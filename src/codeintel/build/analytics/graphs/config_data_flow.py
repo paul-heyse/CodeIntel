@@ -18,6 +18,8 @@ from codeintel.build.analytics.compute.evidence.collection import EvidenceCollec
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
@@ -254,6 +256,23 @@ def _matches_optional_scope(value: object, expected: str) -> bool:
     return str(value) == expected
 
 
+def _filter_table_by_scope(
+    table: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+) -> pa.Table:
+    mask: pa.Array | pa.ChunkedArray | None = None
+    if "repo" in table.column_names:
+        mask = equal_mask(table["repo"], pa.scalar(repo))
+    if "commit" in table.column_names:
+        commit_mask = equal_mask(table["commit"], pa.scalar(commit))
+        mask = commit_mask if mask is None else and_kleene(mask, commit_mask)
+    if mask is None:
+        return table
+    return safe_filter(table, mask)
+
+
 def _config_references_from_rows(
     rows: Sequence[Mapping[str, object]],
     *,
@@ -367,7 +386,11 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
     ConfigDataFlowResult
         Container with config data flow rows.
     """
-    config_rows = _rows_from_tabular(inputs.config_value_rows)
+    config_rows = _rows_from_tabular(
+        inputs.config_value_rows,
+        repo=inputs.snapshot.repo,
+        commit=inputs.snapshot.commit,
+    )
     refs_by_path = _config_references_from_rows(
         config_rows,
         repo=inputs.snapshot.repo,
@@ -381,7 +404,11 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
         )
         return ConfigDataFlowResult(rows=None)
 
-    entrypoint_rows = _rows_from_tabular(inputs.entrypoint_rows)
+    entrypoint_rows = _rows_from_tabular(
+        inputs.entrypoint_rows,
+        repo=inputs.snapshot.repo,
+        commit=inputs.snapshot.commit,
+    )
     entrypoints = _entrypoints_from_rows(
         entrypoint_rows,
         repo=inputs.snapshot.repo,
@@ -468,8 +495,11 @@ def _build_config_flow_rows(
 
 def _rows_from_tabular(
     rows: Sequence[Mapping[str, object]] | pa.Table,
+    *,
+    repo: str,
+    commit: str,
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
-        table = cast("pa.Table", rows)
+        table = _filter_table_by_scope(cast("pa.Table", rows), repo=repo, commit=commit)
         return list(iter_rows(table))
     return [dict(row) for row in rows]

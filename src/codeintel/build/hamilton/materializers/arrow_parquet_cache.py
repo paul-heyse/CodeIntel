@@ -11,6 +11,8 @@ import pyarrow.parquet as pq
 from hamilton import registry
 from hamilton.io.data_adapters import DataLoader, DataSaver
 
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+
 
 @dataclass(frozen=True, slots=True)
 class PyArrowParquetSaver(DataSaver):
@@ -140,8 +142,21 @@ class PyArrowParquetLoader(DataLoader):
         """
         _ = type_
         dictionary_columns = _dictionary_columns_for_path(self.path)
-        read_dictionary = list(dictionary_columns) if dictionary_columns else False
-        table = pq.read_table(self.path, read_dictionary=read_dictionary)
+        read_dictionary = list(dictionary_columns) if dictionary_columns else None
+        try:
+            parquet_file = pq.ParquetFile(
+                self.path,
+                memory_map=True,
+                pre_buffer=True,
+                read_dictionary=read_dictionary,
+            )
+            batches = parquet_file.iter_batches(
+                batch_size=DEFAULT_ARROW_BATCH_SIZE,
+                use_threads=True,
+            )
+            table = pa.Table.from_batches(batches, schema=parquet_file.schema_arrow)
+        except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError, TypeError):
+            table = pq.read_table(self.path, read_dictionary=read_dictionary or False)
         if dictionary_columns:
             table = table.unify_dictionaries()
         return (

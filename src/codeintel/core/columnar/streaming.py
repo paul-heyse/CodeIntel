@@ -21,11 +21,15 @@ from codeintel.core.config.settings import ArrowScanSettings
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
     DEFAULT_ARROW_BATCH_SIZE,
+    DEFAULT_ARROW_CACHE_METADATA,
     DEFAULT_ARROW_CPU_COUNT,
     DEFAULT_ARROW_FRAGMENT_READAHEAD,
     DEFAULT_ARROW_IO_THREAD_COUNT,
     DEFAULT_ARROW_IO_THREAD_MULTIPLIER,
     DEFAULT_ARROW_MIN_IO_THREADS,
+    DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
+    DEFAULT_ARROW_PARQUET_PRE_BUFFER,
+    DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
     DEFAULT_ARROW_USE_THREADS,
 )
 from codeintel.core.manifests import ArrowDatasetManifest
@@ -53,7 +57,11 @@ class DatasetScanOptions:
     batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
     fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
     filter_expression: ds.Expression | None = None
+    cache_metadata: bool | None = DEFAULT_ARROW_CACHE_METADATA
     use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
+    parquet_pre_buffer: bool | None = DEFAULT_ARROW_PARQUET_PRE_BUFFER
+    parquet_use_buffered_stream: bool | None = DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM
+    parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
     memory_pool: pa.MemoryPool | None = None
     schema: pa.Schema | None = None
     columns: Sequence[str] | None = None
@@ -133,10 +141,30 @@ def _merge_scan_options(
             settings.fragment_readahead,
             default=DEFAULT_ARROW_FRAGMENT_READAHEAD,
         ),
+        cache_metadata=_override_default_bool(
+            current=options.cache_metadata,
+            override=settings.cache_metadata,
+            default=DEFAULT_ARROW_CACHE_METADATA,
+        ),
         use_threads=_override_default_bool(
             current=options.use_threads,
             override=settings.use_threads,
             default=DEFAULT_ARROW_USE_THREADS,
+        ),
+        parquet_pre_buffer=_override_default_bool(
+            current=options.parquet_pre_buffer,
+            override=settings.parquet_pre_buffer,
+            default=DEFAULT_ARROW_PARQUET_PRE_BUFFER,
+        ),
+        parquet_use_buffered_stream=_override_default_bool(
+            current=options.parquet_use_buffered_stream,
+            override=settings.parquet_use_buffered_stream,
+            default=DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
+        ),
+        parquet_buffer_size=_override_default_optional(
+            options.parquet_buffer_size,
+            settings.parquet_buffer_size,
+            default=DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
         ),
     )
 
@@ -278,7 +306,12 @@ def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanne
     resolved_options = _merge_scan_options(options, scan_settings)
     configure_arrow_threading(settings=scan_settings)
     schema = _resolve_scan_schema(dataset, resolved_options)
-    scan_kwargs = _build_scan_kwargs(resolved_options, schema)
+    fragment_scan_options = _parquet_fragment_scan_options(dataset, resolved_options)
+    scan_kwargs = _build_scan_kwargs(
+        resolved_options,
+        schema,
+        fragment_scan_options=fragment_scan_options,
+    )
     filter_expression = resolved_options.filter_expression
     if filter_expression is None:
         return _scanner_with_schema(dataset, scan_kwargs)
@@ -481,10 +514,12 @@ def _dataset_fragments(dataset: ds.Dataset) -> Iterable[ds.Fragment] | None:
 
 
 def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) -> Scanner:
+    scan_kwargs = _filter_scan_kwargs(dataset.scanner, scan_kwargs)
     try:
         return dataset.scanner(**scan_kwargs)
     except TypeError:
         scan_kwargs.pop("schema", None)
+        scan_kwargs = _filter_scan_kwargs(dataset.scanner, scan_kwargs)
         return dataset.scanner(**scan_kwargs)
 
 
@@ -501,15 +536,61 @@ def _resolve_scan_schema(
     return schema
 
 
+def _filter_scan_kwargs(
+    target: Callable[..., object], kwargs: dict[str, object]
+) -> dict[str, object]:
+    try:
+        params = inspect.signature(target).parameters
+    except (TypeError, ValueError):
+        return dict(kwargs)
+    return {key: value for key, value in kwargs.items() if key in params}
+
+
+def _dataset_is_parquet(dataset: ds.Dataset) -> bool:
+    dataset_format = getattr(dataset, "format", None)
+    return isinstance(dataset_format, ds.ParquetFileFormat)
+
+
+def _parquet_fragment_scan_options(
+    dataset: ds.Dataset,
+    options: DatasetScanOptions,
+) -> object | None:
+    parquet_options = getattr(ds, "ParquetFragmentScanOptions", None)
+    if not callable(parquet_options):
+        return None
+    if not _dataset_is_parquet(dataset):
+        return None
+    kwargs: dict[str, object] = {}
+    if options.parquet_pre_buffer is not None:
+        kwargs["pre_buffer"] = options.parquet_pre_buffer
+    if options.parquet_use_buffered_stream is not None:
+        kwargs["use_buffered_stream"] = options.parquet_use_buffered_stream
+    if options.parquet_buffer_size is not None:
+        kwargs["buffer_size"] = options.parquet_buffer_size
+    if not kwargs:
+        return None
+    filtered = _filter_scan_kwargs(parquet_options, kwargs)
+    if not filtered:
+        return None
+    try:
+        return parquet_options(**filtered)
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return None
+
+
 def _build_scan_kwargs(
     options: DatasetScanOptions,
     schema: pa.Schema | None,
+    *,
+    fragment_scan_options: object | None,
 ) -> dict[str, object]:
     scan_kwargs: dict[str, object] = {"batch_size": options.batch_size}
     if options.batch_readahead is not None:
         scan_kwargs["batch_readahead"] = options.batch_readahead
     if options.fragment_readahead is not None:
         scan_kwargs["fragment_readahead"] = options.fragment_readahead
+    if options.cache_metadata is not None:
+        scan_kwargs["cache_metadata"] = options.cache_metadata
     if options.use_threads is not None:
         scan_kwargs["use_threads"] = options.use_threads
     if options.memory_pool is not None:
@@ -518,6 +599,8 @@ def _build_scan_kwargs(
         scan_kwargs["columns"] = list(options.columns)
     if schema is not None:
         scan_kwargs["schema"] = schema
+    if fragment_scan_options is not None:
+        scan_kwargs["fragment_scan_options"] = fragment_scan_options
     return scan_kwargs
 
 
@@ -536,12 +619,14 @@ def _scanner_from_fragments(
         scanner_kwargs["filter"] = filter_expression
     if callable(from_fragments):
         try:
+            scanner_kwargs = _filter_scan_kwargs(from_fragments, scanner_kwargs)
             return from_fragments(fragments, schema=schema, **scanner_kwargs)
         except (TypeError, ValueError, pa.ArrowInvalid):
             return None
     from_fragment = getattr(ds.Scanner, "from_fragment", None)
     if callable(from_fragment) and len(fragments) == 1:
         try:
+            scanner_kwargs = _filter_scan_kwargs(from_fragment, scanner_kwargs)
             return from_fragment(fragments[0], schema=schema, **scanner_kwargs)
         except (TypeError, ValueError, pa.ArrowInvalid):
             return None

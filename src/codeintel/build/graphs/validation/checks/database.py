@@ -20,6 +20,8 @@ from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_sna
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.hamilton.native.graphs.cpg.bytecode import instruction_cpg_id
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_masks import is_valid_mask
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.query_results import coerce_int, coerce_str
@@ -494,7 +496,9 @@ def _warn_callsite_span_mismatches_impl(
     )
     if table is None:
         return []
-    rows = [row for row in iter_rows(table) if row.get("callsite_line") is not None]
+    if "callsite_line" in table.column_names:
+        table = safe_filter(table, is_valid_mask(table["callsite_line"]))
+    rows = list(iter_rows(table))
 
     mismatches = []
     for row in rows:

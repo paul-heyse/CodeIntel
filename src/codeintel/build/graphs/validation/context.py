@@ -10,10 +10,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from codeintel.build.graphs.rx.algos import GraphInput
+
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import networkx as nx
 
     from codeintel.build.graphs.engine import GraphEngine
     from codeintel.build.graphs.runtime import GraphRuntime
@@ -61,9 +61,9 @@ class GraphValidationContext:
     catalog: FunctionCatalog | None = None
     runtime: GraphRuntime | None = None
     logger: logging.Logger = field(default_factory=lambda: log)
-    call_graph: nx.DiGraph | None = None
-    import_graph: nx.DiGraph | None = None
-    symbol_graph: nx.Graph | None = None
+    call_graph: GraphInput | None = None
+    import_graph: GraphInput | None = None
+    symbol_graph: GraphInput | None = None
 
 
 __all__ = ["GraphValidationContext"]

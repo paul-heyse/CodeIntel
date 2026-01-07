@@ -21,6 +21,7 @@ from codeintel.build.hamilton.run_records import (
     options_hash_for_target,
     save_manifest,
 )
+from codeintel.build.tabular.arrow_ops import AlignmentReport, pop_alignment_report
 from codeintel.core.execution.materialization import (
     MaterializationStatus,
     failed_artifact_result,
@@ -205,6 +206,11 @@ def record_from_duckdb_materialization(
         record,
         _dataset_manifest_paths({table_key: result}),
     )
+    alignment_reports = _alignment_reports_for_target(
+        table_keys=(table_key,),
+        target_name=target_name,
+    )
+    record = _apply_alignment_reports(record, alignment_reports)
     save_manifest(env, record)
     return record
 
@@ -461,6 +467,11 @@ def record_from_duckdb_materializations(
         inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
     )
     record = _apply_dataset_manifest_paths(record, _dataset_manifest_paths(parsed))
+    alignment_reports = _alignment_reports_for_target(
+        table_keys=expected_table_keys,
+        target_name=target_name,
+    )
+    record = _apply_alignment_reports(record, alignment_reports)
     save_manifest(env, record, change_delta=change_delta)
     return record
 
@@ -665,6 +676,11 @@ def record_from_materializations(
     )
     record = _apply_file_artifact_results(record, parsed_artifacts)
     record = _apply_dataset_manifest_paths(record, _dataset_manifest_paths(parsed_tables))
+    alignment_reports = _alignment_reports_for_target(
+        table_keys=expected_table_keys,
+        target_name=context.target_name,
+    )
+    record = _apply_alignment_reports(record, alignment_reports)
     save_manifest(context.env, record, change_delta=context.change_delta)
     return record
 
@@ -1072,6 +1088,75 @@ def _apply_dataset_manifest_paths(
         artifacts=record.artifacts,
         drift_summaries=record.drift_summaries,
     )
+
+
+def _alignment_report_payload(report: AlignmentReport) -> dict[str, object]:
+    return {
+        "target_name": report.target_name,
+        "missing_columns": list(report.missing_columns),
+        "extra_columns": list(report.extra_columns),
+        "coerced_columns": list(report.coerced_columns),
+        "row_count": report.row_count,
+    }
+
+
+def _alignment_reports_for_target(
+    *,
+    table_keys: tuple[str, ...],
+    target_name: str,
+) -> dict[str, AlignmentReport]:
+    reports: dict[str, AlignmentReport] = {}
+    for table_key in table_keys:
+        report = pop_alignment_report(table_key=table_key, target_name=target_name)
+        if report is None:
+            continue
+        reports[table_key] = report
+    return reports
+
+
+def _apply_alignment_reports(
+    record: TargetRunRecord,
+    reports: Mapping[str, AlignmentReport],
+) -> TargetRunRecord:
+    if not reports or not record.datasets:
+        return record
+
+    updated_datasets: list[DatasetRefProtocol] = []
+    for dataset in record.datasets:
+        report = reports.get(dataset.table_key)
+        if report is None:
+            updated_datasets.append(dataset)
+            continue
+        updated_datasets.append(
+            _apply_dataset_alignment_report(dataset, _alignment_report_payload(report))
+        )
+
+    return TargetRunRecord(
+        target=record.target,
+        impl_kind=record.impl_kind,
+        status=record.status,
+        input_hash=record.input_hash,
+        options_hash=record.options_hash,
+        duration_ms=record.duration_ms,
+        row_counts=record.row_counts,
+        error=record.error,
+        datasets=tuple(updated_datasets),
+        artifacts=record.artifacts,
+        drift_summaries=record.drift_summaries,
+    )
+
+
+def _apply_dataset_alignment_report(
+    dataset: DatasetRefProtocol,
+    report: Mapping[str, object],
+) -> DatasetRefProtocol:
+    if isinstance(dataset, DatasetRef):
+        return dataset.with_metadata("alignment_report", report)
+    with_metadata = getattr(dataset, "with_metadata", None)
+    if callable(with_metadata):
+        updated = with_metadata("alignment_report", report)
+        return cast("DatasetRefProtocol", updated)
+    return dataset
 
 
 def _apply_dataset_manifest_path(

@@ -373,9 +373,7 @@ def cfg_dominance_metrics(graph: GraphInput, entry_idx: int) -> DominanceSummary
     idoms = compute_dominator_tree(store, entry_idx)
     dom_depth = compute_dominator_depths(idoms)
     frontiers = compute_dominance_frontier(store, entry_idx)
-    frontier_sizes = {
-        node: len(frontiers.get(node, frozenset())) for node in store.node_ids()
-    }
+    frontier_sizes = {node: len(frontiers.get(node, frozenset())) for node in store.node_ids()}
     height = max(dom_depth.values()) if dom_depth else None
 
     return DominanceSummary(

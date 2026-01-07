@@ -53,6 +53,12 @@ def table_to_reader(
     pa.RecordBatchReader
         Reader over record batches from the table.
     """
+    to_reader = getattr(table, "to_reader", None)
+    if callable(to_reader):
+        try:
+            return to_reader(max_chunksize=batch_size)
+        except TypeError:
+            return to_reader()
     batches = table.to_batches(max_chunksize=batch_size)
     return pa.RecordBatchReader.from_batches(table.schema, batches)
 

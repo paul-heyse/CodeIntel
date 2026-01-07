@@ -123,6 +123,15 @@ rustworkx-only execution model.
   - `tests/graphs/test_rx_serialization.py`
   - `tests/graphs/test_engine_nx.py`
   - `tests/graphs/test_engine_factory.py`
+- Completed Workstream B algorithm + metrics migration:
+  - `src/codeintel/build/graphs/rx/algos.py` wrappers with deterministic ordering, NaN policy,
+    and tolerance handling (pagerank, betweenness, closeness, eigenvector, harmonic,
+    clustering/triangles, core numbers, constraint/effective size, bipartite projection).
+  - `src/codeintel/core/compute/centrality.py` switched to rustworkx wrappers and store inputs.
+  - `src/codeintel/build/graphs/compute/metrics/*` moved to rustworkx/custom implementations
+    (`centrality.py`, `structural.py`, `paths.py`, `dfg.py`, `cfg.py`, `components.py`,
+    `statistics.py`, `community.py`, `bipartite.py`, `projections.py`).
+  - Deterministic ordering, NaN handling, and numeric tolerance policies applied across outputs.
 
 ### Workstreams (Run in Parallel; No Gradual Rollout)
 
@@ -132,12 +141,9 @@ Workstream A: Engine + Graph Construction (Complete Replacement)
   rustworkx is the internal construction engine.
 
 Workstream B: Algorithm + Metrics Migration (Parity First)
-- Port `src/codeintel/core/compute/centrality.py`.
-- Replace `src/codeintel/build/graphs/compute/metrics/*` with rustworkx/custom
-  implementations (harmonic, clustering/triangles, constraint/effective size,
-  bipartite projection).
-- Apply deterministic ordering, NaN handling, and tolerance policies across
-  all algorithm wrappers and outputs.
+- Status: Implemented.
+- Rustworkx-first wrappers and metric modules now provide deterministic outputs, NaN handling,
+  and numeric tolerance policies for custom algorithms.
 
 Workstream C: Analytics + Validation + Tests (Full Cutover)
 - Update analytics orchestrators and subsystem metrics to consume rustworkx.
@@ -146,23 +152,22 @@ Workstream C: Analytics + Validation + Tests (Full Cutover)
 
 ### Next Actions (Recommended, Two Sets)
 
-Set 1 — Workstream B (Algorithms + Metrics Parity)
-- Add rustworkx-first algorithm wrappers (`rx/algos.py`) with deterministic ordering,
-  NaN policies, and tolerance handling (harmonic, clustering/triangles,
-  constraint/effective size, bipartite projection).
-- Port `src/codeintel/core/compute/centrality.py` to rustworkx wrappers.
-- Replace `src/codeintel/build/graphs/compute/metrics/*` implementations to
-  use rustworkx or custom algorithms and return stable, normalized containers.
-- Update algorithm-focused tests for deterministic ordering and tolerance.
-
-Set 2 — Workstream C (Analytics Cutover + Cleanup)
+Set 1 — Workstream C (Analytics + Validation Cutover)
 - Update analytics consumers (`build/analytics/graphs/*`, `build/analytics/subsystems/*`,
-  `build/analytics/cfg_dfg/*`, `build/analytics/functions/function_effects.py`) to
-  call rustworkx wrappers and remove direct NetworkX usage.
-- Migrate validation checks and fixtures to rustworkx-compatible operations.
+  `build/analytics/cfg_dfg/*`, `build/analytics/functions/function_effects.py`) to call
+  rustworkx wrappers or `GraphInput`-based helpers directly.
+- Migrate validation checks and fixtures under `src/codeintel/build/graphs/validation/*`
+  to rustworkx-compatible operations and deterministic outputs.
+- Update analytics tests/fixtures to expect rustworkx-driven deterministic ordering and
+  the new NaN/tolerance policies.
+
+Set 2 — Dependency Removal + API Surface Cleanup
 - Remove NetworkX dependency/stubs from `pyproject.toml`, `uv.lock`,
-  and `typings/networkx`, then update any remaining type annotations
-  and protocol interfaces to rustworkx-first types.
+  and `typings/networkx`, then update type annotations to rustworkx-first types.
+- Simplify or remove NetworkX-compatible protocols/adapters in
+  `src/codeintel/build/graphs/engine/*`, `src/codeintel/build/graphs/runtime/*`,
+  and `src/codeintel/core/resources/graphs.py` if still present for compatibility.
+- Update documentation and acceptance checks to reflect rustworkx-only usage.
 
 ### Cutover Checklist (Single Switchover)
 - Delete the compatibility shim and engine flag; rustworkx only.

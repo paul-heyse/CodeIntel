@@ -299,9 +299,7 @@ def _modularity_score(
     modularity = 0.0
     for comm_id in set(node_to_comm.values()):
         degree_sum = sum(
-            degree.get(idx, 0.0)
-            for idx, node_comm in node_to_comm.items()
-            if node_comm == comm_id
+            degree.get(idx, 0.0) for idx, node_comm in node_to_comm.items() if node_comm == comm_id
         )
         modularity += (intra.get(comm_id, 0.0) / total_weight) - resolution * (
             (degree_sum / (2.0 * total_weight)) ** 2

@@ -95,8 +95,10 @@ def projection_metrics(
         Projection metric bundle.
     """
     weight_attr = ctx.pagerank_weight if ctx.pagerank_weight is not None else "weight"
-    proj = projection if projection is not None else build_projection_graph(
-        bipartite_graph, nodes, label=label
+    proj = (
+        projection
+        if projection is not None
+        else build_projection_graph(bipartite_graph, nodes, label=label)
     )
     if graph_node_count(proj) == 0:
         return ProjectionMetrics(

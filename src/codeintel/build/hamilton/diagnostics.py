@@ -25,6 +25,7 @@ from codeintel.build.hamilton.observability import (
     export_dag_mermaid,
 )
 from codeintel.build.schemas import get_schema_provider
+from codeintel.build.settings import get_arrow_scan_settings
 from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import scan_dataset
@@ -654,10 +655,11 @@ def _null_counts_for_columns(
     dataset: object,
     columns: Sequence[str],
 ) -> tuple[int, dict[str, int]]:
+    scan_settings = get_arrow_scan_settings()
     scanner = build_scanner(
         dataset,
         options=DatasetScanOptions(
-            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+            batch_size=scan_settings.batch_size or DEFAULT_ARROW_BATCH_SIZE,
             columns=columns,
             unify_schemas=True,
         ),

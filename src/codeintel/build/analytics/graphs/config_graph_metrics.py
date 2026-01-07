@@ -23,6 +23,8 @@ from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 
@@ -198,6 +200,25 @@ def _row_matches_scope(
     )
 
 
+def _filter_table_by_scope(
+    table: pa.Table,
+    *,
+    repo: str | None,
+    commit: str | None,
+) -> pa.Table:
+    if repo is None and commit is None:
+        return table
+    mask: pa.Array | pa.ChunkedArray | None = None
+    if repo is not None and "repo" in table.column_names:
+        mask = equal_mask(table["repo"], pa.scalar(repo))
+    if commit is not None and "commit" in table.column_names:
+        commit_mask = equal_mask(table["commit"], pa.scalar(commit))
+        mask = commit_mask if mask is None else and_kleene(mask, commit_mask)
+    if mask is None:
+        return table
+    return safe_filter(table, mask)
+
+
 def _add_bipartite_edge(graph: nx.Graph, *, key: str, module: str) -> None:
     key_node = ("c", key)
     module_node = ("m", module)
@@ -240,9 +261,12 @@ def _config_bipartite_from_rows(
 
 def _rows_from_tabular(
     rows: Iterable[Mapping[str, object]] | pa.Table,
+    *,
+    repo: str | None,
+    commit: str | None,
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
-        table = cast("pa.Table", rows)
+        table = _filter_table_by_scope(cast("pa.Table", rows), repo=repo, commit=commit)
         return list(iter_rows(table))
     return [dict(row) for row in rows]
 
@@ -272,7 +296,7 @@ def build_config_module_bipartite(
     nx.Graph
         Undirected bipartite graph with config keys and modules.
     """
-    rows = _rows_from_tabular(config_value_rows)
+    rows = _rows_from_tabular(config_value_rows, repo=repo, commit=commit)
     return _config_bipartite_from_rows(
         rows,
         allowed_modules=allowed_modules,

@@ -398,16 +398,11 @@ def _unresolved_call_counts_from_frame(
         return counts
     if "callee_goid_h128" not in edges_frame.column_names:
         return counts
-    has_repo = "repo" in edges_frame.column_names
-    has_commit = "commit" in edges_frame.column_names
-    has_caller = "caller_goid_h128" in edges_frame.column_names
-    if not has_caller:
+    if "caller_goid_h128" not in edges_frame.column_names:
         return counts
-    for row in iter_rows(edges_frame):
-        if has_repo and row.get("repo") != repo:
-            continue
-        if has_commit and row.get("commit") != commit:
-            continue
+    scope = SnapshotScope(repo=repo, commit=commit)
+    filtered = scope.filter_arrow_table(edges_frame, require_columns=False)
+    for row in iter_rows(filtered):
         callee = row.get("callee_goid_h128")
         if callee is not None and callee != -1:
             continue

@@ -14,7 +14,11 @@ from codeintel.core.columnar.streaming import build_scanner as _build_scanner
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
     DEFAULT_ARROW_BATCH_SIZE,
+    DEFAULT_ARROW_CACHE_METADATA,
     DEFAULT_ARROW_FRAGMENT_READAHEAD,
+    DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
+    DEFAULT_ARROW_PARQUET_PRE_BUFFER,
+    DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
     DEFAULT_ARROW_USE_THREADS,
 )
 
@@ -29,6 +33,10 @@ class ScannerParams:
     batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
     fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
     use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
+    cache_metadata: bool | None = DEFAULT_ARROW_CACHE_METADATA
+    parquet_pre_buffer: bool | None = DEFAULT_ARROW_PARQUET_PRE_BUFFER
+    parquet_use_buffered_stream: bool | None = DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM
+    parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
     memory_pool: pa.MemoryPool | None = None
     schema: pa.Schema | None = None
     unify_schemas: bool = False
@@ -50,6 +58,10 @@ class ScannerParams:
             fragment_readahead=self.fragment_readahead,
             filter_expression=self.filter_expression,
             use_threads=self.use_threads,
+            cache_metadata=self.cache_metadata,
+            parquet_pre_buffer=self.parquet_pre_buffer,
+            parquet_use_buffered_stream=self.parquet_use_buffered_stream,
+            parquet_buffer_size=self.parquet_buffer_size,
             memory_pool=self.memory_pool,
             schema=self.schema,
             columns=self.columns,

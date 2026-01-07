@@ -56,7 +56,6 @@ from codeintel.core.columnar import (
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.config.settings import BuildSettings
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetManifestRequest,
     ArrowDatasetWriteOptions,
@@ -682,13 +681,14 @@ def _lazyframe_reader(
     data: pl.LazyFrame,
     query_opt_flags: object | None,
 ) -> pa.RecordBatchReader:
+    batch_size = ctx.build_settings.arrow_scan.batch_size
     return _lazyframe_stream(
         data,
         streaming=ctx.build_settings.polars_streaming,
         streaming_fallback=ctx.build_settings.polars_streaming_fallback,
         query_opt_flags=query_opt_flags,
         inspect=ctx.build_settings.polars_inspect,
-    ).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+    ).to_reader(batch_size=batch_size)
 
 
 def _write_dataset_from_reader(
@@ -724,10 +724,8 @@ def _write_profiled_dataset(
 ) -> ArrowDatasetManifest:
     reader = _reader_from_frame(
         frame,
+        ctx=ctx,
         query_opt_flags=query_opt_flags,
-        streaming=ctx.build_settings.polars_streaming,
-        streaming_fallback=ctx.build_settings.polars_streaming_fallback,
-        inspect=ctx.build_settings.polars_inspect,
     )
     aligned = _align_reader_to_contract(
         reader,
@@ -788,7 +786,12 @@ def _write_sink_or_dataset(
         reader = _lazyframe_reader(ctx=ctx, data=data, query_opt_flags=query_opt_flags)
         return _write_dataset_from_reader(ctx=ctx, reader=reader, observation=observation)
     dataset = ds.dataset(str(snapshot_dir), format="parquet")
-    _observe_sink_dataset(dataset=dataset, table_key=ctx.table_key, observation=observation)
+    _observe_sink_dataset(
+        dataset=dataset,
+        table_key=ctx.table_key,
+        observation=observation,
+        batch_size=ctx.build_settings.arrow_scan.batch_size,
+    )
     return _manifest_from_sink(ctx=ctx, dataset=dataset, snapshot_dir=snapshot_dir)
 
 
@@ -797,11 +800,12 @@ def _observe_sink_dataset(
     dataset: ds.Dataset,
     table_key: str,
     observation: SchemaObservationAccumulator | None,
+    batch_size: int,
 ) -> None:
     if observation is None:
         return
     try:
-        params = ScannerParams(batch_size=DEFAULT_ARROW_BATCH_SIZE, unify_schemas=True)
+        params = ScannerParams(batch_size=batch_size, unify_schemas=True)
         scanner = build_scanner(dataset, params=params)
         observe_batches(scanner.to_reader(), accumulator=observation)
     except (TypeError, ValueError, pa.ArrowInvalid, OSError):
@@ -943,19 +947,17 @@ def _lazyframe_stream(
 def _reader_from_frame(
     frame: pl.DataFrame,
     *,
+    ctx: _DatasetWriteContext,
     query_opt_flags: object | None,
-    streaming: bool,
-    streaming_fallback: bool,
-    inspect: bool,
 ) -> pa.RecordBatchReader:
     stream = LazyFrameStream(
         frame.lazy(),
         query_opt_flags=query_opt_flags,
-        streaming=streaming,
-        streaming_fallback=streaming_fallback,
-        inspect=inspect,
+        streaming=ctx.build_settings.polars_streaming,
+        streaming_fallback=ctx.build_settings.polars_streaming_fallback,
+        inspect=ctx.build_settings.polars_inspect,
     )
-    return stream.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+    return stream.to_reader(batch_size=ctx.build_settings.arrow_scan.batch_size)
 
 
 def _log_lazyframe_plan(

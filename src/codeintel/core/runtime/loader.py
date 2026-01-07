@@ -120,20 +120,54 @@ def _load_build_settings() -> BuildSettings:
             return None
         return get_bool(name, default=None)
 
+    def _load_arrow_scan_settings() -> ArrowScanSettings:
+        arrow_scan_defaults = ArrowScanSettings()
+        arrow_scan_batch_size = optional_int("CODEINTEL_ARROW_SCAN_BATCH_SIZE")
+        arrow_scan_batch_readahead = optional_int("CODEINTEL_ARROW_SCAN_BATCH_READAHEAD")
+        arrow_scan_fragment_readahead = optional_int("CODEINTEL_ARROW_SCAN_FRAGMENT_READAHEAD")
+        arrow_scan_cache_metadata = optional_bool("CODEINTEL_ARROW_SCAN_CACHE_METADATA")
+        arrow_scan_use_threads = optional_bool("CODEINTEL_ARROW_SCAN_USE_THREADS")
+        arrow_scan_parquet_pre_buffer = optional_bool("CODEINTEL_ARROW_SCAN_PARQUET_PRE_BUFFER")
+        arrow_scan_parquet_use_buffered_stream = optional_bool(
+            "CODEINTEL_ARROW_SCAN_PARQUET_USE_BUFFERED_STREAM"
+        )
+        arrow_scan_parquet_buffer_size = optional_int("CODEINTEL_ARROW_SCAN_PARQUET_BUFFER_SIZE")
+        arrow_scan_cpu_count = optional_int("CODEINTEL_ARROW_SCAN_CPU_COUNT")
+        arrow_scan_io_thread_count = optional_int("CODEINTEL_ARROW_SCAN_IO_THREAD_COUNT")
+        return ArrowScanSettings(
+            batch_size=arrow_scan_batch_size
+            if arrow_scan_batch_size is not None
+            else arrow_scan_defaults.batch_size,
+            batch_readahead=arrow_scan_batch_readahead
+            if arrow_scan_batch_readahead is not None
+            else arrow_scan_defaults.batch_readahead,
+            fragment_readahead=arrow_scan_fragment_readahead
+            if arrow_scan_fragment_readahead is not None
+            else arrow_scan_defaults.fragment_readahead,
+            cache_metadata=arrow_scan_cache_metadata
+            if arrow_scan_cache_metadata is not None
+            else arrow_scan_defaults.cache_metadata,
+            use_threads=arrow_scan_use_threads
+            if arrow_scan_use_threads is not None
+            else arrow_scan_defaults.use_threads,
+            parquet_pre_buffer=arrow_scan_parquet_pre_buffer
+            if arrow_scan_parquet_pre_buffer is not None
+            else arrow_scan_defaults.parquet_pre_buffer,
+            parquet_use_buffered_stream=arrow_scan_parquet_use_buffered_stream
+            if arrow_scan_parquet_use_buffered_stream is not None
+            else arrow_scan_defaults.parquet_use_buffered_stream,
+            parquet_buffer_size=arrow_scan_parquet_buffer_size
+            if arrow_scan_parquet_buffer_size is not None
+            else arrow_scan_defaults.parquet_buffer_size,
+            cpu_count=arrow_scan_cpu_count
+            if arrow_scan_cpu_count is not None
+            else arrow_scan_defaults.cpu_count,
+            io_thread_count=arrow_scan_io_thread_count
+            if arrow_scan_io_thread_count is not None
+            else arrow_scan_defaults.io_thread_count,
+        )
+
     dictionary_max_cardinality = optional_int("CODEINTEL_ARROW_DATASET_DICT_MAX_CARDINALITY")
-    arrow_scan_defaults = ArrowScanSettings()
-    arrow_scan_batch_size = optional_int("CODEINTEL_ARROW_SCAN_BATCH_SIZE")
-    arrow_scan_batch_readahead = optional_int("CODEINTEL_ARROW_SCAN_BATCH_READAHEAD")
-    arrow_scan_fragment_readahead = optional_int("CODEINTEL_ARROW_SCAN_FRAGMENT_READAHEAD")
-    arrow_scan_cache_metadata = optional_bool("CODEINTEL_ARROW_SCAN_CACHE_METADATA")
-    arrow_scan_use_threads = optional_bool("CODEINTEL_ARROW_SCAN_USE_THREADS")
-    arrow_scan_parquet_pre_buffer = optional_bool("CODEINTEL_ARROW_SCAN_PARQUET_PRE_BUFFER")
-    arrow_scan_parquet_use_buffered_stream = optional_bool(
-        "CODEINTEL_ARROW_SCAN_PARQUET_USE_BUFFERED_STREAM"
-    )
-    arrow_scan_parquet_buffer_size = optional_int("CODEINTEL_ARROW_SCAN_PARQUET_BUFFER_SIZE")
-    arrow_scan_cpu_count = optional_int("CODEINTEL_ARROW_SCAN_CPU_COUNT")
-    arrow_scan_io_thread_count = optional_int("CODEINTEL_ARROW_SCAN_IO_THREAD_COUNT")
     polars_streaming = optional_bool("CODEINTEL_BUILD_POLARS_STREAMING")
     polars_streaming_fallback = optional_bool("CODEINTEL_BUILD_POLARS_STREAMING_FALLBACK")
     polars_flags = split_csv(get_str("CODEINTEL_BUILD_POLARS_QUERY_OPT_FLAGS", default=None))
@@ -165,38 +199,7 @@ def _load_build_settings() -> BuildSettings:
                 optional_bool("CODEINTEL_ARROW_DATASET_ENABLE_SINK_PARQUET") or True
             ),
         ),
-        arrow_scan=ArrowScanSettings(
-            batch_size=arrow_scan_batch_size
-            if arrow_scan_batch_size is not None
-            else arrow_scan_defaults.batch_size,
-            batch_readahead=arrow_scan_batch_readahead
-            if arrow_scan_batch_readahead is not None
-            else arrow_scan_defaults.batch_readahead,
-            fragment_readahead=arrow_scan_fragment_readahead
-            if arrow_scan_fragment_readahead is not None
-            else arrow_scan_defaults.fragment_readahead,
-            cache_metadata=arrow_scan_cache_metadata
-            if arrow_scan_cache_metadata is not None
-            else arrow_scan_defaults.cache_metadata,
-            use_threads=arrow_scan_use_threads
-            if arrow_scan_use_threads is not None
-            else arrow_scan_defaults.use_threads,
-            parquet_pre_buffer=arrow_scan_parquet_pre_buffer
-            if arrow_scan_parquet_pre_buffer is not None
-            else arrow_scan_defaults.parquet_pre_buffer,
-            parquet_use_buffered_stream=arrow_scan_parquet_use_buffered_stream
-            if arrow_scan_parquet_use_buffered_stream is not None
-            else arrow_scan_defaults.parquet_use_buffered_stream,
-            parquet_buffer_size=arrow_scan_parquet_buffer_size
-            if arrow_scan_parquet_buffer_size is not None
-            else arrow_scan_defaults.parquet_buffer_size,
-            cpu_count=arrow_scan_cpu_count
-            if arrow_scan_cpu_count is not None
-            else arrow_scan_defaults.cpu_count,
-            io_thread_count=arrow_scan_io_thread_count
-            if arrow_scan_io_thread_count is not None
-            else arrow_scan_defaults.io_thread_count,
-        ),
+        arrow_scan=_load_arrow_scan_settings(),
         polars_profile=bool(optional_bool("CODEINTEL_BUILD_POLARS_PROFILE") or False),
         polars_inspect=bool(optional_bool("CODEINTEL_BUILD_POLARS_INSPECT") or False),
         polars_query_opt_flags=tuple(polars_flags),

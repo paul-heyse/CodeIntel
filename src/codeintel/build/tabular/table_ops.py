@@ -8,8 +8,8 @@ from typing import cast
 import polars as pl
 import pyarrow as pa
 
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_columns import empty_table
+from codeintel.core.columnar.iter import iter_rows
 
 
 def empty_table_for_columns(columns: Sequence[str]) -> pa.Table:

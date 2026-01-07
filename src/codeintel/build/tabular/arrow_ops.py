@@ -10,7 +10,7 @@ Policy
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
@@ -42,6 +42,12 @@ from codeintel.build.tabular.frames import (
     join_validated,
 )
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.iter import (
+    iter_array_values as _iter_array_values,
+)
+from codeintel.core.columnar.iter import (
+    iter_rows as _iter_rows,
+)
 from codeintel.core.columnar.normalization import (
     normalize_table_for_compute as _normalize_table_for_compute,
 )
@@ -827,6 +833,7 @@ class AlignmentReport:
 
 
 AlignmentReporter = Callable[[AlignmentReport], None]
+type AlignmentReportKey = tuple[str, str | None]
 
 
 class AlignmentOverrides(TypedDict, total=False):
@@ -927,13 +934,35 @@ def _build_alignment_report(
     )
 
 
-_ALIGNMENT_REPORT_SEEN: set[tuple[str, str | None]] = set()
+_ALIGNMENT_REPORT_SEEN: set[AlignmentReportKey] = set()
+_ALIGNMENT_REPORTS: dict[AlignmentReportKey, AlignmentReport] = {}
+
+
+def record_alignment_report(report: AlignmentReport) -> None:
+    """Store the latest alignment report for a table target."""
+    _ALIGNMENT_REPORTS[report.table_key, report.target_name] = report
+
+
+def pop_alignment_report(
+    *,
+    table_key: str,
+    target_name: str | None,
+) -> AlignmentReport | None:
+    """Return and clear the latest alignment report for a table target.
+
+    Returns
+    -------
+    AlignmentReport | None
+        Report when available, otherwise None.
+    """
+    return _ALIGNMENT_REPORTS.pop((table_key, target_name), None)
 
 
 def emit_alignment_report(report: AlignmentReport) -> None:
     """Log alignment diagnostics once per table target."""
     if not report.missing_columns and not report.extra_columns and not report.coerced_columns:
         return
+    record_alignment_report(report)
     key = (report.table_key, report.target_name)
     if key in _ALIGNMENT_REPORT_SEEN:
         return
@@ -1254,52 +1283,8 @@ def arrow_join_lazyframes(
     return joined.lazy()
 
 
-def iter_array_values(values: pa.Array | pa.ChunkedArray) -> Iterator[object]:
-    """Yield Python values from an Arrow array without materializing a full list.
-
-    Yields
-    ------
-    object
-        Python scalar values.
-    """
-    if isinstance(values, pa.ChunkedArray):
-        for chunk in values.iterchunks():
-            for item in chunk:
-                yield item.as_py()
-        return
-    for item in values:
-        yield item.as_py()
-
-
-def iter_rows(
-    table_or_batch: pa.Table | pa.RecordBatch,
-    columns: Sequence[str] | None = None,
-) -> Iterator[dict[str, object]]:
-    """Yield row dicts from a table or record batch without building a pylist.
-
-    Yields
-    ------
-    dict[str, object]
-        Row dictionaries.
-    """
-    if isinstance(table_or_batch, pa.Table):
-        column_names = list(columns) if columns is not None else list(table_or_batch.column_names)
-        if not column_names:
-            return
-        selected = table_or_batch.select(column_names)
-        for batch in selected.to_batches():
-            yield from iter_rows(batch, column_names)
-        return
-    batch = table_or_batch
-    column_names = list(columns) if columns is not None else list(batch.schema.names)
-    if not column_names:
-        return
-    arrays = [batch.column(column_name) for column_name in column_names]
-    for row_index in range(batch.num_rows):
-        yield {
-            column_name: arrays[idx][row_index].as_py()
-            for idx, column_name in enumerate(column_names)
-        }
+iter_array_values = _iter_array_values
+iter_rows = _iter_rows
 
 
 def group_list_or_polars(
@@ -1378,6 +1363,8 @@ def write_json_streaming_table(
 
 
 __all__ = [
+    "AlignmentOptions",
+    "AlignmentOverrides",
     "AlignmentReport",
     "AlignmentReporter",
     "ArrowJoinOptions",
@@ -1405,6 +1392,8 @@ __all__ = [
     "normalize_string_view_array",
     "normalize_table_for_compute",
     "normalize_table_for_join",
+    "pop_alignment_report",
+    "record_alignment_report",
     "require_json_writer",
     "resolve_join_filter_field",
     "scan_parquet_dataset",
