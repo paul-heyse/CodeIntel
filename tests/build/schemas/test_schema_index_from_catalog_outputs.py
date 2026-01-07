@@ -11,7 +11,7 @@ from codeintel.build.schemas.schema_index import build_schema_index
 from codeintel.build.target_metadata import TargetSystem
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from tests._helpers.catalog import build_catalog, make_target_descriptor
 
 if TYPE_CHECKING:
@@ -53,7 +53,7 @@ class _FakeInferenceService:
         }
 
 
-def _build_target_system(runtime: RuntimeBundle) -> TargetSystem:
+def _build_target_system(runtime: HamiltonRuntimeBundle) -> TargetSystem:
     target = make_target_descriptor(
         name="alpha",
         module="analytics",
@@ -81,7 +81,7 @@ def _build_target_system(runtime: RuntimeBundle) -> TargetSystem:
 
 
 def test_schema_index_requires_explicit_schema_for_non_inferable(
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
 ) -> None:
     """Non-inferable outputs must have explicit registry schemas."""
     system = _build_target_system(hamilton_runtime)
@@ -96,7 +96,7 @@ def test_schema_index_requires_explicit_schema_for_non_inferable(
         )
 
 
-def test_schema_index_uses_catalog_outputs(hamilton_runtime: RuntimeBundle) -> None:
+def test_schema_index_uses_catalog_outputs(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Schema index derivations should come from catalog outputs."""
     system = _build_target_system(hamilton_runtime)
     declared_provider = MappingSchemaProvider({})

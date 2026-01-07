@@ -6,11 +6,11 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.build.analytics.compute.row_builders.context import RowBuildContext
 from codeintel.core.query_results import coerce_optional_int
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
-    from datetime import datetime
 
     from codeintel.build.analytics.compute.graphs import ComponentBundle, NeighborStats
 
@@ -19,28 +19,24 @@ if TYPE_CHECKING:
 class FunctionGraphMetricInputs:
     """Inputs required to build graph_metrics_functions rows."""
 
-    repo: str
-    commit: str
+    row_context: RowBuildContext
     stats: NeighborStats
     centrality: Mapping[str, Mapping[int, float]]
     components: ComponentBundle
     graph_nodes: list[int]
-    created_at: datetime
 
 
 @dataclass(frozen=True)
 class ModuleGraphMetricInputs:
     """Inputs required to build graph_metrics_modules rows."""
 
-    repo: str
-    commit: str
+    row_context: RowBuildContext
     modules: set[str]
     import_stats: NeighborStats
     centrality: Mapping[str, Mapping[str, float]]
     component_meta: Mapping[str, Mapping[str, int | bool]]
     symbol_inbound: Mapping[str, set[str]]
     symbol_outbound: Mapping[str, set[str]]
-    created_at: datetime
 
 
 def build_function_graph_metric_rows(
@@ -60,8 +56,8 @@ def build_function_graph_metric_rows(
     """
     return [
         {
-            "repo": inputs.repo,
-            "commit": inputs.commit,
+            "repo": inputs.row_context.repo,
+            "commit": inputs.row_context.commit,
             "function_goid_h128": int(node),
             "call_fan_in": len(inputs.stats.in_neighbors.get(node, ())),
             "call_fan_out": len(inputs.stats.out_neighbors.get(node, ())),
@@ -73,7 +69,7 @@ def build_function_graph_metric_rows(
             "call_cycle_member": inputs.components.in_cycle.get(node, False),
             "call_cycle_id": inputs.components.scc_id.get(node),
             "call_layer": inputs.components.layer.get(node),
-            "created_at": inputs.created_at,
+            "created_at": inputs.row_context.created_at,
         }
         for node in inputs.graph_nodes
     ]
@@ -207,8 +203,8 @@ def build_module_graph_metric_rows(
     """
     return [
         {
-            "repo": inputs.repo,
-            "commit": inputs.commit,
+            "repo": inputs.row_context.repo,
+            "commit": inputs.row_context.commit,
             "module": module,
             "import_fan_in": len(inputs.import_stats.in_neighbors.get(module, ())),
             "import_fan_out": len(inputs.import_stats.out_neighbors.get(module, ())),
@@ -230,7 +226,7 @@ def build_module_graph_metric_rows(
             ),
             "symbol_fan_in": len(inputs.symbol_inbound.get(module, ())),
             "symbol_fan_out": len(inputs.symbol_outbound.get(module, ())),
-            "created_at": inputs.created_at,
+            "created_at": inputs.row_context.created_at,
         }
         for module in sorted(inputs.modules)
     ]

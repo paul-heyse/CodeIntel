@@ -10,11 +10,11 @@ from codeintel.runtime.module_resolver import (
     resolve_modules,
 )
 from codeintel.runtime.registry import RuntimeRegistry
-from codeintel.runtime.runtime_bundle import RuntimeBundle, RuntimeKey
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle, RuntimeKey
 
 __all__ = [
     "ExecutionInputs",
-    "RuntimeBundle",
+    "HamiltonRuntimeBundle",
     "RuntimeComposition",
     "RuntimeKey",
     "RuntimeRegistry",

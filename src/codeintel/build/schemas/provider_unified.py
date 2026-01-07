@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from codeintel.build.schemas.schema_index import SchemaIndex
 from codeintel.core.schemas.authority import SchemaAuthority
 from codeintel.core.schemas.declared import source_declared_schema_provider
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -26,15 +26,15 @@ _DECLARED_PROVIDER_CACHE: dict[str, SchemaProvider] = {}
 _PROVIDER_CACHE: dict[tuple[str, bool], UnifiedSchemaProvider] = {}
 
 
-def _schema_index_from_runtime(runtime: RuntimeBundle) -> SchemaIndex:
+def _schema_index_from_runtime(runtime: HamiltonRuntimeBundle) -> SchemaIndex:
     schema_index = runtime.schema_index
     if schema_index is None:
-        msg = "RuntimeBundle.schema_index is required to build a schema provider"
+        msg = "HamiltonRuntimeBundle.schema_index is required to build a schema provider"
         raise ValueError(msg)
     return schema_index
 
 
-def declared_schema_provider(*, runtime: RuntimeBundle) -> SchemaProvider:
+def declared_schema_provider(*, runtime: HamiltonRuntimeBundle) -> SchemaProvider:
     """Return a source-only declared schema provider for build usage.
 
     Returns
@@ -216,7 +216,7 @@ class UnifiedSchemaProvider:
 
 def _build_provider(
     *,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     allow_inference: bool,
 ) -> UnifiedSchemaProvider:
     cache_key = (runtime.fingerprint, allow_inference)
@@ -232,7 +232,7 @@ def _build_provider(
     return provider
 
 
-def unified_schema_provider(*, runtime: RuntimeBundle) -> UnifiedSchemaProvider:
+def unified_schema_provider(*, runtime: HamiltonRuntimeBundle) -> UnifiedSchemaProvider:
     """Return the DAG-first schema provider.
 
     Returns
@@ -243,7 +243,7 @@ def unified_schema_provider(*, runtime: RuntimeBundle) -> UnifiedSchemaProvider:
     return _build_provider(runtime=runtime, allow_inference=True)
 
 
-def non_inferable_schema_provider(*, runtime: RuntimeBundle) -> UnifiedSchemaProvider:
+def non_inferable_schema_provider(*, runtime: HamiltonRuntimeBundle) -> UnifiedSchemaProvider:
     """Return a schema provider with inference disabled.
 
     Returns

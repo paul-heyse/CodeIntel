@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.planning.model import BuildPlan, PlanRequest, PlanTargetEntry
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from tests._helpers.build import (
     TEST_BUILD_SETTINGS,
     make_build_config,
@@ -168,7 +168,7 @@ class TestPlanComputation:
     def test_compute_plan_closure(
         fake_gateway: FakeGateway,
         tmp_path: Path,
-        hamilton_runtime: RuntimeBundle,
+        hamilton_runtime: HamiltonRuntimeBundle,
     ) -> None:
         """Verify compute_plan returns a closure entry for the target graph."""
         env = make_test_build_env(fake_gateway, tmp_path)

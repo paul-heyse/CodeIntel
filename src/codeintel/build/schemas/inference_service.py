@@ -21,11 +21,6 @@ import polars as pl
 import pyarrow as pa
 from polars.exceptions import PolarsError
 
-try:
-    from dulwich.repo import Repo as _DulwichRepo
-except ImportError:
-    _DulwichRepo = None
-
 from codeintel.build.assets.emitter import RunArtifactSpec, record_run_artifact
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.build_log import record_build_event
@@ -43,10 +38,11 @@ from codeintel.build.schemas.observations import (
     table_schema_from_tag_sets,
 )
 from codeintel.build.schemas.seed_harness import DatasetSeedHarness, SeedDatasetConfig
+from codeintel.build.scopes.dulwich import snapshot_from_dulwich
 from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput, TabularInput
 from codeintel.config.models import ToolsConfig
-from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.config.primitives import BuildPaths
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.config.settings import (
     BuildSettings,
@@ -830,7 +826,7 @@ def _default_build_settings() -> BuildSettings:
 
 
 def _inference_env(*, gateway: BuildGateway, force_targets: frozenset[str]) -> BuildEnv:
-    snapshot = _dulwich_snapshot()
+    snapshot = snapshot_from_dulwich()
     if snapshot is None:
         msg = "Schema inference requires a valid dulwich snapshot (repo root + HEAD commit)."
         raise RuntimeError(msg)
@@ -847,29 +843,6 @@ def _inference_env(*, gateway: BuildGateway, force_targets: frozenset[str]) -> B
         force_targets=force_targets,
     )
     return context.build_env()
-
-
-def _dulwich_snapshot() -> SnapshotRef | None:
-    if _DulwichRepo is None:
-        return None
-    try:
-        repo = _DulwichRepo.discover(Path.cwd())
-    except (OSError, ValueError):
-        return None
-    repo_root = Path(repo.path).resolve()
-    head = repo.head()
-    if isinstance(head, bytes):
-        commit = head.decode("ascii", errors="ignore").strip()
-    else:
-        commit = str(head).strip()
-    if not commit:
-        return None
-    repo_name = repo_root.name or "repo"
-    return SnapshotRef.from_args(
-        repo=repo_name,
-        commit=commit,
-        repo_root=repo_root,
-    )
 
 
 def _infer_table_schema_for_compute(inputs: _InferenceComputeInputs) -> TableSchema:

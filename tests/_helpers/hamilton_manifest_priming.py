@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from codeintel.build.hamilton.run_records import options_hash_for_target
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
@@ -26,7 +26,7 @@ class ManifestPriming:
     """Insert manifests and minimal state for build tests."""
 
     harness: _HarnessProtocol
-    runtime: RuntimeBundle
+    runtime: HamiltonRuntimeBundle
 
     @dataclass(frozen=True)
     class ManifestSpec:

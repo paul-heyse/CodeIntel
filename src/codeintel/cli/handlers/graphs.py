@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.dag_catalog import TargetDescriptor
     from codeintel.cli.context import CommandContext
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 LOG = logging.getLogger(__name__)
 
@@ -225,7 +225,7 @@ def graph_targets_handler(
 
 
 def _filter_graph_targets(
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
     names_set: set[str] | None,
 ) -> list[TargetDescriptor]:
     catalog = runtime_bundle.catalog
@@ -236,7 +236,7 @@ def _filter_graph_targets(
 
 
 def _select_graph_plugin_targets(
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
     names: list[str],
     selection_policy: SelectionPolicy,
 ) -> tuple[list[TargetDescriptor], set[str]]:
@@ -253,7 +253,7 @@ def _select_graph_plugin_targets(
 
 
 def _build_target_infos(
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
     targets: Iterable[TargetDescriptor],
     *,
     description_prefix: str,
@@ -277,7 +277,7 @@ def _build_target_infos(
 
 
 def _build_plan_stages(
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
     targets: Iterable[TargetDescriptor],
 ) -> list[GraphPlanStage]:
     catalog = runtime_bundle.catalog
@@ -289,7 +289,7 @@ def _build_plan_stages(
 
 
 def _plan_graph_plugins(
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
     graph_targets: Iterable[TargetDescriptor],
     available_names: set[str],
     dependency_policy: DependencyPolicy,
@@ -305,7 +305,7 @@ def _plan_graph_plugins(
 
 
 def _list_graph_plugins(
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
     graph_targets: Iterable[TargetDescriptor],
 ) -> CliResult[GraphPlanResult | TabularResult]:
     target_infos = _build_target_infos(

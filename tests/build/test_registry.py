@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 
 MIN_INGESTION_TARGETS = 5
@@ -41,7 +41,7 @@ class TestTargetRegistry:
         expect_true(len(catalog) > 0)
 
     @staticmethod
-    def test_get_target_graph_is_cached(hamilton_runtime: RuntimeBundle) -> None:
+    def test_get_target_graph_is_cached(hamilton_runtime: HamiltonRuntimeBundle) -> None:
         """Target graph resolution returns the same instance."""
         catalog1 = hamilton_runtime.catalog
         catalog2 = hamilton_runtime.catalog
@@ -142,7 +142,7 @@ def test_key_targets_are_registered(target_name: str, catalog: DagCatalog) -> No
 
 
 @pytest.fixture(scope="module")
-def catalog(hamilton_runtime: RuntimeBundle) -> DagCatalog:
+def catalog(hamilton_runtime: HamiltonRuntimeBundle) -> DagCatalog:
     """Provide the DAG catalog for registry tests.
 
     Returns

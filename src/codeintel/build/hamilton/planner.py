@@ -10,14 +10,14 @@ from codeintel.build.hamilton.native.planning.plan_targets import CI_PLAN_TARGET
 from codeintel.build.planning.model import BuildPlan, PlanRequest
 from codeintel.runtime.compose import compose_runtime, set_execution_active
 from codeintel.runtime.inputs import ExecutionInputs
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 def compute_plan(
     *,
     env: BuildEnv,
     plan_request: PlanRequest,
-    runtime: RuntimeBundle | None = None,
+    runtime: HamiltonRuntimeBundle | None = None,
     config: Mapping[str, Any] | None = None,
     materialize: bool = True,
 ) -> BuildPlan:
@@ -71,7 +71,7 @@ def _compose_planning_runtime(
     *,
     env: BuildEnv,
     config: Mapping[str, Any] | None,
-) -> RuntimeBundle:
+) -> HamiltonRuntimeBundle:
     resolved_config = _planning_config(env=env, config=config)
     return compose_runtime(env=env, config=resolved_config).bundle
 
@@ -89,7 +89,7 @@ def _planning_config(
     return resolved
 
 
-def _plan_final_vars(*, runtime: RuntimeBundle, materialize: bool) -> list[str]:
+def _plan_final_vars(*, runtime: HamiltonRuntimeBundle, materialize: bool) -> list[str]:
     final_vars = ["plan"]
     if materialize:
         target_node = runtime.catalog.target_nodes.get(CI_PLAN_TARGET_NAME)
@@ -102,7 +102,7 @@ def _plan_final_vars(*, runtime: RuntimeBundle, materialize: bool) -> list[str]:
 
 def _execute_plan(
     *,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     inputs: ExecutionInputs,
     final_vars: Sequence[str],
 ) -> dict[str, object]:

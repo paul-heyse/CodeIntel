@@ -12,6 +12,7 @@ from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.variants import variant_config_from_build_config
+from codeintel.build.scopes.dulwich import ensure_snapshot_matches_head
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.execution import ExecutionContext
 from codeintel.core.validation.mode import ContractValidationMode
@@ -102,9 +103,10 @@ class BuildRunContext:
             variants = self.execution_context.variants
         registry_service = None
         validation_mode = self.validation_mode or ContractValidationMode.LENIENT
+        snapshot = ensure_snapshot_matches_head(self.snapshot)
         return BuildEnv(
             gateway=self.gateway,
-            snapshot=self.snapshot,
+            snapshot=snapshot,
             paths=self.paths,
             providers=self.providers,
             config=stacked,

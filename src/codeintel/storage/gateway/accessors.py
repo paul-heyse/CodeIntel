@@ -11,12 +11,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.core.datasets.manifests import load_dataset_manifest
+from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.schemas.provider import FallbackSchemaProvider, MappingSchemaProvider
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.serving.semantic.duckdb_scan_adapter import scan_parquet
 from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.datasets.manifests import load_dataset_manifest
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
 from codeintel.storage.duckdb.context import DuckDBContext
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService

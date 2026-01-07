@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -86,7 +86,7 @@ class HamiltonTestContext:
 
     env: BuildEnv
     catalog: DagCatalog
-    runtime: RuntimeBundle
+    runtime: HamiltonRuntimeBundle
     harness: HamiltonBuildHarness
     gateway: StorageGateway
     snapshot: SnapshotRef
@@ -151,7 +151,7 @@ class HamiltonTestBuilder:
     profile: str = DEFAULT_PROFILE_NAME
     force_targets: frozenset[str] = field(default_factory=frozenset)
     validate_outputs: bool = False
-    _runtime: RuntimeBundle | None = field(default=None, repr=False)
+    _runtime: HamiltonRuntimeBundle | None = field(default=None, repr=False)
 
     @classmethod
     def create(
@@ -159,7 +159,7 @@ class HamiltonTestBuilder:
         gateway: StorageGateway,
         tmp_path: Path,
         *,
-        runtime: RuntimeBundle | None = None,
+        runtime: HamiltonRuntimeBundle | None = None,
     ) -> HamiltonTestBuilder:
         """Create a new builder with required dependencies.
 
@@ -309,7 +309,7 @@ class HamiltonTestBuilder:
         self.validate_outputs = enabled
         return self
 
-    def with_runtime(self, runtime: RuntimeBundle) -> HamiltonTestBuilder:
+    def with_runtime(self, runtime: HamiltonRuntimeBundle) -> HamiltonTestBuilder:
         """Reuse a shared runtime bundle.
 
         Parameters
@@ -378,12 +378,12 @@ class HamiltonTestBuilder:
             return self.config
         return BuildConfig.empty()
 
-    def _require_runtime(self) -> RuntimeBundle:
+    def _require_runtime(self) -> HamiltonRuntimeBundle:
         """Return the configured runtime bundle.
 
         Returns
         -------
-        RuntimeBundle
+        HamiltonRuntimeBundle
             Runtime bundle with driver, catalog, and tag query.
 
         Raises
@@ -392,7 +392,7 @@ class HamiltonTestBuilder:
             Raised when no runtime bundle was provided.
         """
         if self._runtime is None:
-            message = "HamiltonTestBuilder requires a RuntimeBundle via with_runtime()."
+            message = "HamiltonTestBuilder requires a HamiltonRuntimeBundle via with_runtime()."
             raise RuntimeError(message)
         return self._runtime
 

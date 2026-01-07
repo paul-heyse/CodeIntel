@@ -38,7 +38,7 @@ Count rows across multiple tables:
 
 from __future__ import annotations
 
-from codeintel.storage.queries.safe import (
+from codeintel.core.queries.safe import (
     count_rows_for_snapshot,
     count_rows_for_tables,
     safe_count_rows,

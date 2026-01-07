@@ -15,7 +15,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.providers import Providers, create_default_providers
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.context import SeedPack, TestContext, create_test_context
 from tests._helpers.env_options import EnvOptions, GatewayOptions
@@ -219,7 +219,7 @@ class HamiltonBuildHarness:
     config: HarnessConfig
     repo_files: tuple[Path, ...] = ()
     last_result: HamiltonBuildResult | None = None
-    runtime: RuntimeBundle | None = None
+    runtime: HamiltonRuntimeBundle | None = None
     _owns_ctx: bool = True
 
     @classmethod
@@ -387,7 +387,7 @@ class HamiltonBuildHarness:
         return result
 
     @staticmethod
-    def validate_graph(*, runtime: RuntimeBundle) -> None:
+    def validate_graph(*, runtime: HamiltonRuntimeBundle) -> None:
         """Validate Hamilton DAG invariants for the build graph.
 
         Raises
@@ -404,7 +404,7 @@ class HamiltonBuildHarness:
             raise AssertionError(message)
 
     @staticmethod
-    def assert_output_inventory_consistent(*, runtime: RuntimeBundle) -> None:
+    def assert_output_inventory_consistent(*, runtime: HamiltonRuntimeBundle) -> None:
         """Assert DAG-derived output inventory is internally consistent.
 
         Raises
@@ -550,12 +550,12 @@ class HamiltonBuildHarness:
             If no runtime bundle has been attached to the harness.
         """
         if self.runtime is None:
-            message = "Manifest priming requires a RuntimeBundle on the harness."
+            message = "Manifest priming requires a HamiltonRuntimeBundle on the harness."
             raise RuntimeError(message)
         return ManifestPriming(self, runtime=self.runtime)
 
-    def with_runtime(self, runtime: RuntimeBundle) -> HamiltonBuildHarness:
-        """Attach a RuntimeBundle for catalog-based helpers.
+    def with_runtime(self, runtime: HamiltonRuntimeBundle) -> HamiltonBuildHarness:
+        """Attach a HamiltonRuntimeBundle for catalog-based helpers.
 
         Returns
         -------

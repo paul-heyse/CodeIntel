@@ -20,8 +20,10 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
 )
 from codeintel.build.tabular.arrow_ops import (
     ArrowJoinSpec,
+    JoinFilterClause,
     arrow_join_tables,
     build_join_options,
+    join_filter_expr,
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns
@@ -516,7 +518,17 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
     edges = normalize_table_for_join(edges)
     src_anchor = normalize_table_for_join(src_anchor)
     join_spec = ArrowJoinSpec(on=["function_goid_h128", "src_block_idx"], how="left")
-    join_options = build_join_options(edges, src_anchor)
+    filter_expr = join_filter_expr(
+        left=edges,
+        right=src_anchor,
+        spec=join_spec,
+        clause=JoinFilterClause(
+            field="src_cpg_node_id",
+            predicate=is_valid_expr,
+            side="right",
+        ),
+    )
+    join_options = build_join_options(edges, src_anchor, filter_expression=filter_expr)
     joined = arrow_join_tables(
         edges,
         src_anchor,
@@ -530,7 +542,17 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
     joined = normalize_table_for_join(joined)
     dst_anchor = normalize_table_for_join(dst_anchor)
     join_spec = ArrowJoinSpec(on=["function_goid_h128", "dst_block_idx"], how="left")
-    join_options = build_join_options(joined, dst_anchor)
+    filter_expr = join_filter_expr(
+        left=joined,
+        right=dst_anchor,
+        spec=join_spec,
+        clause=JoinFilterClause(
+            field="dst_cpg_node_id",
+            predicate=is_valid_expr,
+            side="right",
+        ),
+    )
+    join_options = build_join_options(joined, dst_anchor, filter_expression=filter_expr)
     return arrow_join_tables(
         joined,
         dst_anchor,

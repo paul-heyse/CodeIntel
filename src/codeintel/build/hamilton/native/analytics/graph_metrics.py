@@ -47,9 +47,8 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import equal_mask
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.scopes.snapshot import SnapshotScope
+from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -194,64 +193,14 @@ def _graph_runtime_options(env: BuildEnv) -> GraphRuntimeOptions:
     )
 
 
-def _collect_rows(
-    value: InferableTabularInput,
-    columns: tuple[str, ...],
-    *,
-    repo: str | None,
-    commit: str | None,
-) -> list[dict[str, object]]:
-    table = tabular_to_arrow_table(value)
-    if repo is not None and "repo" in table.column_names:
-        table = table.filter(equal_mask(table["repo"], pa.scalar(repo)))
-    if commit is not None and "commit" in table.column_names:
-        table = table.filter(equal_mask(table["commit"], pa.scalar(commit)))
-    if columns:
-        missing = [col for col in columns if col not in table.column_names]
-        if missing:
-            msg = f"Missing columns in graph_metrics inputs: {missing}"
-            raise ValueError(msg)
-        table = table.select(list(columns))
-    if table.num_rows == 0:
-        return []
-    return list(iter_rows(table))
-
-
-def _matches_optional_scope_value(value: object, expected: str) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return not value.strip() or value == expected
-    return str(value).strip() == expected
-
-
-def _filter_rows_by_snapshot(
-    rows: list[dict[str, object]],
-    *,
-    repo: str,
-    commit: str,
-) -> list[dict[str, object]]:
-    filtered: list[dict[str, object]] = []
-    for row in rows:
-        repo_value = row.get("repo")
-        commit_value = row.get("commit")
-        if repo_value is not None and not _matches_optional_scope_value(repo_value, repo):
-            continue
-        if commit_value is not None and not _matches_optional_scope_value(commit_value, commit):
-            continue
-        filtered.append(row)
-    return filtered
-
-
 def _allowed_modules_from_rows(
     rows: list[dict[str, object]],
     *,
-    repo: str,
-    commit: str,
+    scope: SnapshotScope,
 ) -> set[str]:
     if not rows:
         return set()
-    filtered = _filter_rows_by_snapshot(rows, repo=repo, commit=commit)
+    filtered = scope.filter_rows(rows, require_keys=True)
     if not filtered:
         return set()
     return {str(row.get("module")) for row in filtered if row.get("module") is not None}
@@ -260,35 +209,34 @@ def _allowed_modules_from_rows(
 def _load_module_inputs(
     env: BuildEnv, table: InferableTabularInput
 ) -> tuple[dict[str, str], set[str]]:
-    modules_rows = _collect_rows(
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    modules_rows = collect_scoped_rows(
         table,
         ("module", "path", "repo", "commit"),
-        repo=None,
-        commit=None,
+        scope=scope,
     )
     return _module_inputs_from_rows(
         modules_rows,
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
 
 
 def _load_function_goids(env: BuildEnv, table: InferableTabularInput) -> set[int]:
-    goid_rows = _collect_rows(
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    goid_rows = collect_scoped_rows(
         table,
         ("goid_h128", "kind"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
     return _function_goids_from_rows(goid_rows)
 
 
 def _load_subsystem_ids(env: BuildEnv, table: InferableTabularInput) -> set[str]:
-    subsystem_rows = _collect_rows(
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    subsystem_rows = collect_scoped_rows(
         table,
         ("subsystem_id",),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
     return _subsystem_ids_from_rows(subsystem_rows)
 
@@ -298,17 +246,17 @@ def _load_call_graph(
     edges: InferableTabularInput,
     nodes: InferableTabularInput,
 ) -> nx.DiGraph:
-    call_edge_rows = _collect_rows(
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    call_edge_rows = collect_scoped_rows(
         edges,
         ("caller_goid_h128", "callee_goid_h128"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
-    call_node_rows = _collect_rows(
+    call_node_rows = collect_scoped_rows(
         nodes,
         ("goid_h128", "kind"),
-        repo=None,
-        commit=None,
+        scope=scope,
+        require_scope_columns=False,
     )
     return _call_graph_from_rows(call_edge_rows, call_node_rows)
 
@@ -318,17 +266,16 @@ def _load_import_graph(
     edges: InferableTabularInput,
     modules: InferableTabularInput,
 ) -> tuple[nx.DiGraph, ComponentMeta | None]:
-    import_edge_rows = _collect_rows(
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    import_edge_rows = collect_scoped_rows(
         edges,
         ("src_module", "dst_module", "module_layer"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
-    import_module_rows = _collect_rows(
+    import_module_rows = collect_scoped_rows(
         modules,
         ("module", "scc_id", "component_size", "layer"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
     return _import_graph_from_rows(import_edge_rows, import_module_rows)
 
@@ -541,12 +488,14 @@ def _symbol_function_graph_from_rows(
 def _load_symbol_graphs(
     module_by_path: Mapping[str, str],
     table: InferableTabularInput,
+    *,
+    scope: SnapshotScope,
 ) -> tuple[SymbolModuleEdges, nx.Graph, nx.Graph]:
-    symbol_rows = _collect_rows(
+    symbol_rows = collect_scoped_rows(
         table,
         ("def_path", "use_path", "def_goid_h128", "use_goid_h128"),
-        repo=None,
-        commit=None,
+        scope=scope,
+        require_scope_columns=False,
     )
     symbol_module_edges = _symbol_module_edges_from_rows(symbol_rows, module_by_path)
     symbol_module_graph = _symbol_module_graph_from_rows(symbol_rows, module_by_path)
@@ -557,14 +506,13 @@ def _load_symbol_graphs(
 def _module_inputs_from_rows(
     rows: list[dict[str, object]],
     *,
-    repo: str,
-    commit: str,
+    scope: SnapshotScope,
 ) -> tuple[dict[str, str], set[str]]:
     module_by_path: dict[str, str] = {}
     module_names: set[str] = set()
     if not rows:
         return module_by_path, module_names
-    filtered = _filter_rows_by_snapshot(rows, repo=repo, commit=commit)
+    filtered = scope.filter_rows(rows, require_keys=True)
     if not filtered:
         return module_by_path, module_names
     for row in filtered:
@@ -676,9 +624,11 @@ def graph_metric_inputs(
         graph_metric_support_frames.import_graph_edges,
         graph_metric_support_frames.import_modules,
     )
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     symbol_module_edges, symbol_module_graph, symbol_function_graph = _load_symbol_graphs(
         module_by_path,
         graph_metric_support_frames.symbol_use_edges,
+        scope=scope,
     )
     return GraphMetricInputs(
         call_graph=call_graph,
@@ -870,22 +820,20 @@ def graph_stats__base(
     pyarrow.Table
         Table containing graph stats rows.
     """
-    config_value_rows = _collect_rows(
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    config_value_rows = collect_scoped_rows(
         q__analytics__config_values,
         ("repo", "commit", "key", "reference_modules"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
-    module_rows = _collect_rows(
+    module_rows = collect_scoped_rows(
         q__core__modules,
         ("module", "repo", "commit"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
     allowed_modules = _allowed_modules_from_rows(
         module_rows,
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
     config_bipartite = build_config_module_bipartite(
         config_value_rows,

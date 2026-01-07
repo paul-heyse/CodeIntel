@@ -15,7 +15,7 @@ from codeintel.build.hamilton.naming import query_node
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.cli.commands.build import BuildRunCommand
 from codeintel.runtime.compose import compose_runtime
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from tests._helpers.assertions import assert_target_ok
 
 
@@ -36,7 +36,7 @@ class TestDriverLoaderNodes:
     """Tests for loader nodes in the driver graph."""
 
     @staticmethod
-    def test_generated_module_has_query_nodes(hamilton_runtime: RuntimeBundle) -> None:
+    def test_generated_module_has_query_nodes(hamilton_runtime: HamiltonRuntimeBundle) -> None:
         """Verify driver graph includes q__* nodes."""
         node_names = set(hamilton_runtime.dr.graph.nodes)
         expected = query_node("analytics.function_types")

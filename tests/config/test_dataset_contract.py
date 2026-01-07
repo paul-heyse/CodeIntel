@@ -13,12 +13,12 @@ from codeintel.build.schemas import (
 )
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from codeintel.storage.contracts.provider import get_contract_provider
 
 
 @pytest.fixture(autouse=True)
-def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+def _configure_schema_provider(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     configure_schema_service(runtime=hamilton_runtime)
 
 

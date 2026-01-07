@@ -12,10 +12,10 @@ from codeintel.build.schemas.compile import (
     compile_schema_manifest,
 )
 from codeintel.build.schemas.provider_unified import unified_schema_provider
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
-def test_pr63_schema_manifest_is_stable(hamilton_runtime: RuntimeBundle) -> None:
+def test_pr63_schema_manifest_is_stable(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Compiling the same manifest twice should yield identical JSON."""
     provider = unified_schema_provider(runtime=hamilton_runtime)
     request = SchemaManifestRequest(

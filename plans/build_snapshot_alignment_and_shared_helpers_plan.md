@@ -11,15 +11,34 @@
 - Modify schema definitions, table keys, or materialization formats.
 - Introduce new external dependencies beyond the existing dulwich usage.
 
+## Completed Scope (Jan 2026)
+- Implemented strict snapshot scoping:
+  - `src/codeintel/build/scopes/snapshot.py`
+  - `src/codeintel/build/tabular/scoping.py`
+- Implemented dulwich-based snapshot alignment helpers:
+  - `src/codeintel/build/scopes/dulwich.py`
+- Enforced HEAD alignment in BuildEnv construction:
+  - `src/codeintel/build/run_context.py`
+- Replaced schema inference snapshot discovery with shared helper:
+  - `src/codeintel/build/schemas/inference_service.py`
+- Replaced snapshot filters + row collectors with SnapshotScope/collect_scoped_rows:
+  - `src/codeintel/build/analytics/semantic_roles/core.py`
+  - `src/codeintel/build/analytics/subsystems/cache.py`
+  - `src/codeintel/build/analytics/compute/functions/goids.py`
+  - `src/codeintel/build/analytics/functions/function_effects.py`
+  - `src/codeintel/build/hamilton/native/analytics/config_graphs.py`
+  - `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`
+  - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
+
 ## Current Duplication and Drift (Selected)
-- Snapshot filtering with inconsistent strictness:
+- Snapshot filtering with inconsistent strictness (resolved via SnapshotScope):
   - `src/codeintel/build/analytics/semantic_roles/core.py`
   - `src/codeintel/build/analytics/subsystems/cache.py`
   - `src/codeintel/build/analytics/compute/functions/goids.py`
   - `src/codeintel/build/hamilton/native/analytics/config_graphs.py`
   - `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`
   - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
-- Row collection logic duplicated across analytics modules:
+- Row collection logic duplicated across analytics modules (resolved via collect_scoped_rows):
   - `src/codeintel/build/hamilton/native/analytics/config_graphs.py`
   - `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`
   - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
@@ -38,9 +57,9 @@
 - GraphContext resolution for extended metrics repeated:
   - `src/codeintel/build/analytics/graphs/graph_metrics_ext.py`
   - `src/codeintel/build/analytics/graphs/module_graph_metrics_ext.py`
-- Join spec conversion glue duplicated across Arrow + Polars paths:
+- ArrowJoinSpec option usage and normalization patterns need to be standardized:
   - `src/codeintel/build/tabular/arrow_ops.py`
-  - `src/codeintel/build/tabular/frames.py`
+  - `src/codeintel/build/hamilton/native/graphs/cpg2/planes/*`
 - Table target scaffolding repeated:
   - `src/codeintel/build/hamilton/native/analytics/function_contracts.py`
   - `src/codeintel/build/hamilton/native/analytics/function_effects.py`
@@ -49,12 +68,15 @@
 - `src/codeintel/build/scopes/snapshot.py` (new)
   - SnapshotScope dataclass, strict matching helpers, Arrow table filtering.
   - Ownership: snapshot scoping is cross-cutting and does not belong solely to analytics or tabular.
+  - Status: implemented.
 - `src/codeintel/build/scopes/dulwich.py` (new)
   - Dulwich repo discovery + HEAD commit resolution.
   - Ownership: shared build-time repo identity, used by schema inference and build alignment.
+  - Status: implemented.
 - `src/codeintel/build/tabular/scoping.py` (new)
   - Strict row collection from tabular inputs with required column checks.
   - Ownership: tabular conversion and filtering helpers live under build/tabular.
+  - Status: implemented.
 - `src/codeintel/build/graphs/builders.py` (new)
   - Call/import/symbol graph builders and edge weight policy helpers.
   - Ownership: graph construction belongs under build/graphs.
@@ -66,9 +88,11 @@
 - `src/codeintel/build/analytics/compute/row_builders/context.py` (new)
   - RowBuildContext (repo, commit, created_at) + row helper conventions.
   - Ownership: row builders are analytics compute concerns.
-- `src/codeintel/build/tabular/join_specs.py` (new)
-  - Unified JoinSpec used by Arrow joins and Polars joins (no conversion glue).
-  - Ownership: join configuration belongs in tabular helpers.
+- `src/codeintel/build/tabular/arrow_ops.py` (existing)
+  - ArrowJoinOptions + JoinFilterClause + normalize_table_for_join helpers for join execution.
+  - Ownership: Arrow join configuration belongs in tabular helpers.
+- `src/codeintel/build/tabular/compute_masks.py` (existing)
+  - Expression helpers (e.g., is_valid_expr) used by join filter clauses.
 - `src/codeintel/build/hamilton/native/patterns/table_target.py` (existing)
   - Add TableTargetContext + factory for `TableContractSpec` + `TableTargetSpec` with defaults.
 
@@ -110,9 +134,9 @@ class SnapshotScope:
                 msg = f"Missing snapshot columns: {missing}"
                 raise ValueError(msg)
             return table
-        mask = equal_mask(table["repo"], pa.scalar(self.repo))
-        mask = and_kleene(mask, equal_mask(table["commit"], pa.scalar(self.commit)))
-        return safe_filter(table, mask)
+        repo_mask = equal_mask(table["repo"], pa.scalar(self.repo))
+        commit_mask = equal_mask(table["commit"], pa.scalar(self.commit))
+        return safe_filter(table, and_kleene(repo_mask, commit_mask))
 
     def filter_rows(
         self,
@@ -125,10 +149,10 @@ class SnapshotScope:
             if require_keys and ("repo" not in row or "commit" not in row):
                 msg = "Missing snapshot keys in row"
                 raise ValueError(msg)
-            if "repo" in row and row.get("repo") != self.repo:
-                continue
-            if "commit" in row and row.get("commit") != self.commit:
-                continue
+        if "repo" in row and row.get("repo") != self.repo:
+            continue
+        if "commit" in row and row.get("commit") != self.commit:
+            continue
             filtered.append(row)
         return filtered
 ```
@@ -141,29 +165,27 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import pyarrow as pa
-
 from codeintel.build.scopes.snapshot import SnapshotScope
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
-from codeintel.build.tabular.table_ops import select_table_columns
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import equal_mask
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.types import InferableTabularInput
 
 
 def collect_scoped_rows(
-    value: object,
+    value: InferableTabularInput,
     columns: Sequence[str],
     *,
     scope: SnapshotScope,
-    require_columns: bool = True,
+    require_scope_columns: bool = True,
 ) -> list[dict[str, object]]:
     table = tabular_to_arrow_table(value)
+    missing = [name for name in columns if name not in table.column_names]
+    if missing:
+        msg = f"Missing columns for scoped rows: {missing}"
+        raise ValueError(msg)
+    scoped = scope.filter_arrow_table(table, require_columns=require_scope_columns)
     if columns:
-        table = select_table_columns(table, columns)
-        if require_columns and len(columns) != len(table.column_names):
-            msg = f"Missing columns for scoped rows: {columns}"
-            raise ValueError(msg)
-    scoped = scope.filter_arrow_table(table, require_columns=require_columns)
+        scoped = scoped.select(list(columns))
     if scoped.num_rows == 0:
         return []
     return list(iter_rows(scoped))
@@ -176,19 +198,53 @@ Location: `src/codeintel/build/scopes/dulwich.py`
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING
 
-from dulwich.repo import Repo
+try:
+    from dulwich.repo import Repo as _DulwichRepo
+except ImportError:
+    _DulwichRepo = None
 
 from codeintel.config.primitives import SnapshotRef
 
+if TYPE_CHECKING:
+    from dulwich.repo import Repo
+
+
+def _discover_repo(start_path: Path) -> Repo | None:
+    if _DulwichRepo is None:
+        return None
+    try:
+        return _DulwichRepo.discover(start_path)
+    except (OSError, ValueError):
+        return None
+
 
 def resolve_head_commit(repo_root: Path) -> str | None:
-    repo = Repo.discover(repo_root)
+    repo = _discover_repo(repo_root)
+    if repo is None:
+        return None
     head = repo.head()
     commit = head.decode("ascii", errors="ignore") if isinstance(head, bytes) else str(head)
     commit = commit.strip()
     return commit or None
+
+
+def snapshot_from_dulwich(start_path: Path | None = None) -> SnapshotRef | None:
+    root = start_path or Path.cwd()
+    repo = _discover_repo(root)
+    if repo is None:
+        return None
+    repo_root = Path(repo.path).resolve()
+    head = resolve_head_commit(repo_root)
+    if head is None:
+        return None
+    repo_name = repo_root.name or "repo"
+    return SnapshotRef.from_args(
+        repo=repo_name,
+        commit=head,
+        repo_root=repo_root,
+    )
 
 
 def ensure_snapshot_matches_head(snapshot: SnapshotRef) -> SnapshotRef:
@@ -206,9 +262,9 @@ def ensure_snapshot_matches_head(snapshot: SnapshotRef) -> SnapshotRef:
 ```
 
 ### Enforcement points
-- `BuildRunContext.build_env()` should call `ensure_snapshot_matches_head` when building outputs.
+- `BuildRunContext.build_env()` calls `ensure_snapshot_matches_head` when building outputs.
 - Runtime/CLI entrypoints that construct `SnapshotRef` should use dulwich as the source of truth.
-- Replace `_dulwich_snapshot` in `src/codeintel/build/schemas/inference_service.py` with the new helper.
+- `_dulwich_snapshot` replaced in `src/codeintel/build/schemas/inference_service.py`.
 
 ## Shared Graph Builders
 
@@ -514,52 +570,75 @@ rows = [
 ]
 ```
 
-## Join Spec Unification
+## Arrow Join Options + Filters
 
-Location: `src/codeintel/build/tabular/join_specs.py`
+Location: `src/codeintel/build/tabular/arrow_ops.py`
 
 ```python
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Callable, Literal
 
-JoinStrategy = Literal["inner", "left", "right", "full", "semi", "anti", "cross", "outer"]
-JoinValidation = Literal["m:m", "m:1", "1:m", "1:1"]
+import pyarrow.compute as pc
 
 
 @dataclass(frozen=True, slots=True)
-class JoinSpec:
-    on: Sequence[str] | None = None
-    left_on: Sequence[str] | None = None
-    right_on: Sequence[str] | None = None
-    how: JoinStrategy = "left"
-    validate: JoinValidation | None = None
-    suffix: str = ""
-    coalesce_keys: bool = True
-    left_suffix: str | None = None
-    right_suffix: str | None = None
+class ArrowJoinOptions:
+    filter_expression: pc.Expression | None = None
+    use_threads: bool | None = True
+    normalize_inputs: bool = True
+
+
+JoinFilterSide = Literal["left", "right", "either"]
+
+
+@dataclass(frozen=True, slots=True)
+class JoinFilterClause:
+    field: str
+    predicate: Callable[[str], pc.Expression]
+    side: JoinFilterSide = "either"
 ```
 
-Usage pattern (Arrow join):
+Usage pattern (basic Arrow join with options):
 
 ```python
-spec = JoinSpec(on=["repo", "commit"], how="left", validate="m:1")
-joined = arrow_join_tables(left, right, spec=spec)
+join_spec = ArrowJoinSpec(on=["repo", "commit"], how="left", validate="m:1")
+join_options = build_join_options(left, right)
+joined = arrow_join_tables(left, right, spec=join_spec, options=join_options)
 ```
 
-Usage pattern (Polars join):
+`build_join_options` uses a row-count heuristic to set `use_threads` when omitted.
+
+Usage pattern (residual join filter with expressions):
 
 ```python
-spec = JoinSpec(left_on=["left_id"], right_on=["right_id"], how="inner")
-joined = join_validated(left_lazy, right_lazy, spec=spec)
+join_spec = ArrowJoinSpec(on=["goid_h128"], how="left")
+filter_expr = join_filter_expr(
+    left=goids,
+    right=anchors,
+    spec=join_spec,
+    clause=JoinFilterClause(
+        field="cpg_node_id",
+        predicate=is_valid_expr,
+        side="right",
+    ),
+)
+join_options = build_join_options(goids, anchors, filter_expression=filter_expr)
+joined = arrow_join_tables(goids, anchors, spec=join_spec, options=join_options)
+```
+
+Usage pattern (explicit join normalization):
+
+```python
+left = normalize_table_for_join(left)
+right = normalize_table_for_join(right)
+joined = arrow_join_tables(left, right, spec=join_spec, options=join_options)
 ```
 
 File targets:
-- `src/codeintel/build/tabular/join_specs.py` (new)
 - `src/codeintel/build/tabular/arrow_ops.py`
-- `src/codeintel/build/tabular/frames.py`
-- `src/codeintel/build/tabular/__init__.py` (re-export JoinSpec)
+- `src/codeintel/build/tabular/compute_masks.py`
 - `src/codeintel/build/analytics/subsystems/cache.py`
 - `src/codeintel/build/hamilton/native/graphs/call_wiring.py`
 - `src/codeintel/build/hamilton/native/ingestion/syntax_enrich.py`
@@ -685,8 +764,8 @@ File targets:
    update analytics modules to use it.
 7. Add RowBuildContext and update row builder call sites to use it
    for consistent repo/commit/created_at injection.
-8. Unify join specs in `src/codeintel/build/tabular/join_specs.py` and update
-   `arrow_ops.py` + `frames.py`.
+8. Adopt ArrowJoinOptions + join_filter_expr + normalize_table_for_join across
+   Arrow join call sites in build pipelines.
 9. Add TableTargetContext + TableTargetSpec factory and update at least two
    analytics targets as a template (function_contracts, function_effects).
 10. Remove or deprecate duplicated helpers where appropriate.
@@ -706,8 +785,9 @@ File targets:
   - runtime.use_gpu propagates to GraphContextSpec
 - RowBuildContext:
   - created_at is deterministic when `now` supplied
-- JoinSpec:
-  - Arrow joins and Polars joins accept the same JoinSpec instance
+- ArrowJoinOptions + JoinFilterClause:
+  - join_filter_expr resolves fields correctly with suffix/coalesce behavior
+  - Arrow joins honor filter_expression and fall back when unsupported
 - Regression checks:
   - graph_metrics and subsystem_metrics end-to-end still materialize rows
 

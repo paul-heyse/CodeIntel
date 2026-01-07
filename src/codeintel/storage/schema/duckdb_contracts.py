@@ -13,10 +13,10 @@ from codeintel.core.columnar.schema_metadata import (
     merge_field_metadata,
     merge_metadata,
 )
+from codeintel.core.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.core.schemas.arrow_gen import ArrowSchemaMetadata, arrow_schema_from_table_schema
 from codeintel.core.schemas.type_mappings import normalize_table_schema_types
 from codeintel.storage.datasets.manifest_index import DatasetManifestEntry, dataset_schema_for_entry
-from codeintel.storage.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.storage.duckdb_types import (
     DuckDBCatalogException,
     DuckDBConnection,

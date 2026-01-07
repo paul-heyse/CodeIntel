@@ -9,18 +9,18 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from codeintel.core.manifests import ArrowDatasetManifest
-from codeintel.storage.datasets.arrow_store import (
+from codeintel.core.datasets.arrow_store import (
     ArrowDatasetManifestRequest,
     ExistingDataBehavior,
     build_dataset_manifest,
 )
-from codeintel.storage.datasets.manifests import (
+from codeintel.core.datasets.manifests import (
     dataset_manifest_path,
     read_dataset_manifest,
     write_dataset_manifest,
 )
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
+from codeintel.core.datasets.paths import dataset_snapshot_dir
+from codeintel.core.manifests import ArrowDatasetManifest
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

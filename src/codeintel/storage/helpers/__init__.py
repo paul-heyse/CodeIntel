@@ -19,7 +19,7 @@ Import module_index directly from its submodule:
 
     from codeintel.storage.helpers.module_index import load_module_map
 
-For row count operations, use `codeintel.storage.queries.safe`.
+For row count operations, use `codeintel.core.queries.safe`.
 
 For profiling view plans, use `codeintel.storage.warehouse.Warehouse.profile_views`.
 """

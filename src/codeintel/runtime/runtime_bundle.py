@@ -30,7 +30,7 @@ class RuntimeKey:
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimeBundle:
+class HamiltonRuntimeBundle:
     """Immutable runtime bundle for execution and planning."""
 
     driver: h_driver.Driver
@@ -55,6 +55,6 @@ class RuntimeBundle:
 
 
 __all__ = [
-    "RuntimeBundle",
+    "HamiltonRuntimeBundle",
     "RuntimeKey",
 ]

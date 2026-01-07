@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import (
     ArrowJoinSpec,
     arrow_join_tables,
@@ -75,16 +76,8 @@ def build_subsystem_profile_cache_rows(
 
 
 def _filter_table_by_snapshot(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
-    available = set(frame.column_names)
-    filtered = [
-        row
-        for row in iter_rows(frame)
-        if (snapshot.repo == row.get("repo") if "repo" in available else True)
-        and (snapshot.commit == row.get("commit") if "commit" in available else True)
-    ]
-    if not filtered:
-        return frame.slice(0, 0)
-    return pa.Table.from_pylist(filtered, schema=frame.schema)
+    scope = SnapshotScope.from_snapshot(snapshot)
+    return scope.filter_arrow_table(frame, require_columns=True)
 
 
 def _profile_cache_columns() -> tuple[str, ...]:

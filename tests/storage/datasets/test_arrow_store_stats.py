@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pyarrow as pa
 
-from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
+from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 
 

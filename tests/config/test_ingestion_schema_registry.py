@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.schemas.provider_unified import non_inferable_schema_provider
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -40,7 +40,7 @@ def _columns_for(con: DuckDBConnection, schema_name: str, table_name: str) -> se
 
 def test_ingestion_sql_tables_match_schema(
     fresh_gateway: StorageGateway,
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
 ) -> None:
     """Ensure registry tables exist with expected columns."""
     con = fresh_gateway.con

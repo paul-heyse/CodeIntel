@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING, cast
 
 from sqlglot import exp
 
+from codeintel.core.datasets.manifests import load_dataset_manifest
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.provider import get_contract_for_table_key
-from codeintel.storage.datasets.manifests import load_dataset_manifest
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader

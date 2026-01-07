@@ -11,12 +11,12 @@ from codeintel.build.hamilton.validate import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 def validate_graph(
     *,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     validate_schema: bool = True,
 ) -> GraphValidationResult:
     """Validate the Hamilton graph for build invariants.

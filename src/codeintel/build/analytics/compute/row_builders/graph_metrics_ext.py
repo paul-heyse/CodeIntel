@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.build.analytics.compute.row_builders.context import RowBuildContext
 from codeintel.build.analytics.utilities.type_coercion import optional_int
 from codeintel.core.data_models.ids import as_int
 
@@ -18,8 +19,7 @@ if TYPE_CHECKING:
 class FunctionMetricExtInputs:
     """Inputs required to build function-level extended metric rows."""
 
-    repo: str
-    commit: str
+    row_context: RowBuildContext
     ctx: GraphContext
     centralities: Mapping[str, Mapping[int, float]]
     structure: Mapping[str, Mapping[int, float | int | bool]]
@@ -34,8 +34,7 @@ class FunctionMetricExtInputs:
 class ModuleMetricExtInputs:
     """Inputs required to build module-level extended metric rows."""
 
-    repo: str
-    commit: str
+    row_context: RowBuildContext
     ctx: GraphContext
     centralities: Mapping[str, Mapping[str, float]]
     structure: Mapping[str, Mapping[str, float | int]]
@@ -54,7 +53,7 @@ def build_function_metric_ext_rows(
     list[dict[str, object]]
         Rows ready for insertion into analytics.graph_metrics_functions_ext.
     """
-    created_at = inputs.ctx.resolved_now()
+    created_at = inputs.row_context.created_at
     rows: list[dict[str, object]] = []
     for node in inputs.centralities["betweenness"]:
         goid_value = as_int(node)
@@ -62,8 +61,8 @@ def build_function_metric_ext_rows(
             continue
         rows.append(
             {
-                "repo": inputs.repo,
-                "commit": inputs.commit,
+                "repo": inputs.row_context.repo,
+                "commit": inputs.row_context.commit,
                 "function_goid_h128": goid_value,
                 "call_betweenness": float(inputs.centralities["betweenness"].get(node, 0.0)),
                 "call_closeness": float(inputs.centralities["closeness"].get(node, 0.0)),
@@ -98,11 +97,11 @@ def build_module_metric_ext_rows(
     list[dict[str, object]]
         Rows ready for insertion into analytics.graph_metrics_modules_ext.
     """
-    created_at = inputs.ctx.resolved_now()
+    created_at = inputs.row_context.created_at
     return [
         {
-            "repo": inputs.repo,
-            "commit": inputs.commit,
+            "repo": inputs.row_context.repo,
+            "commit": inputs.row_context.commit,
             "module": module,
             "import_betweenness": float(inputs.centralities["betweenness"].get(module, 0.0)),
             "import_closeness": float(inputs.centralities["closeness"].get(module, 0.0)),

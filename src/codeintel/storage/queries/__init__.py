@@ -26,7 +26,7 @@ if safe_table_exists(gateway, "core.modules"):
 
 from __future__ import annotations
 
-from codeintel.storage.queries.safe import (
+from codeintel.core.queries.safe import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
     ForeignKeyRef,

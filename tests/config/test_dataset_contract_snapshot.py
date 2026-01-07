@@ -13,19 +13,19 @@ from codeintel.build.schemas import (
 from codeintel.build.schemas.provider_unified import non_inferable_schema_provider
 from codeintel.config.datasets.contracts import get_row_bindings
 from codeintel.core.schemas.primitives import TableSchema
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 EXPECTED_DATASET_CONTRACTS_COUNT = 99
 
 
 @pytest.fixture(autouse=True)
-def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+def _configure_schema_provider(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     configure_schema_service(runtime=hamilton_runtime)
 
 
 @pytest.fixture(scope="module")
 def non_inferable_table_schemas(
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
 ) -> tuple[TableSchema, ...]:
     """Provide table schemas from the non-inferable provider.
 
@@ -39,7 +39,7 @@ def non_inferable_table_schemas(
 
 
 @pytest.fixture(scope="module")
-def inferable_table_keys(hamilton_runtime: RuntimeBundle) -> frozenset[str]:
+def inferable_table_keys(hamilton_runtime: HamiltonRuntimeBundle) -> frozenset[str]:
     """Provide inferable table keys from the schema provider.
 
     Returns
@@ -72,7 +72,7 @@ def test_dataset_contracts_by_table_key_count_snapshot() -> None:
 
 
 def test_non_inferable_outputs_have_overrides(
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
     non_inferable_table_schemas: tuple[TableSchema, ...],
     inferable_table_keys: frozenset[str],
 ) -> None:

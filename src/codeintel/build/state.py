@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +110,7 @@ class StateValidator:
     def from_runtime(
         cls,
         *,
-        runtime: RuntimeBundle,
+        runtime: HamiltonRuntimeBundle,
         env: BuildEnv,
         options: StateValidationOptions | None = None,
     ) -> StateValidator:
@@ -180,7 +180,7 @@ class StateValidator:
         return self._computer.compute_single(name)
 
 
-def _state_input_values(*, runtime: RuntimeBundle, env: BuildEnv) -> Mapping[str, object]:
+def _state_input_values(*, runtime: HamiltonRuntimeBundle, env: BuildEnv) -> Mapping[str, object]:
     inputs = ExecutionInputs(
         env=env,
         catalog=runtime.catalog,

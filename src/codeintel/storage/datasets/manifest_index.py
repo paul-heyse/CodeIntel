@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.core.datasets.manifests import read_dataset_manifest
+from codeintel.core.datasets.parquet_metadata import metadata_from_schema
 from codeintel.core.queries.filter_compiler import (
     FilterCompilerError,
     arrow_filter_expression,
@@ -25,8 +27,6 @@ from codeintel.storage.datasets.contracts import (
     tuning_metadata_from_manifest,
     write_settings_from_manifest,
 )
-from codeintel.storage.datasets.manifests import read_dataset_manifest
-from codeintel.storage.datasets.parquet_metadata import metadata_from_schema
 from codeintel.storage.datasets.scanning import (
     DatasetScanOptions,
     build_scanner,

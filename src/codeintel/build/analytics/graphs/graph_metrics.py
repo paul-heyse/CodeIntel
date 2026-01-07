@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import networkx as nx
@@ -23,16 +22,24 @@ from codeintel.build.analytics.compute.graphs import (
 from codeintel.build.analytics.compute.row_builders import (
     FunctionGraphMetricInputs,
     ModuleGraphMetricInputs,
+    RowBuildContext,
     build_function_graph_metric_rows,
     build_module_graph_metric_rows,
     merge_component_metadata,
 )
-from codeintel.build.graphs.runtime.context import (
-    GraphContextSpec,
-    GraphMetricsOptions,
-    resolve_graph_context,
+from codeintel.build.analytics.graphs.context_helpers import (
+    GraphContextFactory,
+    GraphMetricsContext,
 )
-from codeintel.core.data_models.ids import as_int, normalize_decimal_id
+from codeintel.build.graphs.builders import (
+    build_call_graph_from_rows as _build_call_graph_from_rows,
+)
+from codeintel.build.graphs.builders import (
+    build_import_graph_from_rows as _build_import_graph_from_rows,
+)
+from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
+from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
+from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable
@@ -149,7 +156,7 @@ class GraphMetricsInputs:
 class ModuleGraphMetricsInputs:
     """Inputs required to compute module graph metrics rows."""
 
-    snapshot: SnapshotRef
+    row_context: RowBuildContext
     ctx: GraphContext
     import_graph: nx.DiGraph
     symbol_module_edges: SymbolModuleEdges
@@ -190,32 +197,9 @@ def build_call_graph_from_rows(
     Returns
     -------
     nx.DiGraph
-        Call graph built from edge/node rows.
+        Directed call graph populated from the provided rows.
     """
-    graph = nx.DiGraph()
-    for row in call_graph_edges:
-        caller = normalize_decimal_id(row.get("caller_goid_h128"))
-        callee = normalize_decimal_id(row.get("callee_goid_h128"))
-        if caller is None or callee is None:
-            continue
-        if graph.has_edge(caller, callee):
-            graph[caller][callee]["weight"] = _next_edge_weight(graph[caller][callee].get("weight"))
-        else:
-            graph.add_edge(caller, callee, weight=1)
-
-    if call_graph_nodes is None:
-        return graph
-
-    for row in call_graph_nodes:
-        node = normalize_decimal_id(row.get("goid_h128"))
-        if node is None or node in graph:
-            continue
-        attrs: dict[str, object] = {}
-        kind = row.get("kind")
-        if kind is not None:
-            attrs["kind"] = str(kind)
-        graph.add_node(node, **attrs)
-    return graph
+    return _build_call_graph_from_rows(call_graph_edges, call_graph_nodes)
 
 
 def build_import_graph_from_rows(
@@ -227,12 +211,9 @@ def build_import_graph_from_rows(
     Returns
     -------
     nx.DiGraph
-        Import graph built from edge and module rows.
+        Directed import graph populated from the provided rows.
     """
-    graph = nx.DiGraph()
-    fallback_layer_by_module = _apply_import_edges(graph, import_graph_edges)
-    _apply_import_module_rows(graph, import_modules, fallback_layer_by_module)
-    return graph
+    return _build_import_graph_from_rows(import_graph_edges, import_modules)
 
 
 def build_graph_metrics_rows(
@@ -252,17 +233,22 @@ def build_graph_metrics_rows(
         Row bundles for graph metrics tables.
     """
     opts = inputs.options or GraphMetricsOptions()
-    active_filters = inputs.filters or GraphMetricFilters()
-    ctx = resolve_graph_context(
-        GraphContextSpec(
-            repo=inputs.snapshot.repo,
-            commit=inputs.snapshot.commit,
-            use_gpu=inputs.use_gpu,
-            options=opts,
-            now=datetime.now(tz=UTC),
-            community_detection_limit=inputs.community_detection_limit,
-        )
+    runtime = GraphRuntimeOptions(
+        snapshot=inputs.snapshot,
+        backend=GraphBackendConfig(use_gpu=inputs.use_gpu),
+        features=GraphFeatureFlags(community_detection_limit=inputs.community_detection_limit),
     )
+    context = GraphMetricsContext.from_inputs(
+        snapshot=inputs.snapshot,
+        runtime=runtime,
+        filters=inputs.filters,
+        context_factory=_GRAPH_CONTEXT_FACTORY,
+        options=opts,
+        use_gpu=inputs.use_gpu,
+        community_detection_limit=inputs.community_detection_limit,
+    )
+    active_filters = context.filters
+    ctx = context.graph_context
     log.info(
         "graph_metrics.filters repo=%s commit=%s functions=%d modules=%d subsystems=%d",
         inputs.snapshot.repo,
@@ -271,15 +257,17 @@ def build_graph_metrics_rows(
         len(active_filters.modules or ()),
         len(active_filters.subsystems or ()),
     )
+    row_context = RowBuildContext.from_snapshot(inputs.snapshot, created_at=ctx.resolved_now())
     function_rows = _build_function_graph_metrics_rows(
         inputs.snapshot,
         ctx=ctx,
         call_graph=inputs.call_graph,
         filters=active_filters,
+        row_context=row_context,
     )
     module_rows = _build_module_graph_metrics_rows(
         ModuleGraphMetricsInputs(
-            snapshot=inputs.snapshot,
+            row_context=row_context,
             ctx=ctx,
             import_graph=inputs.import_graph,
             symbol_module_edges=inputs.symbol_module_edges,
@@ -297,12 +285,12 @@ def _build_function_graph_metrics_rows(
     ctx: GraphContext,
     call_graph: nx.DiGraph,
     filters: GraphMetricFilters,
+    row_context: RowBuildContext,
 ) -> list[dict[str, object]]:
     graph = filters.filter_call_graph(call_graph)
     stats = neighbor_stats(graph, weight=ctx.betweenness_weight)
     centrality_bundle = centrality_directed(graph, ctx)
     components = component_metadata(graph)
-    created_at = ctx.resolved_now()
 
     centrality = {
         "pagerank": centrality_bundle.pagerank,
@@ -320,13 +308,11 @@ def _build_function_graph_metrics_rows(
 
     rows = build_function_graph_metric_rows(
         FunctionGraphMetricInputs(
-            repo=snapshot.repo,
-            commit=snapshot.commit,
+            row_context=row_context,
             stats=stats,
             centrality=centrality,
             components=components,
             graph_nodes=graph_nodes,
-            created_at=created_at,
         )
     )
 
@@ -373,15 +359,13 @@ def _build_module_graph_metrics_rows(
     }
     rows_to_insert = build_module_graph_metric_rows(
         ModuleGraphMetricInputs(
-            repo=inputs.snapshot.repo,
-            commit=inputs.snapshot.commit,
+            row_context=inputs.row_context,
             modules=modules,
             import_stats=import_stats,
             centrality=centrality,
             component_meta=component_meta,
             symbol_inbound=symbol_inbound,
             symbol_outbound=symbol_outbound,
-            created_at=inputs.ctx.resolved_now(),
         )
     )
 
@@ -389,74 +373,10 @@ def _build_module_graph_metrics_rows(
         log.info(
             "graph_metrics_modules rows built: %d rows for %s@%s",
             len(rows_to_insert),
-            inputs.snapshot.repo,
-            inputs.snapshot.commit,
+            inputs.row_context.repo,
+            inputs.row_context.commit,
         )
     return rows_to_insert
 
 
-def _apply_import_edges(
-    graph: nx.DiGraph,
-    import_graph_edges: Iterable[Mapping[str, object]],
-) -> dict[str, int]:
-    fallback_layer_by_module: dict[str, int] = {}
-    for row in import_graph_edges:
-        src = row.get("src_module")
-        dst = row.get("dst_module")
-        if src is None or dst is None:
-            continue
-        source = str(src)
-        target = str(dst)
-        layer = as_int(row.get("module_layer"))
-        if layer is not None:
-            fallback_layer_by_module[source] = layer
-        if graph.has_edge(source, target):
-            graph[source][target]["weight"] = _next_edge_weight(graph[source][target].get("weight"))
-        else:
-            graph.add_edge(source, target, weight=1)
-    return fallback_layer_by_module
-
-
-def _apply_import_module_rows(
-    graph: nx.DiGraph,
-    import_modules: Iterable[Mapping[str, object]] | None,
-    fallback_layer_by_module: Mapping[str, int],
-) -> None:
-    module_rows = list(import_modules or [])
-    if module_rows:
-        for row in module_rows:
-            module = row.get("module")
-            if module is None:
-                continue
-            module_name = str(module)
-            attrs: dict[str, int] = {}
-            scc_id = as_int(row.get("scc_id"))
-            if scc_id is not None:
-                attrs["scc_id"] = scc_id
-            component_size = as_int(row.get("component_size"))
-            if component_size is not None:
-                attrs["component_size"] = component_size
-            layer = as_int(row.get("layer"))
-            if layer is not None:
-                attrs["layer"] = layer
-            graph.add_node(module_name, **attrs)
-        return
-    if fallback_layer_by_module:
-        graph.add_nodes_from(
-            [(module, {"layer": layer}) for module, layer in fallback_layer_by_module.items()]
-        )
-
-
-def _next_edge_weight(value: object | None) -> int:
-    if isinstance(value, bool):
-        return int(value) + 1
-    if isinstance(value, int):
-        return value + 1
-    if isinstance(value, float):
-        return int(value) + 1
-    if isinstance(value, str):
-        try:
-            return int(value) + 1
-        except ValueError:
-            return 1
-    return 1
+_GRAPH_CONTEXT_FACTORY = GraphContextFactory()

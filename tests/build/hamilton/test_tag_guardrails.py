@@ -12,10 +12,10 @@ from codeintel.build.hamilton.graph_validation import (
     validate_graph,
     validation_result_to_json,
 )
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
-def test_validate_graph_has_no_errors(hamilton_runtime: RuntimeBundle) -> None:
+def test_validate_graph_has_no_errors(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Ensure runtime bundle produces a tag-clean graph."""
     result = validate_graph(runtime=hamilton_runtime)
     if result.has_errors:

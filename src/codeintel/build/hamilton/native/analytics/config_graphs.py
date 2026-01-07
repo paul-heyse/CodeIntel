@@ -32,8 +32,8 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.scopes.snapshot import SnapshotScope
+from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -140,50 +140,17 @@ def _graph_runtime_options(env: BuildEnv) -> GraphRuntimeOptions:
     )
 
 
-def _collect_rows(
-    value: InferableTabularInput,
-    columns: tuple[str, ...],
-    *,
-    repo: str | None,
-    commit: str | None,
-) -> list[dict[str, object]]:
-    table = tabular_to_arrow_table(value).select(list(columns))
-    rows = list(iter_rows(table))
-    if repo is None and commit is None:
-        return rows
-    filtered: list[dict[str, object]] = []
-    for row in rows:
-        if repo is not None and not _matches_optional_scope(row.get("repo"), repo):
-            continue
-        if commit is not None and not _matches_optional_scope(row.get("commit"), commit):
-            continue
-        filtered.append(row)
-    return filtered
-
-
-def _matches_optional_scope(value: object, expected: str) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str) and not value.strip():
-        return True
-    return str(value) == expected
-
-
 def _allowed_modules_from_frame(
     rows: list[dict[str, object]],
     *,
-    repo: str,
-    commit: str,
+    scope: SnapshotScope,
 ) -> set[str]:
     if not rows:
         return set()
-    return {
-        str(row["module"])
-        for row in rows
-        if row.get("module") is not None
-        and _matches_optional_scope(row.get("repo"), repo)
-        and _matches_optional_scope(row.get("commit"), commit)
-    }
+    filtered = scope.filter_rows(rows, require_keys=True)
+    if not filtered:
+        return set()
+    return {str(row["module"]) for row in filtered if row.get("module") is not None}
 
 
 def _coerce_int(value: object) -> int | None:
@@ -207,18 +174,14 @@ def _coerce_int(value: object) -> int | None:
 def _group_goids_by_path(
     rows: list[dict[str, object]],
     *,
-    repo: str,
-    commit: str,
+    scope: SnapshotScope,
 ) -> tuple[dict[str, list[_GoidSpan]], set[int]]:
     grouped: dict[str, list[_GoidSpan]] = {}
     missing: set[int] = set()
     if not rows:
         return grouped, missing
-    for row in rows:
-        if not _matches_optional_scope(row.get("repo"), repo):
-            continue
-        if not _matches_optional_scope(row.get("commit"), commit):
-            continue
+    filtered = scope.filter_rows(rows, require_keys=True)
+    for row in filtered:
         kind = row.get("kind")
         if kind is None or str(kind) not in _FUNCTION_KINDS:
             continue
@@ -288,11 +251,10 @@ def _add_call_graph_nodes(graph: nx.DiGraph, nodes: list[dict[str, object]]) -> 
 def _function_asts_from_goids(
     rows: list[dict[str, object]],
     *,
-    repo: str,
-    commit: str,
+    scope: SnapshotScope,
     repo_root: Path,
 ) -> tuple[dict[int, FunctionAst], set[int]]:
-    grouped, missing = _group_goids_by_path(rows, repo=repo, commit=commit)
+    grouped, missing = _group_goids_by_path(rows, scope=scope)
     ast_by_goid: dict[int, FunctionAst] = {}
     for rel_path, spans in grouped.items():
         abs_path = (repo_root / rel_path).resolve()
@@ -359,41 +321,37 @@ def config_data_flow__base(
     pa.Table
         Reader containing config data flow rows.
     """
-    config_value_rows = _collect_rows(
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    config_value_rows = collect_scoped_rows(
         config_data_flow_frames.config_values,
         ("repo", "commit", "config_path", "key", "reference_paths"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
-    entrypoint_rows = _collect_rows(
+    entrypoint_rows = collect_scoped_rows(
         config_data_flow_frames.entrypoints,
         ("repo", "commit", "handler_goid_h128"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
-    call_edge_rows = _collect_rows(
+    call_edge_rows = collect_scoped_rows(
         config_data_flow_frames.call_graph_edges,
         ("caller_goid_h128", "callee_goid_h128"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
-    call_node_rows = _collect_rows(
+    call_node_rows = collect_scoped_rows(
         config_data_flow_frames.call_graph_nodes,
         ("goid_h128", "kind"),
-        repo=None,
-        commit=None,
+        scope=scope,
+        require_scope_columns=False,
     )
     call_graph = _call_graph_from_frames(call_edge_rows, call_node_rows)
-    goid_rows = _collect_rows(
+    goid_rows = collect_scoped_rows(
         config_data_flow_frames.goids,
         ("goid_h128", "rel_path", "qualname", "kind", "start_line", "end_line", "repo", "commit"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
     ast_map, missing = _function_asts_from_goids(
         goid_rows,
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
         repo_root=env.snapshot.repo_root,
     )
     result = compute_config_data_flow_result(
@@ -425,22 +383,20 @@ def config_graph_metrics_result(
     ConfigGraphMetricsResult
         Computed config graph metrics container.
     """
-    config_value_rows = _collect_rows(
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    config_value_rows = collect_scoped_rows(
         q__analytics__config_values,
         ("repo", "commit", "key", "reference_modules"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
-    module_rows = _collect_rows(
+    module_rows = collect_scoped_rows(
         q__core__modules,
         ("module", "repo", "commit"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
     allowed_modules = _allowed_modules_from_frame(
         module_rows,
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
     runtime_options = _graph_runtime_options(env)
     return compute_config_graph_metrics_result(

@@ -46,7 +46,7 @@ from codeintel.storage.validation import collect_contract_issues
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 LOG = logging.getLogger(__name__)
 
@@ -298,7 +298,7 @@ def _downstream_consumers_for_contract(
 def dataset_info_structured(
     *,
     table_key: str,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
 ) -> CliResult[DatasetInfoResult]:
     """Show comprehensive schema information for a dataset (structured).
 
@@ -373,7 +373,7 @@ def dataset_info_handler(ctx: CommandContext) -> CliResult[DatasetInfoResult]:
 def dataset_flow_structured(
     *,
     table_key: str,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
 ) -> CliResult[DatasetFlowResult]:
     """Show producer/consumer graph for a dataset (structured).
 

@@ -11,7 +11,7 @@ from codeintel.build.hamilton.native.ingestion.extraction_targets import (
     DOCSTRINGS_TABLE_KEY,
 )
 from codeintel.core.hamilton import tags as ht
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 def _variable_name(variable: object) -> str:
@@ -20,7 +20,7 @@ def _variable_name(variable: object) -> str:
 
 
 def test_extraction_table_nodes_have_dataset_tags(
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
 ) -> None:
     """Ensure extraction table nodes are tagged as datasets with correct table keys."""
     variables = {

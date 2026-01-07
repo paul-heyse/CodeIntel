@@ -19,7 +19,7 @@ from codeintel.build.analytics.compute.graphs import (
     log_empty_graph,
     structural_metrics,
 )
-from codeintel.build.analytics.compute.row_builders import SymbolMetricInputs
+from codeintel.build.analytics.compute.row_builders import RowBuildContext, SymbolMetricInputs
 from codeintel.build.analytics.graphs.constants import MAX_BETWEENNESS_NODES, MAX_COMMUNITY_NODES
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -121,9 +121,13 @@ def build_undirected_symbol_metric_rows[TNode](
     )
     comp_id, comp_size = component_ids_undirected(graph)
 
+    row_context = RowBuildContext.from_repo_commit(
+        inputs.repo,
+        inputs.commit,
+        created_at=ctx.resolved_now(),
+    )
     metric_inputs = SymbolMetricInputs[TNode](
-        repo=inputs.repo,
-        commit=inputs.commit,
+        row_context=row_context,
         centrality={
             "betweenness": centrality.betweenness,
             "closeness": centrality.closeness,
@@ -140,7 +144,6 @@ def build_undirected_symbol_metric_rows[TNode](
         },
         comp_id=comp_id,
         comp_size=comp_size,
-        created_at=ctx.resolved_now(),
     )
     return list(config.build_rows(metric_inputs))
 

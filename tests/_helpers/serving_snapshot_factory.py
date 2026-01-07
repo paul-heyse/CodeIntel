@@ -17,6 +17,8 @@ from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
+from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
+from codeintel.core.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.core.hashing import stable_hash
 from codeintel.core.manifests import ServingSnapshotManifest, SnapshotDatasetEntry
 from codeintel.core.schemas import table_schema_from_json_obj
@@ -35,8 +37,6 @@ from codeintel.serving.publisher import (
     publish_serving_snapshot,
 )
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
-from codeintel.storage.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.serving.search_index import build_search_documents_table

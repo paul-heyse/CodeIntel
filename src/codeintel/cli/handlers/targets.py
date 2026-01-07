@@ -17,7 +17,7 @@ from codeintel.cli.handlers.tag_filters import filter_targets_by_tags, parse_tag
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 def targets_list_handler(ctx: CommandContext) -> CliResult[TargetOriginListResult]:
@@ -55,7 +55,7 @@ def targets_list_handler(ctx: CommandContext) -> CliResult[TargetOriginListResul
 
 
 def _collect_target_origins(
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
     *,
     show_origin: bool,
     show_tags: bool,

@@ -6,7 +6,7 @@ import pytest
 
 from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
 from codeintel.core.hamilton import tags as ht
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 def _variable_name(variable: object) -> str:
@@ -16,14 +16,14 @@ def _variable_name(variable: object) -> str:
     return str(name) if name is not None else str(variable)
 
 
-def test_all_targets_compile_from_dag(hamilton_runtime: RuntimeBundle) -> None:
+def test_all_targets_compile_from_dag(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Ensure DAG-derived target compilation succeeds and produces targets."""
     catalog = compile_dag_catalog(hamilton_runtime.dr, strict=True)
     if not catalog.all_targets:
         pytest.fail("No build targets compiled from DAG tags")
 
 
-def test_target_anchors_have_docstrings(hamilton_runtime: RuntimeBundle) -> None:
+def test_target_anchors_have_docstrings(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Ensure every target anchor has a docstring summary."""
     catalog = compile_dag_catalog(hamilton_runtime.dr, strict=False)
     missing = [target.name for target in catalog.all_targets if not target.description.strip()]
@@ -31,7 +31,7 @@ def test_target_anchors_have_docstrings(hamilton_runtime: RuntimeBundle) -> None
         pytest.fail("Targets missing docstring summaries:\n" + "\n".join(sorted(missing)))
 
 
-def test_target_anchors_have_spec_version(hamilton_runtime: RuntimeBundle) -> None:
+def test_target_anchors_have_spec_version(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Ensure target anchors carry the canonical spec version tag."""
     missing: list[str] = []
     variables = hamilton_runtime.tag_query.query({ht.TAG_NODE_TYPE: ht.NODE_TYPE_MATERIALIZE})

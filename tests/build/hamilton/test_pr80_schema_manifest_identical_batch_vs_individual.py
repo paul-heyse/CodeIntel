@@ -12,11 +12,11 @@ from codeintel.build.schemas.compile import (
     SchemaManifestRequest,
     compile_schema_manifest,
 )
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 def test_pr80_schema_manifest_identical_batch_vs_individual(
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
 ) -> None:
     """Ensure batch and per-table inference produce identical manifests."""
     provider = declared_schema_provider(runtime=hamilton_runtime)

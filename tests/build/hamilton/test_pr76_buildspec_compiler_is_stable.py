@@ -6,10 +6,10 @@ import pytest
 
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec import compile_buildspec
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
-def test_buildspec_compiler_is_stable(hamilton_runtime: RuntimeBundle) -> None:
+def test_buildspec_compiler_is_stable(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Compile twice and require identical buildspec_hash."""
     spec1 = compile_buildspec(
         catalog=hamilton_runtime.catalog,

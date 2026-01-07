@@ -23,10 +23,10 @@ from codeintel.cli.handlers.datasets import (
 )
 from codeintel.core.columnar.stream import stream_from_table
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.query_results import records_from_arrow_reader
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.primitives import Column, TableSchema
-from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,

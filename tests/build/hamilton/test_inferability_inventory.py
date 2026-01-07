@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from codeintel.build.schemas.inference_service import inferability_inventory
 from codeintel.core.schemas.output_registry import NON_INFERABLE_OUTPUT_KEYS
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from tests._helpers.assertions.expectation_assertions import expect_true
 
 
-def _saver_nodes(runtime: RuntimeBundle) -> set[str]:
+def _saver_nodes(runtime: HamiltonRuntimeBundle) -> set[str]:
     return {output.saver_node for output in runtime.catalog.table_outputs.values()}
 
 
-def test_inferability_inventory_marks_inferable_outputs(hamilton_runtime: RuntimeBundle) -> None:
+def test_inferability_inventory_marks_inferable_outputs(
+    hamilton_runtime: HamiltonRuntimeBundle,
+) -> None:
     """Inferability inventory should flag all inferable outputs as inferable."""
     records = inferability_inventory(
         driver=hamilton_runtime.driver,
@@ -30,7 +32,7 @@ def test_inferability_inventory_marks_inferable_outputs(hamilton_runtime: Runtim
 
 
 def test_inferable_outputs_do_not_depend_on_saver_nodes(
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
 ) -> None:
     """Inferable outputs should not use saver nodes as compute dependencies."""
     records = inferability_inventory(

@@ -84,6 +84,7 @@ from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.cli.services.storage import default_validation_summary_path
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.manifests import DatasetSuiteManifest, ServingSnapshotManifest
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.time import utc_now
@@ -104,7 +105,6 @@ from codeintel.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
-from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
@@ -124,7 +124,7 @@ if TYPE_CHECKING:
     from codeintel.core.build_manifest import BuildRunRecord
     from codeintel.core.hamilton.records import ArtifactRefProtocol
     from codeintel.observability.cli import RunContext
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
@@ -733,7 +733,7 @@ def _build_cache_report(
     return report
 
 
-def _cache_adapter_from_runtime(runtime: RuntimeBundle) -> HamiltonCacheAdapter | None:
+def _cache_adapter_from_runtime(runtime: HamiltonRuntimeBundle) -> HamiltonCacheAdapter | None:
     cache_adapter_raw = getattr(runtime.dr, "cache", None)
     if isinstance(cache_adapter_raw, HamiltonCacheAdapter):
         return cache_adapter_raw
@@ -773,7 +773,7 @@ def _cache_behavior_str(behavior: object) -> str | None:
     return None
 
 
-def _cache_node_tag_fields(runtime: RuntimeBundle, node_name: str) -> dict[str, object]:
+def _cache_node_tag_fields(runtime: HamiltonRuntimeBundle, node_name: str) -> dict[str, object]:
     node_obj = runtime.dr.graph.nodes.get(node_name)
     if node_obj is None:
         return {}
@@ -796,7 +796,7 @@ def _cache_node_tag_fields(runtime: RuntimeBundle, node_name: str) -> dict[str, 
 
 def _collect_cache_node_rows(
     *,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     cache_adapter: HamiltonCacheAdapter,
     cache_run_id: str,
 ) -> tuple[list[dict[str, object]], int, int]:
@@ -971,7 +971,7 @@ class _BuildRunParams:
 
 @dataclass(frozen=True)
 class _BuildRunFormatOptions:
-    runtime_bundle: RuntimeBundle | None
+    runtime_bundle: HamiltonRuntimeBundle | None
     show_tags: bool
 
 
@@ -979,7 +979,7 @@ class _BuildRunFormatOptions:
 class _BuildRunInputs:
     params: _BuildRunParams
     runtime: ResolvedRuntime
-    runtime_bundle: RuntimeBundle
+    runtime_bundle: HamiltonRuntimeBundle
     goals: list[str]
     compose_options: CliRuntimeComposeOptions
 
@@ -1192,7 +1192,7 @@ class _BootstrapSuiteContext:
 @dataclass(frozen=True, slots=True)
 class _BootstrapSuitePlan:
     context: _BootstrapSuiteContext
-    runtime_bundle: RuntimeBundle
+    runtime_bundle: HamiltonRuntimeBundle
     env: BuildEnv
     goals: tuple[str, ...]
     missing_targets: tuple[str, ...]
@@ -1400,7 +1400,7 @@ def build_run_handler(
 def _resolve_goals_for_params(
     *,
     params: _BuildRunParams,
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
 ) -> tuple[list[str], CliResult[BuildRunResult] | None]:
     raw_tags = params.tag_filters or ()
     try:
@@ -1450,7 +1450,7 @@ def _extract_node_tags(node: object | None) -> dict[str, object] | None:
 
 
 def _collect_target_tags(
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
     *,
     targets: Sequence[str],
 ) -> dict[str, dict[str, object]]:
@@ -1470,8 +1470,8 @@ def _collect_target_tags(
 
 def _resolve_tag_runtime_bundle(
     outcome: _BuildExecutionOutcome | None,
-    runtime_bundle: RuntimeBundle | None,
-) -> RuntimeBundle | None:
+    runtime_bundle: HamiltonRuntimeBundle | None,
+) -> HamiltonRuntimeBundle | None:
     if outcome is not None and outcome.result.runtime is not None:
         return outcome.result.runtime
     return runtime_bundle
@@ -1587,7 +1587,7 @@ def _resolve_gateway_requirements(
 def _runtime_bundle_for_gateway(
     inputs: _BuildRunInputs,
     gateway: StorageGateway | None,
-) -> RuntimeBundle:
+) -> HamiltonRuntimeBundle:
     if gateway is None:
         return inputs.runtime_bundle
     return compose_cli_runtime_bundle(
@@ -1625,7 +1625,7 @@ def _build_execution_args(
 def _execute_build_run_inputs(
     inputs: _BuildRunInputs,
     *,
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
     gateway: StorageGateway | None,
     telemetry_state: _BuildRunTelemetryState,
 ) -> CliResult[BuildRunResult] | None:
@@ -2386,7 +2386,7 @@ class _BuildExplainParams:
 @dataclass(frozen=True, slots=True)
 class _PlanningRuntimeContext:
     env: BuildEnv
-    runtime: RuntimeBundle
+    runtime: HamiltonRuntimeBundle
     catalog: DagCatalog
 
 

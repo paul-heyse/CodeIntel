@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.graphs.engine import views as nx_views
-from codeintel.storage.datasets.arrow_store import write_dataset
+from codeintel.core.datasets.arrow_store import write_dataset
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,

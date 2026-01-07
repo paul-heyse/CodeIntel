@@ -17,6 +17,8 @@ from codeintel.build.hamilton.native.export.serving_artifacts import (
     SERVING_ARTIFACT_SEMANTIC_REGISTRY,
     SERVING_ARTIFACTS_TARGET_NAME,
 )
+from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
+from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.publisher import (
@@ -25,8 +27,6 @@ from codeintel.serving.publisher import (
 )
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.schema_provider import get_schema_provider
-from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
-from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from tests._helpers.assertions import (

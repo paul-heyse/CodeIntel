@@ -106,7 +106,7 @@ from codeintel.observability.telemetry_context import (
 )
 from codeintel.runtime.compose import compose_runtime, set_execution_active
 from codeintel.runtime.inputs import ExecutionInputs, execution_input_mapping
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 if TYPE_CHECKING:
     from typing import TypedDict
@@ -195,7 +195,7 @@ class _RunState:
 
     env: BuildEnv
     targets: tuple[str, ...]
-    runtime: RuntimeBundle
+    runtime: HamiltonRuntimeBundle
     run_id: str
     cache_dir: Path
     telemetry: _TelemetryHooksSettings
@@ -1504,7 +1504,7 @@ def _resolve_optional_path(
 def _categorize_outputs(
     closure: tuple[str, ...],
     outputs: dict[str, Any],
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
 ) -> tuple[list[str], list[str], list[str]]:
     """Categorize outputs into computed/skipped/failed lists.
 
@@ -1573,7 +1573,7 @@ def _skip_record(
 def _failure_record(
     *,
     target_name: str,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     cache_keys: Mapping[str, str],
     error: str,
 ) -> TargetRunRecord:
@@ -1601,7 +1601,7 @@ def _safe_input_hash(
     target: TargetDescriptor,
     *,
     cache_keys: Mapping[str, str],
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
 ) -> str | None:
     node_name = runtime.catalog.target_nodes.get(target.name)
     if node_name is None:
@@ -1612,7 +1612,7 @@ def _safe_input_hash(
 def _ensure_failure_records(
     *,
     env: BuildEnv,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     closure: tuple[str, ...],
     outputs: dict[str, Any],
     error: str,
@@ -1633,7 +1633,7 @@ def _ensure_failure_records(
         outputs[key] = record
 
 
-def _resolve_cache_keys(*, env: BuildEnv, runtime: RuntimeBundle) -> dict[str, str]:
+def _resolve_cache_keys(*, env: BuildEnv, runtime: HamiltonRuntimeBundle) -> dict[str, str]:
     resolver = runtime.cache_key_resolver
     if resolver is None:
         return {}
@@ -1659,7 +1659,7 @@ def _resolve_cache_keys(*, env: BuildEnv, runtime: RuntimeBundle) -> dict[str, s
 def _apply_cache_keys(
     *,
     outputs: dict[str, Any],
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
 ) -> None:
     cache_adapter = runtime.cache_adapter
     if cache_adapter is None:
@@ -1686,7 +1686,7 @@ def _apply_cache_keys(
 
 def _map_closure_to_nodes(
     closure: tuple[str, ...],
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
 ) -> tuple[list[str], list[str]]:
     """Map closure targets to Hamilton node names.
 
@@ -1794,7 +1794,7 @@ def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
 def _preflight_missing_inputs(
     *,
     env: BuildEnv,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     closure: tuple[str, ...],
 ) -> dict[str, _MissingInputs]:
     catalog = runtime.catalog
@@ -1846,7 +1846,7 @@ def _blocked_targets(catalog: DagCatalog, roots: set[str]) -> set[str]:
 def _preflight_blocked_records(
     *,
     env: BuildEnv,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     closure: tuple[str, ...],
     missing_by_target: Mapping[str, _MissingInputs],
 ) -> tuple[dict[str, TargetRunRecord], set[str]]:
@@ -2030,7 +2030,7 @@ def _finalize_run(
 def _emit_metadata_bundle(
     *,
     env: BuildEnv,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     run_id: str,
 ) -> None:
     bundle = env.metadata_bundle
@@ -2079,7 +2079,7 @@ def _emit_contract_catalog(
 def _emit_schema_manifest(
     *,
     bundle: BuildMetadataBundleWriter,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     run_id: str,
     generated_at: datetime,
 ) -> None:
@@ -2151,7 +2151,7 @@ def _emit_lineage(
     *,
     bundle: BuildMetadataBundleWriter,
     env: BuildEnv,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     run_id: str,
     generated_at: datetime,
 ) -> None:
@@ -2179,7 +2179,7 @@ def _emit_lineage(
 def _safe_view_lineage(
     *,
     env: BuildEnv,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     run_id: str,
 ) -> tuple[dict[str, frozenset[str]] | None, dict[str, dict[str, frozenset[str]]] | None]:
     try:
@@ -2223,7 +2223,7 @@ class HamiltonBuildResult:
     run_id
         Unique identifier for this build run.
     runtime
-        Reference to the RuntimeBundle for mapping lookups.
+        Reference to the HamiltonRuntimeBundle for mapping lookups.
     """
 
     requested: tuple[str, ...]
@@ -2236,7 +2236,7 @@ class HamiltonBuildResult:
     duration_ms: float = 0.0
     error: str | None = None
     run_id: str = ""
-    runtime: RuntimeBundle | None = None
+    runtime: HamiltonRuntimeBundle | None = None
 
     def get_record(self, target_name: str) -> TargetRunRecord | None:
         """Get the execution record for a target.
@@ -2661,12 +2661,12 @@ class HamiltonBuildExecutor:
         *,
         setup: _RunSetup,
         domain: str | None,
-    ) -> tuple[RuntimeBundle, NodeTelemetryHook | None]:
+    ) -> tuple[HamiltonRuntimeBundle, NodeTelemetryHook | None]:
         """Build Hamilton runtime with configured mode and lifecycle adapters.
 
         Returns
         -------
-        RuntimeBundle
+        HamiltonRuntimeBundle
             Configured runtime bundle with driver and catalog.
         """
         config = _base_hamilton_config(env=setup.env, options=self._options)

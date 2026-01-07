@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.datasets.parquet_metadata import table_schema_from_dataset
 from codeintel.core.schemas.primitives import Column, Index, TableSchema, normalize_column_type
 from codeintel.serving.semantic.duckdb_contracts import table_schema_for_table_key
 from codeintel.storage.datasets.manifest_index import (
@@ -17,7 +18,6 @@ from codeintel.storage.datasets.manifest_index import (
     DatasetManifestIndex,
     dataset_for_entry,
 )
-from codeintel.storage.datasets.parquet_metadata import table_schema_from_dataset
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping

@@ -8,10 +8,10 @@ import duckdb
 import polars as pl
 import pytest
 
+from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import Column, TableSchema
-from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.storage.datasets.registry import DatasetRegistry
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig

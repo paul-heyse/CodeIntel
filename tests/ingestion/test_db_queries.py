@@ -10,6 +10,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.core.queries.safe import (
+    DUCKDB_QUERY_ERRORS,
+    ColumnNotFoundError,
+    QueryError,
+    TableNotFoundError,
+)
 from codeintel.storage.queries.parquet import (
     ForeignKeyRef,
     safe_count,
@@ -23,12 +29,6 @@ from codeintel.storage.queries.parquet import (
     safe_min_value,
     safe_not_null_fraction,
     safe_table_exists,
-)
-from codeintel.storage.queries.safe import (
-    DUCKDB_QUERY_ERRORS,
-    ColumnNotFoundError,
-    QueryError,
-    TableNotFoundError,
 )
 from tests._helpers.assertions import (
     expect_equal,

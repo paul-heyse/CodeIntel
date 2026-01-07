@@ -8,10 +8,12 @@ from codeintel.build.hamilton.driver_factory import (
     list_available_nodes,
     target_to_node_name,
 )
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
-def test_auto_driver_includes_native_analytics_nodes(hamilton_runtime: RuntimeBundle) -> None:
+def test_auto_driver_includes_native_analytics_nodes(
+    hamilton_runtime: HamiltonRuntimeBundle,
+) -> None:
     """Verify auto driver includes target anchor nodes for native analytics."""
     all_nodes = list_available_nodes(runtime=hamilton_runtime)
 
@@ -27,7 +29,7 @@ def test_auto_driver_includes_native_analytics_nodes(hamilton_runtime: RuntimeBu
 
 
 def test_auto_driver_resolves_native_target_nodes(
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
 ) -> None:
     """Verify native targets resolve to canonical target nodes."""
     all_nodes = list_available_nodes(runtime=hamilton_runtime)

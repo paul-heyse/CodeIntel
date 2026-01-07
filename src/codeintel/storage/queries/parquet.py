@@ -25,10 +25,10 @@ from codeintel.core.columnar.masks import (
     is_valid_mask,
 )
 from codeintel.core.columnar.set_ops import is_in_mask
+from codeintel.core.datasets.arrow_store import dataset_stats, scan_dataset
+from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.query_results import ScalarCoercionError
 from codeintel.core.table_key import is_valid_table_key
-from codeintel.storage.datasets.arrow_store import dataset_stats, scan_dataset
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
 from codeintel.storage.query_results import coerce_optional_float
 
 if TYPE_CHECKING:

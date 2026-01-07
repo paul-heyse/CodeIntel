@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from codeintel.build.analytics.compute.row_builders.context import RowBuildContext
 from codeintel.build.analytics.compute.row_builders.core import (
     row_tuple_for_table,
     rows_to_tuples_for_table,
@@ -39,6 +40,7 @@ __all__ = [
     "FunctionMetricExtInputs",
     "ModuleGraphMetricInputs",
     "ModuleMetricExtInputs",
+    "RowBuildContext",
     "SubsystemMetricInputs",
     "SubsystemMetricRow",
     "SymbolFunctionMetricInputs",

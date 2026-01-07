@@ -14,7 +14,7 @@ from codeintel.build.schemas.compile import (
     compile_schema_manifest,
 )
 from codeintel.core.schemas.primitives import Column, TableSchema
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
@@ -52,7 +52,7 @@ class _SpyBatchInferer:
         return {key: _schema_for_key(key) for key in keys}
 
 
-def test_pr80_schema_compile_uses_batch_inference(hamilton_runtime: RuntimeBundle) -> None:
+def test_pr80_schema_compile_uses_batch_inference(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Ensure compile_schema_manifest pre-infers schemas in a single batch call."""
     provider = declared_schema_provider(runtime=hamilton_runtime)
     spy = _SpyBatchInferer()

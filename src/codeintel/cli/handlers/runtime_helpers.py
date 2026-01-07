@@ -14,7 +14,7 @@ from codeintel.cli.execution.bootstrap import VERBOSITY_DEBUG
 from codeintel.core.execution import ExecutionContext, RunKind, new_run_context
 from codeintel.core.runtime.loader import load_execution_context
 from codeintel.runtime.compose import compose_runtime
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -89,12 +89,12 @@ def compose_cli_runtime_bundle_with_env(
     runtime: ResolvedRuntime,
     gateway: StorageGateway | None,
     options: CliRuntimeComposeOptions | None = None,
-) -> tuple[RuntimeBundle, BuildEnv]:
-    """Compose a RuntimeBundle and BuildEnv for CLI handlers.
+) -> tuple[HamiltonRuntimeBundle, BuildEnv]:
+    """Compose a HamiltonRuntimeBundle and BuildEnv for CLI handlers.
 
     Returns
     -------
-    tuple[RuntimeBundle, BuildEnv]
+    tuple[HamiltonRuntimeBundle, BuildEnv]
         Runtime bundle and build environment for CLI usage.
     """
     resolved_options = options or CliRuntimeComposeOptions()
@@ -129,12 +129,12 @@ def compose_cli_runtime_bundle(
     runtime: ResolvedRuntime,
     gateway: StorageGateway | None,
     options: CliRuntimeComposeOptions | None = None,
-) -> RuntimeBundle:
-    """Compose a RuntimeBundle for CLI handlers.
+) -> HamiltonRuntimeBundle:
+    """Compose a HamiltonRuntimeBundle for CLI handlers.
 
     Returns
     -------
-    RuntimeBundle
+    HamiltonRuntimeBundle
         Composed runtime bundle for CLI usage.
     """
     bundle, _ = compose_cli_runtime_bundle_with_env(

@@ -24,7 +24,7 @@ Import patterns::
 
 
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
     from codeintel.build.errors import BuildError, BuildErrorCollection
@@ -42,7 +42,7 @@ CLI usage::
     codeintel build status
     codeintel build history
 
-Use ``RuntimeBundle.catalog`` (from ``compose_runtime``) for the canonical DAG catalog.
+Use ``HamiltonRuntimeBundle.catalog`` (from ``compose_runtime``) for the canonical DAG catalog.
 """
 
 from __future__ import annotations

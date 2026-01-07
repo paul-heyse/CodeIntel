@@ -17,13 +17,13 @@ from codeintel.build.schemas import (
     iter_contracts_by_table_key,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.views.inventory import discover_derived_docs_views
 from codeintel.storage.contracts.provider import (
     clear_contract_cache as clear_storage_contract_cache,
 )
 from codeintel.storage.contracts.provider import (
     get_contract_for_table_key as get_storage_contract_for_table_key,
 )
-from codeintel.storage.views.inventory import discover_derived_docs_views
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,

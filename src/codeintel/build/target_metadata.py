@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog, OutputDescriptor, TargetDescriptor
 from codeintel.build.schemas.schema_index import SchemaIndex
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 class TargetSystem:
     """Bundle runtime, catalog, and target lookup indexes."""
 
-    runtime: RuntimeBundle
+    runtime: HamiltonRuntimeBundle
     catalog: DagCatalog
     by_name: Mapping[str, TargetDescriptor]
     by_table_key: Mapping[str, TargetDescriptor]
@@ -145,7 +145,7 @@ def _build_indexes(
     )
 
 
-def build_target_system(*, runtime: RuntimeBundle) -> TargetSystem:
+def build_target_system(*, runtime: HamiltonRuntimeBundle) -> TargetSystem:
     """Build a TargetSystem from a runtime bundle.
 
     Returns
@@ -270,7 +270,7 @@ class TargetMetadataProvider(Protocol):
 class LazyTargetMetadataProvider:
     """Lazy provider that loads the target metadata service on demand."""
 
-    runtime: RuntimeBundle
+    runtime: HamiltonRuntimeBundle
     _service: TargetMetadataService | None = None
 
     def _resolve(self) -> TargetMetadataService:
@@ -346,7 +346,7 @@ class LazyTargetMetadataProvider:
 _TARGET_METADATA_PROVIDERS: list[LazyTargetMetadataProvider] = []
 
 
-def get_target_metadata_service(*, runtime: RuntimeBundle) -> TargetMetadataService:
+def get_target_metadata_service(*, runtime: HamiltonRuntimeBundle) -> TargetMetadataService:
     """Return the canonical target metadata service for a runtime.
 
     Returns
@@ -361,7 +361,7 @@ def get_target_metadata_service(*, runtime: RuntimeBundle) -> TargetMetadataServ
     """
     schema_index = runtime.schema_index
     if schema_index is None:
-        msg = "RuntimeBundle.schema_index is required to build TargetMetadataService"
+        msg = "HamiltonRuntimeBundle.schema_index is required to build TargetMetadataService"
         raise ValueError(msg)
     return TargetMetadataService(
         system=build_target_system(runtime=runtime),
@@ -369,7 +369,7 @@ def get_target_metadata_service(*, runtime: RuntimeBundle) -> TargetMetadataServ
     )
 
 
-def get_target_system(*, runtime: RuntimeBundle) -> TargetSystem:
+def get_target_system(*, runtime: HamiltonRuntimeBundle) -> TargetSystem:
     """Return the target system for a runtime bundle.
 
     Returns
@@ -380,7 +380,7 @@ def get_target_system(*, runtime: RuntimeBundle) -> TargetSystem:
     return build_target_system(runtime=runtime)
 
 
-def get_target_metadata_provider(*, runtime: RuntimeBundle) -> TargetMetadataProvider:
+def get_target_metadata_provider(*, runtime: HamiltonRuntimeBundle) -> TargetMetadataProvider:
     """Return a lazy target metadata provider bound to a runtime bundle.
 
     Returns

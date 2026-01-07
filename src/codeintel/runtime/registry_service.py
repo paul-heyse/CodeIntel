@@ -15,7 +15,7 @@ from codeintel.build.schemas.contract_service import (
 from codeintel.core.exports.formats import export_format_choices, resolve_export_format_spec
 from codeintel.core.imports.lazy import lazy_getattr
 from codeintel.core.paths import find_repo_root
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -704,7 +704,7 @@ class RegistryService:
         *,
         gateway: StorageGateway | None = None,
         root: Path | None = None,
-        runtime: RuntimeBundle,
+        runtime: HamiltonRuntimeBundle,
     ) -> RegistryService:
         """Load dataset and target catalogs from the build graph.
 

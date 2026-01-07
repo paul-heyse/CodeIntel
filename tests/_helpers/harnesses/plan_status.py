@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.planning.model import BuildPlan, PlanRequest
 from codeintel.build.state import StateValidationOptions, StateValidator
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -29,7 +29,7 @@ def compute_plan_summary(
     harness: HamiltonBuildHarness,
     targets: Iterable[str],
     *,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
 ) -> PlanSummary:
     """Compute a summary of plan entries for requested targets.
 
@@ -58,7 +58,7 @@ def compute_status_summary(
     harness: HamiltonBuildHarness,
     targets: Iterable[str],
     *,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
 ) -> PlanSummary:
     """Compute a summary of build status for requested targets.
 

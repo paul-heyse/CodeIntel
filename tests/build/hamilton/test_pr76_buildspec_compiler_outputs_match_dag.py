@@ -6,10 +6,10 @@ import pytest
 
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec import compile_buildspec
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
-def test_buildspec_compiler_outputs_match_dag(hamilton_runtime: RuntimeBundle) -> None:
+def test_buildspec_compiler_outputs_match_dag(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Compile BuildSpec and verify key targets/outputs are present."""
     spec = compile_buildspec(
         catalog=hamilton_runtime.catalog,

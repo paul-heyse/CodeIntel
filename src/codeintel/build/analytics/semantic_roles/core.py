@@ -13,8 +13,8 @@ import msgspec
 import pyarrow as pa
 
 from codeintel.build.analytics.utilities.ast import safe_unparse
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.query_results import coerce_optional_int, coerce_optional_str, coerce_str
@@ -526,13 +526,8 @@ def _filter_table_by_snapshot(
     repo: str,
     commit: str,
 ) -> pa.Table:
-    mask = None
-    if "repo" in frame.column_names:
-        mask = equal_mask(frame["repo"], pa.scalar(repo))
-    if "commit" in frame.column_names:
-        commit_mask = equal_mask(frame["commit"], pa.scalar(commit))
-        mask = commit_mask if mask is None else and_kleene(mask, commit_mask)
-    return frame.filter(mask) if mask is not None else frame
+    scope = SnapshotScope(repo=repo, commit=commit)
+    return scope.filter_arrow_table(frame, require_columns=True)
 
 
 def _classify_function(

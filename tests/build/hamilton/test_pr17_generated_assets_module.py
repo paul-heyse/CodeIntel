@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
-def test_assets_module_has_dataset_nodes(hamilton_runtime: RuntimeBundle) -> None:
+def test_assets_module_has_dataset_nodes(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Verify driver graph contains dataset nodes."""
     node_names = set(hamilton_runtime.dr.graph.nodes)
 
@@ -23,7 +23,7 @@ def test_assets_module_has_dataset_nodes(hamilton_runtime: RuntimeBundle) -> Non
         pytest.fail("Driver graph should contain dataset nodes (d__*)")
 
 
-def test_assets_module_has_loader_nodes(hamilton_runtime: RuntimeBundle) -> None:
+def test_assets_module_has_loader_nodes(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Verify driver graph contains query loader nodes."""
     node_names = set(hamilton_runtime.dr.graph.nodes)
 
@@ -33,7 +33,7 @@ def test_assets_module_has_loader_nodes(hamilton_runtime: RuntimeBundle) -> None
         pytest.fail("Driver graph should contain query nodes (q__*)")
 
 
-def test_assets_module_has_artifact_nodes(hamilton_runtime: RuntimeBundle) -> None:
+def test_assets_module_has_artifact_nodes(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Verify driver graph contains artifact nodes for SCIP/exports."""
     node_names = set(hamilton_runtime.dr.graph.nodes)
 
@@ -43,7 +43,7 @@ def test_assets_module_has_artifact_nodes(hamilton_runtime: RuntimeBundle) -> No
         pytest.fail("Driver graph should contain artifact nodes (a__*)")
 
 
-def test_assets_module_all_node_types_independent(hamilton_runtime: RuntimeBundle) -> None:
+def test_assets_module_all_node_types_independent(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Verify support nodes are compiled alongside targets."""
     node_names = set(hamilton_runtime.dr.graph.nodes)
 

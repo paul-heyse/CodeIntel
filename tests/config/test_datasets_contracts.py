@@ -15,13 +15,13 @@ from codeintel.config.datasets.contracts import get_row_bindings
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 _SHA256_HEX_LEN: int = 64
 
 
 @pytest.fixture(autouse=True)
-def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+def _configure_schema_provider(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     configure_schema_service(runtime=hamilton_runtime)
 
 

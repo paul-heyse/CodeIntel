@@ -18,7 +18,7 @@ from codeintel.build.target_metadata import TargetSystem
 from codeintel.build.targets import TargetDescriptor
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from tests._helpers.catalog import build_catalog, make_target_descriptor
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ def _build_target_system(
     targets: tuple[TargetDescriptor, ...],
     *,
     table_keys_by_target: Mapping[str, Sequence[str]] | None = None,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
 ) -> TargetSystem:
     catalog = build_catalog(targets=targets, table_keys_by_target=table_keys_by_target)
     by_name: dict[str, TargetDescriptor] = {}
@@ -55,7 +55,7 @@ def _build_target_system(
 
 
 def test_schema_index_accepts_explicit_override_for_non_inferable_outputs(
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
 ) -> None:
     """Explicit overrides resolve schemas for non-inferable outputs."""
     table_key = "analytics.override_ok"

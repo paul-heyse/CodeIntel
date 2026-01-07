@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 from codeintel.core.serialization.json import decode_json
 from codeintel.core.serialization.payload import encode_payload
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
 from tests._helpers.assertions import expect_true
 from tests._helpers.fixtures.rows import insert_symbol_use_edges
@@ -157,7 +157,7 @@ def _ensure_unresolved_edges_have_evidence(con: DuckDBPyConnection) -> None:
 
 def test_callgraph_handles_aliases_and_relative_imports(
     tmp_path: Path,
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
 ) -> None:
     """
     Calls through import aliases and methods on imported classes are resolved.

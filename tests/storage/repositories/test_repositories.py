@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.schemas import configure_schema_service, get_schema_provider
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from codeintel.storage.repositories import (
     DataModelsRepository,
     DatasetReadRepository,
@@ -55,7 +55,7 @@ def _expect_in(member: object, container: Sequence[object], message: str) -> Non
 
 
 @pytest.fixture(autouse=True)
-def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+def _configure_schema_provider(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     configure_schema_service(runtime=hamilton_runtime)
 
 

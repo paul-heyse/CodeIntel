@@ -10,11 +10,11 @@ from codeintel.build.schemas.compile import (
     SchemaManifestRequest,
     compile_schema_manifest,
 )
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 def test_manifest_provenance_includes_inference_status(
-    hamilton_runtime: RuntimeBundle,
+    hamilton_runtime: HamiltonRuntimeBundle,
 ) -> None:
     """Manifest provenance should include inference status for tables."""
     provider = get_schema_provider()

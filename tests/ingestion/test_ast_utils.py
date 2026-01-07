@@ -17,7 +17,7 @@ from codeintel.core.parsing import AstSpanIndex
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.compute.ast_extract import AstVisitor
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module, timed_parse
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
@@ -48,12 +48,12 @@ INDEX_CASES = [
 
 
 @pytest.fixture(autouse=True)
-def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+def _configure_schema_provider(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     configure_schema_service(runtime=hamilton_runtime)
 
 
 @pytest.fixture(scope="module")
-def ast_nodes_columns(hamilton_runtime: RuntimeBundle) -> tuple[str, ...]:
+def ast_nodes_columns(hamilton_runtime: HamiltonRuntimeBundle) -> tuple[str, ...]:
     """Provide column names for the AST nodes schema.
 
     Returns

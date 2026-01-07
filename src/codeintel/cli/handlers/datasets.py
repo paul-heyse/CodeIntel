@@ -41,11 +41,11 @@ from codeintel.cli.errors.results import (
     fail_project_error,
 )
 from codeintel.cli.handlers.ops import dataset_list_handler
+from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
+from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.errors.taxonomy import OperationErrorCode
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
 from codeintel.storage.gateway.relation import relation_from_table_key
 from codeintel.storage.protocols.duckdb_relation import adapt_duckdb_relation_stream
 from codeintel.storage.validation import collect_contract_issues

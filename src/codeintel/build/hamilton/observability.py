@@ -17,11 +17,11 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 def list_execution_order(
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     targets: list[str],
 ) -> list[str]:
     """Return the execution order for targets.
@@ -58,7 +58,7 @@ def list_execution_order(
 
 
 def list_execution_targets(
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     targets: list[str],
 ) -> list[str]:
     """Return the execution order as target names.
@@ -86,7 +86,7 @@ def list_execution_targets(
 
 
 def get_dag_info(
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     targets: list[str],
 ) -> dict[str, Any]:
     """Get detailed DAG information for targets.
@@ -163,7 +163,7 @@ def get_dag_info(
 
 
 def export_dag_json(
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     targets: list[str],
     *,
     indent: int | None = 2,
@@ -198,7 +198,7 @@ def export_dag_json(
 
 
 def export_execution_json(
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     *,
     targets: list[str],
     env: BuildEnv,
@@ -250,7 +250,7 @@ def export_execution_json(
 
 
 def export_dag_mermaid(
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     targets: list[str],
 ) -> str:
     """Export DAG as Mermaid graph definition.
@@ -296,7 +296,7 @@ def export_dag_mermaid(
 
 
 def export_dag_dot(
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     targets: list[str],
 ) -> str:
     """Export DAG as Graphviz DOT definition.

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import networkx as nx
@@ -15,8 +14,10 @@ from codeintel.build.analytics.compute.graphs import (
 )
 from codeintel.build.analytics.compute.row_builders import (
     FunctionMetricExtInputs,
+    RowBuildContext,
     build_function_metric_ext_rows,
 )
+from codeintel.build.analytics.graphs.context_helpers import GraphContextFactory
 from codeintel.build.analytics.graphs.constants import (
     CENTRALITY_SAMPLE_LIMIT,
     EIGEN_MAX_ITER,
@@ -26,7 +27,7 @@ from codeintel.build.analytics.graphs.orchestrator import (
     ExtendedMetricsRequest,
     build_extended_metrics_rows,
 )
-from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.build.graphs.runtime.context import GraphContext
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.compute.graphs import (

@@ -44,6 +44,7 @@ import sqlglot.expressions as exp
 from codeintel.core.errors.storage import StorageError
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
+from codeintel.core.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.serialization.json import normalize_duckdb_json_value
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT, SCHEMAS
@@ -60,7 +61,6 @@ from codeintel.storage.helpers.table_key import (
     split_table_key_or_default,
 )
 from codeintel.storage.metadata.schema import EXPORT_AUDIT_TABLE
-from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.query_results import coerce_str, iter_tuples_from_arrow_reader
 from codeintel.storage.schema.ddl_builders import (
     create_index_if_not_exists_ast,

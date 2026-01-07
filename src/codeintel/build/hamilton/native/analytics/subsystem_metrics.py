@@ -26,8 +26,8 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
-from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.scopes.snapshot import SnapshotScope
+from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
@@ -58,27 +58,6 @@ def _graph_runtime_options(env: BuildEnv) -> GraphRuntimeOptions:
     )
 
 
-def _collect_rows(
-    value: InferableTabularInput,
-    columns: tuple[str, ...],
-    *,
-    repo: str | None,
-    commit: str | None,
-) -> list[dict[str, object]]:
-    table = tabular_to_arrow_table(value).select(list(columns))
-    rows = list(iter_rows(table))
-    if repo is None and commit is None:
-        return rows
-    filtered: list[dict[str, object]] = []
-    for row in rows:
-        if repo is not None and row.get("repo") not in {None, repo, ""}:
-            continue
-        if commit is not None and row.get("commit") not in {None, commit, ""}:
-            continue
-        filtered.append(row)
-    return filtered
-
-
 def subsystem_graph_metrics__base(
     env: BuildEnv,
     q__analytics__subsystem_modules: InferableTabularInput,
@@ -92,23 +71,21 @@ def subsystem_graph_metrics__base(
     pa.Table
         Reader containing subsystem graph metrics rows.
     """
-    membership_rows = _collect_rows(
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    membership_rows = collect_scoped_rows(
         q__analytics__subsystem_modules,
         ("repo", "commit", "subsystem_id", "module"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
-    import_edge_rows = _collect_rows(
+    import_edge_rows = collect_scoped_rows(
         q__graph__import_graph_edges,
         ("src_module", "dst_module", "module_layer"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
-    import_module_rows = _collect_rows(
+    import_module_rows = collect_scoped_rows(
         q__graph__import_modules,
         ("module", "scc_id", "component_size", "layer"),
-        repo=env.repo,
-        commit=env.commit,
+        scope=scope,
     )
     import_graph = build_import_graph_from_rows(import_edge_rows, import_module_rows)
     subsystem_ids = {

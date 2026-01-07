@@ -37,7 +37,7 @@ from codeintel.core.schemas.primitives import TableSchema
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.core.hamilton.records import NodeExecutionRecord
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 log = logging.getLogger(__name__)
 CACHE_LOG_KEY_TUPLE_LEN = 2
@@ -54,7 +54,7 @@ class DiagnosticsTargets:
 @dataclass(frozen=True)
 class DiagnosticsInputs:
     env: BuildEnv
-    runtime: RuntimeBundle
+    runtime: HamiltonRuntimeBundle
     run_id: str
     cache_dir: Path
     cache_adapter: HamiltonCacheAdapter | None
@@ -191,7 +191,7 @@ def _write_run_summary(path: Path, summary: RunSummary) -> None:
 def _write_dag_exports(
     *,
     diag_dir: Path,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     targets: list[str],
 ) -> None:
     if not targets:
@@ -208,7 +208,7 @@ def _write_null_inventory(
     *,
     diag_dir: Path,
     env: BuildEnv,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     table_keys: Sequence[str],
     run_id: str,
 ) -> dict[str, object] | None:
@@ -281,7 +281,7 @@ def _schema_drift_payload(
 def _write_external_input_usage(
     *,
     diag_dir: Path,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     repo_root: Path,
     run_id: str,
 ) -> None:
@@ -495,7 +495,9 @@ def _validation_findings_from_drift(
     return findings
 
 
-def _table_keys_for_targets(runtime: RuntimeBundle, targets: Sequence[str]) -> tuple[str, ...]:
+def _table_keys_for_targets(
+    runtime: HamiltonRuntimeBundle, targets: Sequence[str]
+) -> tuple[str, ...]:
     table_keys: set[str] = set()
     for target in targets:
         outputs = runtime.catalog.table_outputs_by_target.get(target, ())
@@ -507,7 +509,7 @@ def _table_keys_for_targets(runtime: RuntimeBundle, targets: Sequence[str]) -> t
 def _null_inventory_payload(
     *,
     env: BuildEnv,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     run_id: str,
     table_keys: Sequence[str],
 ) -> dict[str, object] | None:
@@ -555,7 +557,7 @@ def _null_inventory_payload(
 def _null_inventory_for_table(
     *,
     env: BuildEnv,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     table_key: str,
 ) -> dict[str, object]:
     snapshot_dir = dataset_snapshot_dir(
@@ -625,7 +627,7 @@ def _null_inventory_for_table(
     }
 
 
-def _table_schema_for_table(runtime: RuntimeBundle, table_key: str) -> TableSchema | None:
+def _table_schema_for_table(runtime: HamiltonRuntimeBundle, table_key: str) -> TableSchema | None:
     schema_index = runtime.schema_index
     if schema_index is not None:
         schema = schema_index.get_table_schema(
@@ -802,7 +804,7 @@ def _write_cache_visualization(
 def _write_target_duration_summary(
     *,
     output_path: Path,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     records: Iterable[NodeExecutionRecord],
 ) -> None:
     target_by_node = _target_map(runtime)
@@ -834,7 +836,7 @@ def _write_target_duration_summary(
     _write_json(output_path, payload)
 
 
-def _target_map(runtime: RuntimeBundle) -> dict[str, str]:
+def _target_map(runtime: HamiltonRuntimeBundle) -> dict[str, str]:
     nodes = getattr(runtime.dr, "graph", None)
     if nodes is None:
         return {}

@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.core.schemas.resolution import SchemaObservationProvider
     from codeintel.core.schemas.row_models import GeneratedRowBinding
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 @runtime_checkable
@@ -69,7 +69,7 @@ def _row_binding_for_provider(
 
 def configure_schema_service(
     *,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
     observation_provider: SchemaObservationProvider | None = None,
 ) -> SchemaService:
     """Configure the canonical SchemaService for a runtime bundle.
@@ -130,7 +130,7 @@ def clear_schema_service_cache() -> None:
     _clear_unified_provider_cache()
 
 
-def _unified_schema_provider(*, runtime: RuntimeBundle) -> SchemaProvider:
+def _unified_schema_provider(*, runtime: HamiltonRuntimeBundle) -> SchemaProvider:
     module = lazy_import("codeintel.build.schemas.provider_unified")
     provider_factory = module.unified_schema_provider
     return provider_factory(runtime=runtime)

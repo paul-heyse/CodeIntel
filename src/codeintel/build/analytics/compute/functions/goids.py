@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 import pyarrow as pa
 
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 
@@ -215,16 +216,8 @@ class FunctionGoidLoader:
 
 
 def _filter_table_by_snapshot(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
-    available = set(frame.column_names)
-    filtered = [
-        row
-        for row in iter_rows(frame)
-        if (snapshot.repo == row.get("repo") if "repo" in available else True)
-        and (snapshot.commit == row.get("commit") if "commit" in available else True)
-    ]
-    if not filtered:
-        return pa.Table.from_pylist([])
-    return pa.Table.from_pylist(filtered)
+    scope = SnapshotScope.from_snapshot(snapshot)
+    return scope.filter_arrow_table(frame, require_columns=True)
 
 
 __all__ = [

@@ -14,6 +14,7 @@ from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
+from codeintel.core.datasets.manifests import read_dataset_manifest
 from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.backend import DuckDBSession
@@ -24,7 +25,6 @@ from codeintel.storage.datasets.manifest_index import (
     dataset_for_entry,
     dataset_scanner_for_entry,
 )
-from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError

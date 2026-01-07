@@ -11,7 +11,7 @@ Path and worker utilities are now consolidated in core modules:
 - Path utilities: ``codeintel.core.paths``
 - Worker utilities: ``codeintel.core.concurrency``
 
-Database query helpers are available at ``codeintel.storage.queries.safe``.
+Database query helpers are available at ``codeintel.core.queries.safe``.
 """
 
 from __future__ import annotations

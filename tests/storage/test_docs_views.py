@@ -19,11 +19,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.core.views.inventory import discover_derived_docs_views
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.repositories.datasets import DatasetReadRepository
-from codeintel.storage.views.inventory import discover_derived_docs_views
 from tests._helpers import docs_views_ready_gateway, seed_call_graph_scoping
 from tests._helpers.docs_views import list_indexes, seed_subsystem
 

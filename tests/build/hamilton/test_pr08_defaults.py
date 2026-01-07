@@ -12,14 +12,14 @@ from __future__ import annotations
 import pytest
 
 from codeintel.build.hamilton.driver_factory import list_available_nodes
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 class TestHamiltonDriverDefaults:
     """Driver composition invariants."""
 
     @staticmethod
-    def test_runtime_constructs_runtime(hamilton_runtime: RuntimeBundle) -> None:
+    def test_runtime_constructs_runtime(hamilton_runtime: HamiltonRuntimeBundle) -> None:
         """Verify runtime constructs a runtime with registered targets."""
         if not hamilton_runtime.catalog.target_nodes:
             pytest.fail("Expected catalog target_nodes to be non-empty")
@@ -29,7 +29,7 @@ class TestHamiltonDriverDefaults:
 
     @staticmethod
     def test_list_available_nodes_includes_target_and_support_nodes(
-        hamilton_runtime: RuntimeBundle,
+        hamilton_runtime: HamiltonRuntimeBundle,
     ) -> None:
         """Verify driver exposes both target and support nodes."""
         nodes = list_available_nodes(runtime=hamilton_runtime)

@@ -16,6 +16,7 @@ import pyarrow as pa
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -439,16 +440,11 @@ def _filter_edges_rows(
 ) -> list[dict[str, object]]:
     if edges_frame is None or edges_frame.num_rows == 0:
         return []
-    has_repo = "repo" in edges_frame.column_names
-    has_commit = "commit" in edges_frame.column_names
-    rows: list[dict[str, object]] = []
-    for row in iter_rows(edges_frame):
-        if has_repo and row.get("repo") != repo:
-            continue
-        if has_commit and row.get("commit") != commit:
-            continue
-        rows.append(row)
-    return rows
+    scope = SnapshotScope(repo=repo, commit=commit)
+    filtered = scope.filter_arrow_table(edges_frame, require_columns=True)
+    if filtered.num_rows == 0:
+        return []
+    return list(iter_rows(filtered))
 
 
 def _add_call_edges(graph: nx.DiGraph, rows: Iterable[Mapping[str, object]]) -> None:

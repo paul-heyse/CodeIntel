@@ -24,6 +24,12 @@ from codeintel.core.columnar.masks import and_mask, fill_null_false, invert_mask
 from codeintel.core.columnar.normalization import normalize_array
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract
+from codeintel.core.datasets.arrow_store import (
+    ArrowDatasetWriteOptions,
+    scan_dataset,
+    write_dataset,
+)
+from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.gateway import ScipRunRecordProtocol
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.service import get_schema_service
@@ -36,12 +42,6 @@ from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.storage.datasets.arrow_store import (
-    ArrowDatasetWriteOptions,
-    scan_dataset,
-    write_dataset,
-)
-from codeintel.storage.datasets.paths import dataset_snapshot_dir
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 from codeintel.storage.upsert import UpsertSpec

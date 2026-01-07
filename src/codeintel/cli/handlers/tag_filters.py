@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 
 from codeintel.cli.errors import ValidationError
 from codeintel.core.hamilton.tag_query import TagQuery
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 def parse_tag_filters(values: Sequence[str] | None) -> dict[str, object] | None:
@@ -55,7 +55,7 @@ def parse_tag_filters(values: Sequence[str] | None) -> dict[str, object] | None:
 
 
 def filter_targets_by_tags(
-    runtime_bundle: RuntimeBundle,
+    runtime_bundle: HamiltonRuntimeBundle,
     *,
     targets: Iterable[str],
     tag_filter: Mapping[str, object] | None,

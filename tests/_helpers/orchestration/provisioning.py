@@ -56,7 +56,7 @@ from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.compute.typing_ingest import TypingIngestContext, TypingIngestStep
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.assertions import assert_target_ok
@@ -1272,7 +1272,7 @@ def build_callgraph_fixture_repo(
     repo_root: Path,
     options: CallgraphFixtureOptions | None = None,
     *,
-    runtime: RuntimeBundle,
+    runtime: HamiltonRuntimeBundle,
 ) -> ProvisionedGateway:
     """Create the alias/relative-import callgraph repo and build callgraph via production APIs.
 

@@ -21,7 +21,7 @@ from codeintel.build.settings import DEFAULT_PROFILE_NAME
 from codeintel.config.models import ToolsConfig
 from codeintel.observability.runtime import shutdown_observability
 from codeintel.runtime.compose import compose_runtime
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from tests._helpers import (
     GatewayOptions,
     ProvisioningConfig,
@@ -280,12 +280,12 @@ def runtime_env(tmp_path_factory: pytest.TempPathFactory) -> Iterator[BuildEnv]:
 
 
 @pytest.fixture(scope="session")
-def hamilton_runtime(runtime_env: BuildEnv) -> RuntimeBundle:
+def hamilton_runtime(runtime_env: BuildEnv) -> HamiltonRuntimeBundle:
     """Provide a session-scoped runtime bundle for DAG inspection.
 
     Returns
     -------
-    RuntimeBundle
+    HamiltonRuntimeBundle
         Runtime bundle with driver, catalog, and tag query.
     """
     config: dict[str, object] = {}
@@ -308,7 +308,7 @@ def _session_schema_service(request: pytest.FixtureRequest) -> None:
     if _should_skip_session_services(request):
         return
 
-    runtime: RuntimeBundle = request.getfixturevalue("hamilton_runtime")
+    runtime: HamiltonRuntimeBundle = request.getfixturevalue("hamilton_runtime")
     configure_schema_service(runtime=runtime)
     configure_contract_service(runtime=runtime)
     ensure_storage_contract_catalog()

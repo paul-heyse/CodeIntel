@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from codeintel.build.target_metadata import TargetMetadataProvider
     from codeintel.config.datasets.primitives import CompositeSchema
     from codeintel.core.hamilton.tag_query import TagQuery
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 __all__ = [
     "ContractProvider",
@@ -60,7 +60,7 @@ def _schema_service() -> SchemaService:
     return get_service()
 
 
-def _target_metadata_provider(*, runtime: RuntimeBundle) -> TargetMetadataProvider:
+def _target_metadata_provider(*, runtime: HamiltonRuntimeBundle) -> TargetMetadataProvider:
     get_provider = cast(
         "Callable[..., TargetMetadataProvider]",
         lazy_getattr("codeintel.build.target_metadata", "get_target_metadata_provider"),
@@ -358,7 +358,7 @@ class _ContractServiceState:
 _CONTRACT_SERVICE_STATE = _ContractServiceState()
 
 
-def configure_contract_service(*, runtime: RuntimeBundle) -> ContractService:
+def configure_contract_service(*, runtime: HamiltonRuntimeBundle) -> ContractService:
     """Configure the contract service for a runtime bundle.
 
     Parameters

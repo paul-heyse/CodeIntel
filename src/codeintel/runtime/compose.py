@@ -61,7 +61,7 @@ from codeintel.runtime.plugins.config import (
     plugin_config_from_mapping,
 )
 from codeintel.runtime.plugins.spec import TargetPack
-from codeintel.runtime.runtime_bundle import RuntimeBundle, RuntimeKey
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle, RuntimeKey
 from codeintel.serving.semantic_compile import compile_semantic_registry_from_tag_query
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.gateway import open_inference_gateway
@@ -120,7 +120,7 @@ class RuntimeComposition:
     """Bundle returned by compose_runtime with the derived runtime key."""
 
     key: RuntimeKey
-    bundle: RuntimeBundle
+    bundle: HamiltonRuntimeBundle
 
 
 @dataclass(frozen=True, slots=True)
@@ -701,7 +701,7 @@ def _build_runtime_bundle(
     driver: h_driver.Driver,
     cache_adapter: HamiltonCacheAdapter | None,
     cache_store: CacheStore | None,
-) -> RuntimeBundle:
+) -> HamiltonRuntimeBundle:
     catalog = compile_dag_catalog(driver, strict=True)
     tag_query = TagQuery(driver)
     cache_index = cache_store
@@ -720,7 +720,7 @@ def _build_runtime_bundle(
         version="v1",
     )
     created_at_utc = datetime.now(tz=UTC).isoformat()
-    return RuntimeBundle(
+    return HamiltonRuntimeBundle(
         driver=driver,
         catalog=catalog,
         tag_query=tag_query,
@@ -845,7 +845,7 @@ def _graph_validation_mode(config: Mapping[str, Any]) -> str:
     return "strict"
 
 
-def _validate_graph_invariants(*, runtime: RuntimeBundle, mode: str) -> None:
+def _validate_graph_invariants(*, runtime: HamiltonRuntimeBundle, mode: str) -> None:
     if mode == "off":
         return
     result = validate_graph(runtime=runtime, validate_schema=True)

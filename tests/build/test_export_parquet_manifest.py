@@ -12,9 +12,9 @@ import pytest
 
 from codeintel.build.exports.engine import export_jsonl_for_table
 from codeintel.core.config.settings import ExportAuditSettings
+from codeintel.core.datasets.arrow_store import write_dataset
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.primitives import Column, TableSchema
-from codeintel.storage.datasets.arrow_store import write_dataset
 from codeintel.storage.datasets.registry import DatasetRegistry
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig

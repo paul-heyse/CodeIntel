@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from codeintel.core.hamilton import tags as ht
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 def _variable_name(variable: object) -> str:
@@ -64,7 +64,7 @@ def _saver_tag_errors(node_name: str, tags: dict[str, object]) -> list[str]:
     return errors
 
 
-def test_saver_nodes_have_canonical_tags(hamilton_runtime: RuntimeBundle) -> None:
+def test_saver_nodes_have_canonical_tags(hamilton_runtime: HamiltonRuntimeBundle) -> None:
     """Ensure DataSaver nodes expose canonical tags for inventory/contract checks."""
     missing: list[str] = []
     variables = hamilton_runtime.tag_query.query({"hamilton.data_saver": True})

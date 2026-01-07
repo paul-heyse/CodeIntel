@@ -11,14 +11,14 @@ from codeintel.build.hamilton.observability import (
     export_dag_dot,
     export_dag_mermaid,
 )
-from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 
 class TestMermaidExport:
     """Tests for Mermaid DAG export."""
 
     @staticmethod
-    def test_export_dag_mermaid_returns_string(hamilton_runtime: RuntimeBundle) -> None:
+    def test_export_dag_mermaid_returns_string(hamilton_runtime: HamiltonRuntimeBundle) -> None:
         """Verify export_dag_mermaid returns a string."""
         result = export_dag_mermaid(hamilton_runtime, ["modules"])
 
@@ -28,7 +28,7 @@ class TestMermaidExport:
             pytest.fail("Mermaid output should not be empty")
 
     @staticmethod
-    def test_mermaid_output_starts_with_graph(hamilton_runtime: RuntimeBundle) -> None:
+    def test_mermaid_output_starts_with_graph(hamilton_runtime: HamiltonRuntimeBundle) -> None:
         """Verify Mermaid output starts with graph directive."""
         result = export_dag_mermaid(hamilton_runtime, ["modules"])
 
@@ -36,7 +36,7 @@ class TestMermaidExport:
             pytest.fail(f"Mermaid should start with graph/flowchart: {result[:50]}")
 
     @staticmethod
-    def test_mermaid_output_contains_target_nodes(hamilton_runtime: RuntimeBundle) -> None:
+    def test_mermaid_output_contains_target_nodes(hamilton_runtime: HamiltonRuntimeBundle) -> None:
         """Verify Mermaid output contains target node references."""
         result = export_dag_mermaid(hamilton_runtime, ["modules"])
 
@@ -48,7 +48,7 @@ class TestDotExport:
     """Tests for Graphviz DOT export."""
 
     @staticmethod
-    def test_export_dag_dot_returns_string(hamilton_runtime: RuntimeBundle) -> None:
+    def test_export_dag_dot_returns_string(hamilton_runtime: HamiltonRuntimeBundle) -> None:
         """Verify export_dag_dot returns a string."""
         result = export_dag_dot(hamilton_runtime, ["modules"])
 
@@ -58,7 +58,7 @@ class TestDotExport:
             pytest.fail("DOT output should not be empty")
 
     @staticmethod
-    def test_dot_output_is_valid_digraph(hamilton_runtime: RuntimeBundle) -> None:
+    def test_dot_output_is_valid_digraph(hamilton_runtime: HamiltonRuntimeBundle) -> None:
         """Verify DOT output is a valid digraph structure."""
         result = export_dag_dot(hamilton_runtime, ["modules"])
 
@@ -69,7 +69,7 @@ class TestDotExport:
             pytest.fail("DOT output should contain braces")
 
     @staticmethod
-    def test_dot_output_contains_target_nodes(hamilton_runtime: RuntimeBundle) -> None:
+    def test_dot_output_contains_target_nodes(hamilton_runtime: HamiltonRuntimeBundle) -> None:
         """Verify DOT output contains target node references."""
         result = export_dag_dot(hamilton_runtime, ["modules"])
 
@@ -81,7 +81,7 @@ class TestGraphExportConsistency:
     """Tests for consistency between export formats."""
 
     @staticmethod
-    def test_mermaid_and_dot_have_same_nodes(hamilton_runtime: RuntimeBundle) -> None:
+    def test_mermaid_and_dot_have_same_nodes(hamilton_runtime: HamiltonRuntimeBundle) -> None:
         """Verify Mermaid and DOT exports reference same targets."""
         mermaid = export_dag_mermaid(hamilton_runtime, ["modules", "scip"])
         dot = export_dag_dot(hamilton_runtime, ["modules", "scip"])

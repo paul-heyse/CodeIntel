@@ -22,12 +22,12 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.columnar.ipc import schema_to_ipc_payload
+from codeintel.core.datasets.manifests import read_dataset_manifest
 from codeintel.core.hashing import stable_hash
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.time import utc_now
-from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.tracking.schema_catalog_models import (
     DerivedSettingsPayload,
     SchemaObservationRecord,
