@@ -9,13 +9,15 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-import networkx as nx
 import pyarrow as pa
+import rustworkx as rx
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.build.graphs.builders import EdgeWeightPolicy, build_call_graph_from_rows
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -358,28 +360,37 @@ def _build_effect_rows(
 
 
 def _compute_transitive_effects(
-    call_graph: nx.DiGraph, direct_flags: dict[int, bool], *, max_depth: int
+    call_graph: GraphInput,
+    direct_flags: dict[int, bool],
+    *,
+    max_depth: int,
 ) -> dict[int, set[int]]:
     transitive: dict[int, set[int]] = {}
-    for node_value in call_graph.nodes:
-        node = cast("int", node_value)
+    store = ensure_directed_store(call_graph)
+    directed_graph = cast("rx.PyDiGraph", store.graph)
+    for node_id in store.node_ids():
+        node = int(str(node_id))
         if direct_flags.get(node):
             continue
+        node_idx = store.id_to_index.get(node_id)
+        if node_idx is None:
+            continue
         hits: set[int] = set()
-        visited: set[int] = {node}
-        queue: deque[tuple[int, int]] = deque([(node, 0)])
+        visited: set[int] = {node_idx}
+        queue: deque[tuple[int, int]] = deque([(node_idx, 0)])
         while queue:
-            current, depth = queue.popleft()
+            current_idx, depth = queue.popleft()
             if depth >= max_depth:
                 continue
-            for succ_value in call_graph.successors(current):
-                succ = cast("int", succ_value)
-                if succ in visited:
+            for succ_idx in directed_graph.successor_indices(current_idx):
+                if succ_idx in visited:
                     continue
-                visited.add(succ)
+                visited.add(succ_idx)
+                succ_id = store.index_to_id[succ_idx]
+                succ = int(str(succ_id))
                 if direct_flags.get(succ):
                     hits.add(succ)
-                queue.append((succ, depth + 1))
+                queue.append((succ_idx, depth + 1))
             if hits:
                 break
         if hits:
@@ -434,10 +445,10 @@ def _call_graph_from_frames(
     *,
     repo: str,
     commit: str,
-) -> nx.DiGraph:
+) -> GraphInput:
     rows = _filter_edges_rows(edges_frame, repo=repo, commit=commit)
     if not rows:
-        return nx.DiGraph()
+        return RxGraphStore.directed()
     node_rows = iter_rows(nodes_frame) if nodes_frame is not None else None
     return build_call_graph_from_rows(rows, node_rows, policy=_EDGE_WEIGHT_POLICY)
 

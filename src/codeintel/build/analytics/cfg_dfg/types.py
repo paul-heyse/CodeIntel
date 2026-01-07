@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from datetime import datetime
 
-    import networkx as nx
+    from codeintel.build.graphs.rx.algos import GraphInput
 
 
 @runtime_checkable
@@ -37,7 +37,7 @@ class FnContextProtocol(Protocol):
     qualname
         Qualified name of the function.
     graph
-        NetworkX directed graph representing the flow.
+        Directed graph representing the flow.
     sccs
         Strongly connected components in the graph.
     now
@@ -75,8 +75,8 @@ class FnContextProtocol(Protocol):
         ...
 
     @property
-    def graph(self) -> nx.DiGraph:
-        """NetworkX directed graph representing the flow."""
+    def graph(self) -> GraphInput:
+        """Directed graph representing the flow."""
         ...
 
     @property

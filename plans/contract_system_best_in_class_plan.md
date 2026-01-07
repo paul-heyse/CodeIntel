@@ -232,7 +232,7 @@ Ensure a consistent ordering for contract steps: clean, feature, align, validate
 persist. This makes runtime behavior predictable and testable.
 
 ### Status
-In progress.
+Completed.
 
 ### Implementation Steps
 - Create a `contract_pipeline` helper that composes the steps in a fixed order.
@@ -259,6 +259,12 @@ def contract_pipeline(
                 columns_to_pass=tuple(spec.columns_to_pass),
                 ops_module=spec.ops_module,
             )(fn)
+        fn = pipe_contract_alignment(
+            table_key=spec.table_key,
+            target_name=spec.target,
+            policy=spec.policy,
+            namespace=f"align__{sanitize_pipeline_component(spec.table_key)}",
+        )(fn)
         fn = pipe_canonical_output(
             table_key=spec.table_key,
             namespace=f"post__{sanitize_pipeline_component(spec.table_key)}",
@@ -275,10 +281,8 @@ def contract_pipeline(
 ### Completed Work
 - Added `contract_pipeline` helper and routed `table_contract` through it in
   `src/codeintel/build/hamilton/transforms/table_contract.py`.
-
-### Remaining Work
-- Decide whether to extend the pipeline to include alignment/validation stages
-  (or keep those in saver layers) and update `table_target` accordingly.
+- Added contract alignment as a pipeline stage via `pipe_contract_alignment`,
+  keeping validation at saver-level decorators.
 
 ## Scope 5: Contract Versioning + Migration Hooks
 ### Overview
@@ -320,7 +324,7 @@ Provide actionable diagnostics for missing/extra columns and type coercions.
 This helps debugging and enables observability at scale.
 
 ### Status
-In progress.
+Completed.
 
 ### Implementation Steps
 - Add `AlignmentReport` with missing/extra/coerced columns and row counts.
@@ -363,11 +367,8 @@ def align_table_to_contract(
 - Threaded reporter usage through ingestion and graph call sites (including
   `ingest_targets`, `scip_resolution`, `syntax_enrich`, `syntax_augment`,
   `call_wiring`, `cdg`, `pdg`, `cpg2` assembly, and `subsystem_cache`).
-
-### Remaining Work
-- Attach alignment reports to materialization metadata via
-  `src/codeintel/build/hamilton/native/materialization_records.py` and
-  `src/codeintel/build/hamilton/native/patterns/table_target.py`.
+- Attached alignment reports to materialization metadata via
+  `src/codeintel/build/hamilton/native/materialization_records.py`.
 
 ## Scope 7: Cross-Tabular Alignment (Arrow + Polars)
 ### Overview

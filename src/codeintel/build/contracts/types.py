@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import ModuleType
 from typing import Final
 
@@ -19,6 +19,32 @@ class ContractPolicy:
     validation_profile: ValidationProfile | None = None
     coerce_types: bool = True
     allow_nulls: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class TableContractSpec:
+    """Specification for canonical table policies."""
+
+    table_key: str
+    domain: str
+    target: str
+    ops_module: ModuleType | None
+    columns_to_pass: Sequence[str]
+    required_cols: Sequence[str] = ("loc", "cyclo")
+    clip_column: str | None = "loc"
+    input_name: str = "df"
+    policy: ContractPolicy = field(default_factory=ContractPolicy)
+    contract_version: str | None = None
+    contract_hash: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ContractDescriptor:
+    """Contract identity metadata for table outputs."""
+
+    table_key: str
+    contract_version: str
+    contract_hash: str
 
 
 class UnsetType:
@@ -52,7 +78,9 @@ class ContractOverrides:
 
 __all__ = [
     "UNSET",
+    "ContractDescriptor",
     "ContractOverrides",
     "ContractPolicy",
+    "TableContractSpec",
     "UnsetType",
 ]

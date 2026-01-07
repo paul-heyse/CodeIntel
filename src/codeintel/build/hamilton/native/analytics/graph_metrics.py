@@ -6,7 +6,6 @@ import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-import networkx as nx
 import pyarrow as pa
 from hamilton.function_modifiers import cache
 
@@ -47,6 +46,7 @@ from codeintel.build.graphs.builders import (
     build_symbol_module_graph,
 )
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
+from codeintel.build.graphs.rx.algos import GraphInput
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -159,11 +159,11 @@ GRAPH_STATS_CONTRACT = require_contract(
 class GraphMetricInputs:
     """Shared graph metric inputs derived from DAG sources."""
 
-    call_graph: nx.DiGraph
-    import_graph: nx.DiGraph
+    call_graph: GraphInput
+    import_graph: GraphInput
     symbol_module_edges: SymbolModuleEdges
-    symbol_module_graph: nx.Graph
-    symbol_function_graph: nx.Graph
+    symbol_module_graph: GraphInput
+    symbol_function_graph: GraphInput
     module_names: set[str]
     function_goids: set[int]
     filters: GraphMetricFilters
@@ -252,7 +252,7 @@ def _load_call_graph(
     env: BuildEnv,
     edges: InferableTabularInput,
     nodes: InferableTabularInput,
-) -> nx.DiGraph:
+) -> GraphInput:
     scope = SnapshotScope.from_snapshot(env.snapshot)
     call_edge_rows = collect_scoped_rows(
         edges,
@@ -272,7 +272,7 @@ def _load_import_graph(
     env: BuildEnv,
     edges: InferableTabularInput,
     modules: InferableTabularInput,
-) -> tuple[nx.DiGraph, ComponentMeta | None]:
+) -> tuple[GraphInput, ComponentMeta | None]:
     scope = SnapshotScope.from_snapshot(env.snapshot)
     import_edge_rows = collect_scoped_rows(
         edges,
@@ -290,14 +290,14 @@ def _load_import_graph(
 def _call_graph_from_rows(
     edges: list[dict[str, object]],
     nodes: list[dict[str, object]],
-) -> nx.DiGraph:
+) -> GraphInput:
     return build_call_graph_from_rows(edges, nodes, policy=_EDGE_WEIGHT_POLICY)
 
 
 def _import_graph_from_rows(
     edges: list[dict[str, object]],
     modules: list[dict[str, object]],
-) -> tuple[nx.DiGraph, ComponentMeta | None]:
+) -> tuple[GraphInput, ComponentMeta | None]:
     graph = build_import_graph_from_rows(edges, modules, policy=_EDGE_WEIGHT_POLICY)
     component_meta = _component_meta_from_import_rows(modules)
     return graph, component_meta
@@ -338,7 +338,7 @@ def _load_symbol_graphs(
     table: InferableTabularInput,
     *,
     scope: SnapshotScope,
-) -> tuple[SymbolModuleEdges, nx.Graph, nx.Graph]:
+) -> tuple[SymbolModuleEdges, GraphInput, GraphInput]:
     symbol_rows = collect_scoped_rows(
         table,
         ("def_path", "use_path", "def_goid_h128", "use_goid_h128"),

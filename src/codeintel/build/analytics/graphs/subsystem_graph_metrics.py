@@ -5,9 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
-
-import networkx as nx
+from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.compute.graphs import centrality_directed
 from codeintel.build.analytics.compute.row_builders import (
@@ -16,96 +14,81 @@ from codeintel.build.analytics.compute.row_builders import (
     build_subsystem_graph_rows,
 )
 from codeintel.build.analytics.graphs.graph_metrics import build_graph_metric_filters_from_sets
+from codeintel.build.graphs.compute.metrics.components import (
+    condensation_layers,
+    find_strongly_connected,
+)
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.graphs.graph_metrics import GraphMetricFilters
     from codeintel.build.graphs.runtime.context import GraphContext
 
 
-def _dag_layers(graph: nx.DiGraph) -> dict[str, int]:
-    layers: dict[str, int] = {str(node): 0 for node in graph.nodes if graph.in_degree(node) == 0}
-    for node in nx.topological_sort(graph):
-        node_key = str(node)
-        base = layers.get(node_key, 0)
-        for succ in graph.successors(node):
-            succ_key = str(succ)
-            layers[succ_key] = max(layers.get(succ_key, 0), base + 1)
-    return layers
-
-
 def _subsystem_centralities(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     ctx: GraphContext,
 ) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
-    if graph.number_of_nodes() == 0:
+    if graph_node_count(graph) == 0:
         return {}, {}, {}
     centrality = centrality_directed(graph, ctx)
     return centrality.pagerank, centrality.betweenness, centrality.closeness
 
 
-def _layer_by_subsystem(subsystem_graph: nx.DiGraph) -> dict[str, int]:
-    condensation = nx.condensation(subsystem_graph)
-    layers = _dag_layers(condensation)
-    scc_index = cast("dict[object, object]", condensation.graph.get("mapping", {}))
-    layer_map: dict[str, int] = {}
-    for node in subsystem_graph.nodes:
-        node_key = str(node)
-        comp_idx = scc_index.get(node_key)
-        layer_map[node_key] = layers.get(str(comp_idx), 0) if comp_idx is not None else 0
-    return layer_map
+def _layer_by_subsystem(subsystem_graph: GraphInput) -> dict[str, int]:
+    if graph_node_count(subsystem_graph) == 0:
+        return {}
+    scc_result = find_strongly_connected(subsystem_graph, compute_condensation=True)
+    layers = condensation_layers(subsystem_graph, scc_result)
+    return {str(node): int(layer) for node, layer in layers.items()}
 
 
 def _degree_maps(
-    subsystem_graph: nx.DiGraph, *, weight: str | None
+    subsystem_graph: GraphInput,
+    *,
+    weight: str | None,
 ) -> tuple[dict[str, float], dict[str, float]]:
-    in_degree_pairs = cast("Iterable[tuple[str, float]]", subsystem_graph.in_degree(weight=weight))
-    out_degree_pairs = cast(
-        "Iterable[tuple[str, float]]", subsystem_graph.out_degree(weight=weight)
-    )
-    return (
-        {str(node): float(deg) for node, deg in in_degree_pairs},
-        {str(node): float(deg) for node, deg in out_degree_pairs},
-    )
+    store = ensure_store(subsystem_graph, weight=weight)
+    in_degree: dict[str, float] = {str(node): 0.0 for node in store.node_ids()}
+    out_degree: dict[str, float] = {str(node): 0.0 for node in store.node_ids()}
+    for src_idx, dst_idx in store.graph.edge_list():
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        payload = store.graph.get_edge_data(src_idx, dst_idx)
+        weight_val = edge_weight_from_payload(payload)
+        out_degree[str(src_id)] = out_degree.get(str(src_id), 0.0) + weight_val
+        in_degree[str(dst_id)] = in_degree.get(str(dst_id), 0.0) + weight_val
+    return in_degree, out_degree
 
 
 def _build_subsystem_graph(
-    import_graph: nx.DiGraph, membership_rows: list[tuple[str, str]], graph_ctx: GraphContext
-) -> nx.DiGraph:
+    import_graph: GraphInput,
+    membership_rows: list[tuple[str, str]],
+    graph_ctx: GraphContext,
+) -> RxGraphStore:
     module_to_subsystem: dict[str, str] = {
         str(module): str(subsystem_id) for subsystem_id, module in membership_rows
     }
-    subsystem_graph = nx.DiGraph()
-    subsystem_graph.add_nodes_from({subsystem_id for subsystem_id, _ in membership_rows})
+    subsystem_graph = RxGraphStore.directed()
+    for subsystem_id, _ in membership_rows:
+        subsystem_graph.ensure_node(str(subsystem_id))
 
-    for src, dst, data in import_graph.edges(data=True):
-        src_sub = module_to_subsystem.get(str(src))
-        dst_sub = module_to_subsystem.get(str(dst))
+    store = ensure_store(import_graph, weight=graph_ctx.betweenness_weight)
+    for src_idx, dst_idx in store.graph.edge_list():
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        src_sub = module_to_subsystem.get(str(src_id))
+        dst_sub = module_to_subsystem.get(str(dst_id))
         if src_sub is None or dst_sub is None or src_sub == dst_sub:
             continue
-        weight = _coerce_edge_weight(data.get(graph_ctx.betweenness_weight or "weight", 1.0))
-        if subsystem_graph.has_edge(src_sub, dst_sub):
-            attrs = subsystem_graph[src_sub][dst_sub]
-            attrs["weight"] = _coerce_edge_weight(attrs.get("weight")) + weight
-        else:
-            subsystem_graph.add_edge(src_sub, dst_sub, weight=weight)
+        payload = store.graph.get_edge_data(src_idx, dst_idx)
+        weight = edge_weight_from_payload(payload)
+        subsystem_graph.add_weighted_edge(src_sub, dst_sub, weight=weight)
     return subsystem_graph
-
-
-def _coerce_edge_weight(value: object) -> float:
-    if value is None:
-        return 1.0
-    if isinstance(value, bool):
-        return float(int(value))
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except ValueError:
-            return 1.0
-    return 1.0
 
 
 def _matches_optional_scope(value: object, expected: str) -> bool:
@@ -152,7 +135,7 @@ class SubsystemGraphMetricInputs:
 
     repo: str
     commit: str
-    import_graph: nx.DiGraph
+    import_graph: GraphInput
     membership_rows: Iterable[Mapping[str, object]] | Iterable[tuple[str, str]]
     runtime: GraphRuntimeOptions | None = None
     filters: GraphMetricFilters | None = None
@@ -197,7 +180,7 @@ def build_subsystem_graph_metrics_rows(
     )
     subsystem_graph = active_filters.filter_subsystem_graph(subsystem_graph)
 
-    if subsystem_graph.number_of_nodes() == 0:
+    if graph_node_count(subsystem_graph) == 0:
         return []
 
     centralities = _subsystem_centralities(subsystem_graph, graph_ctx)

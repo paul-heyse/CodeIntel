@@ -8,11 +8,9 @@ architectural bottlenecks and coupling signals.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
-
-import networkx as nx
+from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.compute.graphs import (
     centrality_directed,
@@ -39,11 +37,14 @@ from codeintel.build.graphs.builders import (
     build_import_graph_from_rows as _build_import_graph_from_rows,
 )
 from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable, Iterable
+    from collections.abc import Iterable
 
     from codeintel.build.graphs.runtime.context import GraphContext
     from codeintel.config.primitives import SnapshotRef
@@ -54,6 +55,33 @@ SymbolModuleEdges = tuple[set[str], dict[str, set[str]], dict[str, set[str]]]
 ComponentMeta = Mapping[str, Mapping[str, int | bool]]
 
 
+def _filter_store(graph: GraphInput, allowed: set[Hashable]) -> RxGraphStore:
+    store = ensure_store(graph)
+    if store.is_directed:
+        filtered = RxGraphStore.directed(
+            node_hint=store.graph.num_nodes(),
+            edge_hint=store.graph.num_edges(),
+        )
+    else:
+        filtered = RxGraphStore.undirected(
+            node_hint=store.graph.num_nodes(),
+            edge_hint=store.graph.num_edges(),
+        )
+    allowed_set = set(allowed)
+    for node_id in store.node_ids():
+        if node_id in allowed_set:
+            filtered.set_node_attrs(node_id, store.get_node_attrs(node_id))
+    for src_idx, dst_idx in store.graph.edge_list():
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        if src_id not in allowed_set or dst_id not in allowed_set:
+            continue
+        payload = store.graph.get_edge_data(src_idx, dst_idx)
+        weight = edge_weight_from_payload(payload)
+        filtered.add_weighted_edge(src_id, dst_id, weight=weight)
+    return filtered
+
+
 @dataclass(frozen=True)
 class GraphMetricFilters:
     """Optional filters for graph metric node sets."""
@@ -62,51 +90,44 @@ class GraphMetricFilters:
     modules: set[str] | None = None
     subsystems: set[str] | None = None
 
-    def filter_call_graph(self, graph: nx.DiGraph) -> nx.DiGraph:
+    def filter_call_graph(self, graph: GraphInput) -> GraphInput:
         """
         Return a filtered call graph when a function allowlist is provided.
 
         Returns
         -------
-        nx.DiGraph
+        GraphInput
             Subgraph restricted to allowed GOIDs or the original graph.
         """
         if not self.function_goids:
-            return graph
-        allowed = self.function_goids
-        present = tuple(node for node in allowed if node in graph)
-        filtered = nx.DiGraph()
-        filtered.add_nodes_from(present)
-        filtered.add_edges_from(
-            (node, nbr) for node in present for nbr in graph.successors(node) if nbr in allowed
-        )
-        return filtered
+            return ensure_store(graph)
+        return _filter_store(graph, self.function_goids)
 
-    def filter_import_graph(self, graph: nx.DiGraph) -> nx.DiGraph:
+    def filter_import_graph(self, graph: GraphInput) -> GraphInput:
         """
         Return a filtered import graph when a module allowlist is provided.
 
         Returns
         -------
-        nx.DiGraph
+        GraphInput
             Subgraph restricted to allowed modules or the original graph.
         """
         if not self.modules:
-            return graph
-        return cast("nx.DiGraph", nx.subgraph(graph, self.modules).copy())
+            return ensure_store(graph)
+        return _filter_store(graph, self.modules)
 
-    def filter_subsystem_graph(self, graph: nx.DiGraph) -> nx.DiGraph:
+    def filter_subsystem_graph(self, graph: GraphInput) -> GraphInput:
         """
         Return a filtered subsystem graph when an allowlist is provided.
 
         Returns
         -------
-        nx.DiGraph
+        GraphInput
             Subgraph restricted to allowed subsystem ids or the original graph.
         """
         if not self.subsystems:
-            return graph
-        return cast("nx.DiGraph", nx.subgraph(graph, self.subsystems).copy())
+            return ensure_store(graph)
+        return _filter_store(graph, self.subsystems)
 
     def filter_subsystem_memberships(
         self, memberships: list[tuple[str, str]]
@@ -142,8 +163,8 @@ class GraphMetricsInputs:
     """Inputs required to compute graph metrics rows."""
 
     snapshot: SnapshotRef
-    call_graph: nx.DiGraph
-    import_graph: nx.DiGraph
+    call_graph: GraphInput
+    import_graph: GraphInput
     symbol_module_edges: SymbolModuleEdges
     module_names: Iterable[str]
     component_meta: ComponentMeta | None = None
@@ -159,7 +180,7 @@ class ModuleGraphMetricsInputs:
 
     row_context: RowBuildContext
     ctx: GraphContext
-    import_graph: nx.DiGraph
+    import_graph: GraphInput
     symbol_module_edges: SymbolModuleEdges
     module_names: Iterable[str]
     filters: GraphMetricFilters
@@ -192,12 +213,12 @@ def build_graph_metric_filters_from_sets(
 def build_call_graph_from_rows(
     call_graph_edges: Iterable[Mapping[str, object]],
     call_graph_nodes: Iterable[Mapping[str, object]] | None = None,
-) -> nx.DiGraph:
+) -> GraphInput:
     """Build a call graph from scoped call graph edge/node rows.
 
     Returns
     -------
-    nx.DiGraph
+    GraphInput
         Directed call graph populated from the provided rows.
     """
     return _build_call_graph_from_rows(call_graph_edges, call_graph_nodes)
@@ -206,12 +227,12 @@ def build_call_graph_from_rows(
 def build_import_graph_from_rows(
     import_graph_edges: Iterable[Mapping[str, object]],
     import_modules: Iterable[Mapping[str, object]] | None = None,
-) -> nx.DiGraph:
+) -> GraphInput:
     """Build an import graph from scoped import edges and module rows.
 
     Returns
     -------
-    nx.DiGraph
+    GraphInput
         Directed import graph populated from the provided rows.
     """
     return _build_import_graph_from_rows(import_graph_edges, import_modules)
@@ -284,7 +305,7 @@ def build_graph_metrics_rows(
 def _build_function_graph_metrics_rows(
     *,
     ctx: GraphContext,
-    call_graph: nx.DiGraph,
+    call_graph: GraphInput,
     filters: GraphMetricFilters,
     row_context: RowBuildContext,
 ) -> list[dict[str, object]]:
@@ -299,8 +320,9 @@ def _build_function_graph_metrics_rows(
         "closeness": centrality_bundle.closeness,
     }
 
+    store = ensure_store(graph)
     graph_nodes: list[int] = []
-    for node in graph.nodes:
+    for node in store.node_ids():
         node_id = normalize_decimal_id(node)
         if node_id is None:
             continue
@@ -331,17 +353,21 @@ def _build_module_graph_metrics_rows(
     inputs: ModuleGraphMetricsInputs,
 ) -> list[dict[str, object]]:
     graph = inputs.filters.filter_import_graph(inputs.import_graph)
+    graph_store = ensure_store(graph)
     symbol_modules, symbol_inbound, symbol_outbound = inputs.symbol_module_edges
-    modules = {str(node) for node in graph.nodes} | {str(node) for node in symbol_modules}
+    modules = {str(node) for node in graph_store.node_ids()} | {
+        str(node) for node in symbol_modules
+    }
     modules.update(str(module) for module in inputs.module_names)
     if inputs.filters.modules is not None:
         modules = modules.intersection(inputs.filters.modules)
     if modules:
-        graph.add_nodes_from(modules)
+        for module in modules:
+            graph_store.ensure_node(module)
 
-    import_stats = neighbor_stats(graph, weight=inputs.ctx.betweenness_weight)
-    centrality_bundle = centrality_directed(graph, inputs.ctx)
-    component_raw = component_metadata(graph)
+    import_stats = neighbor_stats(graph_store, weight=inputs.ctx.betweenness_weight)
+    centrality_bundle = centrality_directed(graph_store, inputs.ctx)
+    component_raw = component_metadata(graph_store)
     computed_component_meta: dict[str, dict[str, int | bool]] = {
         "component_id": {str(node): int(val) for node, val in component_raw.component_id.items()},
         "in_cycle": {str(node): bool(flag) for node, flag in component_raw.in_cycle.items()},

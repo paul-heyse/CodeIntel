@@ -2,32 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
-from types import ModuleType
+from collections.abc import Callable
 
-from codeintel.build.contracts.types import ContractPolicy
+from codeintel.build.contracts.types import TableContractSpec
 from codeintel.build.hamilton.naming import sanitize_pipeline_component
 from codeintel.build.hamilton.transforms.decorators import (
     pipe_canonical_output,
     pipe_clean_df,
+    pipe_contract_alignment,
     with_features,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class TableContractSpec:
-    """Specification for canonical table policies."""
-
-    table_key: str
-    domain: str
-    target: str
-    ops_module: ModuleType | None
-    columns_to_pass: Sequence[str]
-    required_cols: Sequence[str] = ("loc", "cyclo")
-    clip_column: str | None = "loc"
-    input_name: str = "df"
-    policy: ContractPolicy = field(default_factory=ContractPolicy)
 
 
 def table_contract(
@@ -52,7 +36,7 @@ def contract_pipeline(
     Returns
     -------
     Callable[[Callable[..., object]], Callable[..., object]]
-        Decorator that applies cleaning, feature, and canonicalization steps.
+        Decorator that applies cleaning, feature, alignment, and canonicalization steps.
     """
 
     def _decorator(fn: Callable[..., object]) -> Callable[..., object]:
@@ -69,6 +53,13 @@ def contract_pipeline(
                 columns_to_pass=tuple(spec.columns_to_pass),
                 ops_module=spec.ops_module,
             )(fn)
+        align_namespace = f"align__{sanitize_pipeline_component(spec.table_key)}"
+        fn = pipe_contract_alignment(
+            table_key=spec.table_key,
+            target_name=spec.target,
+            policy=spec.policy,
+            namespace=align_namespace,
+        )(fn)
         output_namespace = f"post__{sanitize_pipeline_component(spec.table_key)}"
         return pipe_canonical_output(
             table_key=spec.table_key,

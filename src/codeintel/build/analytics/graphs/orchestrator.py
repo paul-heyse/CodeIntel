@@ -43,12 +43,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
-
-import networkx as nx
+from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.graphs.graph_metrics import GraphMetricFilters
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store, to_undirected_store
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -74,9 +75,9 @@ class GraphViews:
         Undirected view of the simple graph for structural metrics.
     """
 
-    graph: nx.DiGraph
-    simple_graph: nx.DiGraph
-    undirected: nx.Graph
+    graph: RxGraphStore
+    simple_graph: RxGraphStore
+    undirected: RxGraphStore
 
 
 @dataclass(frozen=True)
@@ -103,7 +104,7 @@ class ExtendedMetricsConfig[TSlices, TRow: Mapping[str, object]]:
     """
 
     table_key: str
-    filter_graph: Callable[[GraphMetricFilters, nx.DiGraph], nx.DiGraph]
+    filter_graph: Callable[[GraphMetricFilters, GraphInput], GraphInput]
     build_context: Callable[[GraphRuntimeOptions, str, str], GraphContext]
     build_slices: Callable[[GraphViews, GraphContext], TSlices]
     build_rows: Callable[[str, str, GraphContext, GraphViews, TSlices], list[TRow]]
@@ -132,12 +133,36 @@ class ExtendedMetricsRequest:
 
     repo: str
     commit: str
-    graph: nx.DiGraph
+    graph: GraphInput
     runtime: GraphRuntimeOptions | None = None
     filters: GraphMetricFilters | None = None
 
 
-def build_graph_views(source_graph: nx.DiGraph) -> GraphViews:
+def _copy_without_self_loops(store: RxGraphStore) -> RxGraphStore:
+    if store.is_directed:
+        filtered = RxGraphStore.directed(
+            node_hint=store.graph.num_nodes(),
+            edge_hint=store.graph.num_edges(),
+        )
+    else:
+        filtered = RxGraphStore.undirected(
+            node_hint=store.graph.num_nodes(),
+            edge_hint=store.graph.num_edges(),
+        )
+    for node_id in store.node_ids():
+        filtered.set_node_attrs(node_id, store.get_node_attrs(node_id))
+    for src_idx, dst_idx in store.graph.edge_list():
+        if src_idx == dst_idx:
+            continue
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        payload = store.graph.get_edge_data(src_idx, dst_idx)
+        weight = edge_weight_from_payload(payload)
+        filtered.add_weighted_edge(src_id, dst_id, weight=weight)
+    return filtered
+
+
+def build_graph_views(source_graph: GraphInput) -> GraphViews:
     """Build standard graph views from a source directed graph.
 
     Create the three graph representations needed for extended metrics:
@@ -154,10 +179,10 @@ def build_graph_views(source_graph: nx.DiGraph) -> GraphViews:
     GraphViews
         Dataclass containing graph, simple_graph, and undirected views.
     """
-    simple_graph = cast("nx.DiGraph", source_graph.copy())
-    simple_graph.remove_edges_from(nx.selfloop_edges(simple_graph))
-    undirected = simple_graph.to_undirected()
-    return GraphViews(graph=source_graph, simple_graph=simple_graph, undirected=undirected)
+    graph_store = ensure_directed_store(source_graph)
+    simple_graph = _copy_without_self_loops(graph_store)
+    undirected = to_undirected_store(simple_graph)
+    return GraphViews(graph=graph_store, simple_graph=simple_graph, undirected=undirected)
 
 
 def build_extended_metrics_rows[TSlices, TRow: Mapping[str, object]](

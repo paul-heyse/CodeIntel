@@ -10,13 +10,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-import networkx as nx
 import pyarrow as pa
-from networkx.exception import NetworkXNoPath
+import rustworkx as rx
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
+from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
@@ -70,7 +71,7 @@ class ConfigFlowArtifacts:
     """Shared datasets used during config data flow analysis."""
 
     entrypoints: set[int]
-    call_graph: nx.DiGraph
+    call_graph: GraphInput
     ast_by_goid: dict[int, FunctionAst]
     refs_by_path: dict[str, list[tuple[str, str]]]
 
@@ -313,28 +314,39 @@ def _entrypoints_from_rows(
 
 
 def _call_chains(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     entrypoints: set[int],
     target: int,
     *,
     max_paths: int,
     max_length: int,
 ) -> list[list[int]]:
-    if target not in graph:
-        graph.add_node(target)
+    store = ensure_directed_store(graph)
+    target_idx = store.id_to_index.get(target)
+    if target_idx is None:
+        return [[target]]
     paths: list[list[int]] = []
-    for entry in entrypoints:
-        if entry not in graph:
+    directed_graph = cast("rx.PyDiGraph", store.graph)
+    for entry in sorted(entrypoints):
+        entry_idx = store.id_to_index.get(entry)
+        if entry_idx is None:
             continue
         try:
-            for path in nx.all_simple_paths(graph, entry, target, cutoff=max_length):
-                paths.append([int(str(node)) for node in path])
+            for path in rx.digraph_all_simple_paths(
+                directed_graph,
+                entry_idx,
+                target_idx,
+                cutoff=max_length,
+            ):
+                ids = [int(str(store.index_to_id[idx])) for idx in path]
+                paths.append(ids)
                 if len(paths) >= max_paths:
-                    return paths
-        except NetworkXNoPath:
+                    break
+        except (rx.InvalidNode, rx.NoPathFound, rx.NullGraph):
             continue
     if not paths:
-        paths.append([target])
+        return [[target]]
+    paths.sort(key=lambda path: stable_key(tuple(path)))
     return paths[:max_paths]
 
 
@@ -365,7 +377,7 @@ class ConfigDataFlowInputs:
     snapshot: SnapshotRef
     config_value_rows: Sequence[Mapping[str, object]] | pa.Table
     entrypoint_rows: Sequence[Mapping[str, object]] | pa.Table
-    call_graph: nx.DiGraph
+    call_graph: GraphInput
     ast_by_goid: dict[int, FunctionAst]
     missing_goids: set[int] | None = None
 

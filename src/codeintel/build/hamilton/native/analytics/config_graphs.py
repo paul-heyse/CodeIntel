@@ -7,7 +7,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import networkx as nx
 import pyarrow as pa
 from hamilton.function_modifiers import cache
 
@@ -24,6 +23,8 @@ from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.contracts.registry import require_contract
 from codeintel.build.contracts.types import ContractOverrides
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
+from codeintel.build.graphs.rx.algos import GraphInput
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -208,14 +209,14 @@ def _group_goids_by_path(
 def _call_graph_from_frames(
     edges: list[dict[str, object]],
     nodes: list[dict[str, object]],
-) -> nx.DiGraph:
-    graph = nx.DiGraph()
-    _add_call_graph_edges(graph, edges)
-    _add_call_graph_nodes(graph, nodes)
-    return graph
+) -> GraphInput:
+    store = RxGraphStore.directed()
+    _add_call_graph_edges(store, edges)
+    _add_call_graph_nodes(store, nodes)
+    return store
 
 
-def _add_call_graph_edges(graph: nx.DiGraph, edges: list[dict[str, object]]) -> None:
+def _add_call_graph_edges(graph: RxGraphStore, edges: list[dict[str, object]]) -> None:
     if not edges:
         return
     for row in edges:
@@ -223,26 +224,24 @@ def _add_call_graph_edges(graph: nx.DiGraph, edges: list[dict[str, object]]) -> 
         callee = normalize_decimal_id(row.get("callee_goid_h128"))
         if caller is None or callee is None:
             continue
-        if graph.has_edge(caller, callee):
-            attrs = graph[caller][callee]
-            current_weight = _coerce_int(attrs.get("weight"))
-            attrs["weight"] = (current_weight or 0) + 1
-        else:
-            graph.add_edge(caller, callee, weight=1)
+        graph.add_weighted_edge(caller, callee, weight=1.0)
 
 
-def _add_call_graph_nodes(graph: nx.DiGraph, nodes: list[dict[str, object]]) -> None:
+def _add_call_graph_nodes(graph: RxGraphStore, nodes: list[dict[str, object]]) -> None:
     if not nodes:
         return
     for row in nodes:
         node = normalize_decimal_id(row.get("goid_h128"))
-        if node is None or node in graph:
+        if node is None:
             continue
         attrs: dict[str, object] = {}
         kind = row.get("kind")
         if kind is not None:
             attrs["kind"] = str(kind)
-        graph.add_node(node, **attrs)
+        if attrs:
+            graph.set_node_attrs(node, attrs)
+        else:
+            graph.ensure_node(node)
 
 
 def _function_asts_from_goids(

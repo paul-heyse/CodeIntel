@@ -555,6 +555,8 @@ def _attach_table_node(
 
     save_spec = _resolve_save_spec(table_spec)
     merged_tags = _merge_tags(context.extra_tags, table_spec.extra_tags)
+    contract_tags = _contract_tags(table_spec)
+    merged_tags = _merge_tags(merged_tags, contract_tags)
     saver_context = SaverContext(
         domain=context.domain,
         target=context.target_name,
@@ -690,6 +692,22 @@ def _merge_tags(
     if table_tags:
         merged.update({**table_tags})
     return merged
+
+
+def _contract_tags(
+    table_spec: TableTargetTableSpec,
+) -> Mapping[TagKey, TagValue] | None:
+    contract = table_spec.contract
+    if contract is None:
+        return None
+    tags: dict[TagKey, TagValue] = {}
+    if contract.contract_version:
+        tags[cast("TagKey", ht.TAG_CONTRACT_VERSION)] = contract.contract_version
+    if contract.contract_hash:
+        tags[cast("TagKey", ht.TAG_CONTRACT_HASH)] = contract.contract_hash
+    if not tags:
+        return None
+    return tags
 
 
 def _validate_table_spec(table_spec: TableTargetTableSpec) -> None:

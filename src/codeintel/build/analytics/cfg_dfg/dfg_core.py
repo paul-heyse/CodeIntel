@@ -25,6 +25,7 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
 )
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -33,8 +34,6 @@ MAX_PATH_CUTOFF = 50
 
 if TYPE_CHECKING:
     from datetime import datetime
-
-    import networkx as nx
 
     from codeintel.build.graphs.runtime.context import GraphContext
 
@@ -53,7 +52,7 @@ class DfgFnContext:
     rel_path: str
     module: str | None
     qualname: str | None
-    graph: nx.DiGraph
+    graph: GraphInput
     phi_edges: int
     symbol_count: int
     components_count: int
@@ -153,14 +152,14 @@ def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
     graph, phi_edges, symbol_count = build_dfg_graph(inputs.edges)
     dfg_in_deg = degree_dict(graph, direction="in")
     dfg_out_deg = degree_dict(graph, direction="out")
-    dfg_phi_in = {int(str(node)): 0 for node in graph.nodes}
-    dfg_phi_out = {int(str(node)): 0 for node in graph.nodes}
-    for src, dst, data in graph.edges(data=True):
-        src_idx = int(str(src))
-        dst_idx = int(str(dst))
-        if data.get("via_phi"):
-            dfg_phi_out[src_idx] += 1
-            dfg_phi_in[dst_idx] += 1
+    store = ensure_store(graph)
+    dfg_phi_in = {int(str(node)): 0 for node in store.node_ids()}
+    dfg_phi_out = {int(str(node)): 0 for node in store.node_ids()}
+    for src, dst, _src_var, _dst_var, via_phi, _use_kind in inputs.edges:
+        if not via_phi:
+            continue
+        dfg_phi_out[src] = dfg_phi_out.get(src, 0) + 1
+        dfg_phi_in[dst] = dfg_phi_in.get(dst, 0) + 1
 
     component_stats = dfg_component_stats(graph)
     path_lengths = dfg_path_lengths(graph)
@@ -220,6 +219,7 @@ def dfg_fn_row(ctx: DfgFnContext) -> tuple[object, ...]:
     """
     in_degs = list(ctx.dfg_in_deg.values())
     out_degs = list(ctx.dfg_out_deg.values())
+    graph_store = ensure_store(ctx.graph)
     return (
         _to_decimal(ctx.fn_goid),
         ctx.repo,
@@ -227,8 +227,8 @@ def dfg_fn_row(ctx: DfgFnContext) -> tuple[object, ...]:
         ctx.rel_path,
         ctx.module,
         ctx.qualname,
-        ctx.graph.number_of_nodes(),
-        ctx.graph.number_of_edges(),
+        graph_store.graph.num_nodes(),
+        graph_store.graph.num_edges(),
         ctx.phi_edges,
         ctx.symbol_count,
         ctx.components_count,

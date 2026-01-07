@@ -22,6 +22,7 @@ from codeintel.build.analytics.compute.graphs import (
     cfg_reachable_nodes,
     dfg_component_stats,
 )
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -30,8 +31,6 @@ MAX_PATH_CUTOFF = 50
 
 if TYPE_CHECKING:
     from datetime import datetime
-
-    import networkx as nx
 
     from codeintel.build.graphs.runtime.context import GraphContext
 
@@ -46,7 +45,7 @@ class CfgFnContext:
     rel_path: str
     module: str | None
     qualname: str | None
-    graph: nx.DiGraph
+    graph: GraphInput
     entry_idx: int
     exit_idx: int
     sccs: list[set[int]]
@@ -161,7 +160,7 @@ def load_cfg_blocks(
     return blocks_by_fn, edges_by_fn
 
 
-def branching_stats(graph: nx.DiGraph) -> tuple[float, int, float]:
+def branching_stats(graph: GraphInput) -> tuple[float, int, float]:
     """
     Return branching mean, max, and linear fraction for a CFG.
 
@@ -170,18 +169,19 @@ def branching_stats(graph: nx.DiGraph) -> tuple[float, int, float]:
     tuple[float, int, float]
         Mean branching factor, maximum branching factor, and linear block fraction.
     """
+    store = ensure_store(graph)
     in_degrees = degree_dict(graph, direction="in")
     out_degrees_map = degree_dict(graph, direction="out")
     out_degrees = [deg for deg in out_degrees_map.values() if deg > 0]
     branching_mean = (sum(out_degrees) / len(out_degrees)) if out_degrees else 0.0
     branching_max = max(out_degrees) if out_degrees else 0
     linear_blocks: list[int] = []
-    for node in graph.nodes:
+    for node in store.node_ids():
         node_idx = int(str(node))
         if in_degrees.get(node_idx, 0) == 1 and out_degrees_map.get(node_idx, 0) == 1:
             linear_blocks.append(node_idx)
     linear_fraction = (
-        len(linear_blocks) / graph.number_of_nodes() if graph.number_of_nodes() else 0.0
+        len(linear_blocks) / store.graph.num_nodes() if store.graph.num_nodes() else 0.0
     )
     return branching_mean, branching_max, linear_fraction
 
@@ -214,7 +214,9 @@ def loop_nodes(sccs: list[set[int]]) -> set[int]:
 
 
 def _compute_centrality_data(
-    graph: nx.DiGraph, entry_idx: int, graph_ctx: GraphContext
+    graph: GraphInput,
+    entry_idx: int,
+    graph_ctx: GraphContext,
 ) -> CfgCentralityData:
     """
     Compute centrality and dominance data for a CFG.
@@ -271,6 +273,7 @@ def cfg_fn_rows(
         else 0
     )
 
+    graph_store = ensure_store(ctx.graph)
     fn_row = (
         ctx.fn_goid,
         ctx.repo,
@@ -278,8 +281,8 @@ def cfg_fn_rows(
         ctx.rel_path,
         ctx.module,
         ctx.qualname,
-        ctx.graph.number_of_nodes(),
-        ctx.graph.number_of_edges(),
+        graph_store.graph.num_nodes(),
+        graph_store.graph.num_edges(),
         has_cycles,
         len(sccs),
         longest_path_len,
@@ -303,8 +306,9 @@ def cfg_fn_rows(
     )
 
     block_rows: list[tuple[object, ...]] = []
-    for node, data in ctx.graph.nodes(data=True):
+    for node in graph_store.node_ids():
         node_idx = int(str(node))
+        data = graph_store.get_node_attrs(node)
         block_rows.append(
             (
                 ctx.fn_goid,
@@ -343,7 +347,7 @@ def cfg_ext_row(
         Row matching analytics.cfg_function_metrics_ext schema.
     """
     reachable = cfg_reachable_nodes(ctx.graph, ctx.entry_idx)
-    unreachable_count = max(ctx.graph.number_of_nodes() - len(reachable), 0)
+    unreachable_count = max(graph_node_count(ctx.graph) - len(reachable), 0)
 
     back_targets = {dst for _, dst, edge_kind in edges if edge_kind == "back"}
     edge_kinds = Counter(edge_kind for _, _, edge_kind in edges)

@@ -1,12 +1,9 @@
-"""Extended module-level import graph metrics using NetworkX."""
+"""Extended module-level import graph metrics."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
-
-import networkx as nx
+from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.compute.graphs import (
     centrality_directed,
@@ -29,6 +26,8 @@ from codeintel.build.analytics.graphs.orchestrator import (
     build_extended_metrics_rows,
 )
 from codeintel.build.graphs.runtime.context import GraphContext
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.compute.graphs import (
@@ -52,6 +51,12 @@ class ModuleGraphSlices:
     components: ComponentBundle
     degree_map: dict[str, int]
     degree_cutoff: int
+
+
+def _node_degree(store: RxGraphStore, node_idx: int) -> int:
+    if store.is_directed:
+        return int(store.graph.in_degree(node_idx) + store.graph.out_degree(node_idx))
+    return int(store.graph.degree(node_idx))
 
 
 def _rich_club_cutoff(degree_map: dict[str, int]) -> int:
@@ -107,8 +112,10 @@ def _module_metric_slices(views: GraphViews, ctx: GraphContext) -> ModuleGraphSl
         community_limit=ctx.community_detection_limit,
     )
     components = component_metadata(views.simple_graph)
-    degree_view = cast("Iterable[tuple[object, float]]", views.simple_graph.degree)
-    degree_map: dict[str, int] = {str(node): int(deg) for node, deg in degree_view}
+    store = ensure_store(views.simple_graph)
+    degree_map: dict[str, int] = {
+        str(node): _node_degree(store, store.id_to_index[node]) for node in store.node_ids()
+    }
     return ModuleGraphSlices(
         centralities=centralities,
         structure=structure,
@@ -163,7 +170,8 @@ def _module_metric_rows(
         "scc_id": slices.components.scc_id,
         "scc_size": slices.components.scc_size,
     }
-    nodes = [str(node) for node in views.simple_graph.nodes]
+    store = ensure_store(views.simple_graph)
+    nodes = [str(node) for node in store.node_ids()]
     rich_club = {
         module: slices.degree_map.get(module, 0) >= slices.degree_cutoff
         if slices.degree_cutoff > 0
@@ -210,7 +218,7 @@ def build_graph_metrics_modules_ext_rows(
     *,
     repo: str,
     commit: str,
-    import_graph: nx.DiGraph,
+    import_graph: GraphInput,
     runtime: GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
 ) -> list[dict[str, object]]:

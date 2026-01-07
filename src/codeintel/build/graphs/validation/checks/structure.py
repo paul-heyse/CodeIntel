@@ -9,11 +9,13 @@ Check classes implement CheckProtocol from core/validation.
 from __future__ import annotations
 
 from collections.abc import Hashable
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
-import networkx as nx
-
+from codeintel.build.graphs.compute.metrics.components import find_strongly_connected
 from codeintel.build.graphs.engine.datasets import dataset_snapshot_exists
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store, ensure_store
+from codeintel.build.graphs.rx.normalize import stable_key
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.graphs.validation.findings import (
     CALL_SCC_MIN,
@@ -23,6 +25,7 @@ from codeintel.build.graphs.validation.findings import (
     SAMPLE_LIMIT,
     hub_threshold,
 )
+from codeintel.core.compute.centrality import compute_betweenness
 from codeintel.core.data_models.ids import as_int
 
 if TYPE_CHECKING:
@@ -137,7 +140,7 @@ class ImportCycleCheck(GraphCheckBase):
         if import_graph is None:
             return []
 
-        sccs = list(nx.strongly_connected_components(import_graph))
+        sccs = _strongly_connected_sets(import_graph)
         return _import_cycle_findings_impl(sccs, ctx.repo, ctx.commit, ctx.logger)
 
 
@@ -304,8 +307,22 @@ class ConfigKeyCheck(GraphCheckBase):
 # =============================================================================
 
 
+def _node_degree(store: RxGraphStore, node_idx: int) -> int:
+    if store.is_directed:
+        return int(store.graph.in_degree(node_idx) + store.graph.out_degree(node_idx))
+    return int(store.graph.degree(node_idx))
+
+
+def _strongly_connected_sets(graph: GraphInput) -> list[set[Hashable]]:
+    result = find_strongly_connected(graph)
+    return [set(component.nodes) for component in result.components]
+
+
 def _call_graph_findings_impl(
-    call_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+    call_graph: GraphInput,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
 ) -> list[dict[str, object]]:
     """Check for call graph structural anomalies (implementation).
 
@@ -315,13 +332,17 @@ def _call_graph_findings_impl(
         Findings for call graph anomalies.
     """
     findings: list[dict[str, object]] = []
-    call_graph_any: Any = call_graph
-    kinds = nx.get_node_attributes(call_graph, "kind")
-    isolated = [
-        node
-        for node in call_graph.nodes
-        if kinds.get(node) not in {"module", "class"} and int(call_graph_any.degree(node)) == 0
-    ]
+    store = ensure_store(call_graph)
+    kinds = {node: store.get_node_attrs(node).get("kind") for node in store.node_ids()}
+    isolated: list[Hashable] = []
+    for node_id in store.node_ids():
+        if kinds.get(node_id) in {"module", "class"}:
+            continue
+        node_idx = store.id_to_index.get(node_id)
+        if node_idx is None:
+            continue
+        if _node_degree(store, node_idx) == 0:
+            isolated.append(node_id)
     if isolated:
         isolated_sample = ", ".join(str(node) for node in isolated[:SAMPLE_LIMIT])
         log.warning(
@@ -341,9 +362,7 @@ def _call_graph_findings_impl(
             }
         )
 
-    sccs = [
-        comp for comp in nx.strongly_connected_components(call_graph) if len(comp) >= CALL_SCC_MIN
-    ]
+    sccs = [comp for comp in _strongly_connected_sets(call_graph) if len(comp) >= CALL_SCC_MIN]
     if sccs:
         largest = max(sccs, key=len)
         log.warning(
@@ -360,18 +379,25 @@ def _call_graph_findings_impl(
                 "path": None,
                 "detail": f"{len(sccs)} recursion cluster(s), largest size {len(largest)}",
                 "context": {
-                    "largest_cluster": sorted(str(node) for node in largest)[: SAMPLE_LIMIT * 4]
+                    "largest_cluster": [
+                        str(node) for node in sorted(largest, key=stable_key)
+                    ][: SAMPLE_LIMIT * 4]
                 },
             }
         )
 
     degree_threshold = max(
-        HUB_MIN_DEGREE_FLOOR, int(call_graph.number_of_nodes() * HUB_DEGREE_RATIO)
+        HUB_MIN_DEGREE_FLOOR, int(store.graph.num_nodes() * HUB_DEGREE_RATIO)
     )
-    degree_map = {node: int(call_graph_any.degree(node)) for node in call_graph.nodes}
+    degree_map = {
+        node: _node_degree(store, store.id_to_index[node])
+        for node in store.node_ids()
+        if node in store.id_to_index
+    }
     hubs = [node for node, deg in degree_map.items() if deg > degree_threshold]
     if hubs:
-        sample = ", ".join(str(node) for node in hubs[:SAMPLE_LIMIT])
+        hubs_sorted = sorted(hubs, key=stable_key)
+        sample = ", ".join(str(node) for node in hubs_sorted[:SAMPLE_LIMIT])
         log.warning("Validation: %d high-degree call graph hub(s) (sample: %s)", len(hubs), sample)
         findings.append(
             {
@@ -381,7 +407,7 @@ def _call_graph_findings_impl(
                 "severity": "info",
                 "path": None,
                 "detail": f"{len(hubs)} hubs above degree {degree_threshold} (sample: {sample})",
-                "context": {"hubs": hubs[: SAMPLE_LIMIT * 4]},
+                "context": {"hubs": [str(node) for node in hubs_sorted[: SAMPLE_LIMIT * 4]]},
             }
         )
 
@@ -389,7 +415,10 @@ def _call_graph_findings_impl(
 
 
 def _import_graph_findings_impl(
-    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+    import_graph: GraphInput,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
 ) -> list[dict[str, object]]:
     """Check for import graph structural anomalies (implementation).
 
@@ -399,7 +428,7 @@ def _import_graph_findings_impl(
         Findings for import graph anomalies.
     """
     findings: list[dict[str, object]] = []
-    sccs = list(nx.strongly_connected_components(import_graph))
+    sccs = _strongly_connected_sets(import_graph)
     findings.extend(_import_cycle_findings_impl(sccs, repo, commit, log))
     findings.extend(_import_hub_findings_impl(import_graph, repo, commit, log))
     findings.extend(_import_upward_findings_impl(import_graph, repo, commit, log))
@@ -465,7 +494,10 @@ def _import_cycle_findings_impl(
 
 
 def _import_hub_findings_impl(
-    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+    import_graph: GraphInput,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
 ) -> list[dict[str, object]]:
     """Check for import graph hubs (implementation).
 
@@ -475,14 +507,16 @@ def _import_hub_findings_impl(
         Findings for import hub anomalies.
     """
     findings: list[dict[str, object]] = []
-    degree_threshold = hub_threshold(import_graph.number_of_nodes())
+    store = ensure_directed_store(import_graph)
+    degree_threshold = hub_threshold(store.graph.num_nodes())
     degree_map: dict[str, int] = {}
-    for node in import_graph.nodes:
-        out_deg_raw = import_graph.out_degree(node)
-        in_deg_raw = import_graph.in_degree(node)
-        out_deg = int(out_deg_raw)
-        in_deg = int(in_deg_raw)
-        degree_map[str(node)] = out_deg + in_deg
+    for node_id in store.node_ids():
+        node_idx = store.id_to_index.get(node_id)
+        if node_idx is None:
+            continue
+        out_deg = int(store.graph.out_degree(node_idx))
+        in_deg = int(store.graph.in_degree(node_idx))
+        degree_map[str(node_id)] = out_deg + in_deg
     hubs = [node for node, deg in degree_map.items() if deg > degree_threshold]
     if hubs:
         sample = ", ".join(sorted(hubs)[:SAMPLE_LIMIT])
@@ -502,7 +536,10 @@ def _import_hub_findings_impl(
 
 
 def _import_upward_findings_impl(
-    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+    import_graph: GraphInput,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
 ) -> list[dict[str, object]]:
     """Check for upward imports against layering (implementation).
 
@@ -511,14 +548,17 @@ def _import_upward_findings_impl(
     list[dict[str, object]]
         Findings for upward import anomalies.
     """
-    upward_edges = []
-    for src, dst in import_graph.edges:
-        src_layer = as_int(import_graph.nodes.get(src, {}).get("layer"))
-        dst_layer = as_int(import_graph.nodes.get(dst, {}).get("layer"))
+    upward_edges: list[tuple[Hashable, Hashable]] = []
+    store = ensure_store(import_graph)
+    for src_idx, dst_idx in store.graph.edge_list():
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        src_layer = as_int(store.get_node_attrs(src_id).get("layer"))
+        dst_layer = as_int(store.get_node_attrs(dst_id).get("layer"))
         if src_layer is None or dst_layer is None:
             continue
         if src_layer > dst_layer:
-            upward_edges.append((src, dst))
+            upward_edges.append((src_id, dst_id))
     if not upward_edges:
         return []
     sample_edges = [f"{s}->{d}" for s, d in upward_edges[:SAMPLE_LIMIT]]
@@ -541,7 +581,10 @@ def _import_upward_findings_impl(
 
 
 def _import_bridge_findings_impl(
-    import_graph: nx.DiGraph, repo: str, commit: str, log: logging.Logger
+    import_graph: GraphInput,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
 ) -> list[dict[str, object]]:
     """Check for bridge-like import modules (implementation).
 
@@ -551,11 +594,14 @@ def _import_bridge_findings_impl(
         Findings for import bridge anomalies.
     """
     betweenness: dict[str, float] = {}
-    if import_graph.number_of_nodes() > 0:
-        sample_size = min(200, import_graph.number_of_nodes())
-        raw_betweenness = nx.betweenness_centrality(
+    store = ensure_store(import_graph)
+    node_count = store.graph.num_nodes()
+    if node_count > 0:
+        sample_size = min(200, node_count)
+        raw_betweenness = compute_betweenness(
             import_graph,
-            k=sample_size if sample_size < import_graph.number_of_nodes() else None,
+            k=sample_size if sample_size < node_count else None,
+            seed=0,
         )
         betweenness = {str(node): float(score) for node, score in raw_betweenness.items()}
     if not betweenness:
@@ -585,7 +631,10 @@ def _import_bridge_findings_impl(
 
 
 def _symbol_graph_findings_impl(
-    symbol_graph: nx.Graph, repo: str, commit: str, log: logging.Logger
+    symbol_graph: GraphInput,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
 ) -> list[dict[str, object]]:
     """Check for symbol graph structural anomalies (implementation).
 
@@ -594,15 +643,20 @@ def _symbol_graph_findings_impl(
     list[dict[str, object]]
         Findings for symbol graph anomalies.
     """
-    if symbol_graph.number_of_nodes() == 0:
+    store = ensure_store(symbol_graph)
+    if store.graph.num_nodes() == 0:
         return []
-    symbol_graph_any: Any = symbol_graph
-    degree_map = {node: int(symbol_graph_any.degree(node)) for node in symbol_graph.nodes}
-    threshold = max(HUB_MIN_DEGREE_FLOOR, int(symbol_graph.number_of_nodes() * HUB_DEGREE_RATIO))
+    degree_map = {
+        node: _node_degree(store, store.id_to_index[node])
+        for node in store.node_ids()
+        if node in store.id_to_index
+    }
+    threshold = max(HUB_MIN_DEGREE_FLOOR, int(store.graph.num_nodes() * HUB_DEGREE_RATIO))
     high_degree = [node for node, deg in degree_map.items() if deg > threshold]
     if not high_degree:
         return []
-    sample = ", ".join(str(node) for node in high_degree[:SAMPLE_LIMIT])
+    high_sorted = sorted(high_degree, key=stable_key)
+    sample = ", ".join(str(node) for node in high_sorted[:SAMPLE_LIMIT])
     log.warning(
         "Validation: %d symbol graph hubs detected (sample: %s)",
         len(high_degree),
@@ -616,13 +670,16 @@ def _symbol_graph_findings_impl(
             "severity": "warning",
             "path": None,
             "detail": f"{len(high_degree)} high-degree symbol hubs (sample: {sample})",
-            "context": {"hubs": high_degree[: SAMPLE_LIMIT * 4]},
+            "context": {"hubs": [str(node) for node in high_sorted[: SAMPLE_LIMIT * 4]]},
         }
     ]
 
 
 def _config_key_findings_impl(
-    cfg_bipartite: nx.Graph, repo: str, commit: str, log: logging.Logger
+    cfg_bipartite: GraphInput,
+    repo: str,
+    commit: str,
+    log: logging.Logger,
 ) -> list[dict[str, object]]:
     """Check for broadly-used config keys (implementation).
 
@@ -631,11 +688,15 @@ def _config_key_findings_impl(
     list[dict[str, object]]
         Findings for config key usage anomalies.
     """
-    if cfg_bipartite.number_of_nodes() == 0:
+    store = ensure_store(cfg_bipartite)
+    if store.graph.num_nodes() == 0:
         return []
-    keys = [n for n, d in cfg_bipartite.nodes(data=True) if d.get("bipartite") == 0]
-    cfg_bipartite_any: Any = cfg_bipartite
-    degs = {node: int(cfg_bipartite_any.degree(node)) for node in keys}
+    keys = [node for node in store.node_ids() if store.get_node_attrs(node).get("bipartite") == 0]
+    degs = {
+        node: _node_degree(store, store.id_to_index[node])
+        for node in keys
+        if node in store.id_to_index
+    }
     key_threshold = max(CONFIG_KEY_MIN_THRESHOLD, int(len(keys) * 0.05))
     high_keys: list[str] = []
     for node, deg in degs.items():

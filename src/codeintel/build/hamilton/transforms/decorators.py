@@ -15,7 +15,9 @@ from hamilton.function_modifiers import (
 )
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
+from codeintel.build.contracts.types import ContractPolicy
 from codeintel.build.hamilton.transforms.tabular_steps import (
+    align_contract_output,
     clip_numeric,
     drop_bad_rows,
     normalize_nulls,
@@ -71,6 +73,19 @@ class _CanonicalizationRuntimeConfig:
     enable_canonicalization: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _AlignmentPolicy:
+    table_key: str
+    target_name: str | None
+    policy: ContractPolicy | None
+    namespace: str
+
+
+@dataclass(frozen=True, slots=True)
+class _AlignmentRuntimeConfig:
+    enable_contract_alignment: bool
+
+
 def _canonicalize_output(
     frame: InferableTabularInput,
     *,
@@ -96,6 +111,21 @@ def _pipe_canonical_output(
         table_key=value(policy.table_key),
     ).named("canonicalize", namespace=policy.namespace)
     return pipe_output(canonical_step, namespace=policy.namespace)
+
+
+def _pipe_contract_alignment(
+    config: _AlignmentRuntimeConfig,
+    policy: _AlignmentPolicy,
+) -> NodeTransformLifecycle:
+    if not config.enable_contract_alignment:
+        return _NoOpTransform()
+    alignment_step = step(
+        align_contract_output,
+        table_key=value(policy.table_key),
+        target_name=value(policy.target_name),
+        policy=value(policy.policy),
+    ).named("align_contract", namespace=policy.namespace)
+    return pipe_output(alignment_step, namespace=policy.namespace)
 
 
 def _pipe_cleaning(
@@ -210,6 +240,40 @@ def pipe_canonical_output(
     return resolve_from_config(decorate_with=_factory)
 
 
+def pipe_contract_alignment(
+    *,
+    table_key: str,
+    target_name: str | None,
+    policy: ContractPolicy | None,
+    namespace: str,
+) -> NodeTransformLifecycle:
+    """Return a config-driven pipe_output decorator for contract alignment.
+
+    Returns
+    -------
+    NodeTransformLifecycle
+        Config-driven transform that applies contract alignment.
+    """
+
+    def _factory(
+        *,
+        enable_contract_alignment: bool = True,
+    ) -> NodeTransformLifecycle:
+        return _pipe_contract_alignment(
+            _AlignmentRuntimeConfig(
+                enable_contract_alignment=enable_contract_alignment,
+            ),
+            _AlignmentPolicy(
+                table_key=table_key,
+                target_name=target_name,
+                policy=policy,
+                namespace=namespace,
+            ),
+        )
+
+    return resolve_from_config(decorate_with=_factory)
+
+
 def _decorate_features(
     *,
     df_backend: str,
@@ -271,4 +335,9 @@ def with_features(
     return resolve_from_config(decorate_with=_factory)
 
 
-__all__ = ["pipe_canonical_output", "pipe_clean_df", "with_features"]
+__all__ = [
+    "pipe_canonical_output",
+    "pipe_clean_df",
+    "pipe_contract_alignment",
+    "with_features",
+]

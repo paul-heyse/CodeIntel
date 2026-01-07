@@ -8,12 +8,15 @@ from typing import Protocol, TypeVar, cast
 
 from codeintel.build.contracts.types import (
     UNSET,
+    ContractDescriptor,
     ContractOverrides,
     ContractPolicy,
+    TableContractSpec,
     UnsetType,
 )
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.primitives import TableSchema
 
 _T = TypeVar("_T")
@@ -102,6 +105,7 @@ class ContractResolver:
             Resolved contract spec derived from the table schema.
         """
         _validate_domain(table_schema, domain)
+        descriptor = contract_descriptor_for_table_schema(table_schema)
         spec = TableContractSpec(
             table_key=table_schema.table_key,
             domain=domain,
@@ -109,8 +113,59 @@ class ContractResolver:
             ops_module=None,
             columns_to_pass=(),
             policy=self.default_policy,
+            contract_version=descriptor.contract_version,
+            contract_hash=descriptor.contract_hash,
         )
         return _apply_overrides(spec, overrides)
+
+
+def _resolve_contract_version(
+    *,
+    table_key: str,
+    schema_digest_value: str,
+) -> str:
+    try:
+        contract = get_contract_for_table_key(table_key)
+    except (KeyError, ValueError, RuntimeError):
+        return schema_digest_value
+    if contract.schema_version:
+        return contract.schema_version
+    return schema_digest_value
+
+
+def contract_descriptor_for_table_schema(table_schema: TableSchema) -> ContractDescriptor:
+    """Return contract identity metadata for a table schema.
+
+    Returns
+    -------
+    ContractDescriptor
+        Contract descriptor with version and hash values.
+    """
+    schema_hash_value = schema_hash(table_schema)
+    schema_digest_value = schema_digest(table_schema)
+    return ContractDescriptor(
+        table_key=table_schema.table_key,
+        contract_version=_resolve_contract_version(
+            table_key=table_schema.table_key,
+            schema_digest_value=schema_digest_value,
+        ),
+        contract_hash=schema_hash_value,
+    )
+
+
+def contract_descriptor_for_table_key(table_key: str) -> ContractDescriptor | None:
+    """Return contract identity metadata for a table key.
+
+    Returns
+    -------
+    ContractDescriptor | None
+        Contract descriptor when table schema exists, otherwise None.
+    """
+    schema_service = get_schema_service()
+    table_schema = schema_service.get_table_schema(table_key)
+    if table_schema is None:
+        return None
+    return contract_descriptor_for_table_schema(table_schema)
 
 
 def _apply_overrides(
@@ -304,6 +359,8 @@ __all__ = [
     "ContractRegistry",
     "ContractResolver",
     "SchemaBackedContractRegistry",
+    "contract_descriptor_for_table_key",
+    "contract_descriptor_for_table_schema",
     "get_contract",
     "get_contract_for_target",
     "get_contract_registry",

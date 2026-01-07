@@ -12,15 +12,14 @@ from typing import TYPE_CHECKING, cast
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import equal_expr, is_in_expr, is_valid_expr
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
-    import networkx as nx
     from pyarrow.compute import Expression as ComputeExpression
 else:
     ComputeExpression = object
@@ -29,7 +28,7 @@ _EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 def degree_dict(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     *,
     direction: str,
     weight: str | None = None,
@@ -50,11 +49,18 @@ def degree_dict(
     dict[int, int]
         Mapping of node -> degree.
     """
-    raw_pairs = (
-        graph.in_degree(weight=weight) if direction == "in" else graph.out_degree(weight=weight)
-    )
-    pairs = cast("Iterable[tuple[int, int | float]]", raw_pairs)
-    return {int(node): int(deg) for node, deg in pairs}
+    store = ensure_store(graph, weight=weight)
+    degree_map: dict[int, int] = {int(str(node)): 0 for node in store.node_ids()}
+    for src_idx, dst_idx in store.graph.edge_list():
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        payload = store.graph.get_edge_data(src_idx, dst_idx)
+        weight_val = int(edge_weight_from_payload(payload))
+        if direction == "in":
+            degree_map[int(str(dst_id))] = degree_map.get(int(str(dst_id)), 0) + weight_val
+        else:
+            degree_map[int(str(src_id))] = degree_map.get(int(str(src_id)), 0) + weight_val
+    return degree_map
 
 
 def parse_block_idx(block_id: str | int | None) -> int | None:

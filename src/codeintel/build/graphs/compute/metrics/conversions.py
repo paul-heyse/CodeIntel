@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from codeintel.build.graphs.rx.algos import GraphInput, graph_node_count
+
 if TYPE_CHECKING:
     from decimal import Decimal
-
-    import networkx as nx
 
 log = logging.getLogger(__name__)
 
@@ -29,9 +29,9 @@ def safe_float(value: float | str | Decimal | None) -> float | None:
         return None
 
 
-def log_empty_graph(name: str, graph: nx.Graph) -> None:
+def log_empty_graph(name: str, graph: GraphInput) -> None:
     """Emit a debug log when a graph has no nodes."""
-    if graph.number_of_nodes() == 0:
+    if graph_node_count(graph) == 0:
         log.debug("Graph %s is empty; metrics will be zeroed", name)
 
 

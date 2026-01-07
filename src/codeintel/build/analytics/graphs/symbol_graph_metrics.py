@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import networkx as nx
-
 from codeintel.build.analytics.compute.row_builders import (
     build_symbol_function_rows,
     build_symbol_module_rows,
@@ -21,6 +19,7 @@ from codeintel.build.graphs.builders import (
 from codeintel.build.graphs.builders import (
     build_symbol_module_graph as _build_symbol_module_graph,
 )
+from codeintel.build.graphs.rx.algos import GraphInput
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -31,12 +30,12 @@ if TYPE_CHECKING:
 def build_symbol_module_graph(
     symbol_use_edges: Iterable[Mapping[str, object]],
     module_by_path: Mapping[str, str],
-) -> nx.Graph:
+) -> GraphInput:
     """Build an undirected weighted symbol-module graph from use edges.
 
     Returns
     -------
-    nx.Graph
+    GraphInput
         Undirected graph linking modules by symbol coupling.
     """
     return _build_symbol_module_graph(symbol_use_edges, module_by_path)
@@ -44,12 +43,12 @@ def build_symbol_module_graph(
 
 def build_symbol_function_graph(
     symbol_use_edges: Iterable[Mapping[str, object]],
-) -> nx.Graph:
+) -> GraphInput:
     """Build an undirected weighted symbol-function graph from use edges.
 
     Returns
     -------
-    nx.Graph
+    GraphInput
         Undirected graph linking functions by symbol coupling.
     """
     return _build_symbol_function_graph(symbol_use_edges)
@@ -107,7 +106,7 @@ def build_symbol_graph_metrics_module_rows(
     *,
     repo: str,
     commit: str,
-    graph: nx.Graph,
+    graph: GraphInput,
     known_modules: set[str] | None = None,
     runtime: GraphRuntimeOptions | None = None,
 ) -> list[tuple[object, ...]]:
@@ -134,7 +133,7 @@ def build_symbol_graph_metrics_function_rows(
     *,
     repo: str,
     commit: str,
-    graph: nx.Graph,
+    graph: GraphInput,
     known_functions: set[int] | None = None,
     runtime: GraphRuntimeOptions | None = None,
 ) -> list[tuple[object, ...]]:

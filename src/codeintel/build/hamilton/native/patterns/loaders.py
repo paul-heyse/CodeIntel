@@ -10,6 +10,11 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.build.contracts.migrations import (
+    apply_contract_migration,
+    get_contract_migration,
+)
+from codeintel.build.contracts.registry import contract_descriptor_for_table_key
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.naming import dataset_node, to_node_name
@@ -30,6 +35,7 @@ from codeintel.core.datasets.arrow_store import (
     ArrowDatasetScanOptions,
     scan_dataset_reader,
 )
+from codeintel.core.datasets.manifests import load_dataset_manifest
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.validation.mode import ContractValidationMode
@@ -37,6 +43,7 @@ from codeintel.core.validation.profiles import ValidationProfile
 from codeintel.core.validation.schema_constraints import schema_errors, schema_metadata_errors
 
 if TYPE_CHECKING:
+    from codeintel.core.manifests import ArrowDatasetManifest
     from codeintel.core.schemas.primitives import TableSchema
 
 log = logging.getLogger(__name__)
@@ -183,6 +190,15 @@ def load_snapshot_tabular(
     table_schema, contract_schema = _contract_schema_for_table(table_key)
     validation_mode = _validation_mode(env)
     table = reader_to_table(reader)
+    table = _apply_contract_migration_if_needed(
+        table=table,
+        table_key=table_key,
+        manifest=_load_dataset_manifest(
+            env=env,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+        ),
+    )
     if validation_mode != "skip":
         schema_for_errors = table.schema
         if contract_schema.metadata is not None:
@@ -219,6 +235,62 @@ def load_snapshot_tabular(
         aligned,
         context=context,
         mode=validation_mode,
+    )
+
+
+def _load_dataset_manifest(
+    *,
+    env: BuildEnv,
+    table_key: str,
+    snapshot_id: str,
+) -> ArrowDatasetManifest | None:
+    dataset_root = env.paths.dataset_root_dir
+    if dataset_root is None:
+        return None
+    return load_dataset_manifest(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+    )
+
+
+def _manifest_contract_version(
+    manifest: ArrowDatasetManifest | None,
+) -> str | None:
+    if manifest is None:
+        return None
+    extras = manifest.extras or {}
+    raw = extras.get("contract_version")
+    if isinstance(raw, str) and raw:
+        return raw
+    return None
+
+
+def _apply_contract_migration_if_needed(
+    *,
+    table: pa.Table,
+    table_key: str,
+    manifest: ArrowDatasetManifest | None,
+) -> pa.Table:
+    stored_version = _manifest_contract_version(manifest)
+    descriptor = contract_descriptor_for_table_key(table_key)
+    current_version = descriptor.contract_version if descriptor is not None else None
+    if stored_version is None or current_version is None or stored_version == current_version:
+        return table
+    migration = get_contract_migration(table_key=table_key)
+    if migration is None:
+        log.warning(
+            "build.contract_migration_missing table_key=%s from=%s to=%s",
+            table_key,
+            stored_version,
+            current_version,
+        )
+        return table
+    return apply_contract_migration(
+        table,
+        table_key=table_key,
+        from_version=stored_version,
+        to_version=current_version,
     )
 
 

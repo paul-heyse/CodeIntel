@@ -5,14 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import networkx as nx
-
 from codeintel.build.analytics.compute.graphs import (
     build_projection_graph,
     global_graph_stats,
 )
 from codeintel.build.analytics.compute.row_builders import row_tuple_for_table
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
 
 GRAPH_STATS_TABLE_KEY = "analytics.graph_stats"
 
@@ -23,11 +22,11 @@ class GraphStatsInputs:
 
     repo: str
     commit: str
-    call_graph: nx.DiGraph
-    import_graph: nx.DiGraph
-    symbol_module_graph: nx.Graph
-    symbol_function_graph: nx.Graph
-    config_module_bipartite: nx.Graph | None = None
+    call_graph: GraphInput
+    import_graph: GraphInput
+    symbol_module_graph: GraphInput
+    symbol_function_graph: GraphInput
+    config_module_bipartite: GraphInput | None = None
     use_gpu: bool = False
 
 
@@ -54,7 +53,7 @@ def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]
         )
     )
 
-    graphs: dict[str, nx.Graph | nx.DiGraph] = {
+    graphs: dict[str, GraphInput] = {
         "call_graph": inputs.call_graph,
         "import_graph": inputs.import_graph,
         "symbol_module_graph": inputs.symbol_module_graph,
@@ -62,9 +61,14 @@ def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]
     }
 
     config_graph = inputs.config_module_bipartite
-    if config_graph is not None and config_graph.number_of_nodes() > 0:
-        keys = {n for n, d in config_graph.nodes(data=True) if d.get("bipartite") == 0}
-        modules = set(config_graph) - keys
+    if config_graph is not None and graph_node_count(config_graph) > 0:
+        store = ensure_store(config_graph)
+        keys = {
+            node
+            for node in store.node_ids()
+            if store.get_node_attrs(node).get("bipartite") == 0
+        }
+        modules = set(store.node_ids()) - keys
         if keys and modules:
             graphs["config_key_projection"] = build_projection_graph(
                 config_graph,

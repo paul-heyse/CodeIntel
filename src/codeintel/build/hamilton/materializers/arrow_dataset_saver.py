@@ -21,6 +21,7 @@ import pyarrow.dataset as ds
 from hamilton.io.data_adapters import DataSaver
 from polars.exceptions import PolarsError
 
+from codeintel.build.contracts.registry import contract_descriptor_for_table_schema
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.build_log import record_build_event
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -1368,6 +1369,9 @@ def _handle_schema_drift(
 
 def _manifest_extras(inputs: _ManifestExtrasInputs) -> dict[str, object]:
     extras: dict[str, object] = {"table_schema": inputs.table_schema.to_json_obj()}
+    descriptor = contract_descriptor_for_table_schema(inputs.table_schema)
+    extras["contract_version"] = descriptor.contract_version
+    extras["contract_hash"] = descriptor.contract_hash
     resolved_provenance = inputs.provenance or _schema_provenance(inputs.table_key)
     if resolved_provenance:
         extras["provenance"] = resolved_provenance
@@ -1389,12 +1393,15 @@ def _parquet_metadata_payload(inputs: _ParquetMetadataInputs) -> dict[str, objec
     target = inputs.ctx.catalog.get_target(inputs.ctx.target_name)
     run_context = inputs.ctx.env.run_context
     build_id = run_context.run_id if run_context is not None else inputs.ctx.env.commit
+    descriptor = contract_descriptor_for_table_schema(inputs.table_schema)
     return {
         "codeintel.table_key": inputs.table_schema.table_key,
         "codeintel.domain": inputs.table_schema.schema,
         "codeintel.target": inputs.ctx.target_name,
         "codeintel.schema_hash": inputs.schema_hash_value,
         "codeintel.schema_digest": inputs.schema_digest_value,
+        "codeintel.contract_version": descriptor.contract_version,
+        "codeintel.contract_hash": descriptor.contract_hash,
         "codeintel.settings_fingerprint": inputs.settings_fingerprint,
         "codeintel.columns_json": columns_json,
         "codeintel.nullability_json": nullability_json,

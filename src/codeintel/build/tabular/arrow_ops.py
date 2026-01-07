@@ -55,7 +55,16 @@ from codeintel.core.columnar.schema_alignment import align_reader_to_contract as
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.columnar.schema_ops import concat_tables_unified as _concat_tables_unified
 from codeintel.core.columnar.streaming import DatasetScanOptions
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.constants import (
+    DEFAULT_ARROW_BATCH_READAHEAD,
+    DEFAULT_ARROW_BATCH_SIZE,
+    DEFAULT_ARROW_CACHE_METADATA,
+    DEFAULT_ARROW_FRAGMENT_READAHEAD,
+    DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
+    DEFAULT_ARROW_PARQUET_PRE_BUFFER,
+    DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
+    DEFAULT_ARROW_USE_THREADS,
+)
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.schemas.arrow_gen import (
@@ -126,6 +135,13 @@ class ParquetScanOptions:
     repo: str | None = None
     commit: str | None = None
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE
+    batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
+    fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
+    use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
+    cache_metadata: bool | None = DEFAULT_ARROW_CACHE_METADATA
+    parquet_pre_buffer: bool | None = DEFAULT_ARROW_PARQUET_PRE_BUFFER
+    parquet_use_buffered_stream: bool | None = DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM
+    parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +155,13 @@ class ParquetScanSpec:
     repo: str | None = None
     commit: str | None = None
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE
+    batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
+    fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
+    use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
+    cache_metadata: bool | None = DEFAULT_ARROW_CACHE_METADATA
+    parquet_pre_buffer: bool | None = DEFAULT_ARROW_PARQUET_PRE_BUFFER
+    parquet_use_buffered_stream: bool | None = DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM
+    parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
 
 
 def _arrow_spec_from_join_spec(spec: JoinSpec) -> ArrowJoinSpec:
@@ -1192,7 +1215,14 @@ def scan_parquet_dataset(
 
     scan_options = DatasetScanOptions(
         batch_size=resolved.batch_size,
+        batch_readahead=resolved.batch_readahead,
+        fragment_readahead=resolved.fragment_readahead,
         filter_expression=expression,
+        cache_metadata=resolved.cache_metadata,
+        use_threads=resolved.use_threads,
+        parquet_pre_buffer=resolved.parquet_pre_buffer,
+        parquet_use_buffered_stream=resolved.parquet_use_buffered_stream,
+        parquet_buffer_size=resolved.parquet_buffer_size,
         columns=tuple(resolved.columns) if resolved.columns is not None else None,
         unify_schemas=True,
     )

@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-import networkx as nx
 import pyarrow as pa
 
 from codeintel.build.analytics.compute.graphs import (
@@ -21,6 +20,8 @@ from codeintel.build.analytics.graphs.constants import MAX_BETWEENNESS_NODES
 from codeintel.build.analytics.utilities.datasets import validate_contract_rows
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter
@@ -77,7 +78,7 @@ class ProjectionTargets:
 
 def _projection_rows(
     *,
-    proj: nx.Graph,
+    proj: GraphInput,
     metrics: ProjectionMetrics,
     context: ProjectionContext,
     targets: ProjectionTargets,
@@ -90,6 +91,7 @@ def _projection_rows(
     src_col = next((col for col in edge_columns if col.startswith("src_")), "src")
     dst_col = next((col for col in edge_columns if col.startswith("dst_")), "dst")
 
+    proj_store = ensure_store(proj)
     node_dicts = [
         {
             "repo": context.repo,
@@ -102,19 +104,23 @@ def _projection_rows(
             "community_id": metrics.community_id.get(node),
             "created_at": context.created_at,
         }
-        for node in proj.nodes
+        for node in proj_store.node_ids()
     ]
-    edge_dicts = [
-        {
-            "repo": context.repo,
-            "commit": context.commit,
-            src_col: _projection_node_id(src),
-            dst_col: _projection_node_id(dst),
-            "weight": _coerce_edge_weight(data.get("weight", 1.0)),
-            "created_at": context.created_at,
-        }
-        for src, dst, data in proj.edges(data=True)
-    ]
+    edge_dicts = []
+    for src_idx, dst_idx in proj_store.graph.edge_list():
+        src_id = proj_store.index_to_id[src_idx]
+        dst_id = proj_store.index_to_id[dst_idx]
+        payload = proj_store.graph.get_edge_data(src_idx, dst_idx)
+        edge_dicts.append(
+            {
+                "repo": context.repo,
+                "commit": context.commit,
+                src_col: _projection_node_id(src_id),
+                dst_col: _projection_node_id(dst_id),
+                "weight": _coerce_edge_weight(payload),
+                "created_at": context.created_at,
+            }
+        )
     node_rows = validate_contract_rows(
         node_contract.table_key,
         node_dicts,
@@ -219,18 +225,12 @@ def _filter_table_by_scope(
     return safe_filter(table, mask)
 
 
-def _add_bipartite_edge(graph: nx.Graph, *, key: str, module: str) -> None:
+def _add_bipartite_edge(graph: RxGraphStore, *, key: str, module: str) -> None:
     key_node = ("c", key)
     module_node = ("m", module)
-    if not graph.has_node(key_node):
-        graph.add_node(key_node, bipartite=0)
-    if not graph.has_node(module_node):
-        graph.add_node(module_node, bipartite=1)
-    if graph.has_edge(key_node, module_node):
-        attrs = graph[key_node][module_node]
-        attrs["weight"] = _coerce_edge_weight(attrs.get("weight", 0.0)) + 1.0
-        return
-    graph.add_edge(key_node, module_node, weight=1.0)
+    graph.set_node_attrs(key_node, {"bipartite": 0})
+    graph.set_node_attrs(module_node, {"bipartite": 1})
+    graph.add_weighted_edge(key_node, module_node, weight=1.0)
 
 
 def _config_bipartite_from_rows(
@@ -239,8 +239,8 @@ def _config_bipartite_from_rows(
     allowed_modules: set[str] | None,
     repo: str | None,
     commit: str | None,
-) -> nx.Graph:
-    graph = nx.Graph()
+) -> RxGraphStore:
+    graph = RxGraphStore.undirected()
     for row in config_value_rows:
         if not _row_matches_scope(row, repo=repo, commit=commit):
             continue
@@ -277,7 +277,7 @@ def build_config_module_bipartite(
     allowed_modules: set[str] | None = None,
     repo: str | None = None,
     commit: str | None = None,
-) -> nx.Graph:
+) -> GraphInput:
     """Build a bipartite graph of config keys to modules from config values rows.
 
     Parameters
@@ -293,7 +293,7 @@ def build_config_module_bipartite(
 
     Returns
     -------
-    nx.Graph
+    GraphInput
         Undirected bipartite graph with config keys and modules.
     """
     rows = _rows_from_tabular(config_value_rows, repo=repo, commit=commit)
@@ -307,7 +307,7 @@ def build_config_module_bipartite(
 
 def _projection_payload(
     *,
-    graph: nx.Graph,
+    graph: GraphInput,
     nodes: set[Hashable],
     context: ProjectionContext,
     label: str,
@@ -393,7 +393,7 @@ def compute_config_graph_metrics_result(
         repo=repo,
         commit=commit,
     )
-    if graph.number_of_nodes() == 0:
+    if graph_node_count(graph) == 0:
         log_empty_graph("config_module_bipartite", graph)
         return ConfigGraphMetricsResult(
             key_rows=None, module_rows=None, key_edge_rows=None, module_edge_rows=None
@@ -409,14 +409,19 @@ def compute_config_graph_metrics_result(
             betweenness_weight="weight",
         )
     )
-    keys = {node for node, data in graph.nodes(data=True) if data.get("bipartite") == 0}
-    modules = set(graph) - keys
+    store = ensure_store(graph)
+    keys = {
+        node
+        for node in store.node_ids()
+        if store.get_node_attrs(node).get("bipartite") == 0
+    }
+    modules = set(store.node_ids()) - keys
     if len(keys) == 0 or len(modules) == 0:
         log_projection_skipped(
             "config_projection",
             "missing partition",
             nodes=0,
-            graph_nodes=graph.number_of_nodes(),
+            graph_nodes=graph_node_count(graph),
         )
         return ConfigGraphMetricsResult(
             key_rows=None, module_rows=None, key_edge_rows=None, module_edge_rows=None

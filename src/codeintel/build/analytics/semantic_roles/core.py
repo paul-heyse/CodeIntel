@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import logging
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -13,8 +14,9 @@ import msgspec
 import pyarrow as pa
 
 from codeintel.build.analytics.utilities.ast import safe_unparse
-from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.query_results import coerce_optional_int, coerce_optional_str, coerce_str
@@ -345,14 +347,20 @@ def _function_rows_from_frame(
 ) -> list[tuple[int, str, str, int | None]]:
     if frame is None or frame.num_rows == 0:
         return []
-    filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
-    if filtered.num_rows == 0:
-        return []
-    if "function_goid_h128" in filtered.column_names:
+    column_names = set(frame.column_names)
+    if "function_goid_h128" in column_names:
         goid_column = "function_goid_h128"
-    elif "goid_h128" in filtered.column_names:
+    elif "goid_h128" in column_names:
         goid_column = "goid_h128"
     else:
+        return []
+    filtered = _filter_table_by_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=[goid_column, "rel_path", "qualname", "start_line", "end_line"],
+    )
+    if filtered.num_rows == 0:
         return []
     result: list[tuple[int, str, str, int | None]] = []
     for row in iter_rows(
@@ -389,7 +397,21 @@ def _effects_from_frame(
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
+    filtered = _filter_table_by_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=[
+            "function_goid_h128",
+            "touches_db",
+            "uses_io",
+            "uses_time",
+            "uses_randomness",
+            "modifies_globals",
+            "modifies_closure",
+            "spawns_threads_or_tasks",
+        ],
+    )
     if filtered.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, object]] = {}
@@ -437,7 +459,17 @@ def _contracts_from_frame(
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
+    filtered = _filter_table_by_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=[
+            "function_goid_h128",
+            "preconditions_json",
+            "raises_json",
+            "param_nullability_json",
+        ],
+    )
     if filtered.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, object]] = {}
@@ -473,7 +505,12 @@ def _graph_metrics_from_frame(
 ) -> dict[int, dict[str, int]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
+    filtered = _filter_table_by_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=["function_goid_h128", "call_fan_in", "call_fan_out"],
+    )
     if filtered.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, int]] = {}
@@ -502,7 +539,12 @@ def _module_meta_from_frame(
 ) -> dict[str, ModuleRecord]:
     if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_table_by_snapshot(frame, repo=repo, commit=commit)
+    filtered = _filter_table_by_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=["module", "path", "tags"],
+    )
     if filtered.num_rows == 0:
         return {}
     meta: dict[str, ModuleRecord] = {}
@@ -525,9 +567,16 @@ def _filter_table_by_snapshot(
     *,
     repo: str,
     commit: str,
+    columns: Sequence[str] | None = None,
 ) -> pa.Table:
-    scope = SnapshotScope(repo=repo, commit=commit)
-    return scope.filter_arrow_table(frame, require_columns=True)
+    missing = [name for name in ("repo", "commit") if name not in frame.column_names]
+    if missing:
+        msg = f"Missing snapshot columns: {missing}"
+        raise ValueError(msg)
+    target = frame if columns is None else frame.select(list(columns))
+    repo_mask = equal_mask(frame["repo"], pa.scalar(repo))
+    commit_mask = equal_mask(frame["commit"], pa.scalar(commit))
+    return safe_filter(target, and_kleene(repo_mask, commit_mask))
 
 
 def _classify_function(

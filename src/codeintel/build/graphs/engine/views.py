@@ -9,30 +9,28 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
+
+import pyarrow as pa
 
 from codeintel.build.graphs.builders import EdgeWeightPolicy, add_weighted_edge
 from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
     scan_snapshot_reader,
-    scan_snapshot_table,
 )
 from codeintel.build.graphs.rx import RxGraphStore, rx_to_networkx
-from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.core.columnar.type_normalization import (
-    normalize_binary_view_table,
-    normalize_string_view_table,
+    normalize_binary_view_array,
+    normalize_string_view_array,
 )
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
-from codeintel.core.query_results import iter_tuples_from_arrow_reader
 
 if TYPE_CHECKING:
     import networkx as nx
-    import pyarrow as pa
 
 log = logging.getLogger(__name__)
 _EDGE_WEIGHT_POLICY = EdgeWeightPolicy()
@@ -65,7 +63,7 @@ def _iter_scoped_rows(
     names = list(reader.schema.names)
     repo_idx = _column_index(names, "repo")
     commit_idx = _column_index(names, "commit")
-    for row in iter_tuples_from_arrow_reader(reader):
+    for row in _iter_tuples(reader):
         if repo_idx is not None:
             row_repo = row[repo_idx]
             if row_repo is not None and str(row_repo) != repo:
@@ -77,8 +75,58 @@ def _iter_scoped_rows(
         yield row
 
 
-def _normalize_view_table(table: pa.Table) -> pa.Table:
-    return normalize_binary_view_table(normalize_string_view_table(table))
+def _normalize_view_batch(batch: pa.RecordBatch) -> pa.RecordBatch:
+    arrays: list[pa.Array] = []
+    fields: list[pa.Field] = []
+    changed = False
+    for idx, field in enumerate(batch.schema):
+        array = batch.column(idx)
+        normalized = normalize_string_view_array(array)
+        normalized = normalize_binary_view_array(normalized)
+        if normalized.type != array.type:
+            changed = True
+        arrays.append(normalized)
+        fields.append(
+            pa.field(
+                field.name,
+                normalized.type,
+                nullable=field.nullable,
+                metadata=field.metadata,
+            )
+        )
+    if not changed:
+        return batch
+    schema = pa.schema(fields, metadata=batch.schema.metadata)
+    return pa.RecordBatch.from_arrays(arrays, schema=schema)
+
+
+def _iter_tuples_from_batch(
+    batch: pa.RecordBatch,
+    *,
+    columns: Sequence[str] | None = None,
+) -> Iterable[tuple[object, ...]]:
+    if batch.num_rows == 0:
+        return
+    column_names = list(batch.schema.names) if columns is None else list(columns)
+    data_by_name = batch.to_pydict()
+    missing = [name for name in column_names if name not in data_by_name]
+    if missing:
+        msg = f"Missing columns in Arrow batch: {', '.join(missing)}"
+        raise ValueError(msg)
+    column_values = [data_by_name[name] for name in column_names]
+    yield from zip(*column_values, strict=True)
+
+
+def _iter_tuples(
+    reader: pa.RecordBatchReader,
+    *,
+    columns: Sequence[str] | None = None,
+) -> Iterable[tuple[object, ...]]:
+    for batch in reader:
+        if batch.num_rows == 0:
+            continue
+        normalized = _normalize_view_batch(batch)
+        yield from _iter_tuples_from_batch(normalized, columns=columns)
 
 
 def _empty_graph(*, directed: bool) -> nx.Graph:
@@ -87,14 +135,14 @@ def _empty_graph(*, directed: bool) -> nx.Graph:
 
 
 def _module_name_map(
-    reader: object,
+    reader: pa.RecordBatchReader,
     *,
     repo: str,
     commit: str,
 ) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
     specificity_by_path: dict[str, int] = {}
-    for path, module, row_repo, row_commit in iter_tuples_from_arrow_reader(reader):
+    for path, module, row_repo, row_commit in _iter_tuples(reader):
         if path is None or module is None:
             continue
         if row_repo is not None and str(row_repo) != repo:
@@ -110,8 +158,8 @@ def _module_name_map(
     return module_by_path
 
 
-def _add_call_edges(store: RxGraphStore, reader: object) -> None:
-    for caller_raw, callee_raw in iter_tuples_from_arrow_reader(reader):
+def _add_call_edges(store: RxGraphStore, reader: pa.RecordBatchReader) -> None:
+    for caller_raw, callee_raw in _iter_tuples(reader):
         caller = normalize_decimal(caller_raw)
         callee = normalize_decimal(callee_raw)
         if caller is None or callee is None:
@@ -119,8 +167,8 @@ def _add_call_edges(store: RxGraphStore, reader: object) -> None:
         add_weighted_edge(store, caller, callee, policy=_EDGE_WEIGHT_POLICY)
 
 
-def _add_call_nodes(store: RxGraphStore, reader: object) -> None:
-    for node_raw, kind in iter_tuples_from_arrow_reader(reader):
+def _add_call_nodes(store: RxGraphStore, reader: pa.RecordBatchReader) -> None:
+    for node_raw, kind in _iter_tuples(reader):
         node = normalize_decimal(node_raw)
         if node is None:
             continue
@@ -221,7 +269,7 @@ def load_call_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.call_graph_edges")
     if dataset_root is None:
         return cast("nx.DiGraph", _empty_graph(directed=True))
-    edge_table = scan_snapshot_table(
+    edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.call_graph_edges",
@@ -231,13 +279,13 @@ def load_call_graph(
             commit=commit,
         )
     )
-    if edge_table is None:
+    if edge_reader is None:
         return cast("nx.DiGraph", _empty_graph(directed=True))
 
     store = RxGraphStore.directed()
-    _add_call_edges(store, table_to_reader(_normalize_view_table(edge_table)))
+    _add_call_edges(store, edge_reader)
 
-    node_table = scan_snapshot_table(
+    node_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.call_graph_nodes",
@@ -247,8 +295,8 @@ def load_call_graph(
             commit=commit,
         )
     )
-    if node_table is not None:
-        _add_call_nodes(store, table_to_reader(_normalize_view_table(node_table)))
+    if node_reader is not None:
+        _add_call_nodes(store, node_reader)
 
     graph = rx_to_networkx(store.graph)
     return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
@@ -285,7 +333,7 @@ def load_import_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.import_graph_edges")
     if dataset_root is None:
         return cast("nx.DiGraph", _empty_graph(directed=True))
-    edge_table = scan_snapshot_table(
+    edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.import_graph_edges",
@@ -295,14 +343,12 @@ def load_import_graph(
             commit=commit,
         )
     )
-    if edge_table is None:
+    if edge_reader is None:
         return cast("nx.DiGraph", _empty_graph(directed=True))
 
     store = RxGraphStore.directed()
     fallback_layer_by_module: dict[str, int] = {}
-    for src, dst, layer in iter_tuples_from_arrow_reader(
-        table_to_reader(_normalize_view_table(edge_table))
-    ):
+    for src, dst, layer in _iter_tuples(edge_reader):
         if src is None or dst is None:
             continue
         source = str(src)
@@ -312,7 +358,7 @@ def load_import_graph(
             fallback_layer_by_module[source] = layer_value
         add_weighted_edge(store, source, target, policy=_EDGE_WEIGHT_POLICY)
 
-    module_table = scan_snapshot_table(
+    module_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.import_modules",
@@ -322,10 +368,8 @@ def load_import_graph(
             commit=commit,
         )
     )
-    if module_table is not None:
-        for module_row in iter_tuples_from_arrow_reader(
-            table_to_reader(_normalize_view_table(module_table))
-        ):
+    if module_reader is not None:
+        for module_row in _iter_tuples(module_reader):
             module_name, attrs = module_attrs_from_row(*module_row)
             store.set_node_attrs(module_name, attrs)
     elif fallback_layer_by_module:
@@ -539,7 +583,7 @@ def load_symbol_module_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
         return _empty_graph(directed=False)
-    edge_table = scan_snapshot_table(
+    edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.symbol_use_edges",
@@ -547,9 +591,9 @@ def load_symbol_module_graph(
             columns=("def_path", "use_path"),
         )
     )
-    if edge_table is None:
+    if edge_reader is None:
         return _empty_graph(directed=False)
-    module_table = scan_snapshot_table(
+    module_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="core.modules",
@@ -557,17 +601,15 @@ def load_symbol_module_graph(
             columns=("path", "module", "repo", "commit"),
         )
     )
-    if module_table is None:
+    if module_reader is None:
         return _empty_graph(directed=False)
     module_by_path = _module_name_map(
-        table_to_reader(_normalize_view_table(module_table)),
+        module_reader,
         repo=repo,
         commit=commit,
     )
     store = RxGraphStore.undirected()
-    for def_path, use_path in iter_tuples_from_arrow_reader(
-        table_to_reader(_normalize_view_table(edge_table))
-    ):
+    for def_path, use_path in _iter_tuples(edge_reader):
         if def_path is None or use_path is None:
             continue
         def_module = module_by_path.get(str(def_path))
@@ -609,7 +651,7 @@ def load_symbol_function_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
         return _empty_graph(directed=False)
-    edge_table = scan_snapshot_table(
+    edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
             table_key="graph.symbol_use_edges",
@@ -617,13 +659,11 @@ def load_symbol_function_graph(
             columns=("def_goid_h128", "use_goid_h128"),
         )
     )
-    if edge_table is None:
+    if edge_reader is None:
         return _empty_graph(directed=False)
 
     store = RxGraphStore.undirected()
-    for def_goid, use_goid in iter_tuples_from_arrow_reader(
-        table_to_reader(_normalize_view_table(edge_table))
-    ):
+    for def_goid, use_goid in _iter_tuples(edge_reader):
         if def_goid is None or use_goid is None:
             continue
         left = normalize_decimal(def_goid)

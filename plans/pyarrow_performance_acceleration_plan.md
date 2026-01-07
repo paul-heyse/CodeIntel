@@ -10,15 +10,20 @@ Goal: maximize scan throughput by enabling Parquet fragment scan options and met
 Approach: extend dataset scan settings and plumb them into scanner construction so every scan can
 enable `cache_metadata` and `ParquetFragmentScanOptions` with performance-first defaults.
 
-Files:
+Status: In progress (core plumbing complete; remaining call-site override exposure).
+
+Files (completed):
+- `src/codeintel/core/constants.py`
 - `src/codeintel/core/config/settings.py`
 - `src/codeintel/core/runtime/loader.py`
 - `src/codeintel/core/columnar/streaming.py`
 - `src/codeintel/core/datasets/scanner_ops.py`
-- `src/codeintel/build/tabular/arrow_ops.py`
-- `src/codeintel/build/graphs/engine/datasets.py`
 - `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`
 - `src/codeintel/build/hamilton/diagnostics.py`
+
+Files (remaining):
+- `src/codeintel/build/tabular/arrow_ops.py` (expose cache/fragment overrides in `ParquetScanOptions`)
+- `src/codeintel/build/graphs/engine/datasets.py` (surface scan overrides for snapshot readers)
 
 Code pattern:
 ```python
@@ -47,7 +52,9 @@ Goal: bias default scan behavior toward high-end hardware and maximal parallelis
 Approach: raise default batch sizes and readahead settings, and align Arrow CPU/IO thread settings
 with available cores while keeping env-based overrides in place.
 
-Files:
+Status: Completed.
+
+Files (completed):
 - `src/codeintel/core/constants.py`
 - `src/codeintel/core/config/settings.py`
 - `src/codeintel/core/columnar/streaming.py`
@@ -77,12 +84,16 @@ accelerate throughput.
 Approach: replace eager `to_table`/`reader_to_table` usage with batch iterators, only materializing
 when required by downstream APIs.
 
-Files:
-- `src/codeintel/build/tabular/arrow_ops.py`
+Status: In progress (streaming defaults adopted in key paths; remaining call-site audit).
+
+Files (completed):
 - `src/codeintel/build/tabular/conversion.py`
-- `src/codeintel/build/graphs/engine/datasets.py`
 - `src/codeintel/build/hamilton/diagnostics.py`
 - `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`
+
+Files (remaining):
+- `src/codeintel/build/tabular/arrow_ops.py` (evaluate `scan_parquet_table`/`reader_to_table` usage)
+- `src/codeintel/build/graphs/engine/datasets.py` (convert call sites to reader/batch iteration)
 
 Code pattern:
 ```python
@@ -102,12 +113,16 @@ iteration and maximize vectorization.
 Approach: build `pc.Expression` filters for dataset scans and use `Table.group_by().aggregate()`
 or Acero for filter-project-aggregate pipelines.
 
-Files:
+Status: In progress (call-graph and config analytics pushdown in place).
+
+Files (completed):
 - `src/codeintel/build/graphs/validation/checks/database.py`
 - `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
 - `src/codeintel/build/analytics/graphs/config_data_flow.py`
-- `src/codeintel/build/analytics/semantic_roles/core.py`
 - `src/codeintel/build/analytics/functions/function_effects.py`
+
+Files (remaining):
+- `src/codeintel/build/analytics/semantic_roles/core.py`
 
 Code pattern:
 ```python
@@ -128,10 +143,12 @@ Goal: reduce duplicate implementations and standardize row-iteration behavior an
 Approach: route all row iteration through `codeintel.core.columnar.iter.iter_rows` and remove
 duplicate definitions in build helpers.
 
-Files:
+Status: Completed.
+
+Files (completed):
 - `src/codeintel/build/tabular/arrow_ops.py`
-- `src/codeintel/core/columnar/iter.py`
 - `src/codeintel/build/tabular/table_ops.py`
+- `src/codeintel/core/columnar/iter.py` (verified canonical helper; no code change required)
 
 Code pattern:
 ```python
@@ -149,7 +166,9 @@ encoding at read time.
 Approach: prefer `pq.ParquetFile(...).iter_batches(...)` for cache reads and unify dictionaries
 after load when dictionary columns are present.
 
-Files:
+Status: Completed.
+
+Files (completed):
 - `src/codeintel/build/hamilton/materializers/arrow_parquet_cache.py`
 
 Code pattern:

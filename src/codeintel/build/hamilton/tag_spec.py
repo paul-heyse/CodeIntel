@@ -26,6 +26,8 @@ TagKey = Literal[
     "kind",
     "version",
     "schema_ref",
+    "contract_version",
+    "contract_hash",
     "entity_keys",
     "join_keys",
     "dtype",

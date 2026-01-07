@@ -13,7 +13,16 @@ import pyarrow.dataset as ds
 from codeintel.build.tabular.compute_masks import equal_expr
 from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.core.columnar.streaming import DatasetScanOptions
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.constants import (
+    DEFAULT_ARROW_BATCH_READAHEAD,
+    DEFAULT_ARROW_BATCH_SIZE,
+    DEFAULT_ARROW_CACHE_METADATA,
+    DEFAULT_ARROW_FRAGMENT_READAHEAD,
+    DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
+    DEFAULT_ARROW_PARQUET_PRE_BUFFER,
+    DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
+    DEFAULT_ARROW_USE_THREADS,
+)
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.datasets.scanner_ops import build_scanner
@@ -35,6 +44,14 @@ class SnapshotScanRequest:
     repo: str | None = None
     commit: str | None = None
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE
+    batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
+    fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
+    use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
+    cache_metadata: bool | None = DEFAULT_ARROW_CACHE_METADATA
+    parquet_pre_buffer: bool | None = DEFAULT_ARROW_PARQUET_PRE_BUFFER
+    parquet_use_buffered_stream: bool | None = DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM
+    parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
+    unify_schemas: bool = True
 
 
 def resolve_dataset_root(
@@ -124,9 +141,16 @@ def scan_snapshot_reader(
         return None
     options = DatasetScanOptions(
         batch_size=request.batch_size,
+        batch_readahead=request.batch_readahead,
+        fragment_readahead=request.fragment_readahead,
         filter_expression=filter_expression,
+        cache_metadata=request.cache_metadata,
+        use_threads=request.use_threads,
+        parquet_pre_buffer=request.parquet_pre_buffer,
+        parquet_use_buffered_stream=request.parquet_use_buffered_stream,
+        parquet_buffer_size=request.parquet_buffer_size,
         columns=resolved_columns,
-        unify_schemas=True,
+        unify_schemas=request.unify_schemas,
     )
     scanner = build_scanner(dataset, options=options)
     return scanner.to_reader()

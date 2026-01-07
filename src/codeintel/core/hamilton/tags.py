@@ -27,6 +27,8 @@ TAG_LAYER = "layer"
 TAG_KIND = "kind"
 TAG_VERSION = "version"
 TAG_SCHEMA_REF = "schema_ref"
+TAG_CONTRACT_VERSION = "contract_version"
+TAG_CONTRACT_HASH = "contract_hash"
 TAG_ENTITY_KEYS = "entity_keys"
 TAG_JOIN_KEYS = "join_keys"
 TAG_DTYPE = "dtype"
@@ -64,6 +66,8 @@ __all__ = [
     "OUTPUT_KIND_VIEW",
     "TAG_ARTIFACT",
     "TAG_ARTIFACT_PATH_TEMPLATE",
+    "TAG_CONTRACT_HASH",
+    "TAG_CONTRACT_VERSION",
     "TAG_DESCRIPTION",
     "TAG_DOMAIN",
     "TAG_DTYPE",

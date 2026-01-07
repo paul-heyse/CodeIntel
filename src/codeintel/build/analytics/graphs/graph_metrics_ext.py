@@ -1,11 +1,11 @@
-"""Extended NetworkX-derived metrics for the call graph."""
+"""Extended call graph metrics."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-import networkx as nx
+import rustworkx as rx
 
 from codeintel.build.analytics.compute.graphs import (
     centrality_directed,
@@ -27,7 +27,12 @@ from codeintel.build.analytics.graphs.orchestrator import (
     ExtendedMetricsRequest,
     build_extended_metrics_rows,
 )
+from codeintel.build.graphs.compute.metrics.components import (
+    find_articulation_points,
+    find_bridges,
+)
 from codeintel.build.graphs.runtime.context import GraphContext
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store, ensure_store
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.compute.graphs import (
@@ -53,7 +58,7 @@ class FunctionGraphSlices:
     bridge_incident: dict[int, int]
 
 
-def _bridge_endpoint_counts(graph: nx.Graph) -> dict[int, int]:
+def _bridge_endpoint_counts(graph: GraphInput) -> dict[int, int]:
     """Count bridge endpoints for each node.
 
     Parameters
@@ -66,12 +71,13 @@ def _bridge_endpoint_counts(graph: nx.Graph) -> dict[int, int]:
     dict[int, int]
         Mapping of node to count of incident bridges.
     """
-    counts: dict[int, int] = {int(str(node)): 0 for node in graph.nodes}
-    for left, right in nx.bridges(graph):
+    store = ensure_store(graph)
+    counts: dict[int, int] = {int(str(node)): 0 for node in store.node_ids()}
+    for left, right in find_bridges(store):
         left_idx = int(str(left))
         right_idx = int(str(right))
-        counts[left_idx] += 1
-        counts[right_idx] += 1
+        counts[left_idx] = counts.get(left_idx, 0) + 1
+        counts[right_idx] = counts.get(right_idx, 0) + 1
     return counts
 
 
@@ -108,11 +114,7 @@ def _function_metric_slices(views: GraphViews, ctx: GraphContext) -> FunctionGra
         community_limit=ctx.community_detection_limit,
     )
     components = component_metadata(views.simple_graph)
-    articulations = (
-        {int(str(node)) for node in nx.articulation_points(views.undirected)}
-        if views.undirected.number_of_nodes() > 0
-        else set()
-    )
+    articulations = {int(str(node)) for node in find_articulation_points(views.undirected)}
     bridge_incident = _bridge_endpoint_counts(views.undirected)
     return FunctionGraphSlices(
         centralities=centralities,
@@ -150,15 +152,31 @@ def _function_metric_rows(
     list[dict[str, object]]
         Rows ready for insertion.
     """
-    node_count = views.graph.number_of_nodes()
-    ancestor_count = {
-        int(str(node)): len(nx.ancestors(views.graph, node)) if node_count else 0
-        for node in views.simple_graph.nodes
-    }
-    descendant_count = {
-        int(str(node)): len(nx.descendants(views.graph, node)) if node_count else 0
-        for node in views.simple_graph.nodes
-    }
+    graph_store = ensure_directed_store(views.graph)
+    simple_store = ensure_directed_store(views.simple_graph)
+    node_count = graph_store.graph.num_nodes()
+    directed_graph = cast("rx.PyDiGraph", graph_store.graph)
+    ancestor_count: dict[int, int] = {}
+    descendant_count: dict[int, int] = {}
+    for node_id in simple_store.node_ids():
+        node_idx = graph_store.id_to_index.get(node_id)
+        if node_idx is None:
+            continue
+        node_key = int(str(node_id))
+        if node_count == 0:
+            ancestor_count[node_key] = 0
+            descendant_count[node_key] = 0
+            continue
+        try:
+            ancestors = rx.ancestors(directed_graph, node_idx)
+        except (rx.InvalidNode, rx.NullGraph):
+            ancestors = set()
+        try:
+            descendants = rx.descendants(directed_graph, node_idx)
+        except (rx.InvalidNode, rx.NullGraph):
+            descendants = set()
+        ancestor_count[node_key] = len(ancestors)
+        descendant_count[node_key] = len(descendants)
     centralities = {
         "betweenness": slices.centralities.betweenness,
         "closeness": slices.centralities.closeness,
@@ -220,7 +238,7 @@ def build_graph_metrics_functions_ext_rows(
     *,
     repo: str,
     commit: str,
-    call_graph: nx.DiGraph,
+    call_graph: GraphInput,
     runtime: GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
 ) -> list[dict[str, object]]:

@@ -10,6 +10,13 @@ import polars.datatypes as pl_datatypes
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.build.contracts.types import ContractPolicy
+from codeintel.build.tabular.arrow_ops import (
+    AlignmentReporter,
+    align_reader_to_contract,
+    align_table_to_contract,
+    emit_alignment_report,
+)
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import TabularInput
@@ -148,6 +155,40 @@ def sort_columns(df: TabularInput, column_order: Sequence[str]) -> TabularInput:
     return lazyframe.select(_selector_by_name(column_order))
 
 
+def align_contract_output(
+    df: TabularInput,
+    *,
+    table_key: str,
+    target_name: str | None,
+    policy: ContractPolicy | None = None,
+    reporter: AlignmentReporter | None = emit_alignment_report,
+) -> TabularInput:
+    """Align Arrow outputs to the contract schema when possible.
+
+    Returns
+    -------
+    TabularInput
+        Aligned Arrow table/reader or the original input for other data.
+    """
+    if isinstance(df, pa.RecordBatchReader):
+        return align_reader_to_contract(
+            table_key,
+            df,
+            target_name=target_name,
+            policy=policy,
+            reporter=reporter,
+        )
+    if isinstance(df, pa.Table):
+        return align_table_to_contract(
+            table_key,
+            df,
+            target_name=target_name,
+            policy=policy,
+            reporter=reporter,
+        )
+    return df
+
+
 def _selector_by_name(names: Sequence[str]) -> pl.Expr | list[str]:
     selectors = getattr(pl, "selectors", None)
     if selectors is None:
@@ -218,6 +259,7 @@ def _clip_table(table: pa.Table, index: int, scalar: pa.Scalar) -> pa.Table:
 
 __all__ = [
     "Frame",
+    "align_contract_output",
     "cast_schema",
     "clip_numeric",
     "drop_bad_rows",

@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-import networkx as nx
 import pyarrow as pa
 
 from codeintel.build.analytics.subsystems.affinity import (
@@ -25,6 +24,8 @@ from codeintel.build.analytics.subsystems.affinity import (
 from codeintel.build.analytics.subsystems.edge_stats import (
     compute_subsystem_edge_stats,
 )
+from codeintel.build.graphs.rx.algos import GraphInput
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 
 if TYPE_CHECKING:
@@ -77,7 +78,7 @@ class SubsystemBuildContext:
     snapshot: SnapshotRef
     labels: dict[str, str]
     tags_by_module: dict[str, list[str]]
-    import_graph: nx.DiGraph
+    import_graph: GraphInput
     risk_stats: dict[str, SubsystemRisk]
     now: datetime
 
@@ -255,8 +256,8 @@ def _import_graph_from_frame(
     *,
     repo: str,
     commit: str,
-) -> nx.DiGraph:
-    graph = nx.DiGraph()
+) -> GraphInput:
+    graph = RxGraphStore.directed()
     if frame is None or frame.num_rows == 0:
         return graph
     filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
@@ -267,27 +268,8 @@ def _import_graph_from_frame(
             continue
         src_mod = str(src)
         dst_mod = str(dst)
-        if graph.has_edge(src_mod, dst_mod):
-            attrs = graph[src_mod][dst_mod]
-            attrs["weight"] = _coerce_edge_weight(attrs.get("weight")) + 1.0
-        else:
-            graph.add_edge(src_mod, dst_mod, weight=1.0)
+        graph.add_weighted_edge(src_mod, dst_mod, weight=1.0)
     return graph
-
-
-def _coerce_edge_weight(value: object) -> float:
-    if value is None:
-        return 0.0
-    if isinstance(value, bool):
-        return float(int(value))
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except ValueError:
-            return 0.0
-    return 0.0
 
 
 def _rows_for_snapshot(

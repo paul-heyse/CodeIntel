@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from codeintel.build.contracts.registry import contract_descriptor_for_table_key
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
@@ -29,7 +30,7 @@ from codeintel.core.execution.materialization import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.core.hamilton.records import DatasetRefProtocol
@@ -211,6 +212,10 @@ def record_from_duckdb_materialization(
         target_name=target_name,
     )
     record = _apply_alignment_reports(record, alignment_reports)
+    record = _apply_contract_metadata(
+        record,
+        _contract_metadata((table_key,)),
+    )
     save_manifest(env, record)
     return record
 
@@ -472,6 +477,10 @@ def record_from_duckdb_materializations(
         target_name=target_name,
     )
     record = _apply_alignment_reports(record, alignment_reports)
+    record = _apply_contract_metadata(
+        record,
+        _contract_metadata(expected_table_keys),
+    )
     save_manifest(env, record, change_delta=change_delta)
     return record
 
@@ -681,6 +690,10 @@ def record_from_materializations(
         target_name=context.target_name,
     )
     record = _apply_alignment_reports(record, alignment_reports)
+    record = _apply_contract_metadata(
+        record,
+        _contract_metadata(expected_table_keys),
+    )
     save_manifest(context.env, record, change_delta=context.change_delta)
     return record
 
@@ -1144,6 +1157,70 @@ def _apply_alignment_reports(
         artifacts=record.artifacts,
         drift_summaries=record.drift_summaries,
     )
+
+
+def _contract_metadata(
+    table_keys: Sequence[str],
+) -> dict[str, dict[str, object]]:
+    metadata: dict[str, dict[str, object]] = {}
+    for table_key in table_keys:
+        descriptor = contract_descriptor_for_table_key(table_key)
+        if descriptor is None:
+            continue
+        metadata[table_key] = {
+            "contract_version": descriptor.contract_version,
+            "contract_hash": descriptor.contract_hash,
+        }
+    return metadata
+
+
+def _apply_contract_metadata(
+    record: TargetRunRecord,
+    metadata: Mapping[str, Mapping[str, object]],
+) -> TargetRunRecord:
+    if not metadata or not record.datasets:
+        return record
+
+    updated_datasets: list[DatasetRefProtocol] = []
+    for dataset in record.datasets:
+        payload = metadata.get(dataset.table_key)
+        if not payload:
+            updated_datasets.append(dataset)
+            continue
+        updated_datasets.append(_apply_dataset_metadata(dataset, payload))
+
+    return TargetRunRecord(
+        target=record.target,
+        impl_kind=record.impl_kind,
+        status=record.status,
+        input_hash=record.input_hash,
+        options_hash=record.options_hash,
+        duration_ms=record.duration_ms,
+        row_counts=record.row_counts,
+        error=record.error,
+        datasets=tuple(updated_datasets),
+        artifacts=record.artifacts,
+        drift_summaries=record.drift_summaries,
+    )
+
+
+def _apply_dataset_metadata(
+    dataset: DatasetRefProtocol,
+    payload: Mapping[str, object],
+) -> DatasetRefProtocol:
+    updated = dataset
+    for key, value in payload.items():
+        if value is None:
+            continue
+        if isinstance(updated, DatasetRef):
+            updated = updated.with_metadata(key, value)
+            continue
+        with_metadata = getattr(updated, "with_metadata", None)
+        if callable(with_metadata):
+            updated = cast("DatasetRefProtocol", with_metadata(key, value))
+            continue
+        return updated
+    return updated
 
 
 def _apply_dataset_alignment_report(

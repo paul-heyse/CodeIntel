@@ -8,9 +8,11 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import networkx as nx
 import pyarrow as pa
 
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 
 if TYPE_CHECKING:
@@ -108,7 +110,7 @@ def parse_tags(raw: object) -> list[str]:
 
 
 def _add_import_edges(
-    graph: nx.Graph,
+    graph: RxGraphStore,
     ctx: AffinityContext,
     frame: pa.Table | None,
 ) -> None:
@@ -127,7 +129,7 @@ def _add_import_edges(
 
 
 def _add_symbol_edges(
-    graph: nx.Graph,
+    graph: RxGraphStore,
     ctx: AffinityContext,
     symbol_use_edges_frame: pa.Table | None,
     modules_frame: pa.Table | None,
@@ -165,7 +167,7 @@ def _add_symbol_edges(
 
 
 def _add_config_edges(
-    graph: nx.Graph,
+    graph: RxGraphStore,
     ctx: AffinityContext,
     config_values_frame: pa.Table | None,
 ) -> None:
@@ -217,13 +219,13 @@ def build_weighted_graph(
     frames: AffinityFrames,
     *,
     weights: AffinityWeights | None = None,
-) -> nx.Graph:
+) -> GraphInput:
     """
     Build an undirected weighted graph representing module affinity.
 
     Returns
     -------
-    nx.Graph
+    GraphInput
         Weighted graph of module affinity.
     """
     w = weights or AffinityWeights()
@@ -233,8 +235,9 @@ def build_weighted_graph(
         commit=snapshot.commit,
         weights=w,
     )
-    graph = nx.Graph()
-    graph.add_nodes_from(modules)
+    graph = RxGraphStore.undirected()
+    for module in modules:
+        graph.ensure_node(module)
     _add_import_edges(
         graph,
         ctx,
@@ -272,24 +275,20 @@ def _rows_for_snapshot(
     ]
 
 
-def add_graph_weight(graph: nx.Graph, left: str, right: str, weight: float) -> None:
+def add_graph_weight(graph: RxGraphStore, left: str, right: str, weight: float) -> None:
     """Accumulate symmetric edge weights on an undirected graph."""
     if left == right or weight <= 0:
         return
-    if graph.has_edge(left, right):
-        attrs = graph[left][right]
-        attrs["weight"] = _coerce_edge_weight(attrs.get("weight")) + weight
-    else:
-        graph.add_edge(left, right, weight=weight)
+    graph.add_weighted_edge(left, right, weight=weight)
 
 
-def graph_to_adjacency(graph: nx.Graph) -> dict[str, dict[str, float]]:
+def graph_to_adjacency(graph: GraphInput) -> dict[str, dict[str, float]]:
     """
     Return a plain adjacency dict copy from a weighted undirected graph.
 
     Parameters
     ----------
-    graph : nx.Graph
+    graph : GraphInput
         Weighted undirected graph to convert.
 
     Returns
@@ -297,11 +296,15 @@ def graph_to_adjacency(graph: nx.Graph) -> dict[str, dict[str, float]]:
     dict[str, dict[str, float]]
         Nested mapping of source -> target -> weight.
     """
+    store = ensure_store(graph)
     adjacency: dict[str, dict[str, float]] = defaultdict(dict)
-    for src, dst, data in graph.edges(data=True):
-        weight = _coerce_edge_weight(data.get("weight", 1.0))
-        src_key = str(src)
-        dst_key = str(dst)
+    for src_idx, dst_idx in store.graph.edge_list():
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        payload = store.graph.get_edge_data(src_idx, dst_idx)
+        weight = edge_weight_from_payload(payload)
+        src_key = str(src_id)
+        dst_key = str(dst_id)
         adjacency[src_key][dst_key] = weight
         adjacency[dst_key][src_key] = weight
     return adjacency
@@ -328,7 +331,7 @@ def seed_labels_from_tags(tags_by_module: dict[str, list[str]]) -> dict[str, str
 
 
 def label_propagation_nx(
-    graph: nx.Graph,
+    graph: GraphInput,
     seed_labels: dict[str, str],
     max_iters: int = 20,
 ) -> dict[str, str]:
@@ -341,12 +344,14 @@ def label_propagation_nx(
         Module -> label mapping after propagation.
     """
     labels: dict[str, str] = {}
-    nodes = [str(node) for node in graph.nodes]
+    store = ensure_store(graph)
+    nodes = [str(node) for node in store.node_ids()]
     for node in nodes:
         seed = seed_labels.get(node)
         labels[node] = seed if seed is not None else node
     frozen: set[str] = set(seed_labels)
     ordered_nodes = sorted(nodes)
+    adjacency = graph_to_adjacency(store)
 
     for _ in range(max_iters):
         changed = False
@@ -354,12 +359,11 @@ def label_propagation_nx(
             if node in frozen:
                 continue
             weights: dict[str, float] = defaultdict(float)
-            for neighbor, data in graph[node].items():
-                neighbor_key = str(neighbor)
-                neighbor_label = labels.get(neighbor_key)
+            for neighbor, weight in adjacency.get(node, {}).items():
+                neighbor_label = labels.get(neighbor)
                 if neighbor_label is None:
                     continue
-                weights[neighbor_label] += _coerce_edge_weight(data.get("weight", 1.0))
+                weights[neighbor_label] += weight
             if not weights:
                 continue
             best_label = max(weights.items(), key=lambda item: (item[1], item[0]))[0]
@@ -369,21 +373,6 @@ def label_propagation_nx(
         if not changed:
             break
     return labels
-
-
-def _coerce_edge_weight(value: object) -> float:
-    if value is None:
-        return 1.0
-    if isinstance(value, bool):
-        return float(int(value))
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except ValueError:
-            return 1.0
-    return 1.0
 
 
 def reassign_small_clusters(
