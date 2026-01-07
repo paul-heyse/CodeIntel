@@ -241,9 +241,7 @@ def _symbol_metric_rows[TNode](
             "constraint": slices.structure.constraint,
             "effective_size": slices.structure.effective_size,
             "community_id": (
-                slices.structure.community_id
-                if slices.node_count <= MAX_COMMUNITY_NODES
-                else {}
+                slices.structure.community_id if slices.node_count <= MAX_COMMUNITY_NODES else {}
             ),
         },
         comp_id=slices.comp_id,

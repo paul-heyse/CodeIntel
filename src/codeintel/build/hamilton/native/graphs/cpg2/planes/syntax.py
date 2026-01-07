@@ -219,6 +219,7 @@ def cpg2_edges__syntax_edges(
         ),
     )
     selected = rename_table_columns(selected, {"child_ordinal": "ordinal"})
+
     def _edge_mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
         return and_kleene(
             is_valid_mask(table.column("src_cpg_node_id")),

@@ -205,6 +205,7 @@ def _definition_maps(
 
 
 def symbol_use_edges_compute(
+    env: BuildEnv,
     q__core__scip_occurrences: InferableTabularInput,
     q__core__modules: InferableTabularInput,
     q__core__goids: InferableTabularInput,
@@ -236,7 +237,7 @@ def symbol_use_edges_compute(
     use_lines_by_symbol_path = _reference_lines_by_symbol_path(occurrences)
     goid_resolver = _goid_resolver(goids_table)
     edges = _attach_goids(edges, def_info_by_symbol, use_lines_by_symbol_path, goid_resolver)
-    rows = (dataclasses.asdict(row) for row in edges_to_rows(edges))
+    rows = (dataclasses.asdict(row) for row in edges_to_rows(edges, env.repo, env.commit))
     return reader_for_rows(SYMBOL_USE_EDGES_TABLE_KEY, rows)
 
 

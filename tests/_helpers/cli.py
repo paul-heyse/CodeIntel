@@ -21,6 +21,7 @@ from cyclopts.exceptions import (
     ValidationError,
 )
 
+from codeintel.build.settings import DEFAULT_PROFILE_NAME
 from codeintel.cli import app
 from codeintel.cli.errors import handle_cli_error
 from codeintel.cli.execution.bootstrap import reset_bootstrap
@@ -72,7 +73,12 @@ CliResultType = CliResult | CliResultLike
 
 
 @contextmanager
-def temp_repo_context(base_dir: Path) -> Iterator[CLIContext]:
+def temp_repo_context(
+    base_dir: Path,
+    *,
+    write_project: bool = False,
+    project_repo: str = "demo/repo",
+) -> Iterator[CLIContext]:
     """Create a temporary repo/build layout and yield a CLI context.
 
     Directories are created under ``base_dir`` to mirror production paths.
@@ -81,6 +87,10 @@ def temp_repo_context(base_dir: Path) -> Iterator[CLIContext]:
     ----------
     base_dir
         Base temporary directory provided by pytest.
+    write_project
+        Whether to write a project config under the repo root.
+    project_repo
+        Repository identifier to embed in the project config.
 
     Yields
     ------
@@ -88,9 +98,16 @@ def temp_repo_context(base_dir: Path) -> Iterator[CLIContext]:
         Context containing repo/build paths and prefilled env vars.
     """
     repo_root = base_dir / "repo"
-    build_dir = base_dir / "build"
+    build_dir = repo_root / "build" if write_project else base_dir / "build"
     repo_root.mkdir(parents=True, exist_ok=True)
     build_dir.mkdir(parents=True, exist_ok=True)
+
+    if write_project:
+        _write_project_file(
+            repo_root,
+            repo=project_repo,
+            db_rel_path=(build_dir / "db" / "codeintel.duckdb").relative_to(repo_root),
+        )
 
     env = {
         **os.environ,
@@ -98,6 +115,23 @@ def temp_repo_context(base_dir: Path) -> Iterator[CLIContext]:
         "CODEINTEL_BUILD_DIR": str(build_dir),
     }
     yield CLIContext(repo_root=repo_root, build_dir=build_dir, env=env)
+
+
+def _write_project_file(repo_root: Path, *, repo: str, db_rel_path: Path) -> Path:
+    cfg_path = repo_root / "config" / "codeintel.yaml"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(
+        "\n".join(
+            [
+                f"repo: {repo}",
+                f"default_profile: {DEFAULT_PROFILE_NAME}",
+                "storage:",
+                f"  db_path: {db_rel_path.as_posix()}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return cfg_path
 
 
 def run_cli(

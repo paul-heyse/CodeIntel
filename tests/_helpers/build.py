@@ -7,26 +7,16 @@ inventories outside the catalog.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.targets import TargetDescriptor
-from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
 from codeintel.core.runtime.loader import load_runtime_settings
 from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
-from tests._helpers.fakes.fake_providers import (
-    FakeGitHistoryProvider,
-    FakeScipIndexer,
-    FakeTestReporter,
-    FakeToolRunner,
-    FakeTypeChecker,
-)
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
@@ -84,21 +74,21 @@ def make_snapshot(
     return create_test_snapshot(effective_path, repo=repo, commit=commit)
 
 
-def make_build_paths(tmp_path: Path | None = None) -> BuildPaths:
-    """Create BuildPaths rooted at tmp_path (or current directory).
+def make_build_paths(repo_root: Path | None = None) -> BuildPaths:
+    """Create BuildPaths rooted at repo_root (or current directory).
 
     Parameters
     ----------
-    tmp_path
-        Temporary path for build directory. If None, uses current directory.
+    repo_root
+        Repository root for build outputs. If None, uses current directory.
 
     Returns
     -------
     BuildPaths
         Build paths configured for tests.
     """
-    effective_path = tmp_path if tmp_path is not None else Path.cwd()
-    return create_test_build_paths(effective_path)
+    resolved_root = repo_root if repo_root is not None else Path.cwd()
+    return create_test_build_paths(resolved_root)
 
 
 def make_build_config(
@@ -157,78 +147,6 @@ def sample_target_graph(
     return build_catalog(targets=targets, table_keys_by_target=table_keys_by_target)
 
 
-@dataclass(frozen=True)
-class ManifestParams:
-    """Parameters for constructing manifest fixtures."""
-
-    repo: str = DEFAULT_VARIANT.repo
-    commit: str = DEFAULT_VARIANT.commit
-    impl_kind: str = "native"
-    input_hash: str = "input-hash"
-    computed_at: datetime | None = None
-    duration_ms: float = 1.0
-    row_count: int | None = None
-    output_hash: str | None = None
-    options_hash: str | None = None
-
-
-def sample_manifest(target: str, params: ManifestParams | None = None) -> OutputManifest:
-    """Create an OutputManifest with defaulted timestamps and hashes.
-
-    Parameters
-    ----------
-    target
-        Target name for the manifest.
-    params
-        Optional manifest parameters; defaults will be used otherwise.
-
-    Returns
-    -------
-    OutputManifest
-        Manifest ready for insertion into tracking tables.
-    """
-    cfg = params or ManifestParams()
-    return OutputManifest(
-        target=target,
-        repo=cfg.repo,
-        commit=cfg.commit,
-        impl_kind=cfg.impl_kind,
-        computed_at=cfg.computed_at or datetime.now(tz=UTC),
-        duration_ms=cfg.duration_ms,
-        input_hash=cfg.input_hash,
-        output_hash=cfg.output_hash,
-        row_count=cfg.row_count,
-        options_hash=cfg.options_hash,
-    )
-
-
-@dataclass
-class RecordingProviders:
-    """Container of fake providers with recording hooks."""
-
-    tool_runner: FakeToolRunner = field(default_factory=FakeToolRunner)
-    scip_indexer: FakeScipIndexer = field(default_factory=FakeScipIndexer)
-    type_checker: FakeTypeChecker = field(default_factory=FakeTypeChecker)
-    test_reporter: FakeTestReporter = field(default_factory=FakeTestReporter)
-    git_history: FakeGitHistoryProvider = field(default_factory=FakeGitHistoryProvider)
-
-    def as_dict(self) -> dict[str, object]:
-        """Return providers as a mapping keyed by provider name.
-
-        Returns
-        -------
-        dict[str, object]
-            Mapping of provider name to fake implementation.
-        """
-        return {
-            "tool_runner": self.tool_runner,
-            "scip_indexer": self.scip_indexer,
-            "type_checker": self.type_checker,
-            "test_reporter": self.test_reporter,
-            "git_history": self.git_history,
-        }
-
-
 def _format_toml_value(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -278,12 +196,9 @@ def _default_targets() -> tuple[TargetDescriptor, ...]:
 
 
 __all__ = [
-    "ManifestParams",
-    "RecordingProviders",
     "make_build_config",
     "make_build_paths",
     "make_snapshot",
-    "sample_manifest",
     "sample_target_graph",
     "write_build_config",
 ]

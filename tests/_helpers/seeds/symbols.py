@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from tests._helpers.fixtures.rows import (
+    SymbolEdgeContext,
     SymbolEdgeOptions,
     insert_symbol_use_edges,
     make_symbol_use_edge_row,
@@ -82,11 +83,15 @@ class SymbolPack:
         ctx
             Test context with gateway.
         """
+        repo = ctx.repo
+        commit = ctx.commit
+        context = SymbolEdgeContext(repo=repo, commit=commit)
         rows = [
             make_symbol_use_edge_row(
                 "func_b",
                 MOD_B_PATH,
                 MOD_A_PATH,
+                context=context,
                 options=SymbolEdgeOptions(
                     same_file=False,
                     same_module=False,
@@ -98,6 +103,7 @@ class SymbolPack:
                 "func_c",
                 MOD_C_PATH,
                 MOD_B_PATH,
+                context=context,
                 options=SymbolEdgeOptions(
                     same_file=False,
                     same_module=False,
@@ -109,6 +115,7 @@ class SymbolPack:
                 "helper",
                 MOD_UTIL_PATH,
                 MOD_A_PATH,
+                context=context,
                 options=SymbolEdgeOptions(
                     same_file=False,
                     same_module=False,
@@ -120,6 +127,7 @@ class SymbolPack:
                 "_internal_a",
                 MOD_A_PATH,
                 MOD_A_PATH,
+                context=context,
                 options=SymbolEdgeOptions(
                     same_file=True,
                     same_module=True,
@@ -130,6 +138,7 @@ class SymbolPack:
                 "MOD_CONSTANT",
                 MOD_UTIL_PATH,
                 MOD_B_PATH,
+                context=context,
                 options=SymbolEdgeOptions(
                     same_file=False,
                     same_module=False,

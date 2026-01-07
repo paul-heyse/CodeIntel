@@ -58,6 +58,8 @@ def _seed_symbol_config_data(ctx: TestContext) -> None:
         ctx.gateway,
         [
             SymbolUseEdgeRow(
+                repo=ctx.repo,
+                commit=ctx.commit,
                 symbol="sym",
                 def_path="pkg/a.py",
                 use_path="pkg/b.py",

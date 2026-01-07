@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import pytest
 
@@ -17,9 +17,10 @@ from tests._helpers.assertions import (
     expect_false,
     expect_true,
 )
-from tests._helpers.columnar_tables import arrow_table_for_rows
+from tests._helpers.columnar_streams import table_for_rows
 from tests._helpers.fixtures.rows import (
     ModuleRow,
+    SymbolEdgeContext,
     SymbolUseEdgeRow,
     insert_symbol_use_edges,
     make_symbol_use_edge_row,
@@ -30,6 +31,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from tests._helpers.context import TestContext
+
+REPO: Final[str] = "repo"
+COMMIT: Final[str] = "commit"
 
 
 def _edge_weight(store: RxGraphStore, src: object, dst: object) -> float | None:
@@ -53,7 +57,7 @@ def _write_snapshot_table(
     commit: str,
     rows: Sequence[Mapping[str, object]],
 ) -> None:
-    table = arrow_table_for_rows(table_key, rows)
+    table = table_for_rows(table_key, rows)
     write_dataset(
         dataset_root=dataset_root,
         table_key=table_key,
@@ -107,21 +111,28 @@ def test_insert_symbol_use_edges_respects_explicit_goids(test_ctx: TestContext) 
 
 def test_make_symbol_use_edge_row_infers_same_flags() -> None:
     """same_file and same_module default to path-derived values when omitted."""
-    edge = make_symbol_use_edge_row("sym", "pkg/a.py", "pkg/a.py")
+    context = SymbolEdgeContext(repo=REPO, commit=COMMIT)
+    edge = make_symbol_use_edge_row("sym", "pkg/a.py", "pkg/a.py", context=context)
     expect_true(edge.same_file is True)
     expect_true(edge.same_module is True)
 
 
 def test_insert_symbol_use_edges_invalid_shape_raises(test_ctx: TestContext) -> None:
     """Invalid-length sequences raise a clear ValueError."""
-    with pytest.raises(ValueError, match="symbol_use_edges rows must have 5 or 7 fields"):
+    with pytest.raises(ValueError, match="symbol_use_edges rows must have 5, 7, or 9 fields"):
         insert_symbol_use_edges(test_ctx.gateway, [("sym", "a", "b", False, False, None)])
 
 
 def test_load_symbol_module_graph_smoke(core_ctx: TestContext) -> None:
     """Helpers seed symbol edges compatible with graph view loaders."""
     dataset_root = core_ctx.build_paths.dataset_root_dir
-    symbol_edge = make_symbol_use_edge_row("sym", MOD_A_PATH, MOD_B_PATH)
+    context = SymbolEdgeContext(repo=core_ctx.repo, commit=core_ctx.commit)
+    symbol_edge = make_symbol_use_edge_row(
+        "sym",
+        MOD_A_PATH,
+        MOD_B_PATH,
+        context=context,
+    )
     _write_snapshot_table(
         dataset_root,
         "graph.symbol_use_edges",
@@ -147,11 +158,25 @@ def test_load_symbol_function_graph_smoke(test_ctx: TestContext) -> None:
     """load_symbol_function_graph normalizes GOIDs and skips invalid/self edges."""
     dataset_root = test_ctx.build_paths.dataset_root_dir
     columns = SymbolUseEdgeRow.__columns__
+    repo = test_ctx.repo
+    commit = test_ctx.commit
     rows = [
-        _row_mapping(columns, ("s1", "a.py", "b.py", False, False, Decimal("10"), 20)),
-        _row_mapping(columns, ("s2", "a.py", "b.py", False, False, Decimal("10"), 20)),
-        _row_mapping(columns, ("self", "a.py", "a.py", True, True, 30, 30)),
-        _row_mapping(columns, ("bad", "a.py", "c.py", False, False, None, 40)),
+        _row_mapping(
+            columns,
+            (repo, commit, "s1", "a.py", "b.py", False, False, Decimal("10"), 20),
+        ),
+        _row_mapping(
+            columns,
+            (repo, commit, "s2", "a.py", "b.py", False, False, Decimal("10"), 20),
+        ),
+        _row_mapping(
+            columns,
+            (repo, commit, "self", "a.py", "a.py", True, True, 30, 30),
+        ),
+        _row_mapping(
+            columns,
+            (repo, commit, "bad", "a.py", "c.py", False, False, None, 40),
+        ),
     ]
     _write_snapshot_table(
         dataset_root,

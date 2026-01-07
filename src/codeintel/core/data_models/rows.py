@@ -24,6 +24,10 @@ class CFGBlockRow:
 
     Attributes
     ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
     function_goid_h128
         Function GOID hash.
     block_idx
@@ -48,6 +52,8 @@ class CFGBlockRow:
         Number of outgoing edges.
     """
 
+    repo: str
+    commit: str
     function_goid_h128: int
     block_idx: int
     block_id: str
@@ -77,6 +83,10 @@ class CFGEdgeRow:
 
     Attributes
     ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
     function_goid_h128
         Function GOID hash.
     src_block_id
@@ -87,6 +97,8 @@ class CFGEdgeRow:
         Edge kind (fallthrough, true, false, etc.).
     """
 
+    repo: str
+    commit: str
     function_goid_h128: int
     src_block_id: str
     dst_block_id: str
@@ -109,6 +121,10 @@ class DFGEdgeRow:
 
     Attributes
     ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
     function_goid_h128
         Function GOID hash.
     src_block_id
@@ -127,6 +143,8 @@ class DFGEdgeRow:
         Use kind descriptor.
     """
 
+    repo: str
+    commit: str
     function_goid_h128: int
     src_block_id: str
     dst_block_id: str
@@ -238,6 +256,10 @@ class SymbolUseRow:
 
     Attributes
     ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
     symbol
         Symbol identifier.
     def_path
@@ -254,6 +276,8 @@ class SymbolUseRow:
         Use GOID hash.
     """
 
+    repo: str
+    commit: str
     symbol: str
     def_path: str
     use_path: str

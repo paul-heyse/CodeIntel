@@ -31,16 +31,16 @@ class CLIProjectContext:
     cfg_path: Path
     env: dict[str, str]
     gateway: StorageGateway | None
+    commit: str
 
 
-def _write_project_file(repo_root: Path, repo: str, commit: str, db_rel_path: Path) -> Path:
+def _write_project_file(repo_root: Path, repo: str, db_rel_path: Path) -> Path:
     cfg_path = repo_root / PROJECT_FILENAME
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text(
         "\n".join(
             [
                 f"repo: {repo}",
-                f"commit: {commit}",
                 f"default_profile: {DEFAULT_PROFILE_NAME}",
                 "storage:",
                 f"  db_path: {db_rel_path.as_posix()}",
@@ -74,7 +74,7 @@ def create_cli_project(tmp_path: Path, *, repo: str, commit: str) -> CLIProjectC
     repo_root.mkdir(parents=True, exist_ok=True)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    cfg_path = _write_project_file(repo_root, repo, commit, db_path.relative_to(repo_root))
+    cfg_path = _write_project_file(repo_root, repo, db_path.relative_to(repo_root))
 
     env = {
         "CODEINTEL_REPO_ROOT": str(repo_root),
@@ -93,6 +93,7 @@ def create_cli_project(tmp_path: Path, *, repo: str, commit: str) -> CLIProjectC
         cfg_path=cfg_path,
         env=env,
         gateway=gateway,
+        commit=commit,
     )
 
 

@@ -294,13 +294,21 @@ def build_dfg(
     return builder.build()
 
 
-def dfg_to_rows(result: DFGResult) -> Sequence[DFGEdgeRow]:
+def dfg_to_rows(
+    result: DFGResult,
+    repo: str,
+    commit: str,
+) -> Sequence[DFGEdgeRow]:
     """Convert DFG result to database rows.
 
     Parameters
     ----------
     result
         DFG construction result.
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
 
     Returns
     -------
@@ -309,6 +317,8 @@ def dfg_to_rows(result: DFGResult) -> Sequence[DFGEdgeRow]:
     """
     return [
         DFGEdgeRow(
+            repo=repo,
+            commit=commit,
             function_goid_h128=result.function_goid,
             src_block_id=f"{result.function_goid}:block{edge.src_block_idx}",
             dst_block_id=f"{result.function_goid}:block{edge.dst_block_idx}",

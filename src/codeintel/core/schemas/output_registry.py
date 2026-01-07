@@ -2184,6 +2184,7 @@ CFG_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         schema="graph",
         name="cfg_blocks",
         columns=[
+            *REPO_COMMIT_COLS,
             Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
             Column("block_idx", "INTEGER", nullable=False),
             Column("block_id", "VARCHAR", nullable=False),
@@ -2196,20 +2197,27 @@ CFG_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("in_degree", "INTEGER", nullable=False),
             Column("out_degree", "INTEGER", nullable=False),
         ],
-        primary_key=("function_goid_h128", "block_idx"),
-        indexes=(Index("idx_graph_cfg_blocks_fn", ("function_goid_h128",)),),
+        primary_key=("repo", "commit", "function_goid_h128", "block_idx"),
+        indexes=(
+            Index("idx_graph_cfg_blocks_repo_commit", ("repo", "commit")),
+            Index("idx_graph_cfg_blocks_fn", ("function_goid_h128",)),
+        ),
         description="Control-flow blocks per function",
     ),
     TableSchema(
         schema="graph",
         name="cfg_edges",
         columns=[
+            *REPO_COMMIT_COLS,
             Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
             Column("src_block_id", "VARCHAR", nullable=False),
             Column("dst_block_id", "VARCHAR", nullable=False),
             Column("edge_kind", "VARCHAR"),
         ],
-        indexes=(Index("idx_graph_cfg_edges_fn", ("function_goid_h128",)),),
+        indexes=(
+            Index("idx_graph_cfg_edges_repo_commit", ("repo", "commit")),
+            Index("idx_graph_cfg_edges_fn", ("function_goid_h128",)),
+        ),
         description="Control-flow edges between blocks",
     ),
 )
@@ -2219,6 +2227,7 @@ DFG_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         schema="graph",
         name="dfg_edges",
         columns=[
+            *REPO_COMMIT_COLS,
             Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
             Column("src_block_id", "VARCHAR", nullable=False),
             Column("dst_block_id", "VARCHAR", nullable=False),
@@ -2228,7 +2237,10 @@ DFG_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("via_phi", "BOOLEAN"),
             Column("use_kind", "VARCHAR"),
         ],
-        indexes=(Index("idx_graph_dfg_edges_fn", ("function_goid_h128",)),),
+        indexes=(
+            Index("idx_graph_dfg_edges_repo_commit", ("repo", "commit")),
+            Index("idx_graph_dfg_edges_fn", ("function_goid_h128",)),
+        ),
         description="Data-flow edges between blocks/vars",
     ),
 )
@@ -2315,6 +2327,7 @@ SYMBOL_USES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         schema="graph",
         name="symbol_use_edges",
         columns=[
+            *REPO_COMMIT_COLS,
             Column("symbol", "VARCHAR", nullable=False),
             Column("def_path", "VARCHAR", nullable=False),
             Column("use_path", "VARCHAR", nullable=False),
@@ -2323,8 +2336,11 @@ SYMBOL_USES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("def_goid_h128", "DECIMAL(38,0)"),
             Column("use_goid_h128", "DECIMAL(38,0)"),
         ],
-        primary_key=("symbol", "def_path", "use_path"),
-        indexes=(Index("idx_graph_symbol_use_symbol", ("symbol",)),),
+        primary_key=("repo", "commit", "symbol", "def_path", "use_path"),
+        indexes=(
+            Index("idx_graph_symbol_use_repo_commit", ("repo", "commit")),
+            Index("idx_graph_symbol_use_symbol", ("symbol",)),
+        ),
         description="Definition-to-use edges derived from SCIP",
     ),
 )

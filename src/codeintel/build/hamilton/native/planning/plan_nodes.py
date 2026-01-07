@@ -47,6 +47,7 @@ class PlanGraphInputs:
     plan_cache_probe: Mapping[str, PlanCacheStatus]
     preflight_block_map: Mapping[str, tuple[str, ...]]
 
+
 _CACHE_DISABLE_TAGS: dict[TagKey, TagValue] = {
     cast("TagKey", CACHE_BEHAVIOR_TAG): "disable",
 }

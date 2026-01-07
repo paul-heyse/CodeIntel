@@ -279,6 +279,8 @@ def _seed_symbol_use_edges(gateway: StorageGateway) -> None:
         [
             ("pkg.a.callee", "pkg/a.py", "pkg/b.py", False, False),
         ],
+        repo=REPO,
+        commit=COMMIT,
     )
 
 

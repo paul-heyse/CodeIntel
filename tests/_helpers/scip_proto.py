@@ -141,6 +141,22 @@ def write_scip_index(
     return output_path
 
 
+def write_dummy_scip_files(base_dir: Path) -> Path:
+    """Create minimal SCIP artifacts for tests.
+
+    Returns
+    -------
+    Path
+        Path to index.scip.
+    """
+    scip_dir = base_dir / "scip"
+    scip_dir.mkdir(parents=True, exist_ok=True)
+    index_scip = scip_dir / "index.scip"
+    proto_module_path = ensure_proto_module()
+    write_scip_index(index_scip, proto_module_path=proto_module_path)
+    return index_scip
+
+
 def _add_documents(index: IndexProto, documents: Iterable[Mapping[str, object]]) -> None:
     for doc in documents:
         rel_path = _doc_path(doc)
@@ -338,5 +354,6 @@ __all__ = [
     "ensure_proto_module",
     "load_proto_module",
     "proto_source_path",
+    "write_dummy_scip_files",
     "write_scip_index",
 ]

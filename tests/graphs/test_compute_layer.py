@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import ast
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Final, cast
+from pathlib import Path
+from typing import Final, cast
 
 import libcst as cst
 
@@ -74,6 +75,7 @@ from codeintel.build.graphs.compute.symbols import (
     parse_symbol_roles,
 )
 from codeintel.build.graphs.ports.parsing import ParsedModule
+from codeintel.config.primitives import SnapshotRef
 from codeintel.core.catalog import FunctionSpan
 from codeintel.core.serialization.payload import encode_payload
 from codeintel.storage.catalog import FunctionSpanIndex
@@ -84,9 +86,6 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 CallGraphEdgeRow = dict[str, object]
 
@@ -113,6 +112,7 @@ TEST_GOID_E: Final[int] = 500
 REL_PATH: Final[str] = "pkg/mod.py"
 REPO: Final[str] = "repo"
 COMMIT: Final[str] = "commit"
+SNAPSHOT: Final[SnapshotRef] = SnapshotRef(repo=REPO, commit=COMMIT, repo_root=Path())
 
 
 def test_resolve_callee_local_name() -> None:
@@ -793,6 +793,7 @@ def test_cfg_to_rows_computes_degrees_and_defaults() -> None:
     cfg_result = CFGResult(blocks=blocks, edges=edges, function_goid=TEST_GOID_A)
     cfg_rows, edge_rows = cfg_to_rows(
         result=cfg_result,
+        snapshot=SNAPSHOT,
         file_path=REL_PATH,
         default_start=10,
         default_end=20,
@@ -1149,7 +1150,7 @@ def test_edges_to_rows() -> None:
             use_goid=TEST_GOID_B,
         )
     ]
-    rows = edges_to_rows(edges)
+    rows = edges_to_rows(edges, REPO, COMMIT)
 
     expect_length(rows, EXPECTED_EDGE_COUNT_ONE)
     row = rows[0]

@@ -35,6 +35,7 @@ def iter_normalized_tuples(
     for batch in normalize_reader(reader):
         yield from iter_tuples(batch, columns=columns)
 
+
 __all__ = [
     "drop_table_columns",
     "ensure_table_columns",

@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
 
 
-
 @dataclass(frozen=True)
 class SemanticRolesResult:
     """Result from semantic roles computation.

@@ -130,7 +130,7 @@ def subsystem_rows(
                 subsystem_core_frames.symbol_use_edges,
                 columns=None,
                 scope=scope,
-                require_scope_columns=False,
+                require_scope_columns=True,
             ),
             config_values_frame=tabular_to_scoped_table(
                 subsystem_analytics_frames.config_values,

@@ -23,6 +23,7 @@ from tests._helpers.fixtures.rows import (
     ImportGraphEdgeRow,
     ModuleRow,
     RepoMapRow,
+    SymbolEdgeContext,
     SymbolEdgeOptions,
     TestCatalogRow,
     dataclass_row,
@@ -313,11 +314,13 @@ class DocsExportPack:
     @staticmethod
     def _seed_symbol_use_edges(ctx: TestContext, goid: int) -> None:
         """Seed the graph.symbol_use_edges table."""
+        context = SymbolEdgeContext(repo=ctx.repo, commit=ctx.commit)
         rows = [
             make_symbol_use_edge_row(
                 "sym",
                 DEFAULT_PATH,
                 DEFAULT_PATH,
+                context=context,
                 options=SymbolEdgeOptions(
                     same_file=True,
                     same_module=True,

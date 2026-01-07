@@ -94,6 +94,8 @@ def test_graph_stats_include_symbol_and_config_graphs(graph_ctx: TestContext) ->
         graph_ctx.gateway,
         [
             SymbolUseEdgeRow(
+                repo=graph_ctx.repo,
+                commit=graph_ctx.commit,
                 symbol="sym1",
                 def_path="pkg/a.py",
                 use_path="pkg/b.py",

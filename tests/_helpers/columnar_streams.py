@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     import polars as pl
 
     from codeintel.core.columnar.schema_alignment import ExtrasPolicy
+    from codeintel.storage.warehouse import MaterializationResult, MaterializeOptions, Warehouse
 else:
     try:
         import polars as pl
@@ -136,6 +137,38 @@ def table_for_rows(
     )
     batches = list(reader)
     return pa.Table.from_batches(batches, schema=reader.schema)
+
+
+def materialize_table_from_rows(
+    warehouse: Warehouse,
+    table_key: str,
+    rows: RowsInput,
+    *,
+    columns: Sequence[str] | None = None,
+    options: MaterializeOptions | None = None,
+) -> MaterializationResult:
+    """Materialize row data via the columnar table path.
+
+    Parameters
+    ----------
+    warehouse
+        Warehouse instance handling the materialization.
+    table_key
+        Fully qualified table key (schema.table).
+    rows
+        Row data as tuples, mappings, or columnar rows.
+    columns
+        Optional column selection used to align row data.
+    options
+        Optional materialization options for the warehouse.
+
+    Returns
+    -------
+    MaterializationResult
+        Result metadata for the materialized table.
+    """
+    reader = reader_for_rows(table_key, rows, columns=columns)
+    return warehouse.materialize_table(table_key, reader, options=options)
 
 
 def lazyframe_for_rows(
@@ -393,6 +426,7 @@ def _is_mapping_sequence(rows: Sequence[object]) -> TypeGuard[Sequence[Mapping[s
 __all__ = [
     "contract_schema_for_table_key",
     "lazyframe_for_rows",
+    "materialize_table_from_rows",
     "reader_for_rows",
     "table_for_rows",
 ]

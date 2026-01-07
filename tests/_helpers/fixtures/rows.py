@@ -40,6 +40,7 @@ from tests._helpers.builders import (
     StaticDiagnosticsRow,
     SubsystemModuleRow,
     SubsystemRow,
+    SymbolEdgeContext,
     SymbolEdgeOptions,
     SymbolGraphMetricsModulesRow,
     SymbolUseEdgeRow,
@@ -116,35 +117,78 @@ class RowCoercions:
         return datetime.now(tz=UTC)
 
 
-_JSON_LIST_COLUMNS: set[str] = {
+_PAYLOAD_LIST_COLUMNS: set[str] = {
+    "base_classes_json",
+    "behavior_tags",
+    "block_reasons",
+    "call_chain_json",
+    "computed_targets",
+    "db_libs",
+    "decorators",
+    "drift_summaries",
     "entrypoints_json",
-    "examples",
-    "examples_json",
+    "excludes",
+    "functions_covered",
+    "http_client_libs",
+    "http_server_libs",
     "includes",
+    "libraries_used",
     "markers",
     "matches",
+    "message_libs",
+    "miss_nodes",
+    "modes",
     "modules_json",
     "owners",
-    "params",
-    "params_json",
-    "raises",
+    "postconditions_json",
+    "preconditions_json",
+    "primary_function_goids",
     "raises_json",
+    "reads",
     "reference_modules",
     "reference_paths",
-    "returns",
-    "returns_json",
+    "requested_targets",
     "role_sources_json",
+    "skipped_targets",
+    "source_pk_json",
     "stmts_json",
+    "subsystems_covered",
     "tags",
+    "usage_kinds_json",
     "usage_modes",
+    "writes_artifacts",
+    "writes_tables",
 }
-_JSON_DICT_COLUMNS: set[str] = {
+_PAYLOAD_DICT_COLUMNS: set[str] = {
     "annotation_ratio",
+    "arguments_schema",
+    "change_delta",
+    "constraints_json",
+    "context_json",
+    "dep_hashes",
+    "doc_params",
+    "doc_returns",
+    "effects_json",
     "evidence_json",
+    "extra",
+    "extras_json",
+    "meta",
     "metadata",
     "modules",
     "overlays",
+    "param_nullability_json",
+    "param_types",
+    "row_counts",
+    "summary",
+    "tool_versions",
     "span",
+}
+_PAYLOAD_BINARY_COLUMNS: set[str] = {
+    "bytecode_magic",
+    "cache_bytes",
+    "magic_number",
+    "op_bytes",
+    "source_sha256",
 }
 
 
@@ -162,18 +206,20 @@ def _looks_like_json(value: str) -> bool:
 
 
 def _guard_json_stringification(schema: TableSchema, row: Mapping[str, object]) -> None:
-    json_columns = {column.name for column in schema.columns if column.type == "JSON"}
-    for name in json_columns:
+    payload_columns = {column.name for column in schema.columns if column.type in {"BLOB", "JSON"}}
+    for name in payload_columns:
         value = row.get(name)
         if isinstance(value, str) and _looks_like_json(value):
             msg = f"JSON stringification detected for column {name}; pass dict/list instead."
             raise ValueError(msg)
 
 
-def _json_default_for_column(column_name: str) -> object:
-    if column_name in _JSON_DICT_COLUMNS:
+def _payload_default_for_column(column_name: str) -> object:
+    if column_name in _PAYLOAD_BINARY_COLUMNS:
+        return b""
+    if column_name in _PAYLOAD_DICT_COLUMNS:
         return {}
-    if column_name in _JSON_LIST_COLUMNS or column_name.endswith("_json"):
+    if column_name in _PAYLOAD_LIST_COLUMNS or column_name.endswith("_json"):
         return []
     return {}
 
@@ -192,8 +238,8 @@ def _default_for_column(column: Column) -> object:
         value = ""
     elif column_type in {"TIMESTAMP", "TIMESTAMPTZ"}:
         value = datetime(1970, 1, 1, tzinfo=UTC)
-    elif column_type == "JSON":
-        value = _json_default_for_column(column.name)
+    elif column_type in {"BLOB", "JSON"}:
+        value = _payload_default_for_column(column.name)
     else:
         value = None
     return value
@@ -1576,6 +1622,7 @@ __all__ = [
     "SubsystemPayloadSeed",
     "SubsystemRow",
     "SubsystemSeed",
+    "SymbolEdgeContext",
     "SymbolEdgeOptions",
     "SymbolGraphMetricsModulesRow",
     "SymbolUseEdgeRow",

@@ -20,7 +20,7 @@ from tests._helpers.assertions import (
     expect_is_none,
     expect_true,
 )
-from tests._helpers.columnar_tables import arrow_table_for_rows
+from tests._helpers.columnar_streams import table_for_rows
 from tests._helpers.fixtures.graphs import chain_graph, empty_digraph
 from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
@@ -70,7 +70,7 @@ def _write_dataset_rows(
         return
     dataset_root.mkdir(parents=True, exist_ok=True)
     columns = type(rows[0]).__columns__
-    table = arrow_table_for_rows(
+    table = table_for_rows(
         table_key,
         [_row_mapping(columns, row.to_tuple()) for row in rows],
         columns=columns,
@@ -92,7 +92,7 @@ def _write_dataset_mappings(
     if not rows:
         return
     dataset_root.mkdir(parents=True, exist_ok=True)
-    table = arrow_table_for_rows(table_key, rows)
+    table = table_for_rows(table_key, rows)
     write_dataset(
         dataset_root=dataset_root,
         table_key=table_key,
@@ -421,13 +421,31 @@ def test_load_symbol_module_graph_weights(test_ctx: TestContext) -> None:
     ]
     edges = [
         SymbolUseEdgeRow(
-            symbol="s", def_path="a.py", use_path="b.py", same_file=False, same_module=False
+            repo=repo,
+            commit=commit,
+            symbol="s",
+            def_path="a.py",
+            use_path="b.py",
+            same_file=False,
+            same_module=False,
         ),
         SymbolUseEdgeRow(
-            symbol="t", def_path="a.py", use_path="b.py", same_file=False, same_module=False
+            repo=repo,
+            commit=commit,
+            symbol="t",
+            def_path="a.py",
+            use_path="b.py",
+            same_file=False,
+            same_module=False,
         ),
         SymbolUseEdgeRow(
-            symbol="self", def_path="a.py", use_path="a.py", same_file=True, same_module=True
+            repo=repo,
+            commit=commit,
+            symbol="self",
+            def_path="a.py",
+            use_path="a.py",
+            same_file=True,
+            same_module=True,
         ),
     ]
     _write_dataset_rows(dataset_root, "core.modules", commit, modules)
@@ -447,7 +465,20 @@ def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
     dataset_root = test_ctx.build_paths.dataset_root_dir
     columns = SymbolUseEdgeRow.__columns__
     rows = [
-        _row_mapping(columns, ("s1", "a.py", "b.py", False, False, Decimal("10"), 20)),
+        _row_mapping(
+            columns,
+            (
+                test_ctx.repo,
+                commit,
+                "s1",
+                "a.py",
+                "b.py",
+                False,
+                False,
+                Decimal("10"),
+                20,
+            ),
+        ),
     ]
     _write_dataset_mappings(
         dataset_root,

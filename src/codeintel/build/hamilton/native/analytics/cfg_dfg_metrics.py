@@ -336,31 +336,31 @@ def cfg_dfg_metrics_inputs(
             q__graph__cfg_blocks,
             columns=None,
             scope=None,
-            require_scope_columns=False,
+            require_scope_columns=True,
         ),
         cfg_edges=tabular_to_scoped_table(
             q__graph__cfg_edges,
             columns=None,
             scope=None,
-            require_scope_columns=False,
+            require_scope_columns=True,
         ),
         dfg_edges=tabular_to_scoped_table(
             q__graph__dfg_edges,
             columns=None,
             scope=None,
-            require_scope_columns=False,
+            require_scope_columns=True,
         ),
         goids=tabular_to_scoped_table(
             q__core__goids,
             columns=None,
             scope=None,
-            require_scope_columns=False,
+            require_scope_columns=True,
         ),
         modules=tabular_to_scoped_table(
             q__core__modules,
             columns=None,
             scope=None,
-            require_scope_columns=False,
+            require_scope_columns=True,
         ),
     )
 
@@ -400,19 +400,19 @@ def cfg_dfg_metrics_analysis(
         cfg_dfg_metrics_inputs.cfg_blocks,
         columns=None,
         scope=scope,
-        require_scope_columns=False,
+        require_scope_columns=True,
     )
     cfg_edges = tabular_to_scoped_table(
         cfg_dfg_metrics_inputs.cfg_edges,
         columns=None,
         scope=scope,
-        require_scope_columns=False,
+        require_scope_columns=True,
     )
     dfg_edges = tabular_to_scoped_table(
         cfg_dfg_metrics_inputs.dfg_edges,
         columns=None,
         scope=scope,
-        require_scope_columns=False,
+        require_scope_columns=True,
     )
     metadata = _function_metadata(
         goids,

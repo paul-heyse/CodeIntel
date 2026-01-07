@@ -429,6 +429,7 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
     required = {"src_cpg_node_id", "dst_cpg_node_id"}
     if not required.issubset(set(table.column_names)):
         return table
+
     def _edge_mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
         return and_kleene(
             is_valid_mask(target.column("src_cpg_node_id")),

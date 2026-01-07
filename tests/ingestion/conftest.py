@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.config.primitives import BuildPaths
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.orchestration.tooling import tooling_outputs_session
 from tests._helpers.schemas import ensure_schema_service
@@ -56,7 +57,8 @@ def ingestion_ctx_bundle(
         Namespace containing repo_root, snapshot, dataset_root, and build_dir.
     """
     repo_root = ingestion_snapshot.repo_root
-    build_dir = ingestion_dataset_root / "build"
+    build_paths = BuildPaths.from_repo_root(repo_root)
+    build_dir = build_paths.build_dir
     build_dir.mkdir(parents=True, exist_ok=True)
     return SimpleNamespace(
         repo_root=repo_root,

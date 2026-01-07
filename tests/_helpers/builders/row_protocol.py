@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 from codeintel.core.storage import StorageContext
 from codeintel.storage.warehouse import MaterializeOptions, UpsertConfig, Warehouse
-from tests._helpers.columnar_tables import materialize_table_from_rows
+from tests._helpers.columnar_streams import materialize_table_from_rows
 from tests._helpers.sql import validate_identifier
 
 if TYPE_CHECKING:

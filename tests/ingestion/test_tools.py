@@ -62,9 +62,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.fakes.tools import (
-    FakeToolRunner,
-    FakeToolRunnerConfig,
+from tests._helpers.fakes.tool_runner import (
     PresetRunner,
     ToolRunResultOptions,
     make_tool_run_result,
@@ -94,7 +92,7 @@ SYMBOL_KIND_CLASS = 7
 
 
 # =============================================================================
-# Helper classes/fixtures are provided via tests._helpers.fakes.tools and
+# Helper classes/fixtures are provided via tests._helpers.fakes.tool_runner and
 # tests._helpers.orchestration.tooling.
 
 
@@ -687,10 +685,11 @@ def test_tool_service_run_pytest_skips_if_exists(tmp_path: Path) -> None:
 
 def test_pytest_plugin_skips_without_json_report(tmp_path: Path) -> None:
     """PytestPlugin should skip when json-report support is missing."""
-    runner = FakeToolRunner(
-        tmp_path,
-        config=FakeToolRunnerConfig(payloads={"pytest": "usage: pytest [options]"}),
+    run = make_tool_run_result(
+        ToolName.PYTEST,
+        options=ToolRunResultOptions(stdout="usage: pytest [options]"),
     )
+    runner = PresetRunner(run)
     plugin = PytestPlugin(runner=runner, tools_config=ToolsConfig.default())
 
     result = asyncio.run(plugin.run(repo_root=tmp_path, json_report_path=tmp_path / "report.json"))
@@ -702,10 +701,11 @@ def test_tool_service_run_pytest_report_skips_when_missing_json_report(
     tmp_path: Path,
 ) -> None:
     """ToolService.run_pytest_report should skip when json-report is unavailable."""
-    runner = FakeToolRunner(
-        tmp_path,
-        config=FakeToolRunnerConfig(payloads={"pytest": "usage: pytest [options]"}),
+    run = make_tool_run_result(
+        ToolName.PYTEST,
+        options=ToolRunResultOptions(stdout="usage: pytest [options]"),
     )
+    runner = PresetRunner(run)
     service = ToolService(runner, ToolsConfig.default())
 
     result = asyncio.run(

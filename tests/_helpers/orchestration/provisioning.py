@@ -737,7 +737,12 @@ def _run_ingestion_steps(
                 typing_result.result.error or "unknown",
             )
     if opts.build_graph_metrics:
-        seed_cfg_dfg_for_metrics(setup.gateway, rel_path="pkg/mod.py")
+        seed_cfg_dfg_for_metrics(
+            setup.gateway,
+            rel_path="pkg/mod.py",
+            repo=repo,
+            commit=commit,
+        )
         # CFG/DFG metrics computation now happens via Hamilton native modules
         # See codeintel.build.hamilton.native.analytics.cfg_dfg for full context
 
@@ -858,7 +863,12 @@ def provision_hamilton_repo(
     ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
 
     if opts.build_graph_metrics:
-        seed_cfg_dfg_for_metrics(ctx.gateway, rel_path="pkg/mod.py")
+        seed_cfg_dfg_for_metrics(
+            ctx.gateway,
+            rel_path="pkg/mod.py",
+            repo=repo,
+            commit=commit,
+        )
 
     return ProvisionedGateway(
         repo=repo,
@@ -1138,6 +1148,8 @@ def graph_metrics_ready_gateway(
             gateway,
             [
                 SymbolUseEdgeRow(
+                    repo=opts.repo,
+                    commit=opts.commit,
                     symbol="sym",
                     def_path="pkg/mod_b.py",
                     use_path="pkg/mod_a.py",
@@ -1322,16 +1334,7 @@ def build_callgraph_fixture_repo(
     )
     build_dir = repo_root / ".build"
     build_dir.mkdir(parents=True, exist_ok=True)
-    paths = BuildPaths(
-        build_dir=build_dir,
-        db_path=build_dir / "db" / "codeintel.duckdb",
-        document_output_dir=build_dir / "document_output",
-        dataset_root_dir=build_dir / "datasets",
-        scip_dir=build_dir / "scip",
-        pytest_report=build_dir / "test-results" / "pytest-report.json",
-        tool_cache=build_dir / ".tool_cache",
-        log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
-    )
+    paths = BuildPaths.from_repo_root(repo_root, build_dir=build_dir)
     providers = create_default_providers(make_tools_config())
     ctx_runtime = TestContext(
         snapshot=snapshot,

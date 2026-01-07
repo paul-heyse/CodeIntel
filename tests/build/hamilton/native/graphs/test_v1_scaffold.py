@@ -223,6 +223,8 @@ def test_cfg_dfg_compute_columns(tmp_path: Path) -> None:
     blocks = cfg_blocks_compute(analysis)
     result_blocks = _collect_frame(blocks)
     assert result_blocks.columns == [
+        "repo",
+        "commit",
         "function_goid_h128",
         "block_idx",
         "block_id",
@@ -239,6 +241,8 @@ def test_cfg_dfg_compute_columns(tmp_path: Path) -> None:
     cfg_edges = cfg_edges_compute(analysis)
     result_cfg_edges = _collect_frame(cfg_edges)
     assert result_cfg_edges.columns == [
+        "repo",
+        "commit",
         "function_goid_h128",
         "src_block_id",
         "dst_block_id",
@@ -248,6 +252,8 @@ def test_cfg_dfg_compute_columns(tmp_path: Path) -> None:
     dfg_edges = dfg_edges_compute(analysis)
     result_dfg_edges = _collect_frame(dfg_edges)
     assert result_dfg_edges.columns == [
+        "repo",
+        "commit",
         "function_goid_h128",
         "src_block_id",
         "dst_block_id",
@@ -273,13 +279,17 @@ def test_goids_compute_columns(tmp_path: Path) -> None:
 def test_symbol_use_edges_compute_columns(tmp_path: Path) -> None:
     """Ensure symbol use edges compute columns match the schema."""
     _write_sample_module(tmp_path)
+    env = _fake_env(tmp_path)
     frame = symbol_use_edges_compute(
+        env,
         _sample_scip_occurrences_frame(),
         _sample_modules_frame(),
         _sample_goids_frame(),
     )
     result = _collect_frame(frame)
     assert result.columns == [
+        "repo",
+        "commit",
         "symbol",
         "def_path",
         "use_path",

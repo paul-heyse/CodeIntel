@@ -11,7 +11,7 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.core.storage import StorageContext
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.expectation_assertions import expect_equal
-from tests._helpers.columnar_tables import materialize_table_from_rows
+from tests._helpers.columnar_streams import materialize_table_from_rows
 
 if TYPE_CHECKING:
     from pathlib import Path

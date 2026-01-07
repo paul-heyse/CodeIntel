@@ -451,6 +451,8 @@ def _build_symbol_use_edges(goids: list[GoidRow]) -> list[SymbolUseEdgeRow]:
             edges.append(
                 dataclass_row(
                     SymbolUseEdgeRow,
+                    repo=def_goid.repo,
+                    commit=def_goid.commit,
                     symbol=symbol,
                     def_path=def_goid.rel_path,
                     use_path=use_goid.rel_path,

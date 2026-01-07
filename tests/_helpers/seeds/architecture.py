@@ -18,7 +18,7 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.columnar_tables import materialize_table_from_rows
+from tests._helpers.columnar_streams import materialize_table_from_rows
 from tests._helpers.fixtures.rows import RowFactory
 from tests._helpers.gateway import GatewayFactory, seed_contract_catalog
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree

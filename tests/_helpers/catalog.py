@@ -39,6 +39,8 @@ def make_target_descriptor(
     *,
     name: str,
     module: TargetModule,
+    table_keys: Sequence[str] | None = None,
+    artifact_names: Sequence[str] | None = None,
     **overrides: object,
 ) -> TargetDescriptor:
     """Construct a minimal TargetDescriptor for tests.
@@ -51,6 +53,10 @@ def make_target_descriptor(
         Target module name.
     overrides
         Optional overrides for dependencies, description, anchor_node, and spec_version.
+    table_keys
+        Optional table keys produced by the target.
+    artifact_names
+        Optional artifact names produced by the target.
 
     Returns
     -------
@@ -97,6 +103,8 @@ def make_target_descriptor(
         parameters=EMPTY_PARAMETERS,
         description=description or f"Test target {name}",
         spec_version=spec_version,
+        table_keys=tuple(table_keys or ()),
+        artifact_names=tuple(artifact_names or ()),
     )
 
 

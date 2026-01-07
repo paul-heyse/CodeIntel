@@ -28,6 +28,7 @@ __all__ = [
     "CallGraphNodeRow",
     "DFGEdgeRow",
     "ImportGraphEdgeRow",
+    "SymbolEdgeContext",
     "SymbolUseEdgeInput",
     "SymbolUseEdgeRow",
     "insert_symbol_use_edges",
@@ -183,6 +184,8 @@ class SymbolUseEdgeRow:
 
     __table__: ClassVar[str] = "graph.symbol_use_edges"
     __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
         "symbol",
         "def_path",
         "use_path",
@@ -192,6 +195,8 @@ class SymbolUseEdgeRow:
         "use_goid_h128",
     )
 
+    repo: str
+    commit: str
     symbol: str
     def_path: str
     use_path: str
@@ -200,15 +205,19 @@ class SymbolUseEdgeRow:
     def_goid_h128: int | None = None
     use_goid_h128: int | None = None
 
-    def to_tuple(self) -> tuple[str, str, str, bool, bool, int | None, int | None]:
+    def to_tuple(
+        self,
+    ) -> tuple[str, str, str, str, str, bool, bool, int | None, int | None]:
         """Return standard tuple for basic insertion.
 
         Returns
         -------
-        tuple[str, str, str, bool, bool, int | None, int | None]
+        tuple[str, str, str, str, str, bool, bool, int | None, int | None]
             Row values in column order including optional GOIDs.
         """
         return (
+            self.repo,
+            self.commit,
             self.symbol,
             self.def_path,
             self.use_path,
@@ -220,7 +229,7 @@ class SymbolUseEdgeRow:
 
     def to_full_tuple(
         self,
-    ) -> tuple[str, str, str, bool, bool, int | None, int | None]:
+    ) -> tuple[str, str, str, str, str, bool, bool, int | None, int | None]:
         """Return tuple with all columns, including optional GOID fields.
 
         Returns
@@ -229,6 +238,8 @@ class SymbolUseEdgeRow:
             Values including GOID fields in column order.
         """
         return (
+            self.repo,
+            self.commit,
             self.symbol,
             self.def_path,
             self.use_path,
@@ -238,7 +249,9 @@ class SymbolUseEdgeRow:
             self.use_goid_h128,
         )
 
-    def to_basic_tuple(self) -> tuple[str, str, str, bool, bool, int | None, int | None]:
+    def to_basic_tuple(
+        self,
+    ) -> tuple[str, str, str, str, str, bool, bool, int | None, int | None]:
         """Return tuple for basic insertion including optional GOIDs.
 
         Returns
@@ -247,6 +260,8 @@ class SymbolUseEdgeRow:
             Values in column order for INSERT.
         """
         return (
+            self.repo,
+            self.commit,
             self.symbol,
             self.def_path,
             self.use_path,
@@ -258,7 +273,7 @@ class SymbolUseEdgeRow:
 
     def to_detailed_tuple(
         self,
-    ) -> tuple[str, str, str, bool, bool, int | None, int | None]:
+    ) -> tuple[str, str, str, str, str, bool, bool, int | None, int | None]:
         """Return tuple with GOID details.
 
         Returns
@@ -267,6 +282,8 @@ class SymbolUseEdgeRow:
             Values including optional GOID fields.
         """
         return (
+            self.repo,
+            self.commit,
             self.symbol,
             self.def_path,
             self.use_path,
@@ -283,6 +300,8 @@ class CFGBlockRow:
 
     __table__: ClassVar[str] = "graph.cfg_blocks"
     __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
         "function_goid_h128",
         "block_idx",
         "block_id",
@@ -296,6 +315,8 @@ class CFGBlockRow:
         "out_degree",
     )
 
+    repo: str
+    commit: str
     function_goid_h128: int
     block_idx: int
     block_id: str
@@ -310,7 +331,7 @@ class CFGBlockRow:
 
     def to_tuple(
         self,
-    ) -> tuple[int, int, str, str, str, int, int, str, JsonValue, int, int]:
+    ) -> tuple[str, str, int, int, str, str, str, int, int, str, JsonValue, int, int]:
         """Serialize row to database insert order.
 
         Returns
@@ -319,6 +340,8 @@ class CFGBlockRow:
             Values in column order for INSERT.
         """
         return (
+            self.repo,
+            self.commit,
             self.function_goid_h128,
             self.block_idx,
             self.block_id,
@@ -339,18 +362,22 @@ class CFGEdgeRow:
 
     __table__: ClassVar[str] = "graph.cfg_edges"
     __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
         "function_goid_h128",
         "src_block_id",
         "dst_block_id",
         "edge_kind",
     )
 
+    repo: str
+    commit: str
     function_goid_h128: int
     src_block_id: str
     dst_block_id: str
     edge_kind: str | None
 
-    def to_tuple(self) -> tuple[int, str, str, str | None]:
+    def to_tuple(self) -> tuple[str, str, int, str, str, str | None]:
         """Serialize row to database insert order.
 
         Returns
@@ -359,6 +386,8 @@ class CFGEdgeRow:
             Values in column order for INSERT.
         """
         return (
+            self.repo,
+            self.commit,
             self.function_goid_h128,
             self.src_block_id,
             self.dst_block_id,
@@ -372,6 +401,8 @@ class DFGEdgeRow:
 
     __table__: ClassVar[str] = "graph.dfg_edges"
     __columns__: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
         "function_goid_h128",
         "src_block_id",
         "dst_block_id",
@@ -382,6 +413,8 @@ class DFGEdgeRow:
         "use_kind",
     )
 
+    repo: str
+    commit: str
     function_goid_h128: int
     src_block_id: str
     dst_block_id: str
@@ -393,7 +426,7 @@ class DFGEdgeRow:
 
     def to_tuple(
         self,
-    ) -> tuple[int, str, str, str | None, str | None, str | None, bool, str | None]:
+    ) -> tuple[str, str, int, str, str, str | None, str | None, str | None, bool, str | None]:
         """Serialize row to database insert order.
 
         Returns
@@ -402,6 +435,8 @@ class DFGEdgeRow:
             Values in column order for INSERT.
         """
         return (
+            self.repo,
+            self.commit,
             self.function_goid_h128,
             self.src_block_id,
             self.dst_block_id,
@@ -415,13 +450,29 @@ class DFGEdgeRow:
 
 SymbolUseEdgeInput = SymbolUseEdgeRow | Mapping[str, object] | Sequence[object]
 
-_EXPECTED_SEQUENCE_LENGTHS: set[int] = {5, 7}
+_EDGE_FIELD_COUNT_MIN = 5
 _EDGE_FIELD_COUNT_FULL = 7
+_EDGE_FIELD_COUNT_EXTENDED = 9
+_EXPECTED_SEQUENCE_LENGTHS: set[int] = {
+    _EDGE_FIELD_COUNT_MIN,
+    _EDGE_FIELD_COUNT_FULL,
+    _EDGE_FIELD_COUNT_EXTENDED,
+}
 
 
-class _SymbolMapping(TypedDict):
+@dataclass(frozen=True)
+class SymbolEdgeContext:
+    """Repository context for symbol use edge helpers."""
+
+    repo: str
+    commit: str
+
+
+class _SymbolMapping(TypedDict, total=False):
     """TypedDict for symbol_use_edge mappings."""
 
+    repo: object
+    commit: object
     symbol: object
     def_path: object
     use_path: object
@@ -500,11 +551,28 @@ def _coerce_goids(
     return def_val, use_val
 
 
+def _resolve_repo_commit(
+    repo: str | None,
+    commit: str | None,
+    gateway: StorageGateway,
+) -> tuple[str, str]:
+    if repo and commit:
+        return repo, commit
+    config = getattr(gateway, "config", None)
+    config_repo = getattr(config, "repo", None) if config is not None else None
+    config_commit = getattr(config, "commit", None) if config is not None else None
+    if config_repo and config_commit:
+        return str(config_repo), str(config_commit)
+    message = "repo and commit are required for symbol_use_edges rows"
+    raise ValueError(message)
+
+
 def make_symbol_use_edge_row(
     symbol: str,
     def_path: str,
     use_path: str,
     *,
+    context: SymbolEdgeContext,
     options: SymbolEdgeOptions | None = None,
 ) -> SymbolUseEdgeRow:
     """Build a SymbolUseEdgeRow with inferred same-file/module defaults.
@@ -517,6 +585,8 @@ def make_symbol_use_edge_row(
         Definition path.
     use_path
         Use path.
+    context
+        Repository/commit context for the edge.
     options
         Optional SymbolEdgeOptions bundle controlling flags and GOIDs.
 
@@ -527,7 +597,8 @@ def make_symbol_use_edge_row(
 
     Examples
     --------
-    >>> make_symbol_use_edge_row("sym", "a.py", "a.py")
+    >>> context = SymbolEdgeContext(repo="demo/repo", commit="deadbeef")
+    >>> make_symbol_use_edge_row("sym", "a.py", "a.py", context=context)
     SymbolUseEdgeRow(symbol='sym', def_path='a.py', use_path='a.py', same_file=True, ...)
     """
     opts = options or SymbolEdgeOptions()
@@ -545,10 +616,17 @@ def make_symbol_use_edge_row(
         same_module=normalized_same_module,
         def_goid_h128=opts.def_goid_h128,
         use_goid_h128=opts.use_goid_h128,
+        repo=context.repo,
+        commit=context.commit,
     )
 
 
-def _coerce_symbol_use_edge_row(row: SymbolUseEdgeInput) -> SymbolUseEdgeRow:
+def _coerce_symbol_use_edge_row(
+    row: SymbolUseEdgeInput,
+    *,
+    repo: str,
+    commit: str,
+) -> SymbolUseEdgeRow:
     """Normalize supported input shapes into a SymbolUseEdgeRow.
 
     Returns
@@ -560,53 +638,89 @@ def _coerce_symbol_use_edge_row(row: SymbolUseEdgeInput) -> SymbolUseEdgeRow:
     ------
     TypeError
         If the row is neither a SymbolUseEdgeRow, mapping, nor sequence.
-    ValueError
-        If required keys are missing or sequence length is invalid.
     """
     if isinstance(row, SymbolUseEdgeRow):
         return row
     if isinstance(row, Mapping):
-        mapping_row = cast("_SymbolMapping", row)
-        try:
-            symbol = mapping_row["symbol"]
-            def_path = mapping_row["def_path"]
-            use_path = mapping_row["use_path"]
-        except KeyError as exc:
-            message = "symbol_use_edge mapping missing required key"
-            raise ValueError(message) from exc
-        same_file = _as_optional_bool(mapping_row.get("same_file"))
-        same_module = _as_optional_bool(mapping_row.get("same_module"))
-        def_goid_h128, use_goid_h128 = _coerce_goids(
-            mapping_row.get("def_goid_h128"),
-            mapping_row.get("use_goid_h128"),
-        )
-        normalized_same_file, normalized_same_module = _normalize_same_flags(
-            str(def_path),
-            str(use_path),
-            same_file=same_file,
-            same_module=same_module,
-        )
-        return SymbolUseEdgeRow(
-            symbol=str(symbol),
-            def_path=str(def_path),
-            use_path=str(use_path),
-            same_file=normalized_same_file,
-            same_module=normalized_same_module,
-            def_goid_h128=(int(def_goid_h128) if isinstance(def_goid_h128, (int, float)) else None),
-            use_goid_h128=(int(use_goid_h128) if isinstance(use_goid_h128, (int, float)) else None),
-        )
+        return _coerce_symbol_use_edge_mapping(row, repo=repo, commit=commit)
     if not isinstance(row, Sequence):
         message = f"Unsupported symbol_use_edge row type: {type(row)}"
         raise TypeError(message)
+    return _coerce_symbol_use_edge_sequence(row, repo=repo, commit=commit)
+
+
+def _coerce_symbol_use_edge_mapping(
+    row: Mapping[str, object],
+    *,
+    repo: str,
+    commit: str,
+) -> SymbolUseEdgeRow:
+    mapping_row = cast("_SymbolMapping", row)
+    symbol_obj = mapping_row.get("symbol")
+    def_path_obj = mapping_row.get("def_path")
+    use_path_obj = mapping_row.get("use_path")
+    if symbol_obj is None or def_path_obj is None or use_path_obj is None:
+        message = "symbol_use_edge mapping missing required key"
+        raise ValueError(message)
+    row_repo = mapping_row.get("repo") or repo
+    row_commit = mapping_row.get("commit") or commit
+    same_file = _as_optional_bool(mapping_row.get("same_file"))
+    same_module = _as_optional_bool(mapping_row.get("same_module"))
+    def_goid_h128, use_goid_h128 = _coerce_goids(
+        mapping_row.get("def_goid_h128"),
+        mapping_row.get("use_goid_h128"),
+    )
+    normalized_same_file, normalized_same_module = _normalize_same_flags(
+        str(def_path_obj),
+        str(use_path_obj),
+        same_file=same_file,
+        same_module=same_module,
+    )
+    return SymbolUseEdgeRow(
+        repo=str(row_repo),
+        commit=str(row_commit),
+        symbol=str(symbol_obj),
+        def_path=str(def_path_obj),
+        use_path=str(use_path_obj),
+        same_file=normalized_same_file,
+        same_module=normalized_same_module,
+        def_goid_h128=def_goid_h128,
+        use_goid_h128=use_goid_h128,
+    )
+
+
+def _coerce_symbol_use_edge_sequence(
+    row: Sequence[object],
+    *,
+    repo: str,
+    commit: str,
+) -> SymbolUseEdgeRow:
     length = len(row)
     if length not in _EXPECTED_SEQUENCE_LENGTHS:
-        message = f"symbol_use_edges rows must have 5 or 7 fields, got {length}: {row}"
+        message = f"symbol_use_edges rows must have 5, 7, or 9 fields, got {length}: {row}"
         raise ValueError(message)
-    symbol, def_path, use_path, same_file, same_module = row[:5]
     def_goid_h128: int | None = None
     use_goid_h128: int | None = None
-    if length == _EDGE_FIELD_COUNT_FULL:
-        def_goid_h128, use_goid_h128 = _coerce_goids(row[5], row[6])
+    if length == _EDGE_FIELD_COUNT_EXTENDED:
+        (
+            row_repo,
+            row_commit,
+            symbol,
+            def_path,
+            use_path,
+            same_file,
+            same_module,
+            def_raw,
+            use_raw,
+        ) = row
+        def_goid_h128, use_goid_h128 = _coerce_goids(def_raw, use_raw)
+    elif length == _EDGE_FIELD_COUNT_FULL:
+        symbol, def_path, use_path, same_file, same_module, def_raw, use_raw = row
+        def_goid_h128, use_goid_h128 = _coerce_goids(def_raw, use_raw)
+        row_repo, row_commit = repo, commit
+    else:
+        symbol, def_path, use_path, same_file, same_module = row
+        row_repo, row_commit = repo, commit
     normalized_same_file, normalized_same_module = _normalize_same_flags(
         str(def_path),
         str(use_path),
@@ -614,6 +728,8 @@ def _coerce_symbol_use_edge_row(row: SymbolUseEdgeInput) -> SymbolUseEdgeRow:
         same_module=_as_optional_bool(same_module),
     )
     return SymbolUseEdgeRow(
+        repo=str(row_repo),
+        commit=str(row_commit),
         symbol=str(symbol),
         def_path=str(def_path),
         use_path=str(use_path),
@@ -628,6 +744,8 @@ def insert_symbol_use_edges(
     gateway: StorageGateway,
     rows: Iterable[SymbolUseEdgeInput],
     *,
+    repo: str | None = None,
+    commit: str | None = None,
     coerce_to_full: bool = True,
 ) -> int:
     """Insert symbol_use_edges rows with schema-aware defaults and validation.
@@ -641,9 +759,13 @@ def insert_symbol_use_edges(
     gateway
         Storage gateway providing database connection.
     rows
-        Iterable of SymbolUseEdgeRow, mapping, or 5/7-field sequence inputs.
+        Iterable of SymbolUseEdgeRow, mapping, or 5/7/9-field sequence inputs.
+    repo
+        Repository identifier to apply when row data omits it.
+    commit
+        Commit hash to apply when row data omits it.
     coerce_to_full
-        When True (default), insert all seven columns; otherwise insert five.
+        When True (default), insert all nine columns; otherwise insert seven.
 
     Returns
     -------
@@ -654,7 +776,11 @@ def insert_symbol_use_edges(
     if not row_list:
         return 0
 
-    normalized_rows = [_coerce_symbol_use_edge_row(row) for row in row_list]
+    resolved_repo, resolved_commit = _resolve_repo_commit(repo, commit, gateway)
+    normalized_rows = [
+        _coerce_symbol_use_edge_row(row, repo=resolved_repo, commit=resolved_commit)
+        for row in row_list
+    ]
     _ = coerce_to_full
     insert_rows(gateway, normalized_rows)
     return len(normalized_rows)

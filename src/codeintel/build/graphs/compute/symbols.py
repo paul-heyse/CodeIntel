@@ -194,13 +194,21 @@ def build_use_def_mapping(
     return mapping
 
 
-def edges_to_rows(edges: Sequence[SymbolUseEdge]) -> list[SymbolUseRow]:
+def edges_to_rows(
+    edges: Sequence[SymbolUseEdge],
+    repo: str,
+    commit: str,
+) -> list[SymbolUseRow]:
     """Convert symbol use edges to database rows.
 
     Parameters
     ----------
     edges
         Symbol use edges.
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
 
     Returns
     -------
@@ -209,6 +217,8 @@ def edges_to_rows(edges: Sequence[SymbolUseEdge]) -> list[SymbolUseRow]:
     """
     return [
         SymbolUseRow(
+            repo=repo,
+            commit=commit,
             symbol=edge.symbol,
             def_path=edge.def_path,
             use_path=edge.use_path,

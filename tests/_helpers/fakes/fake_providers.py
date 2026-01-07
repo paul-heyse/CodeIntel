@@ -18,6 +18,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.engine.infrastructure import (
+    ToolName,
+    ToolRunner,
+    ToolRunOptions,
+    ToolRunResult,
+)
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.engine.status import ToolStatus
 from codeintel.ingestion.ports.tools import (
@@ -29,7 +36,6 @@ from codeintel.ingestion.ports.tools import (
     ScipSymbol,
     TestCase,
 )
-from tests._helpers.fakes.tools import FakeToolRunner as IngestionFakeToolRunner
 from tests._helpers.records import (
     CallRecorder,
     CollectCall,
@@ -37,6 +43,7 @@ from tests._helpers.records import (
     GitLogCall,
     ScipIndexCall,
     ScipParseCall,
+    ToolRunCall,
     TypeCheckCall,
 )
 
@@ -65,11 +72,46 @@ class GitLogEntry:
 
 
 @dataclass
-class FakeToolRunner(IngestionFakeToolRunner):
-    """Compatibility alias for the ingestion FakeToolRunner."""
+class FakeToolRunner(ToolRunner):
+    """ToolRunner that returns empty successes and records calls."""
 
     def __init__(self, cache_dir: Path | None = None) -> None:
-        super().__init__(cache_dir=cache_dir or Path("build") / ".tool_cache")
+        super().__init__(
+            tools_config=ToolsConfig.default(),
+            cache_dir=cache_dir or Path("build") / ".tool_cache",
+        )
+        self.calls: CallRecorder[ToolRunCall] = CallRecorder()
+
+    async def run_async(
+        self,
+        tool: ToolName | str,
+        args: Sequence[str],
+        *,
+        options: ToolRunOptions | None = None,
+    ) -> ToolRunResult:
+        run_options = options or ToolRunOptions()
+        tool_enum = tool if isinstance(tool, ToolName) else ToolName(str(tool))
+        args_list = list(args)
+        self.calls.record(
+            ToolRunCall(
+                tool=tool_enum.value,
+                args=args_list,
+                cwd=run_options.cwd or self.cache_dir,
+                timeout_ms=(
+                    None if run_options.timeout_s is None else int(run_options.timeout_s * 1000)
+                ),
+                env=None if run_options.env is None else dict(run_options.env),
+            )
+        )
+        return ToolRunResult(
+            tool=tool_enum,
+            args=tuple(args_list),
+            returncode=0,
+            stdout="",
+            stderr="",
+            output_path=run_options.output_path,
+            duration_s=0.0,
+        )
 
 
 @dataclass

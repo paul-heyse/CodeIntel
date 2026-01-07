@@ -35,15 +35,14 @@ EXPECTED_START_LINE = 1
 EXPECTED_END_LINE = 1
 
 
-def _scip_paths(tmp_path: Path) -> tuple[Path, Path]:
+def _scip_paths(tmp_path: Path) -> tuple[Path, Path, Path]:
     context = build_scip_repo_paths(tmp_path)
-    return context.repo_root, context.build_dir
+    return context.repo_root, context.build_dir, context.document_output_dir
 
 
 def test_resolved_scip_config_create_minimal(tmp_path: Path) -> None:
     """Test creating ResolvedScipConfig with minimal required fields."""
-    repo_root, build_dir = _scip_paths(tmp_path)
-    doc_dir = build_dir / "docs"
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
 
     config = ResolvedScipConfig(
         repo="test-org/test-repo",
@@ -66,7 +65,7 @@ def test_resolved_scip_config_create_minimal(tmp_path: Path) -> None:
 
 def test_resolved_scip_config_create_with_modules(tmp_path: Path) -> None:
     """Test creating ResolvedScipConfig with module records."""
-    repo_root, build_dir = _scip_paths(tmp_path)
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
     module = module_records_for_paths(["pkg/mod.py"], repo_root)[0]
 
     config = ResolvedScipConfig(
@@ -74,7 +73,7 @@ def test_resolved_scip_config_create_with_modules(tmp_path: Path) -> None:
         commit="abc123",
         repo_root=repo_root,
         build_dir=build_dir,
-        document_output_dir=build_dir / "docs",
+        document_output_dir=doc_dir,
         scip_python_bin="/usr/bin/scip-python",
         modules=[module],
     )
@@ -86,12 +85,13 @@ def test_resolved_scip_config_create_with_modules(tmp_path: Path) -> None:
 
 def test_resolved_scip_config_frozen_dataclass(tmp_path: Path) -> None:
     """Test that ResolvedScipConfig is immutable."""
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
     config = ResolvedScipConfig(
         repo="test-org/test-repo",
         commit="abc123",
-        repo_root=tmp_path,
-        build_dir=tmp_path / "build",
-        document_output_dir=tmp_path / "docs",
+        repo_root=repo_root,
+        build_dir=build_dir,
+        document_output_dir=doc_dir,
         scip_python_bin=None,
         modules=[],
     )
@@ -114,8 +114,7 @@ def test_scip_resolver_input_create_empty() -> None:
 
 def test_scip_resolver_input_create_with_explicit_params(tmp_path: Path) -> None:
     """Test creating ScipResolverInput with explicit parameters."""
-    repo_root, build_dir = _scip_paths(tmp_path)
-    doc_dir = build_dir / "docs"
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
 
     inputs = ScipResolverInput(
         repo="test-org/test-repo",
@@ -136,7 +135,7 @@ def test_scip_resolver_input_create_with_explicit_params(tmp_path: Path) -> None
 
 def test_scip_resolver_input_create_with_modules(tmp_path: Path) -> None:
     """Test creating ScipResolverInput with pre-computed modules."""
-    repo_root, build_dir = _scip_paths(tmp_path)
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
     modules = module_records_for_paths(["pkg/mod.py"], repo_root)
 
     inputs = ScipResolverInput(
@@ -144,7 +143,7 @@ def test_scip_resolver_input_create_with_modules(tmp_path: Path) -> None:
         commit="abc",
         repo_root=repo_root,
         build_dir=build_dir,
-        document_output_dir=build_dir / "docs",
+        document_output_dir=doc_dir,
         modules=modules,
     )
 
@@ -165,8 +164,7 @@ def test_scip_resolver_input_frozen_dataclass() -> None:
 
 def test_resolve_scip_inputs_with_explicit_params(tmp_path: Path) -> None:
     """Test resolving with explicit ScipResolverInput.build()."""
-    repo_root, build_dir = _scip_paths(tmp_path)
-    doc_dir = build_dir / "docs"
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
 
     result = resolve_scip_inputs(
         [],
@@ -191,8 +189,7 @@ def test_resolve_scip_inputs_with_explicit_params(tmp_path: Path) -> None:
 
 def test_resolve_scip_inputs_with_scip_resolver_input(tmp_path: Path) -> None:
     """Test resolving with ScipResolverInput dataclass."""
-    repo_root, build_dir = _scip_paths(tmp_path)
-    doc_dir = build_dir / "docs"
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
 
     inputs = ScipResolverInput(
         repo="test-org/test-repo",
@@ -212,7 +209,7 @@ def test_resolve_scip_inputs_with_scip_resolver_input(tmp_path: Path) -> None:
 
 def test_resolve_scip_inputs_with_modules_sequence(tmp_path: Path) -> None:
     """Test resolving with modules passed as first argument."""
-    repo_root, build_dir = _scip_paths(tmp_path)
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
     modules = module_records_for_paths(["pkg/mod.py"], repo_root)
 
     result = resolve_scip_inputs(
@@ -223,7 +220,7 @@ def test_resolve_scip_inputs_with_modules_sequence(tmp_path: Path) -> None:
             paths=ScipPathConfig.from_strings(
                 repo_root=repo_root,
                 build_dir=build_dir,
-                document_output_dir=build_dir / "docs",
+                document_output_dir=doc_dir,
             ),
         ),
     )
@@ -234,7 +231,7 @@ def test_resolve_scip_inputs_with_modules_sequence(tmp_path: Path) -> None:
 
 def test_resolve_scip_inputs_with_modules_in_input(tmp_path: Path) -> None:
     """Test resolving with modules passed via ScipResolverInput."""
-    repo_root, build_dir = _scip_paths(tmp_path)
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
     modules = module_records_for_paths(["pkg/mod.py"], repo_root)
 
     result = resolve_scip_inputs(
@@ -245,7 +242,7 @@ def test_resolve_scip_inputs_with_modules_in_input(tmp_path: Path) -> None:
             paths=ScipPathConfig.from_strings(
                 repo_root=repo_root,
                 build_dir=build_dir,
-                document_output_dir=build_dir / "docs",
+                document_output_dir=doc_dir,
             ),
             modules=modules,
         ),
@@ -257,15 +254,16 @@ def test_resolve_scip_inputs_with_modules_in_input(tmp_path: Path) -> None:
 
 def test_resolve_scip_inputs_missing_repo_raises_value_error(tmp_path: Path) -> None:
     """Test that missing repo parameter raises ValueError."""
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
     with pytest.raises(ValueError, match=r"repo.*required"):
         resolve_scip_inputs(
             [],
             ScipResolverInput.build(
                 commit="abc",
                 paths=ScipPathConfig.from_strings(
-                    repo_root=tmp_path,
-                    build_dir=tmp_path / "build",
-                    document_output_dir=tmp_path / "docs",
+                    repo_root=repo_root,
+                    build_dir=build_dir,
+                    document_output_dir=doc_dir,
                 ),
             ),
         )
@@ -273,15 +271,16 @@ def test_resolve_scip_inputs_missing_repo_raises_value_error(tmp_path: Path) -> 
 
 def test_resolve_scip_inputs_missing_commit_raises_value_error(tmp_path: Path) -> None:
     """Test that missing commit parameter raises ValueError."""
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
     with pytest.raises(ValueError, match=r"commit.*required"):
         resolve_scip_inputs(
             [],
             ScipResolverInput.build(
                 repo="test-repo",
                 paths=ScipPathConfig.from_strings(
-                    repo_root=tmp_path,
-                    build_dir=tmp_path / "build",
-                    document_output_dir=tmp_path / "docs",
+                    repo_root=repo_root,
+                    build_dir=build_dir,
+                    document_output_dir=doc_dir,
                 ),
             ),
         )
@@ -289,6 +288,7 @@ def test_resolve_scip_inputs_missing_commit_raises_value_error(tmp_path: Path) -
 
 def test_resolve_scip_inputs_missing_repo_root_raises_value_error(tmp_path: Path) -> None:
     """Test that missing repo_root parameter raises ValueError."""
+    _repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
     with pytest.raises(ValueError, match=r"repo_root.*required"):
         resolve_scip_inputs(
             [],
@@ -296,8 +296,8 @@ def test_resolve_scip_inputs_missing_repo_root_raises_value_error(tmp_path: Path
                 repo="test-repo",
                 commit="abc",
                 paths=ScipPathConfig.from_strings(
-                    build_dir=tmp_path / "build",
-                    document_output_dir=tmp_path / "docs",
+                    build_dir=build_dir,
+                    document_output_dir=doc_dir,
                 ),
             ),
         )
@@ -305,6 +305,7 @@ def test_resolve_scip_inputs_missing_repo_root_raises_value_error(tmp_path: Path
 
 def test_resolve_scip_inputs_missing_build_dir_raises_value_error(tmp_path: Path) -> None:
     """Test that missing build_dir parameter raises ValueError."""
+    repo_root, _build_dir, doc_dir = _scip_paths(tmp_path)
     with pytest.raises(ValueError, match=r"build_dir.*required"):
         resolve_scip_inputs(
             [],
@@ -312,8 +313,8 @@ def test_resolve_scip_inputs_missing_build_dir_raises_value_error(tmp_path: Path
                 repo="test-repo",
                 commit="abc",
                 paths=ScipPathConfig.from_strings(
-                    repo_root=tmp_path,
-                    document_output_dir=tmp_path / "docs",
+                    repo_root=repo_root,
+                    document_output_dir=doc_dir,
                 ),
             ),
         )
@@ -337,13 +338,13 @@ def test_resolve_scip_inputs_missing_document_output_dir_raises_value_error(tmp_
 
 def test_resolve_scip_inputs_uses_inputs_values(tmp_path: Path) -> None:
     """Test that ScipResolverInput values are used correctly."""
-    repo_root, build_dir = _scip_paths(tmp_path)
+    repo_root, build_dir, doc_dir = _scip_paths(tmp_path)
     inputs = ScipResolverInput(
         repo="inputs-repo",
         commit="inputs-commit",
         repo_root=repo_root,
         build_dir=build_dir,
-        document_output_dir=build_dir / "inputs-docs",
+        document_output_dir=doc_dir,
     )
 
     result = resolve_scip_inputs([], inputs)
@@ -354,7 +355,7 @@ def test_resolve_scip_inputs_uses_inputs_values(tmp_path: Path) -> None:
 
 def test_module_record_create(tmp_path: Path) -> None:
     """Test creating a ModuleRecord with all fields."""
-    repo_root, _build_dir = _scip_paths(tmp_path)
+    repo_root, _build_dir, _doc_dir = _scip_paths(tmp_path)
     module = module_records_for_paths(["pkg/mod.py"], repo_root)[0]
 
     expect_equal(module.rel_path, "pkg/mod.py")

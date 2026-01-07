@@ -183,7 +183,12 @@ def test_callgraph_handles_aliases_and_relative_imports(
     )
     gateway = ctx.gateway
     con = gateway.con
-    insert_symbol_use_edges(gateway, [("sym", "pkg/a.py", "pkg/b.py", False, False)])
+    insert_symbol_use_edges(
+        gateway,
+        [("sym", "pkg/a.py", "pkg/b.py", False, False)],
+        repo=repo,
+        commit=commit,
+    )
 
     foo_goid = _fetch_goid(con, repo=repo, commit=commit, qualname="pkg.a.foo")
     helper_goid = _fetch_goid(con, repo=repo, commit=commit, qualname="pkg.a.C.helper")

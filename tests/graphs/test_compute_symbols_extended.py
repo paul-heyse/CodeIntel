@@ -38,6 +38,8 @@ SYMBOL_DEF_GOID: Final = 12345
 SYMBOL_USE_GOID: Final = 67890
 ROW_DEF_GOID: Final = 111
 ROW_USE_GOID: Final = 222
+REPO: Final[str] = "repo"
+COMMIT: Final[str] = "commit"
 
 
 def test_symbol_occurrence_is_definition() -> None:
@@ -325,6 +327,8 @@ def test_symbol_use_edge_frozen() -> None:
 def test_symbol_use_row_attributes() -> None:
     """SymbolUseRow has all expected attributes."""
     row = SymbolUseRow(
+        repo=REPO,
+        commit=COMMIT,
         symbol="helper",
         def_path="src/helper.py",
         use_path="src/main.py",
@@ -342,6 +346,8 @@ def test_symbol_use_row_attributes() -> None:
 def test_symbol_use_row_frozen() -> None:
     """SymbolUseRow is frozen (immutable)."""
     row = SymbolUseRow(
+        repo=REPO,
+        commit=COMMIT,
         symbol="test",
         def_path="def.py",
         use_path="use.py",

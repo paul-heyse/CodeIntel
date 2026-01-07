@@ -75,6 +75,8 @@ CALL_GRAPH_EDGE_SAMPLES: list[CallGraphEdgeRow] = [
 ]
 SYMBOL_USE_SAMPLES: list[SymbolUseRow] = [
     SymbolUseRow(
+        repo="alpha",
+        commit="bravo",
         symbol="alpha",
         def_path="src/app.py",
         use_path="src/utils.py",
@@ -84,6 +86,8 @@ SYMBOL_USE_SAMPLES: list[SymbolUseRow] = [
         use_goid_h128=2,
     ),
     SymbolUseRow(
+        repo="alpha",
+        commit="bravo",
         symbol="beta",
         def_path="src/app.py",
         use_path="src/app.py",

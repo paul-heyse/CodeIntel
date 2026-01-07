@@ -29,6 +29,8 @@ Example
 from codeintel.core.data_models import CFGBlockRow
 
 row = CFGBlockRow(
+    repo="github.com/owner/repo",
+    commit="abc123def456",
     function_goid_h128=123456789,
     block_idx=0,
     block_id="entry",
@@ -37,7 +39,7 @@ row = CFGBlockRow(
     start_line=1,
     end_line=10,
     kind="entry",
-    stmts_json="[]",
+    stmts_json=b"[]",
     in_degree=0,
     out_degree=1,
 )

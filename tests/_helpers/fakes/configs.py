@@ -6,7 +6,6 @@ for tests that need deterministic config behavior.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import BuildPaths, SnapshotRef
@@ -15,9 +14,7 @@ from codeintel.core.execution import RunContext
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.config.models import ToolsConfig
     from codeintel.core.execution.context import RunKind, TriggerKind
-    from codeintel.ingestion.engine.service import ToolService
 
 
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
@@ -53,22 +50,26 @@ def create_test_snapshot(
 
 
 def create_test_build_paths(
-    tmp_path: Path,
+    repo_root: Path,
+    *,
+    build_dir: Path | None = None,
 ) -> BuildPaths:
     """Create a real BuildPaths for testing.
 
     Parameters
     ----------
-    tmp_path
-        Temporary path for build directory (required for test isolation).
+    repo_root
+        Repository root for test isolation.
+    build_dir
+        Optional build directory override; defaults to repo_root/build.
 
     Returns
     -------
     BuildPaths
         Configured build paths.
     """
-    repo_root = tmp_path.parent
-    return BuildPaths.from_repo_root(repo_root, build_dir=tmp_path)
+    resolved_build_dir = build_dir or (repo_root / "build")
+    return BuildPaths.from_repo_root(repo_root, build_dir=resolved_build_dir)
 
 
 def create_test_run_context(
@@ -104,78 +105,10 @@ def create_test_run_context(
     )
 
 
-@dataclass
-class TestPluginContext:
-    """Test context for config factory tests.
-
-    Provide a minimal context with real SnapshotRef and BuildPaths types
-    for proper static analysis.
-
-    Use `TestPluginContext.from_tmp_path(tmp_path)` to create an instance
-    with properly isolated paths.
-
-    Attributes
-    ----------
-    snapshot : SnapshotRef
-        Snapshot reference.
-    paths : BuildPaths
-        Build paths.
-    tools : ToolsConfig | None
-        Optional tools configuration.
-    tracker : object | None
-        Optional change tracker (using object to avoid circular imports).
-    tool_service : ToolService | None
-        Optional tool service.
-    code_profile : object | None
-        Optional code scan profile.
-    config_profile : object | None
-        Optional config scan profile.
-    """
-
-    snapshot: SnapshotRef
-    paths: BuildPaths
-    tools: ToolsConfig | None = None
-    tracker: object | None = None
-    tool_service: ToolService | None = None
-    code_profile: object | None = None
-    config_profile: object | None = None
-
-    @classmethod
-    def from_tmp_path(
-        cls,
-        tmp_path: Path,
-        *,
-        repo: str = DEFAULT_TEST_REPO,
-        commit: str = DEFAULT_TEST_COMMIT,
-    ) -> TestPluginContext:
-        """Create a TestPluginContext with isolated paths.
-
-        Parameters
-        ----------
-        tmp_path
-            Temporary directory for test isolation.
-        repo
-            Repository identifier.
-        commit
-            Commit hash.
-
-        Returns
-        -------
-        TestPluginContext
-            Context with paths rooted under tmp_path.
-        """
-        snapshot = create_test_snapshot(tmp_path, repo=repo, commit=commit)
-        build_dir = tmp_path / "build"
-        build_dir.mkdir(parents=True, exist_ok=True)
-        paths = create_test_build_paths(build_dir)
-        return cls(snapshot=snapshot, paths=paths)
-
-
 __all__ = [
     "DEFAULT_TEST_COMMIT",
     "DEFAULT_TEST_REPO",
     "DEFAULT_TEST_RUN_ID",
-    "TestPluginContext",
     "create_test_build_paths",
     "create_test_run_context",
     "create_test_snapshot",

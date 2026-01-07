@@ -11,7 +11,7 @@ from tests._helpers.assertions import (
     assert_no_subprocess_usage,
     expect_equal,
 )
-from tests._helpers.fakes.tools import (
+from tests._helpers.fakes.tool_runner import (
     PresetRunner,
     ToolRunResultOptions,
     make_tool_run_result,

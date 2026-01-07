@@ -77,6 +77,7 @@ from tests._helpers.fixtures.rows import (
     ConfigValueRow,
     ModuleRow,
     SubsystemModuleRow,
+    SymbolEdgeContext,
     SymbolEdgeOptions,
     function_meta,
     insert_rows,
@@ -433,10 +434,12 @@ def insert_subsystems(gateway: StorageGateway, snapshot: SnapshotRef) -> None:
 
 def insert_symbol_edges(
     gateway: StorageGateway,
+    snapshot: SnapshotRef,
     goids: Mapping[str, int],
     ast_by_goid: Mapping[int, FunctionAst],
 ) -> None:
     """Seed symbol use edges between api/service/utils."""
+    context = SymbolEdgeContext(repo=snapshot.repo, commit=snapshot.commit)
     insert_symbol_use_edges(
         gateway,
         [
@@ -444,6 +447,7 @@ def insert_symbol_edges(
                 "pkg.mod_b.func_b",
                 ast_by_goid[goids["func_b"]].rel_path,
                 ast_by_goid[goids["func_a"]].rel_path,
+                context=context,
                 options=SymbolEdgeOptions(
                     same_file=False,
                     same_module=False,
@@ -453,6 +457,7 @@ def insert_symbol_edges(
                 "pkg.mod_c.func_c",
                 ast_by_goid[goids["func_c"]].rel_path,
                 ast_by_goid[goids["func_b"]].rel_path,
+                context=context,
                 options=SymbolEdgeOptions(
                     same_file=False,
                     same_module=False,
@@ -576,7 +581,7 @@ def build_graph_runtime_harness(tmp_path: Path) -> GraphRuntimeHarness:
     insert_config_values(gateway, snapshot, goids, ast_by_goid)
     insert_entrypoints(gateway, snapshot, goids, ast_by_goid, now=now)
     insert_subsystems(gateway, snapshot)
-    insert_symbol_edges(gateway, goids, ast_by_goid)
+    insert_symbol_edges(gateway, snapshot, goids, ast_by_goid)
 
     fixtures = build_sample_graphs(goids)
     engine = build_graph_engine_double(

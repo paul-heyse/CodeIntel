@@ -17,20 +17,13 @@ from typing import TYPE_CHECKING, Final
 
 _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
     "tests._helpers.build": (
-        "ManifestParams",
-        "RecordingProviders",
         "make_build_config",
         "make_build_paths",
         "make_snapshot",
-        "sample_manifest",
         "sample_target_graph",
         "write_build_config",
     ),
     "tests._helpers.catalogs": ("ensure_catalog_with_goids", "seed_goids_from_catalog"),
-    "tests._helpers.build_config_overrides": (
-        "reload_build_config",
-        "write_build_config_sections",
-    ),
     "tests._helpers.cli_context": (
         "CliTestContext",
         "cli_test_context_with_seeds",
@@ -173,18 +166,11 @@ _ALL_EXPORTS: Final[tuple[str, ...]] = tuple(sorted(_EXPORT_TO_MODULE))
 
 if TYPE_CHECKING:
     from tests._helpers.build import (
-        ManifestParams,
-        RecordingProviders,
         make_build_config,
         make_build_paths,
         make_snapshot,
-        sample_manifest,
         sample_target_graph,
         write_build_config,
-    )
-    from tests._helpers.build_config_overrides import (
-        reload_build_config,
-        write_build_config_sections,
     )
     from tests._helpers.catalogs import ensure_catalog_with_goids, seed_goids_from_catalog
     from tests._helpers.cli_context import (
@@ -335,13 +321,11 @@ if TYPE_CHECKING:
         HamiltonTestContext,
         ManifestPriming,
         METRICS_PACK,
-        ManifestParams,
         OPERATION_REGISTRY_PACK,
         ProvisionedGateway,
         ProvisioningConfig,
         QueryRow,
         RecordingAsyncClient,
-        RecordingProviders,
         ScenarioConfig,
         STORAGE_PROFILE_PACK,
         SUBSYSTEM_ANALYTICS_PACK,
@@ -390,7 +374,6 @@ if TYPE_CHECKING:
         provision_hamilton_repo,
         provisioned_gateway,
         provisioning_gateway_options,
-        sample_manifest,
         sample_target_graph,
         seed_call_graph_scoping,
         seed_docs_export_invalid_profile,
@@ -423,13 +406,11 @@ if TYPE_CHECKING:
         get_repo_fixture,
         list_repo_fixtures,
         pytest_report_payload,
-        reload_build_config,
         assert_succeeded,
         load_manifest_index,
         prime_manifest,
         prime_modules_manifest,
         write_build_config,
-        write_build_config_sections,
     )
 
 

@@ -267,6 +267,7 @@ def _prefilter_cdg_blocks(blocks_table: pa.Table) -> pa.Table:
     required = {"function_goid_h128", "block_id", "block_idx"}
     if not required.issubset(set(blocks_table.column_names)):
         return blocks_table
+
     def _mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
         goid_mask = is_valid_mask(table.column("function_goid_h128"))
         block_id_mask = is_valid_mask(table.column("block_id"))
@@ -290,6 +291,7 @@ def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
     required = {"function_goid_h128", "edge_kind"}
     if not required.issubset(set(edges_table.column_names)):
         return edges_table
+
     def _mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
         goid_mask = is_valid_mask(table.column("function_goid_h128"))
         kind_mask = non_empty_string_mask(table.column("edge_kind"))

@@ -6,6 +6,7 @@ import ast
 import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -28,6 +29,9 @@ from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
 from codeintel.core.spans import normalize_line_span
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
+
+if TYPE_CHECKING:
+    from codeintel.config.primitives import SnapshotRef
 
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
@@ -148,6 +152,7 @@ def _collect_goids_by_path(
 
 
 def _build_cfg_dfg_rows(
+    snapshot: SnapshotRef,
     repo_root: Path,
     goids_by_path: dict[str, list[_FunctionGoidInfo]],
     paths: set[str],
@@ -171,6 +176,7 @@ def _build_cfg_dfg_rows(
             cfg_result = build_cfg(info.goid, node_info.node, info.rel_path)
             block_rows, edge_rows = cfg_to_rows(
                 cfg_result,
+                snapshot,
                 info.rel_path,
                 info.start_line,
                 info.end_line,
@@ -178,7 +184,7 @@ def _build_cfg_dfg_rows(
             cfg_blocks.extend(block_rows)
             cfg_edges.extend(edge_rows)
             dfg_result = build_dfg(info.goid, cfg_result.blocks, cfg_result.edges)
-            dfg_edges.extend(dfg_to_rows(dfg_result))
+            dfg_edges.extend(dfg_to_rows(dfg_result, snapshot.repo, snapshot.commit))
     return cfg_blocks, cfg_edges, dfg_edges
 
 
@@ -263,6 +269,7 @@ def cfg_dfg_analysis(
     resolved_paths = paths or set(goids_by_path)
     repo_root = Path(env.snapshot.repo_root)
     cfg_blocks, cfg_edges, dfg_edges = _build_cfg_dfg_rows(
+        env.snapshot,
         repo_root,
         goids_by_path,
         resolved_paths,

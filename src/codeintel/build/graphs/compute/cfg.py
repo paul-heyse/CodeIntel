@@ -16,6 +16,8 @@ from codeintel.core.serialization.payload import encode_payload
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from codeintel.config.primitives import SnapshotRef
+
 
 @dataclass
 class BasicBlock:
@@ -382,6 +384,7 @@ def build_cfg(
 
 def cfg_to_rows(
     result: CFGResult,
+    snapshot: SnapshotRef,
     file_path: str,
     default_start: int,
     default_end: int,
@@ -392,6 +395,8 @@ def cfg_to_rows(
     ----------
     result
         CFG construction result.
+    snapshot
+        Snapshot reference providing repo/commit metadata.
     file_path
         Source file path.
     default_start
@@ -412,6 +417,8 @@ def cfg_to_rows(
 
     block_rows = [
         CFGBlockRow(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
             function_goid_h128=result.function_goid,
             block_idx=block.idx,
             block_id=f"{result.function_goid}:block{block.idx}",
@@ -429,6 +436,8 @@ def cfg_to_rows(
 
     edge_rows = [
         CFGEdgeRow(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
             function_goid_h128=result.function_goid,
             src_block_id=f"{result.function_goid}:block{edge.src}",
             dst_block_id=f"{result.function_goid}:block{edge.dst}",

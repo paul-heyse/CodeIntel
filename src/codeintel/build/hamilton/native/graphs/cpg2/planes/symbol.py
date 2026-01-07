@@ -196,6 +196,7 @@ def cpg2_edges__scip_symbol_goid_xref(
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
     goid_rows = _normalize_symbol_goid(symbol_goid)
     if "goid_h128" in goid_rows.column_names:
+
         def _goid_mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
             return is_valid_mask(table.column("goid_h128"))
 
@@ -371,6 +372,7 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
     required = {"src_cpg_node_id", "dst_cpg_node_id"}
     if not required.issubset(set(table.column_names)):
         return table
+
     def _edge_mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
         return and_kleene(
             is_valid_mask(target.column("src_cpg_node_id")),

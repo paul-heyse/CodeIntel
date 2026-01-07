@@ -36,9 +36,8 @@ from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.modules import ModulesAssertions
 from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.catalog import make_target_descriptor
-from tests._helpers.columnar_tables import materialize_table_from_rows
+from tests._helpers.columnar_streams import materialize_table_from_rows
 from tests._helpers.factories import make_snapshot
-from tests._helpers.fakes.tools import write_dummy_scip_files
 from tests._helpers.fixtures.repos import write_tree
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
@@ -51,7 +50,7 @@ from tests._helpers.parquet_datasets import (
     write_snapshot_rows,
     write_snapshot_rows_raw,
 )
-from tests._helpers.scip_proto import ensure_proto_module
+from tests._helpers.scip_proto import ensure_proto_module, write_dummy_scip_files
 from tests._helpers.scip_proto import write_scip_index as write_proto_index
 from tests._helpers.tool_payloads import pytest_report_payload
 
@@ -252,17 +251,7 @@ def build_target_context_for_target(
     build_paths = cfg.paths
     if build_paths is None:
         build_dir = effective_repo_root / "build"
-        db_path = build_dir / "db" / "codeintel.duckdb"
-        build_paths = BuildPaths(
-            build_dir=build_dir,
-            db_path=db_path,
-            document_output_dir=build_dir / "document_output",
-            dataset_root_dir=build_dir / "datasets",
-            scip_dir=build_dir / "scip",
-            pytest_report=build_dir / "test-results" / "pytest-report.json",
-            tool_cache=build_dir / ".tool_cache",
-            log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
-        )
+        build_paths = BuildPaths.from_repo_root(effective_repo_root, build_dir=build_dir)
 
     providers = cfg.providers or create_default_providers(ToolsConfig.default())
 
@@ -748,6 +737,7 @@ class ScipIngestContext:
 class ScipRepoPaths:
     repo_root: Path
     build_dir: Path
+    document_output_dir: Path
 
 
 @dataclass(frozen=True)
@@ -810,8 +800,13 @@ def build_scip_repo_paths(tmp_path: Path) -> ScipRepoPaths:
         {"pkg/__init__.py": "", "pkg/mod.py": "def foo(x: int) -> int:\n    return x + 1\n"},
     )
     build_dir = repo_root / "build"
+    build_paths = BuildPaths.from_repo_root(repo_root, build_dir=build_dir)
     build_dir.mkdir(parents=True, exist_ok=True)
-    return ScipRepoPaths(repo_root=repo_root, build_dir=build_dir)
+    return ScipRepoPaths(
+        repo_root=repo_root,
+        build_dir=build_paths.build_dir,
+        document_output_dir=build_paths.document_output_dir,
+    )
 
 
 def build_scip_repo_fixture(tmp_path: Path) -> ScipIngestContext:

@@ -171,7 +171,23 @@ def seed_docs_export_minimal(
     )
     insert_rows(
         gateway,
-        [CFGBlockRow(goid, 0, f"{goid}:block0", "entry", "foo.py", 1, 1, "entry", [], 0, 0)],
+        [
+            CFGBlockRow(
+                repo,
+                commit,
+                goid,
+                0,
+                f"{goid}:block0",
+                "entry",
+                "foo.py",
+                1,
+                1,
+                "entry",
+                [],
+                0,
+                0,
+            )
+        ],
     )
     insert_rows(
         gateway,
@@ -192,6 +208,8 @@ def seed_docs_export_minimal(
         gateway,
         [
             SymbolUseEdgeRow(
+                repo=repo,
+                commit=commit,
                 symbol="sym",
                 def_path="foo.py",
                 use_path="foo.py",

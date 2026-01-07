@@ -75,6 +75,8 @@ def seed_cfg_dfg_for_metrics(
     gateway: StorageGateway,
     *,
     rel_path: str,
+    repo: str,
+    commit: str,
 ) -> None:
     """Seed minimal CFG/DFG rows so compute_cfg/dfg_metrics can run.
 
@@ -84,25 +86,101 @@ def seed_cfg_dfg_for_metrics(
         Storage gateway to seed.
     rel_path
         Relative path for the seeded blocks.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
     """
     cfg_blocks = [
-        CFGBlockRow(1, 0, "1:block0", "entry", rel_path, 1, 1, "entry", [], 0, 1),
-        CFGBlockRow(1, 1, "1:block1", "body", rel_path, 2, 3, "body", [], 1, 1),
-        CFGBlockRow(1, 2, "1:block2", "loop_head", rel_path, 4, 4, "loop_head", [], 1, 2),
-        CFGBlockRow(1, 3, "1:block3", "unreachable", rel_path, 10, 10, "body", [], 0, 0),
-        CFGBlockRow(1, 4, "1:block4", "exit", rel_path, 11, 11, "exit", [], 1, 0),
+        CFGBlockRow(
+            repo,
+            commit,
+            1,
+            0,
+            "1:block0",
+            "entry",
+            rel_path,
+            1,
+            1,
+            "entry",
+            [],
+            0,
+            1,
+        ),
+        CFGBlockRow(
+            repo,
+            commit,
+            1,
+            1,
+            "1:block1",
+            "body",
+            rel_path,
+            2,
+            3,
+            "body",
+            [],
+            1,
+            1,
+        ),
+        CFGBlockRow(
+            repo,
+            commit,
+            1,
+            2,
+            "1:block2",
+            "loop_head",
+            rel_path,
+            4,
+            4,
+            "loop_head",
+            [],
+            1,
+            2,
+        ),
+        CFGBlockRow(
+            repo,
+            commit,
+            1,
+            3,
+            "1:block3",
+            "unreachable",
+            rel_path,
+            10,
+            10,
+            "body",
+            [],
+            0,
+            0,
+        ),
+        CFGBlockRow(
+            repo,
+            commit,
+            1,
+            4,
+            "1:block4",
+            "exit",
+            rel_path,
+            11,
+            11,
+            "exit",
+            [],
+            1,
+            0,
+        ),
     ]
     insert_rows(gateway, cfg_blocks)
     cfg_edges = [
-        CFGEdgeRow(1, "1:block0", "1:block1", "fallthrough"),
-        CFGEdgeRow(1, "1:block1", "1:block2", "loop"),
-        CFGEdgeRow(1, "1:block2", "1:block1", "back"),
-        CFGEdgeRow(1, "1:block2", "1:block4", "fallthrough"),
+        CFGEdgeRow(repo, commit, 1, "1:block0", "1:block1", "fallthrough"),
+        CFGEdgeRow(repo, commit, 1, "1:block1", "1:block2", "loop"),
+        CFGEdgeRow(repo, commit, 1, "1:block2", "1:block1", "back"),
+        CFGEdgeRow(repo, commit, 1, "1:block2", "1:block4", "fallthrough"),
     ]
     insert_rows(gateway, cfg_edges)
 
     dfg_edges = [
         DFGEdgeRow(
+            repo,
+            commit,
             1,
             "1:block0",
             "1:block1",
@@ -113,6 +191,8 @@ def seed_cfg_dfg_for_metrics(
             use_kind="data-flow",
         ),
         DFGEdgeRow(
+            repo,
+            commit,
             1,
             "1:block1",
             "1:block2",
@@ -123,6 +203,8 @@ def seed_cfg_dfg_for_metrics(
             use_kind="phi",
         ),
         DFGEdgeRow(
+            repo,
+            commit,
             1,
             "1:block1",
             "1:block1",
@@ -366,6 +448,8 @@ def seed_module_graph_inputs(
         gateway,
         [
             SymbolUseEdgeRow(
+                repo=spec.repo,
+                commit=spec.commit,
                 symbol="sym",
                 def_path="pkg/mod_b.py",
                 use_path="pkg/mod_a.py",
