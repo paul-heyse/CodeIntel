@@ -120,9 +120,7 @@ class BuildExecutionOptions:
         HookOptions
             Hook configuration derived from execution options.
         """
-        resolved_progress_desc = (
-            progress_desc if progress_desc is not None else "Building targets"
-        )
+        resolved_progress_desc = progress_desc if progress_desc is not None else "Building targets"
         return HookOptions(
             enable_telemetry=self.enable_telemetry,
             enable_io_telemetry=self.enable_io_telemetry,

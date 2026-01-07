@@ -26,6 +26,7 @@ from codeintel.build.analytics.utilities.ast import (
     safe_unparse,
     snippet_from_lines,
 )
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.hashing import sha256_short
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.paths import normalize_path, path_to_module
@@ -735,7 +736,7 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = frame.to_pylist()
+    rows = list(iter_rows(frame))
     has_repo = "repo" in frame.column_names
     has_commit = "commit" in frame.column_names
     return [

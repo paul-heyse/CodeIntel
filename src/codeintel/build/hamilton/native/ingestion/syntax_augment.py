@@ -22,13 +22,19 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
+from codeintel.build.tabular.array_ops import ensure_array
 from codeintel.build.tabular.arrow_ops import (
     ArrowJoinSpec,
     align_table_to_contract,
     arrow_join_tables,
-    concat_tables_unified,
+    build_join_options,
     dedupe_table_for_table,
+    group_list_or_polars,
+    iter_array_values,
+    normalize_table_for_compute,
+    normalize_table_for_join,
 )
+from codeintel.build.tabular.compute_columns import constant_array
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
@@ -41,6 +47,7 @@ from codeintel.build.tabular.compute_masks import (
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.schema_ops import concat_tables_unified, unify_schemas
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.spans import normalize_byte_span
 
@@ -153,15 +160,9 @@ def _drop_nulls(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArra
     return pc.call_function("drop_null", [values])
 
 
-def _ensure_array(values: pa.Array | pa.ChunkedArray) -> pa.Array:
-    if isinstance(values, pa.ChunkedArray):
-        return values.combine_chunks()
-    return values
-
-
 def _path_set(values: pa.Array | pa.ChunkedArray) -> set[str]:
-    array = _ensure_array(values)
-    return {item for item in array.to_pylist() if isinstance(item, str)}
+    array = ensure_array(values)
+    return {item for item in iter_array_values(array) if isinstance(item, str)}
 
 
 def _struct_field(
@@ -195,7 +196,7 @@ def _failure_paths(parse_manifest: pa.Table) -> pa.Array | pa.ChunkedArray:
     if filtered.num_rows == 0:
         return pa.array([], type=pa.string())
     rel_path = filtered["rel_path"]
-    return _ensure_array(_drop_nulls(rel_path))
+    return ensure_array(_drop_nulls(rel_path))
 
 
 def _normalize_span_bytes(
@@ -264,7 +265,11 @@ def _producer_table(nodes_table: pa.Table) -> pa.Table:
     selected = select_table_columns(nodes_table, ["rel_path", "producer"])
     if selected.num_rows == 0:
         return pa.table({"rel_path": [], "producer": []})
-    grouped = selected.group_by(["rel_path"]).aggregate([("producer", "min")])
+    grouped = (
+        normalize_table_for_compute(selected)
+        .group_by(["rel_path"])
+        .aggregate([("producer", "min")])
+    )
     rename: dict[str, str] = {}
     for name in grouped.column_names:
         if name.startswith("producer"):
@@ -292,18 +297,23 @@ def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
         ["repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"],
     )
     ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
+    ts_selected = normalize_table_for_join(ts_selected)
     syntax_selected = select_table_columns(
         syntax_nodes,
         ["repo", "commit", "rel_path", "node_id", "start_byte", "end_byte", "producer"],
     )
     syntax_selected = _rename_columns(syntax_selected, {"node_id": "syntax_node_id"})
+    syntax_selected = normalize_table_for_join(syntax_selected)
+    join_spec = ArrowJoinSpec(
+        on=["repo", "commit", "rel_path", "start_byte", "end_byte"],
+        how="left",
+    )
+    join_options = build_join_options(ts_selected, syntax_selected)
     joined = arrow_join_tables(
         ts_selected,
         syntax_selected,
-        spec=ArrowJoinSpec(
-            on=["repo", "commit", "rel_path", "start_byte", "end_byte"],
-            how="left",
-        ),
+        spec=join_spec,
+        options=join_options,
     )
     syntax_null = is_null_mask(joined["syntax_node_id"])
     match_kind = _if_else(syntax_null, pa.scalar("NONE"), pa.scalar("EXACT"))
@@ -341,13 +351,18 @@ def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
         ["repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"],
     )
     ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
+    ts_selected = normalize_table_for_join(ts_selected)
     if xref_exact.num_rows == 0 or "ts_node_id" not in xref_exact.column_names:
         return ts_selected
     xref_selected = select_table_columns(xref_exact, ["ts_node_id", "syntax_node_id"])
+    xref_selected = normalize_table_for_join(xref_selected)
+    join_spec = ArrowJoinSpec(on=["ts_node_id"], how="left")
+    join_options = build_join_options(ts_selected, xref_selected)
     joined = arrow_join_tables(
         ts_selected,
         xref_selected,
-        spec=ArrowJoinSpec(on=["ts_node_id"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     mask = is_null_mask(joined["syntax_node_id"])
     return safe_filter(joined, mask)
@@ -514,10 +529,15 @@ def _xref_fuzzy(
     if unmatched_ts_nodes.num_rows == 0:
         return _empty_reader(TS_XREF_TABLE_KEY)
     index_by_path = _build_syntax_index(syntax_nodes)
+    unmatched_ts_nodes = normalize_table_for_join(unmatched_ts_nodes)
+    producer_table = normalize_table_for_join(producer_table)
+    join_spec = ArrowJoinSpec(on=["rel_path"], how="left")
+    join_options = build_join_options(unmatched_ts_nodes, producer_table)
     joined = arrow_join_tables(
         unmatched_ts_nodes,
         producer_table,
-        spec=ArrowJoinSpec(on=["rel_path"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     rows: list[dict[str, object]] = []
     columns = (
@@ -565,7 +585,7 @@ def _xref_union(exact: pa.Table, fuzzy: pa.Table) -> pa.Table:
 
 def _column_or_null(table: pa.Table, name: str) -> pa.Array | pa.ChunkedArray:
     if name in table.column_names:
-        return _ensure_array(table[name])
+        return ensure_array(table[name])
     return pa.nulls(table.num_rows)
 
 
@@ -573,28 +593,78 @@ def _group_payloads_by_syntax_node(
     syntax_node_ids: pa.Array | pa.ChunkedArray,
     payloads: pa.StructArray,
 ) -> pa.Table:
-    ids = _ensure_array(syntax_node_ids)
-    index_by_id: dict[str, list[int]] = {}
-    for idx, node_id in enumerate(ids.to_pylist()):
-        if not isinstance(node_id, str):
-            continue
-        index_by_id.setdefault(node_id, []).append(idx)
-    if not index_by_id:
+    ids = ensure_array(syntax_node_ids)
+    if ids.num_rows == 0:
         empty_nodes = pa.array([], type=pa.string())
         empty_payloads = pa.array([], type=pa.list_(payloads.type))
         return pa.table({"syntax_node_id": empty_nodes, "ts_nodes": empty_payloads})
-    keys: list[str] = []
-    indices_flat: list[int] = []
-    offsets: list[int] = [0]
-    for node_id, indices in index_by_id.items():
-        keys.append(node_id)
-        indices_flat.extend(indices)
-        offsets.append(len(indices_flat))
-    offsets_array = pa.array(offsets, type=pa.int64())
-    flat_indices = pa.array(indices_flat, type=pa.int64())
-    flat_payloads = payloads.take(flat_indices)
-    list_array = pa.ListArray.from_arrays(offsets_array, flat_payloads)
-    return pa.table({"syntax_node_id": pa.array(keys, type=pa.string()), "ts_nodes": list_array})
+    if not pa.types.is_string(ids.type):
+        index_by_id: dict[str, list[int]] = {}
+        for idx, node_id in enumerate(iter_array_values(ids)):
+            if not isinstance(node_id, str):
+                continue
+            index_by_id.setdefault(node_id, []).append(idx)
+        if not index_by_id:
+            empty_nodes = pa.array([], type=pa.string())
+            empty_payloads = pa.array([], type=pa.list_(payloads.type))
+            return pa.table({"syntax_node_id": empty_nodes, "ts_nodes": empty_payloads})
+        keys: list[str] = []
+        indices_flat: list[int] = []
+        offsets: list[int] = [0]
+        for node_id, indices in index_by_id.items():
+            keys.append(node_id)
+            indices_flat.extend(indices)
+            offsets.append(len(indices_flat))
+        offsets_array = pa.array(offsets, type=pa.int64())
+        flat_indices = pa.array(indices_flat, type=pa.int64())
+        flat_payloads = payloads.take(flat_indices)
+        list_array = pa.ListArray.from_arrays(offsets_array, flat_payloads)
+        return pa.table(
+            {"syntax_node_id": pa.array(keys, type=pa.string()), "ts_nodes": list_array}
+        )
+    payload_table = pa.Table.from_arrays(
+        [ids, payloads],
+        names=["syntax_node_id", "ts_payload"],
+    )
+    payload_table = safe_filter(payload_table, is_valid_mask(payload_table["syntax_node_id"]))
+    grouped = group_list_or_polars(
+        payload_table,
+        keys=["syntax_node_id"],
+        value_col="ts_payload",
+        maintain_order=True,
+    )
+    renamed = _rename_columns(grouped, {"ts_payload_list": "ts_nodes"})
+    if "ts_nodes" not in renamed.column_names:
+        return pa.table(
+            {
+                "syntax_node_id": pa.array([], type=pa.string()),
+                "ts_nodes": pa.array([], type=pa.list_(payloads.type)),
+            }
+        )
+    return renamed
+
+
+def _index_lookup_indices(node_ids: pa.Array, payload_ids: pa.Array) -> pa.Array:
+    id_to_index = {
+        value: idx
+        for idx, value in enumerate(iter_array_values(payload_ids))
+        if isinstance(value, str)
+    }
+    indices = [
+        id_to_index.get(value) if isinstance(value, str) else None
+        for value in iter_array_values(node_ids)
+    ]
+    return pa.array(indices, type=pa.int32())
+
+
+def _ast_nodes_from_extras(syntax_nodes: pa.Table) -> pa.Array:
+    if "extras_json" not in syntax_nodes.column_names:
+        return pa.nulls(syntax_nodes.num_rows)
+    try:
+        ast_nodes = _struct_field(syntax_nodes["extras_json"], "ast_nodes")
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, TypeError, ValueError):
+        return pa.nulls(syntax_nodes.num_rows)
+    return ensure_array(ast_nodes)
 
 
 def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
@@ -629,10 +699,15 @@ def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
         ],
     )
     ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
+    filtered = normalize_table_for_join(filtered)
+    ts_selected = normalize_table_for_join(ts_selected)
+    join_spec = ArrowJoinSpec(on=["ts_node_id"], how="left")
+    join_options = build_join_options(filtered, ts_selected)
     joined = arrow_join_tables(
         filtered,
         ts_selected,
-        spec=ArrowJoinSpec(on=["ts_node_id"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     payload = pa.StructArray.from_arrays(
         [
@@ -675,41 +750,32 @@ def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
         ],
     )
     payload_table = pa.Table.from_arrays(
-        [_ensure_array(joined["syntax_node_id"]), payload],
+        [ensure_array(joined["syntax_node_id"]), payload],
         names=["syntax_node_id", "ts_payload"],
     )
     return _group_payloads_by_syntax_node(payload_table["syntax_node_id"], payload)
 
 
 def _augment_syntax_nodes(syntax_nodes: pa.Table, ts_payloads: pa.Table) -> pa.Table:
-    if syntax_nodes.num_rows == 0:
+    if syntax_nodes.num_rows == 0 or ts_payloads.num_rows == 0:
         return syntax_nodes
-    if ts_payloads.num_rows == 0:
+    if "node_id" not in syntax_nodes.column_names:
         return syntax_nodes
-    joined = arrow_join_tables(
-        syntax_nodes,
-        ts_payloads,
-        spec=ArrowJoinSpec(left_on=["node_id"], right_on=["syntax_node_id"], how="left"),
+    if not {"syntax_node_id", "ts_nodes"}.issubset(set(ts_payloads.column_names)):
+        return syntax_nodes
+    node_ids = ensure_array(syntax_nodes["node_id"])
+    payload_ids = ensure_array(ts_payloads["syntax_node_id"])
+    indices = _index_lookup_indices(node_ids, payload_ids)
+    ts_nodes = pc.take(ensure_array(ts_payloads["ts_nodes"]), indices)
+    ast_nodes = _ast_nodes_from_extras(syntax_nodes)
+    extras = pa.StructArray.from_arrays(
+        [ensure_array(ast_nodes), ensure_array(ts_nodes)],
+        names=["ast_nodes", "ts_nodes"],
     )
-    if "extras_json" in joined.column_names:
-        try:
-            ast_nodes = _struct_field(joined["extras_json"], "ast_nodes")
-        except (pa.ArrowInvalid, pa.ArrowNotImplementedError, TypeError, ValueError):
-            ast_nodes = pa.nulls(joined.num_rows)
-    else:
-        ast_nodes = pa.nulls(joined.num_rows)
-    ts_nodes = (
-        joined["ts_nodes"] if "ts_nodes" in joined.column_names else pa.nulls(joined.num_rows)
-    )
-    extras = pa.StructArray.from_arrays([ast_nodes, ts_nodes], names=["ast_nodes", "ts_nodes"])
-    if "extras_json" in joined.column_names:
-        index = joined.schema.get_field_index("extras_json")
-        joined = joined.set_column(index, "extras_json", extras)
-    else:
-        joined = joined.append_column("extras_json", extras)
-    final_columns = [name for name in syntax_nodes.column_names if name != "extras_json"]
-    final_columns.append("extras_json")
-    return joined.select([name for name in final_columns if name in joined.column_names])
+    if "extras_json" in syntax_nodes.column_names:
+        index = syntax_nodes.schema.get_field_index("extras_json")
+        return syntax_nodes.set_column(index, "extras_json", extras)
+    return syntax_nodes.append_column("extras_json", extras)
 
 
 def _weld_coverage_table(
@@ -727,7 +793,9 @@ def _weld_coverage_table(
             empty = {col: [] for col in key_cols}
             empty[name] = []
             return pa.table(empty)
-        grouped = table.group_by(key_cols).aggregate([(count_col, "count")])
+        grouped = (
+            normalize_table_for_compute(table).group_by(key_cols).aggregate([(count_col, "count")])
+        )
         rename: dict[str, str] = {}
         for column in grouped.column_names:
             if column.startswith(f"{count_col}_"):
@@ -742,9 +810,9 @@ def _weld_coverage_table(
         mapped = safe_filter(xref, and_kleene(match_mask, is_valid_mask(xref["ts_node_id"])))
         mapped_counts = _count_by(mapped, count_col="ts_node_id", name="mapped_count")
 
-    joined = arrow_join_tables(
-        ts_counts, mapped_counts, spec=ArrowJoinSpec(on=key_cols, how="left")
-    )
+    join_spec = ArrowJoinSpec(on=key_cols, how="left")
+    join_options = build_join_options(ts_counts, mapped_counts)
+    joined = arrow_join_tables(ts_counts, mapped_counts, spec=join_spec, options=join_options)
     mapped = pc.fill_null(_column_or_null(joined, "mapped_count"), pa.scalar(0))
     total = _column_or_null(joined, "ts_node_count")
     total_float = pc.cast(total, pa.float64())
@@ -791,10 +859,6 @@ def _reader_from_table(table_key: str, table: pa.Table) -> pa.Table:
     return dedupe_table_for_table(table_key, aligned)
 
 
-def _constant_array(value: object, length: int) -> pa.Array:
-    return pa.array([value] * length)
-
-
 def _rename_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
     if not mapping:
         return table
@@ -833,8 +897,8 @@ def _ts_nodes_to_syntax_nodes(ts_nodes: pa.Table) -> pa.Table:
         },
     )
     renamed = renamed.append_column("raw_kind", renamed.column("node_kind"))
-    renamed = renamed.append_column("producer", _constant_array(TS_PRODUCER, renamed.num_rows))
-    renamed = renamed.append_column("extras_json", _constant_array(None, renamed.num_rows))
+    renamed = renamed.append_column("producer", constant_array(TS_PRODUCER, renamed.num_rows))
+    renamed = renamed.append_column("extras_json", constant_array(None, renamed.num_rows))
     ordered = [
         "repo",
         "commit",
@@ -870,8 +934,8 @@ def _ts_edges_to_syntax_edges(ts_edges: pa.Table) -> pa.Table:
     ]
     existing = [name for name in columns if name in ts_edges.column_names]
     selected = ts_edges.select(existing)
-    selected = selected.append_column("producer", _constant_array(TS_PRODUCER, selected.num_rows))
-    selected = selected.append_column("edge_kind", _constant_array(EDGE_KIND, selected.num_rows))
+    selected = selected.append_column("producer", constant_array(TS_PRODUCER, selected.num_rows))
+    selected = selected.append_column("edge_kind", constant_array(EDGE_KIND, selected.num_rows))
     ordered = [
         "repo",
         "commit",
@@ -905,7 +969,7 @@ def _filter_libcst_rows(
 def _align_tables_for_concat(left: pa.Table, right: pa.Table) -> tuple[pa.Table, pa.Table]:
     if left.schema == right.schema:
         return left, right
-    unified = pa.unify_schemas([left.schema, right.schema], promote_options="permissive")
+    unified = unify_schemas([left.schema, right.schema])
     return left.cast(unified), right.cast(unified)
 
 
@@ -919,7 +983,7 @@ def _concat_if_non_empty(base: pa.Table, extra: pa.Table) -> pa.Table:
 def _filter_by_paths(table: pa.Table, paths: pa.Array | pa.ChunkedArray) -> pa.Table:
     if len(paths) == 0 or "rel_path" not in table.column_names:
         return table
-    mask = is_in_mask(table["rel_path"], value_set=_ensure_array(paths))
+    mask = is_in_mask(table["rel_path"], value_set=ensure_array(paths))
     return safe_filter(table, mask)
 
 

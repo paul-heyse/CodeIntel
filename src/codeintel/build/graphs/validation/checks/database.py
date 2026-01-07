@@ -19,6 +19,7 @@ import pyarrow as pa
 from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_table
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.hamilton.native.graphs.cpg.bytecode import instruction_cpg_id
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.query_results import coerce_int, coerce_str
@@ -357,7 +358,7 @@ def _function_span_resolver(spans: Sequence[FunctionSpan]) -> SpanResolver[int]:
 
 def _function_counts_by_path(ast_table: pa.Table) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for row in ast_table.to_pylist():
+    for row in iter_rows(ast_table):
         if row.get("node_type") not in {"FunctionDef", "AsyncFunctionDef"}:
             continue
         path = row.get("path")
@@ -369,7 +370,7 @@ def _function_counts_by_path(ast_table: pa.Table) -> dict[str, int]:
 
 def _goid_counts_by_path(goids_table: pa.Table) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for row in goids_table.to_pylist():
+    for row in iter_rows(goids_table):
         if row.get("kind") not in {"function", "method"}:
             continue
         path = row.get("rel_path")
@@ -493,7 +494,7 @@ def _warn_callsite_span_mismatches_impl(
     )
     if table is None:
         return []
-    rows = [row for row in table.to_pylist() if row.get("callsite_line") is not None]
+    rows = [row for row in iter_rows(table) if row.get("callsite_line") is not None]
 
     mismatches = []
     for row in rows:
@@ -595,7 +596,7 @@ def _warn_orphan_modules_impl(
             return []
     else:
         module_goid_counts: dict[str, int] = {}
-        for row in goids_table.to_pylist():
+        for row in iter_rows(goids_table):
             if row.get("kind") != "module":
                 continue
             rel_path = row.get("rel_path")
@@ -605,7 +606,7 @@ def _warn_orphan_modules_impl(
 
         module_paths = [
             coerce_str(row.get("path"), ctx="orphan_modules.path")
-            for row in modules_table.to_pylist()
+            for row in iter_rows(modules_table)
             if row.get("path") is not None
         ]
         module_count = len(module_paths)
@@ -694,7 +695,7 @@ def _warn_missing_symtable_resolution_edges_impl(
 
 def _symtable_resolution_edge_keys(edges_table: pa.Table) -> set[tuple[str, str]]:
     edge_keys: set[tuple[str, str]] = set()
-    for row in edges_table.to_pylist():
+    for row in iter_rows(edges_table):
         rel_path = row.get("rel_path")
         src_binding_id = row.get("src_binding_id")
         if isinstance(rel_path, str) and isinstance(src_binding_id, str):
@@ -708,7 +709,7 @@ def _missing_symtable_resolution_rows(
 ) -> list[dict[str, object]]:
     ref_kinds = {"global_ref", "nonlocal_ref", "free_ref"}
     missing: list[dict[str, object]] = []
-    for row in bindings_table.to_pylist():
+    for row in iter_rows(bindings_table):
         if row.get("binding_kind") not in ref_kinds:
             continue
         rel_path = row.get("rel_path")
@@ -812,7 +813,7 @@ def _warn_symtable_freevar_mismatch_impl(
 
 def _scope_qualpath_map(scopes_table: pa.Table) -> dict[tuple[str, str], str]:
     scope_by_key: dict[tuple[str, str], str] = {}
-    for row in scopes_table.to_pylist():
+    for row in iter_rows(scopes_table):
         rel_path = row.get("rel_path")
         scope_id = row.get("scope_id")
         qualpath = row.get("qualpath")
@@ -823,7 +824,7 @@ def _scope_qualpath_map(scopes_table: pa.Table) -> dict[tuple[str, str], str]:
 
 def _freevars_by_unit(code_units_table: pa.Table) -> dict[tuple[str, str], list[str]]:
     freevars_by_unit: dict[tuple[str, str], list[str]] = {}
-    for row in code_units_table.to_pylist():
+    for row in iter_rows(code_units_table):
         rel_path = row.get("rel_path")
         qualpath = row.get("qualpath")
         freevars = row.get("freevars")
@@ -844,7 +845,7 @@ def _freevar_mismatches(
     commit: str,
 ) -> list[dict[str, object]]:
     mismatches: list[dict[str, object]] = []
-    for row in partitions_table.to_pylist():
+    for row in iter_rows(partitions_table):
         rel_path = row.get("rel_path")
         scope_id = row.get("scope_id")
         frees = row.get("frees")
@@ -916,10 +917,10 @@ def _warn_missing_bytecode_blocks_impl(
             coerce_str(row.get("code_unit_id"), ctx="bytecode_cfg_blocks.code_unit_id"),
             coerce_str(row.get("block_id"), ctx="bytecode_cfg_blocks.block_id"),
         )
-        for row in blocks_table.to_pylist()
+        for row in iter_rows(blocks_table)
     }
     missing: list[dict[str, object]] = []
-    for row in edges_table.to_pylist():
+    for row in iter_rows(edges_table):
         rel_path = coerce_str(row.get("rel_path"), ctx="bytecode_cfg_edges.rel_path")
         code_unit_id = coerce_str(row.get("code_unit_id"), ctx="bytecode_cfg_edges.code_unit_id")
         src_block = coerce_str(row.get("src_block_id"), ctx="bytecode_cfg_edges.src_block_id")
@@ -977,7 +978,7 @@ def _warn_defuse_binding_space_mismatch_impl(
         "free": {"free_ref", "nonlocal_ref"},
     }
     mismatches: list[dict[str, object]] = []
-    for row in edges_table.to_pylist():
+    for row in iter_rows(edges_table):
         edge_kind = row.get("edge_kind")
         if edge_kind not in {"DEFINES_BINDING", "USES_BINDING"}:
             continue
@@ -1072,9 +1073,9 @@ def _warn_missing_defuse_binding_edges_impl(
     )
     if events_table is None or edges_table is None:
         return []
-    edges_by_src = _defuse_edges_by_source(edges_table.to_pylist())
+    edges_by_src = _defuse_edges_by_source(list(iter_rows(edges_table)))
     missing = _missing_defuse_binding_edges(
-        events_table.to_pylist(),
+        list(iter_rows(events_table)),
         edges_by_src=edges_by_src,
         context=_DefuseBindingEventContext(
             repo=request.repo,

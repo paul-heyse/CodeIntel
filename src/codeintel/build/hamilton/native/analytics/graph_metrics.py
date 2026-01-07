@@ -47,6 +47,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_masks import equal_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
@@ -213,7 +214,7 @@ def _collect_rows(
         table = table.select(list(columns))
     if table.num_rows == 0:
         return []
-    return table.to_pylist()
+    return list(iter_rows(table))
 
 
 def _matches_optional_scope_value(value: object, expected: str) -> bool:

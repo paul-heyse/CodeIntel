@@ -7,8 +7,8 @@ same parameter mapping, rather than instantiating options dataclasses directly.
 
 from __future__ import annotations
 
-from dataclasses import fields, is_dataclass, replace
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from dataclasses import Field, is_dataclass, replace
+from typing import TYPE_CHECKING, ClassVar, Protocol, TypeGuard, cast, runtime_checkable
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.parameters import TargetParameters
@@ -21,6 +21,18 @@ if TYPE_CHECKING:
 class _FromParameters[OptionsT: object](Protocol):
     @classmethod
     def from_parameters(cls, params: Mapping[str, object], /) -> OptionsT: ...
+
+
+class _DataclassInstance(Protocol):
+    __dataclass_fields__: ClassVar[dict[str, Field[object]]]
+
+
+class _ScopePathsDataclass(_DataclassInstance, Protocol):
+    scope_paths: list[str] | None
+
+
+def _is_dataclass_instance(value: object) -> TypeGuard[_DataclassInstance]:
+    return is_dataclass(value) and not isinstance(value, type)
 
 
 def load_target_options[OptionsT: object](
@@ -52,13 +64,13 @@ def load_target_options[OptionsT: object](
     """
     params: TargetParameters = env.config.parameters_for(target_name)
     if len(params) == 0:
-        return _apply_global_scope(env, options_type())
+        return cast("OptionsT", _apply_global_scope(env, options_type()))
     mapping = cast("Mapping[str, object]", params)
 
     from_params = getattr(options_type, "from_parameters", None)
     if callable(from_params):
         options = cast("_FromParameters[OptionsT]", options_type).from_parameters(mapping)
-        return _apply_global_scope(env, options)
+        return cast("OptionsT", _apply_global_scope(env, options))
 
     if not is_dataclass(options_type):
         msg = f"Options type must be a dataclass or implement from_parameters(): {options_type}"
@@ -66,25 +78,24 @@ def load_target_options[OptionsT: object](
 
     try:
         options = options_type(**dict(mapping))
-        return _apply_global_scope(env, options)
+        return cast("OptionsT", _apply_global_scope(env, options))
     except TypeError as exc:
         msg = f"Failed to construct {options_type} for {target_name} from params={dict(mapping)!r}"
         raise TypeError(msg) from exc
 
 
-def _apply_global_scope[OptionsT: object](env: BuildEnv, options: OptionsT) -> OptionsT:
+def _apply_global_scope(env: BuildEnv, options: object) -> object:
     scope_paths = _resolve_global_scope_paths(env)
     if scope_paths is None:
         return options
-    if not is_dataclass(options):
+    if not _is_dataclass_instance(options):
         return options
-    option_fields = {field.name for field in fields(options)}
-    if "scope_paths" not in option_fields:
+    if "scope_paths" not in options.__dataclass_fields__:
         return options
     current = getattr(options, "scope_paths", None)
     if current is not None:
         return options
-    return replace(options, scope_paths=list(scope_paths))
+    return replace(cast("_ScopePathsDataclass", options), scope_paths=list(scope_paths))
 
 
 def _resolve_global_scope_paths(env: BuildEnv) -> tuple[str, ...] | None:

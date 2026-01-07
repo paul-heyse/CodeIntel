@@ -21,6 +21,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -116,7 +117,7 @@ def _default_feature_row(row: dict[str, object]) -> dict[str, object]:
 
 def _module_by_path(modules_frame: pa.Table) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
-    for row in modules_frame.to_pylist():
+    for row in iter_rows(modules_frame):
         rel_path = row.get("path")
         module_name = row.get("module")
         language = row.get("language")
@@ -230,7 +231,7 @@ def function_ast_features__base(
 
     rows: list[dict[str, object]] = []
     repo_root = Path(env.snapshot.repo_root)
-    for row in goids.to_pylist():
+    for row in iter_rows(goids):
         if row.get("kind") not in {"function", "method"}:
             continue
         rows.append(

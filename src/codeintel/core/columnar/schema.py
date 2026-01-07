@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Literal
 
 import pyarrow as pa
 
-SchemaPromoteOptions = Literal["default", "permissive"]
-DEFAULT_SCHEMA_PROMOTE_OPTIONS: SchemaPromoteOptions = "permissive"
+from codeintel.core.columnar.schema_ops import (
+    DEFAULT_SCHEMA_PROMOTE_OPTIONS,
+    SchemaPromoteOptions,
+    unify_schemas,
+)
 
 
 def unify_schema_for_batches(
@@ -38,23 +40,10 @@ def unify_schema_for_batches(
     schemas = [batch.schema for batch in batches]
     if base_schema is not None:
         schemas.append(base_schema)
-    unified = _unify_schemas(schemas, promote_options=promote_options)
+    unified = unify_schemas(schemas, promote_options=promote_options)
     if base_schema is not None and base_schema.metadata:
         unified = unified.with_metadata(base_schema.metadata)
     return unified
-
-
-def _unify_schemas(
-    schemas: Sequence[pa.Schema],
-    *,
-    promote_options: SchemaPromoteOptions,
-) -> pa.Schema:
-    if len(schemas) == 1:
-        return schemas[0]
-    try:
-        return pa.unify_schemas(schemas, promote_options=promote_options)
-    except TypeError:
-        return pa.unify_schemas(schemas)
 
 
 __all__ = [

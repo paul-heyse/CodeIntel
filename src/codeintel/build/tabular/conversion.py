@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Literal
 
 import polars as pl
 import pyarrow as pa
@@ -40,7 +41,11 @@ def relation_to_polars_lazy(relation: TabularRelation) -> pl.LazyFrame:
     return arrow_reader_to_lazyframe(reader)
 
 
-def table_to_reader(table: pa.Table) -> pa.RecordBatchReader:
+def table_to_reader(
+    table: pa.Table,
+    *,
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+) -> pa.RecordBatchReader:
     """Convert an Arrow Table into a RecordBatchReader.
 
     Returns
@@ -48,7 +53,8 @@ def table_to_reader(table: pa.Table) -> pa.RecordBatchReader:
     pa.RecordBatchReader
         Reader over record batches from the table.
     """
-    return pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    batches = table.to_batches(max_chunksize=batch_size)
+    return pa.RecordBatchReader.from_batches(table.schema, batches)
 
 
 def reader_to_table(reader: pa.RecordBatchReader | pa.Table) -> pa.Table:
@@ -301,6 +307,30 @@ def _record_batch_reader_from_iterable(
     return pa.RecordBatchReader.from_batches(first.schema, batch_iter())
 
 
+def record_batch_reader_from_iterable(
+    batches: Iterable[pa.RecordBatch],
+    *,
+    empty_policy: Literal["none", "error"] = "none",
+) -> pa.RecordBatchReader | None:
+    """Return a RecordBatchReader for an iterable of RecordBatch objects.
+
+    Returns
+    -------
+    pa.RecordBatchReader | None
+        Reader for the batches, or None when empty and allowed by policy.
+
+    Raises
+    ------
+    ValueError
+        If the iterable is empty and the empty policy is set to "error".
+    """
+    reader = _record_batch_reader_from_iterable(batches)
+    if reader is None and empty_policy == "error":
+        msg = "Record batch iterable is empty; schema cannot be inferred"
+        raise ValueError(msg)
+    return reader
+
+
 def _coerce_goid_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
     try:
         columns = frame.collect_schema().names()
@@ -331,6 +361,7 @@ __all__ = [
     "arrow_reader_to_lazyframe",
     "lazyframe_to_reader",
     "reader_to_table",
+    "record_batch_reader_from_iterable",
     "relation_to_arrow_reader",
     "relation_to_polars_lazy",
     "table_to_lazyframe",

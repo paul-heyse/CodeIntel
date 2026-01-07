@@ -28,6 +28,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -142,7 +143,7 @@ def _module_map(modules_frame: pa.Table) -> dict[str, str]:
         return module_map
     if not {"path", "module"}.issubset(set(modules_frame.column_names)):
         return module_map
-    for row in modules_frame.select(["path", "module"]).to_pylist():
+    for row in iter_rows(modules_frame, ["path", "module"]):
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):

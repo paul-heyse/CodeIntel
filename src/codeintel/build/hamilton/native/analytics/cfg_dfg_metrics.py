@@ -38,6 +38,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -144,7 +145,7 @@ def _rows_to_reader(
 
 def _module_by_path(modules_frame: pa.Table) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
-    for row in modules_frame.to_pylist():
+    for row in iter_rows(modules_frame):
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):
@@ -158,7 +159,7 @@ def _function_metadata(
 ) -> dict[int, tuple[str, str | None, str | None]]:
     module_by_path = _module_by_path(modules_frame)
     metadata: dict[int, tuple[str, str | None, str | None]] = {}
-    for row in goids_frame.to_pylist():
+    for row in iter_rows(goids_frame):
         if row.get("kind") not in {"function", "method"}:
             continue
         goid_raw = row.get("goid_h128")
@@ -178,7 +179,7 @@ def _cfg_blocks_by_fn(
     cfg_blocks_frame: pa.Table,
 ) -> dict[int, list[tuple[int, str, int, int]]]:
     blocks_by_fn: dict[int, list[tuple[int, str, int, int]]] = {}
-    for row in cfg_blocks_frame.to_pylist():
+    for row in iter_rows(cfg_blocks_frame):
         fn = normalize_decimal_id(row.get("function_goid_h128"))
         block_idx = normalize_decimal_id(row.get("block_idx"))
         if fn is None or block_idx is None:
@@ -192,16 +193,22 @@ def _cfg_blocks_by_fn(
     return blocks_by_fn
 
 
+def _coerce_block_id(value: object) -> str | int | None:
+    if isinstance(value, (str, int)):
+        return value
+    return None
+
+
 def _cfg_edges_by_fn(
     cfg_edges_frame: pa.Table,
 ) -> dict[int, list[tuple[int, int, str]]]:
     edges_by_fn: dict[int, list[tuple[int, int, str]]] = {}
-    for row in cfg_edges_frame.to_pylist():
+    for row in iter_rows(cfg_edges_frame):
         fn = normalize_decimal_id(row.get("function_goid_h128"))
         if fn is None:
             continue
-        src_idx = parse_block_idx(row.get("src_block_id"))
-        dst_idx = parse_block_idx(row.get("dst_block_id"))
+        src_idx = parse_block_idx(_coerce_block_id(row.get("src_block_id")))
+        dst_idx = parse_block_idx(_coerce_block_id(row.get("dst_block_id")))
         if src_idx is None or dst_idx is None:
             continue
         edge_kind = row.get("edge_kind")
@@ -215,12 +222,12 @@ def _dfg_edges_by_fn(
     dfg_edges_frame: pa.Table,
 ) -> dict[int, list[tuple[int, int, str, str, bool, str]]]:
     edges_by_fn: dict[int, list[tuple[int, int, str, str, bool, str]]] = {}
-    for row in dfg_edges_frame.to_pylist():
+    for row in iter_rows(dfg_edges_frame):
         fn = normalize_decimal_id(row.get("function_goid_h128"))
         if fn is None:
             continue
-        src_idx = parse_block_idx(row.get("src_block_id"))
-        dst_idx = parse_block_idx(row.get("dst_block_id"))
+        src_idx = parse_block_idx(_coerce_block_id(row.get("src_block_id")))
+        dst_idx = parse_block_idx(_coerce_block_id(row.get("dst_block_id")))
         if src_idx is None or dst_idx is None:
             continue
         src_var = row.get("src_var")

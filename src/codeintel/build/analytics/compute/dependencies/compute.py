@@ -23,6 +23,7 @@ from codeintel.build.analytics.compute.dependencies.detection import (
 )
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_models import columns_for_table_key
@@ -413,7 +414,7 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = frame.to_pylist()
+    rows = list(iter_rows(frame))
     has_repo = "repo" in frame.column_names
     has_commit = "commit" in frame.column_names
     return [

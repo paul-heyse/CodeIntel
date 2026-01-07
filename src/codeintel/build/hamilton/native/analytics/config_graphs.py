@@ -32,6 +32,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -147,7 +148,7 @@ def _collect_rows(
     commit: str | None,
 ) -> list[dict[str, object]]:
     table = tabular_to_arrow_table(value).select(list(columns))
-    rows = table.to_pylist()
+    rows = list(iter_rows(table))
     if repo is None and commit is None:
         return rows
     filtered: list[dict[str, object]] = []

@@ -208,10 +208,12 @@ def test_semantic_layer_info_creation(sample_semantic_layer_info: SemanticLayerI
 def test_semantic_layer_info_view_count_validation() -> None:
     """Verify SemanticLayerInfo rejects negative view_count."""
     with pytest.raises(ValidationError):
-        SemanticLayerInfo(
-            version="1.0.0",
-            hash="hash123",
-            view_count=-1,
+        SemanticLayerInfo.model_validate(
+            {
+                "version": "1.0.0",
+                "hash": "hash123",
+                "view_count": -1,
+            }
         )
 
 
@@ -252,7 +254,7 @@ def test_query_limits_defaults() -> None:
 def test_query_limits_validation() -> None:
     """Verify QueryLimits rejects invalid values."""
     with pytest.raises(ValidationError):
-        QueryLimits(default_limit=0)
+        QueryLimits.model_validate({"default_limit": 0})
 
 
 # =============================================================================

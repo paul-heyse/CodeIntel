@@ -128,7 +128,12 @@ def compute_cfg_metrics_pure(
     cfg_edges = tabular_to_frame(cfg_edges_input)
     goids = tabular_to_frame(goids_input)
     modules = tabular_to_frame(modules_input)
-    blocks_by_fn, edges_by_fn = load_cfg_blocks(cfg_blocks, cfg_edges)
+    blocks_by_fn, edges_by_fn = load_cfg_blocks(
+        cfg_blocks,
+        cfg_edges,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     metadata = load_function_metadata(goids, modules, repo=snapshot.repo, commit=snapshot.commit)
     metrics_ctx = resolve_graph_context(
         GraphContextSpec(
@@ -214,7 +219,11 @@ def compute_dfg_metrics_pure(
     dfg_edges = tabular_to_frame(dfg_edges_input)
     goids = tabular_to_frame(goids_input)
     modules = tabular_to_frame(modules_input)
-    edges_by_fn = load_dfg_edges(dfg_edges)
+    edges_by_fn = load_dfg_edges(
+        dfg_edges,
+        repo=repo,
+        commit=commit,
+    )
     metadata = load_function_metadata(goids, modules, repo=repo, commit=commit)
     metrics_ctx = resolve_graph_context(
         GraphContextSpec(

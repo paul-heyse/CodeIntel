@@ -22,6 +22,7 @@ from codeintel.build.analytics.functions.config import (
 )
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
@@ -304,7 +305,7 @@ def _load_goids_from_frame(
     selected = goids_table.select(list(required))
     rows = [
         row
-        for row in selected.to_pylist()
+        for row in iter_rows(selected)
         if row.get("repo") == snapshot.repo
         and row.get("commit") == snapshot.commit
         and row.get("kind") in {"function", "method"}

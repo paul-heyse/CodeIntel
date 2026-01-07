@@ -33,6 +33,10 @@ from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import TabularInput
+from codeintel.core.columnar.type_normalization import (
+    normalize_binary_view_table,
+    normalize_string_view_table,
+)
 from codeintel.core.constants import DUCKDB_DIALECT, SCHEMAS
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import SEMANTIC_VIEW_TAG_ATTR
@@ -474,26 +478,8 @@ def _decorate_view_node(
     return decorated
 
 
-def _coerce_string_view(table: pa.Table) -> pa.Table:
-    schema = table.schema
-    fields: list[pa.Field] = []
-    changed = False
-    for field in schema:
-        if pa.types.is_string_view(field.type):
-            fields.append(
-                pa.field(
-                    field.name,
-                    pa.string(),
-                    nullable=field.nullable,
-                    metadata=field.metadata,
-                )
-            )
-            changed = True
-        else:
-            fields.append(field)
-    if not changed:
-        return table
-    return table.cast(pa.schema(fields, metadata=schema.metadata))
+def _normalize_view_table(table: pa.Table) -> pa.Table:
+    return normalize_binary_view_table(normalize_string_view_table(table))
 
 
 def _execute_view_query(
@@ -505,7 +491,7 @@ def _execute_view_query(
     try:
         for table_key, reader in readers.items():
             table = tabular_to_arrow_table(reader)
-            table = _coerce_string_view(table)
+            table = _normalize_view_table(table)
             con.register(table_key, table)
         result = con.execute(plan.sql).fetch_arrow_table()
     finally:

@@ -54,6 +54,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import (
@@ -779,7 +780,7 @@ def _ensure_manifest_from_module_state(env: BuildEnv, scip_dir: Path) -> None:
 def _build_file_state_map(file_state_rows: pa.Table) -> dict[str, FileDigest]:
     digest_by_path: dict[str, FileDigest] = {}
     table = reader_to_table(file_state_rows)
-    for row in table.to_pylist():
+    for row in iter_rows(table):
         rel_path_raw = row.get("rel_path")
         size_raw = row.get("size_bytes")
         mtime_raw = row.get("mtime_ns")

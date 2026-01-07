@@ -5,7 +5,7 @@ Arrow-first policy
 - Build graphs operate on Arrow readers/tables; Polars conversions happen at
   explicit view/export boundaries only.
 - Arrow join keys and expected cardinalities are tracked in
-  `docs/arrow_join_policy.md`.
+  `docs/architecture/arrow_join_policy.md`.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import polars as pl
 import pyarrow as pa
 
 from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
+from codeintel.build.tabular.dedupe_ops import dedupe_tabular
 from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
@@ -381,16 +382,14 @@ def dedupe_frame_for_table(
     polars.LazyFrame
         LazyFrame with duplicate primary-key rows removed.
     """
-    schema_service = _schema_service()
-    schema = schema_service.get_table_schema(table_key) if schema_service is not None else None
-    if schema is None or not schema.primary_key:
-        return frame
-    key_columns = list(schema.primary_key)
-    if prefer_columns:
-        prefer = [column for column in prefer_columns if column in set(schema.column_names())]
-        if prefer:
-            frame = frame.sort(by=prefer, descending=[True] * len(prefer), nulls_last=True)
-    return frame.unique(subset=key_columns, keep="first")
+    deduped = dedupe_tabular(
+        table_key,
+        frame,
+        prefer_columns=prefer_columns,
+    )
+    if isinstance(deduped, pl.LazyFrame):
+        return deduped
+    return frame
 
 
 def to_records(frame: pl.DataFrame | pl.LazyFrame | pa.Table) -> list[dict[str, Any]]:

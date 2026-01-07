@@ -15,16 +15,26 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     identity_keys,
     lookup_keys,
 )
-from codeintel.build.tabular.arrow_ops import ArrowJoinSpec, arrow_join_tables
+from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinSpec,
+    JoinFilterClause,
+    arrow_join_tables,
+    build_join_options,
+    iter_array_values,
+    join_filter_expr,
+    normalize_table_for_join,
+)
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
+from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.serialization.payload import encode_payload
 
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
+
+_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True)
@@ -53,12 +63,14 @@ def _syntax_anchor_map(syntax_nodes: pa.Table, *, include_source_pk_json: bool =
         Anchor map containing syntax node identifiers.
     """
     normalized = canonicalize_for_table(syntax_nodes, table_key=SYNTAX_NODES_TABLE_KEY)
-    return build_anchor_map(
+    normalized = normalize_table_for_join(normalized)
+    anchors = build_anchor_map(
         normalized,
         table_key=SYNTAX_NODES_TABLE_KEY,
         pk_columns=identity_keys(SYNTAX_NODES_TABLE_KEY),
         include_source_pk_json=include_source_pk_json,
     )
+    return normalize_table_for_join(anchors)
 
 
 def cpg2_nodes__syntax_nodes(
@@ -78,12 +90,22 @@ def cpg2_nodes__syntax_nodes(
     required = set(identity_keys(SYNTAX_NODES_TABLE_KEY))
     if not required.issubset(set(syntax_nodes.column_names)):
         return _empty_node_table()
-    normalized = _encode_extras_json(syntax_nodes, column_name="extras_json")
-    anchor_map = _syntax_anchor_map(normalized, include_source_pk_json=True)
+    normalized = normalize_table_for_join(
+        _encode_extras_json(syntax_nodes, column_name="extras_json")
+    )
+    anchor_map = normalize_table_for_join(
+        _syntax_anchor_map(normalized, include_source_pk_json=True)
+    )
+    join_spec = ArrowJoinSpec(
+        on=["repo", "commit", "rel_path", "producer", "node_id"],
+        how="left",
+    )
+    join_options = build_join_options(normalized, anchor_map)
     joined = arrow_join_tables(
         normalized,
         anchor_map,
-        spec=ArrowJoinSpec(on=["repo", "commit", "rel_path", "producer", "node_id"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     joined = _encode_extras_json(joined, column_name="extras_json")
     joined = append_constant_columns(
@@ -136,11 +158,15 @@ def cpg2_edges__syntax_edges(
     required = set(join_keys) | {"parent_node_id", "child_node_id"}
     if not required.issubset(set(syntax_edges.column_names)):
         return _empty_edge_table()
-    anchor_map = _syntax_anchor_map(syntax_nodes, include_source_pk_json=False)
-    normalized_edges = canonicalize_for_table(syntax_edges, table_key="core.syntax_edges")
+    anchor_map = normalize_table_for_join(
+        _syntax_anchor_map(syntax_nodes, include_source_pk_json=False)
+    )
+    normalized_edges = normalize_table_for_join(
+        canonicalize_for_table(syntax_edges, table_key="core.syntax_edges")
+    )
     parent_left_on = ["parent_node_id" if column == "node_id" else column for column in join_keys]
     child_left_on = ["child_node_id" if column == "node_id" else column for column in join_keys]
-    parent_join = arrow_join_tables(
+    parent_join = _join_anchor_with_filter(
         normalized_edges,
         anchor_map,
         spec=ArrowJoinSpec(
@@ -148,9 +174,12 @@ def cpg2_edges__syntax_edges(
             right_on=list(join_keys),
             how="left",
         ),
+        filter_field="cpg_node_id",
     )
     child_anchor = rename_table_columns(anchor_map, {"cpg_node_id": "cpg_node_id_child"})
-    child_join = arrow_join_tables(
+    parent_join = normalize_table_for_join(parent_join)
+    child_anchor = normalize_table_for_join(child_anchor)
+    child_join = _join_anchor_with_filter(
         parent_join,
         child_anchor,
         spec=ArrowJoinSpec(
@@ -159,6 +188,7 @@ def cpg2_edges__syntax_edges(
             how="left",
             right_suffix="_child",
         ),
+        filter_field="cpg_node_id_child",
     )
     child_join = rename_table_columns(child_join, {"cpg_node_id": "src_cpg_node_id"})
     if "cpg_node_id_child" in child_join.column_names:
@@ -185,11 +215,28 @@ def cpg2_edges__syntax_edges(
         ),
     )
     selected = rename_table_columns(selected, {"child_ordinal": "ordinal"})
-    mask = and_kleene(
-        is_valid_mask(selected.column("src_cpg_node_id")),
-        is_valid_mask(selected.column("dst_cpg_node_id")),
-    )
-    filtered = safe_filter(selected, mask)
+    if _EXPR_TYPE is not None:
+        try:
+            expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+            filtered = selected.filter(expr)
+        except (
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            TypeError,
+            ValueError,
+        ):
+            mask = and_kleene(
+                is_valid_mask(selected.column("src_cpg_node_id")),
+                is_valid_mask(selected.column("dst_cpg_node_id")),
+            )
+            filtered = safe_filter(selected, mask)
+    else:
+        mask = and_kleene(
+            is_valid_mask(selected.column("src_cpg_node_id")),
+            is_valid_mask(selected.column("dst_cpg_node_id")),
+        )
+        filtered = safe_filter(selected, mask)
     if diagnostics is not None:
         resolved = filtered.num_rows
         diagnostics["syntax_edges"] = SyntaxEdgeDiagnostics(
@@ -198,6 +245,27 @@ def cpg2_edges__syntax_edges(
             dropped_edges=selected.num_rows - resolved,
         )
     return filtered
+
+
+def _join_anchor_with_filter(
+    left: pa.Table,
+    right: pa.Table,
+    *,
+    spec: ArrowJoinSpec,
+    filter_field: str,
+) -> pa.Table:
+    filter_expr = join_filter_expr(
+        left=left,
+        right=right,
+        spec=spec,
+        clause=JoinFilterClause(
+            field=filter_field,
+            predicate=is_valid_expr,
+            side="right",
+        ),
+    )
+    join_options = build_join_options(left, right, filter_expression=filter_expr)
+    return arrow_join_tables(left, right, spec=spec, options=join_options)
 
 
 def _count_valid(table: pa.Table, column: str) -> int:
@@ -246,7 +314,9 @@ _CPG_EDGE_COLUMNS = (
 def _encode_extras_json(table: pa.Table, *, column_name: str) -> pa.Table:
     if column_name not in table.column_names:
         return table
-    encoded = [_encode_optional_payload(value) for value in table[column_name].to_pylist()]
+    encoded = [
+        _encode_optional_payload(value) for value in iter_array_values(table.column(column_name))
+    ]
     index = table.schema.get_field_index(column_name)
     return table.set_column(index, column_name, pa.array(encoded, type=pa.binary()))
 

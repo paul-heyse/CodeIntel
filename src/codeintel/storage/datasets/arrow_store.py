@@ -17,6 +17,7 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
+from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.columnar.schema_metadata import decode_metadata, merge_metadata
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.core.validation.schema_constraints import schema_metadata_errors
@@ -569,8 +570,7 @@ def _apply_dictionary_options(
                 encode_columns=encode_columns,
             )
         if options.unify_dictionaries:
-            table = _unify_dictionaries(table)
-            table = _combine_chunks(table)
+            table = normalize_table_for_compute(table)
         return table
     if isinstance(data, pa.RecordBatchReader):
         if not encode_enabled and not options.unify_dictionaries:
@@ -587,8 +587,7 @@ def _apply_dictionary_options(
                 encode_columns=encode_columns,
             )
         if options.unify_dictionaries:
-            table = _unify_dictionaries(table)
-            table = _combine_chunks(table)
+            table = normalize_table_for_compute(table)
         return table
     return data
 
@@ -667,26 +666,6 @@ def _dictionary_encode(array: pa.Array | pa.ChunkedArray) -> pa.Array | pa.Chunk
     if not callable(func):
         return array
     return func(array)
-
-
-def _unify_dictionaries(table: pa.Table) -> pa.Table:
-    unify = getattr(table, "unify_dictionaries", None)
-    if not callable(unify):
-        return table
-    try:
-        return unify()
-    except pa.ArrowInvalid:
-        return table
-
-
-def _combine_chunks(table: pa.Table) -> pa.Table:
-    combine = getattr(table, "combine_chunks", None)
-    if not callable(combine):
-        return table
-    try:
-        return combine()
-    except pa.ArrowInvalid:
-        return table
 
 
 def _count_rows(dataset: ds.Dataset, *, parquet_rows: int | None) -> int | None:

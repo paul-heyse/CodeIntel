@@ -244,11 +244,7 @@ def _telemetry_progress_enabled(config: Mapping[str, object], *, progress_style:
     enabled = _telemetry_bool(config, "enable_progress", default=False)
     if not enabled:
         return False
-    if progress_style in {"none", "false", "off"}:
-        return False
-    if progress_style in {"rich", "tqdm"}:
-        return False
-    return True
+    return progress_style not in {"none", "false", "off", "rich", "tqdm"}
 
 
 __all__ = ["BuildRunContext", "BuildRunContextOverrides"]

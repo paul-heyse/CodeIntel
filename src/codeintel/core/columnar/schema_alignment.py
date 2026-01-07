@@ -13,6 +13,7 @@ import pyarrow.compute as pc
 
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_metadata import decode_metadata
+from codeintel.core.columnar.schema_ops import unify_schemas
 from codeintel.core.schemas.arrow_gen import (
     DEFAULT_EXTRAS_COLUMN,
     DEFAULT_EXTRAS_POLICY,
@@ -364,10 +365,7 @@ def _unify_schemas(
     *,
     promote_options: SchemaPromoteOptions,
 ) -> pa.Schema:
-    try:
-        return pa.unify_schemas(schemas, promote_options=promote_options)
-    except TypeError:
-        return pa.unify_schemas(schemas)
+    return unify_schemas(schemas, promote_options=promote_options)
 
 
 def _is_json_field(field: pa.Field) -> bool:

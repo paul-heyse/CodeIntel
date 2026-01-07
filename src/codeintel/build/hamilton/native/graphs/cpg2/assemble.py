@@ -104,7 +104,6 @@ from codeintel.build.hamilton.native.graphs.cpg2.types import (
 )
 from codeintel.build.tabular.arrow_ops import (
     align_table_to_contract,
-    concat_tables_unified,
     dedupe_table_for_table,
 )
 from codeintel.build.tabular.compute_masks import (
@@ -114,6 +113,7 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
 )
 from codeintel.core.columnar.rows import empty_table_for_table
+from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.schemas.row_models import columns_for_table_key
 
 LOG = logging.getLogger(__name__)

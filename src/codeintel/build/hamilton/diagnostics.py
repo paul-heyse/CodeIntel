@@ -25,11 +25,12 @@ from codeintel.build.hamilton.observability import (
     export_dag_mermaid,
 )
 from codeintel.build.schemas import get_schema_provider
-from codeintel.core.columnar.streaming import DatasetScanOptions, build_scanner
+from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.manifests import load_dataset_manifest
 from codeintel.core.datasets.paths import dataset_snapshot_dir
+from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.schemas.primitives import TableSchema
 

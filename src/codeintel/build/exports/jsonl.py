@@ -167,13 +167,12 @@ def export_repo_map_json(
     table_name = "core.repo_map"
     if format_output == "json":
         output_path = document_output_dir / "repo_map.json"
-        with output_path.open("w", encoding="utf-8") as handle:
-            reader = build_export_reader(
-                gateway,
-                table_name,
-                batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            )
-            write_json_array(handle, reader=reader)
+        reader = build_export_reader(
+            gateway,
+            table_name,
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
+        write_json_array(output_path, reader=reader)
     else:
         output_path = document_output_dir / "repo_map.jsonl"
         export_jsonl_for_table(gateway, table_name, output_path, settings=settings)

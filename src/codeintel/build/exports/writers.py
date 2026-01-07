@@ -3,22 +3,36 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
-from typing import TYPE_CHECKING, SupportsInt, TextIO, TypedDict, cast
+from pathlib import Path
+from typing import SupportsInt, TypedDict, cast
 
 import msgspec
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from codeintel.build.tabular.arrow_ops import json_writer_available, write_json_streaming
+from codeintel.build.tabular.conversion import record_batch_reader_from_iterable
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.exports.serialization import coerce_export_row, coerce_export_value
 from codeintel.core.ports.export import ExportRelation, RecordBatch, RecordBatchReader
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 
 class _ParquetWriterKwargs(TypedDict, total=False):
     use_dictionary: bool
+
+
+class _CountingBatchIterator:
+    def __init__(self, batches: Iterable[RecordBatch]) -> None:
+        self._iterator = iter(batches)
+        self.rows = 0
+
+    def __iter__(self) -> _CountingBatchIterator:
+        return self
+
+    def __next__(self) -> RecordBatch:
+        batch = next(self._iterator)
+        self.rows += batch.num_rows
+        return batch
 
 
 def default_json_serializer(obj: object) -> object:
@@ -76,7 +90,7 @@ def _coerce_row_count(value: object) -> int:
 
 
 def write_jsonl_records(
-    handle: TextIO,
+    output_path: Path,
     *,
     rel: ExportRelation,
     record_type: str | None = None,
@@ -87,8 +101,8 @@ def write_jsonl_records(
 
     Parameters
     ----------
-    handle
-        File-like object opened for writing.
+    output_path
+        Output path for JSONL records.
     rel
         DuckDB relation to stream records from.
     record_type
@@ -112,11 +126,11 @@ def write_jsonl_records(
         msg = "Custom JSON serializers are not supported for columnar JSONL exports"
         raise ValueError(msg)
     reader = rel.fetch_record_batch(batch_size)
-    return write_jsonl_reader(handle, reader=reader, record_type=record_type)
+    return write_jsonl_reader(output_path, reader=reader, record_type=record_type)
 
 
 def write_jsonl_reader(
-    handle: TextIO,
+    output_path: Path,
     *,
     reader: RecordBatchReader,
     record_type: str | None = None,
@@ -125,8 +139,8 @@ def write_jsonl_reader(
 
     Parameters
     ----------
-    handle
-        File-like object opened for writing.
+    output_path
+        Output path for JSONL records.
     reader
         Arrow record batch reader to stream.
     record_type
@@ -137,20 +151,31 @@ def write_jsonl_reader(
     int
         Number of rows written to the JSONL output.
     """
+    if record_type is None and json_writer_available():
+        counting_iter = _CountingBatchIterator(_iter_batches(reader))
+        writer_reader = record_batch_reader_from_iterable(counting_iter, empty_policy="none")
+        if writer_reader is None:
+            empty_reader = pa.RecordBatchReader.from_batches(reader.schema, [])
+            write_json_streaming(empty_reader, output_path)
+            return 0
+        write_json_streaming(writer_reader, output_path)
+        return counting_iter.rows
+
     rows_written = 0
     encoder = msgspec.json.Encoder()
-    for batch in _iter_batches(reader):
-        rows = _json_rows_from_batch(batch, record_type=record_type)
-        if not rows:
-            continue
-        payload = encoder.encode_lines(rows)
-        handle.write(payload.decode("utf-8"))
-        rows_written += len(rows)
+    with output_path.open("w", encoding="utf-8") as handle:
+        for batch in _iter_batches(reader):
+            if batch.num_rows == 0:
+                continue
+            rows = _iter_json_rows_from_batch(batch, record_type=record_type)
+            payload = encoder.encode_lines(rows)
+            handle.write(payload.decode("utf-8"))
+            rows_written += batch.num_rows
     return rows_written
 
 
 def write_json_array(
-    handle: TextIO,
+    output_path: Path,
     *,
     reader: RecordBatchReader,
     record_type: str | None = None,
@@ -159,8 +184,8 @@ def write_json_array(
 
     Parameters
     ----------
-    handle
-        File-like object opened for writing.
+    output_path
+        Output path for JSON array output.
     reader
         Arrow record batch reader to stream.
     record_type
@@ -174,18 +199,18 @@ def write_json_array(
     rows_written = 0
     first = True
     encoder = msgspec.json.Encoder()
-    handle.write("[")
-    for batch in _iter_batches(reader):
-        rows = _json_rows_from_batch(batch, record_type=record_type)
-        for row in rows:
-            payload = encoder.encode(row).decode("utf-8")
-            if first:
-                first = False
-            else:
-                handle.write(",")
-            handle.write(payload)
-        rows_written += len(rows)
-    handle.write("]\n")
+    with output_path.open("w", encoding="utf-8") as handle:
+        handle.write("[")
+        for batch in _iter_batches(reader):
+            for row in _iter_json_rows_from_batch(batch, record_type=record_type):
+                payload = encoder.encode(row).decode("utf-8")
+                if first:
+                    first = False
+                else:
+                    handle.write(",")
+                handle.write(payload)
+            rows_written += batch.num_rows
+        handle.write("]\n")
     return rows_written
 
 
@@ -306,17 +331,22 @@ def _parquet_writer_kwargs(
     return {}
 
 
-def _json_rows_from_batch(
+def _iter_json_rows_from_batch(
     batch: RecordBatch,
     *,
     record_type: str | None,
-) -> list[dict[str, object]]:
-    table = pa.Table.from_batches([cast("pa.RecordBatch", batch)], schema=batch.schema)
-    rows: list[dict[str, object]] = table.to_pylist()
-    if record_type is not None:
-        for row in rows:
+) -> Iterable[dict[str, object]]:
+    record_batch = cast("pa.RecordBatch", batch)
+    columns = record_batch.to_pydict()
+    if not columns:
+        return
+    names = list(columns.keys())
+    values_iter = zip(*(columns[name] for name in names), strict=False)
+    for values in values_iter:
+        row = dict(zip(names, values, strict=False))
+        if record_type is not None:
             row["_type"] = record_type
-    return [coerce_export_row(row) for row in rows]
+        yield coerce_export_row(row)
 
 
 __all__ = [

@@ -17,6 +17,7 @@ from networkx.exception import NetworkXNoPath
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
@@ -470,5 +471,5 @@ def _rows_from_tabular(
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
         table = cast("pa.Table", rows)
-        return table.to_pylist()
+        return list(iter_rows(table))
     return [dict(row) for row in rows]

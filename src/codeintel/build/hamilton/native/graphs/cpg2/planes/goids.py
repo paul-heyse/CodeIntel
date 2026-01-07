@@ -5,20 +5,30 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     build_anchor_map,
     canonicalize_for_table,
     identity_keys,
 )
-from codeintel.build.tabular.arrow_ops import ArrowJoinSpec, arrow_join_tables
+from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinSpec,
+    JoinFilterClause,
+    arrow_join_tables,
+    build_join_options,
+    join_filter_expr,
+    normalize_table_for_join,
+)
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import is_valid_mask
+from codeintel.build.tabular.compute_masks import is_valid_expr, is_valid_mask
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 GOIDS_TABLE_KEY = "core.goids"
+
+_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True)
@@ -46,16 +56,31 @@ def cpg2_nodes__goids(
     if not required.issubset(set(goids.column_names)):
         return empty_table_for_table(CPG_NODES_TABLE_KEY)
     normalized = canonicalize_for_table(goids, table_key=GOIDS_TABLE_KEY)
+    normalized = normalize_table_for_join(normalized)
     anchors = build_anchor_map(
         normalized,
         table_key=GOIDS_TABLE_KEY,
         pk_columns=identity_keys(GOIDS_TABLE_KEY),
         include_source_pk_json=True,
     )
+    anchors = normalize_table_for_join(anchors)
+    join_spec = ArrowJoinSpec(on=["goid_h128"], how="left")
+    filter_expr = join_filter_expr(
+        left=normalized,
+        right=anchors,
+        spec=join_spec,
+        clause=JoinFilterClause(
+            field="cpg_node_id",
+            predicate=is_valid_expr,
+            side="right",
+        ),
+    )
+    join_options = build_join_options(normalized, anchors, filter_expression=filter_expr)
     joined = arrow_join_tables(
         normalized,
         anchors,
-        spec=ArrowJoinSpec(on=["goid_h128"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     joined = append_constant_columns(
         joined,
@@ -92,6 +117,19 @@ def cpg2_nodes__goids(
 
 
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
+    if "cpg_node_id" not in table.column_names:
+        return table
+    if _EXPR_TYPE is not None:
+        try:
+            return table.filter(is_valid_expr("cpg_node_id"))
+        except (
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            TypeError,
+            ValueError,
+        ):
+            pass
     mask = is_valid_mask(table.column("cpg_node_id"))
     return safe_filter(table, mask)
 

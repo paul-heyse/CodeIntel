@@ -248,6 +248,18 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         ),
     ),
     Guardrail(
+        name="storage_to_pylist",
+        pattern=re.compile(r"\.to_pylist\("),
+        message="Storage must not materialize Arrow arrays via to_pylist; use core helpers.",
+        include_prefixes=("src/codeintel/storage/",),
+    ),
+    Guardrail(
+        name="storage_direct_call_compute",
+        pattern=re.compile(r"\bpc\.call_function\("),
+        message="Storage must use core call_compute helpers instead of pc.call_function.",
+        include_prefixes=("src/codeintel/storage/",),
+    ),
+    Guardrail(
         name="core_json_column_types",
         pattern=re.compile(r"Column\(\s*\"[^\"]+\"\s*,\s*\"JSON\""),
         message="Core table schemas must not declare JSON columns; use BLOB or Arrow-native types.",

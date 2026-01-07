@@ -20,6 +20,7 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
@@ -604,7 +605,7 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = frame.to_pylist()
+    rows = list(iter_rows(frame))
     has_repo = "repo" in frame.column_names
     has_commit = "commit" in frame.column_names
     return [

@@ -19,6 +19,7 @@ from codeintel.build.graphs.validation.findings import (
     SAMPLE_LIMIT,
     SYMBOL_COMMUNITY_MIN,
 )
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.query_results import coerce_int, coerce_str
 
 if TYPE_CHECKING:
@@ -128,7 +129,7 @@ def _symbol_community_findings_impl(
     if table is None:
         return []
     counts: dict[object, int] = {}
-    for row in table.to_pylist():
+    for row in iter_rows(table):
         community_id = row.get("symbol_community_id")
         if community_id is None:
             continue
@@ -195,7 +196,7 @@ def _subsystem_disagreement_findings_impl(
                 ctx="subsystem_agreement.import_community_id",
             ),
         )
-        for row in table.to_pylist()
+        for row in iter_rows(table)
         if row.get("agrees") is False
     ]
     if not disagreements:

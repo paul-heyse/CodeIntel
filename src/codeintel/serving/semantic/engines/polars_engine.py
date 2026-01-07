@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
+from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.serving.semantic.engines.protocol import QueryExplain
 from codeintel.serving.semantic.guardrails import warn_eager_materialization
 from codeintel.storage.duckdb_explain import normalize_explain_output
@@ -147,7 +148,7 @@ def _record_batches_from_frames(
     for frame in frames:
         table = frame.to_arrow()
         if unify_dictionaries:
-            table = _unify_dictionaries(table)
+            table = normalize_table_for_compute(table)
         yield from table.to_batches()
 
 
@@ -547,16 +548,6 @@ def _resolve_query_opt_flags(flags: tuple[str, ...]) -> PolarsQueryOptFlags | No
         else:
             resolved = resolved_flag
     return resolved
-
-
-def _unify_dictionaries(table: pa.Table) -> pa.Table:
-    unify = getattr(table, "unify_dictionaries", None)
-    if not callable(unify):
-        return table
-    try:
-        return unify()
-    except pa.ArrowInvalid:
-        return table
 
 
 def _maybe_to_string(value: object) -> str | None:

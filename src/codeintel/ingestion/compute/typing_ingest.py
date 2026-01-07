@@ -101,6 +101,7 @@ async def _collect_diagnostic_counts(
     DiagnosticCounts
         Error counts from each tool.
     """
+
     async def _run_tool(
         label: str,
         coro: Awaitable[DiagnosticResult],

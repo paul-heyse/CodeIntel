@@ -25,6 +25,7 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
 from codeintel.build.analytics.compute.row_builders import row_tuple_for_table
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
@@ -422,7 +423,7 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = frame.to_pylist()
+    rows = list(iter_rows(frame))
     has_repo = "repo" in frame.column_names
     has_commit = "commit" in frame.column_names
     return [

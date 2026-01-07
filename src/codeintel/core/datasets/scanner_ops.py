@@ -1,0 +1,87 @@
+"""Dataset scanner helpers for Arrow datasets."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+import pyarrow as pa
+import pyarrow.dataset as ds
+
+from codeintel.core.columnar.schema_ops import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
+from codeintel.core.columnar.streaming import DatasetScanOptions
+from codeintel.core.columnar.streaming import build_scanner as _build_scanner
+from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+
+
+@dataclass(frozen=True, slots=True)
+class ScannerParams:
+    """Convenience parameters for dataset scanning."""
+
+    columns: Sequence[str] | None = None
+    filter_expression: ds.Expression | None = None
+    batch_size: int | None = None
+    batch_readahead: int | None = None
+    fragment_readahead: int | None = None
+    use_threads: bool | None = None
+    memory_pool: pa.MemoryPool | None = None
+    schema: pa.Schema | None = None
+    unify_schemas: bool = False
+    schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
+    metrics_enabled: bool = False
+
+    def to_options(self) -> DatasetScanOptions:
+        """Return DatasetScanOptions derived from the parameters.
+
+        Returns
+        -------
+        DatasetScanOptions
+            Dataset scan options object.
+        """
+        resolved_batch_size = self.batch_size or DEFAULT_ARROW_BATCH_SIZE
+        return DatasetScanOptions(
+            batch_size=resolved_batch_size,
+            batch_readahead=self.batch_readahead,
+            fragment_readahead=self.fragment_readahead,
+            filter_expression=self.filter_expression,
+            use_threads=self.use_threads,
+            memory_pool=self.memory_pool,
+            schema=self.schema,
+            columns=self.columns,
+            unify_schemas=self.unify_schemas,
+            schema_promote_options=self.schema_promote_options,
+            metrics_enabled=self.metrics_enabled,
+        )
+
+
+def build_scanner(
+    dataset: ds.Dataset,
+    *,
+    options: DatasetScanOptions | None = None,
+    params: ScannerParams | None = None,
+) -> ds.Scanner:
+    """Build a dataset scanner from options or convenience parameters.
+
+    Parameters
+    ----------
+    dataset
+        Dataset to scan.
+    options
+        Optional DatasetScanOptions to use directly.
+    params
+        Optional convenience parameters for scanner construction.
+
+    Returns
+    -------
+    pyarrow.dataset.Scanner
+        Configured dataset scanner.
+    """
+    if options is None:
+        options = (params or ScannerParams()).to_options()
+    return _build_scanner(dataset, options=options)
+
+
+__all__ = [
+    "ScannerParams",
+    "build_scanner",
+]

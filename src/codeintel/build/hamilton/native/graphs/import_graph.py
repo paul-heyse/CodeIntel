@@ -22,6 +22,7 @@ from codeintel.build.graphs.compute.imports import (
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.graphs.compute_filters import filter_python_modules
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
@@ -93,7 +94,7 @@ def import_graph_analysis(
     edges: list[ImportEdge] = []
     repo_root = env.snapshot.repo_root
 
-    for row in modules_table.to_pylist():
+    for row in iter_rows(modules_table):
         module_name = row.get("module")
         rel_path = row.get("path")
         language = row.get("language")

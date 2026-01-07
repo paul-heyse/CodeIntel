@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.build.tabular.arrow_ops import ArrowJoinSpec, arrow_join_tables
+from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinSpec,
+    arrow_join_tables,
+    build_join_options,
+    iter_rows,
+)
 from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
@@ -43,7 +48,8 @@ def build_subsystem_profile_cache_frame(
         how="left",
         validate="m:1",
     )
-    joined = arrow_join_tables(subsystems, metrics, spec=join_spec)
+    join_options = build_join_options(subsystems, metrics)
+    joined = arrow_join_tables(subsystems, metrics, spec=join_spec, options=join_options)
     columns = _profile_cache_columns()
     return _ensure_columns(joined, columns)
 
@@ -65,15 +71,14 @@ def build_subsystem_profile_cache_rows(
         subsystems_frame=subsystems_frame,
         subsystem_graph_metrics_frame=subsystem_graph_metrics_frame,
     )
-    return cast("list[dict[str, object]]", frame.to_pylist())
+    return list(iter_rows(frame))
 
 
 def _filter_table_by_snapshot(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
     available = set(frame.column_names)
-    rows = frame.to_pylist()
     filtered = [
         row
-        for row in rows
+        for row in iter_rows(frame)
         if (snapshot.repo == row.get("repo") if "repo" in available else True)
         and (snapshot.commit == row.get("commit") if "commit" in available else True)
     ]

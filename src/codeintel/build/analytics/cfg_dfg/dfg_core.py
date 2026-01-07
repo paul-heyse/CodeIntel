@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.build.analytics.cfg_dfg.helpers import degree_dict, parse_block_idx
+from codeintel.build.analytics.cfg_dfg.helpers import (
+    degree_dict,
+    parse_block_idx,
+    prefilter_table,
+)
 from codeintel.build.analytics.compute.graphs import (
     bounded_simple_path_count,
     build_dfg_graph,
@@ -21,6 +25,7 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
 )
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 MAX_SIMPLE_PATHS = 1000
@@ -81,6 +86,9 @@ class DfgInputs:
 
 def load_dfg_edges(
     dfg_edges_frame: pa.Table,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
 ) -> dict[int, list[tuple[int, int, str, str, bool, str]]]:
     """
     Load DFG edges grouped by function GOID.
@@ -91,12 +99,18 @@ def load_dfg_edges(
         Mapping of GOID -> edge tuples.
     """
     edges_by_fn: dict[int, list[tuple[int, int, str, str, bool, str]]] = defaultdict(list)
-    for row in dfg_edges_frame.to_pylist():
+    filtered_edges = prefilter_table(
+        dfg_edges_frame,
+        repo=repo,
+        commit=commit,
+        require_valid=("function_goid_h128", "src_block_id", "dst_block_id", "src_var", "dst_var"),
+    )
+    for row in iter_rows(filtered_edges):
         fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         if fn_id is None:
             continue
-        src_idx = parse_block_idx(row.get("src_block_id"))
-        dst_idx = parse_block_idx(row.get("dst_block_id"))
+        src_idx = parse_block_idx(_coerce_block_id(row.get("src_block_id")))
+        dst_idx = parse_block_idx(_coerce_block_id(row.get("dst_block_id")))
         if src_idx is None or dst_idx is None:
             continue
         src_var = row.get("src_var")
@@ -115,6 +129,12 @@ def load_dfg_edges(
             )
         )
     return edges_by_fn
+
+
+def _coerce_block_id(value: object) -> str | int | None:
+    if isinstance(value, (str, int)):
+        return value
+    return None
 
 
 def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:

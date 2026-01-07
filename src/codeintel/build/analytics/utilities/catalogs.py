@@ -6,6 +6,7 @@ from collections.abc import Mapping
 
 import pyarrow as pa
 
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.storage.catalog import CatalogService, build_function_catalog_from_rows
 
 _FUNCTION_KINDS = {"function", "method"}
@@ -20,7 +21,7 @@ def module_map_from_frame(modules_frame: pa.Table) -> dict[str, str]:
         Mapping of file path to module name.
     """
     module_map: dict[str, str] = {}
-    for row in modules_frame.to_pylist():
+    for row in iter_rows(modules_frame):
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):
@@ -43,7 +44,7 @@ def catalog_provider_from_frames(
     """
     module_map = dict(module_map_override or module_map_from_frame(modules_frame))
     rows: list[dict[str, object]] = []
-    for row in goids_frame.to_pylist():
+    for row in iter_rows(goids_frame):
         kind = row.get("kind")
         if kind is not None and str(kind) not in _FUNCTION_KINDS:
             continue

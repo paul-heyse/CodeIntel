@@ -18,10 +18,15 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     canonicalize_for_table,
     identity_keys,
 )
-from codeintel.build.tabular.arrow_ops import ArrowJoinSpec, arrow_join_tables
+from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinSpec,
+    arrow_join_tables,
+    build_join_options,
+    normalize_table_for_join,
+)
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
+from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.build.tabular.conversion import table_to_frame
 from codeintel.core.columnar.rows import empty_table_for_table
 
@@ -29,6 +34,8 @@ CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 GOIDS_TABLE_KEY = "core.goids"
+
+_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True)
@@ -88,11 +95,15 @@ def cpg2_nodes__cfg_blocks(
         table_key=CFG_BLOCKS_TABLE_KEY,
         casts={"function_goid_h128": pa.decimal128(38, 0)},
     )
-    goid_ctx = _goid_context(goids)
+    normalized_blocks = normalize_table_for_join(normalized_blocks)
+    goid_ctx = normalize_table_for_join(_goid_context(goids))
+    join_spec = ArrowJoinSpec(on=["function_goid_h128"], how="left")
+    join_options = build_join_options(normalized_blocks, goid_ctx)
     joined = arrow_join_tables(
         normalized_blocks,
         goid_ctx,
-        spec=ArrowJoinSpec(on=["function_goid_h128"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     anchors = build_anchor_map(
         normalized_blocks,
@@ -100,10 +111,15 @@ def cpg2_nodes__cfg_blocks(
         pk_columns=identity_keys(CFG_BLOCKS_TABLE_KEY),
         include_source_pk_json=True,
     )
+    anchors = normalize_table_for_join(anchors)
+    joined = normalize_table_for_join(joined)
+    join_spec = ArrowJoinSpec(on=["function_goid_h128", "block_idx"], how="left")
+    join_options = build_join_options(joined, anchors)
     joined = arrow_join_tables(
         joined,
         anchors,
-        spec=ArrowJoinSpec(on=["function_goid_h128", "block_idx"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     joined = append_constant_columns(
         joined,
@@ -162,6 +178,7 @@ def cpg2_edges__cfg_edges(
     lookup = _cfg_block_lookup(cfg_blocks, goids)
     anchors = _cfg_block_anchor(cfg_blocks)
     joined = _join_block_lookup(normalized_edges, lookup)
+    joined = normalize_table_for_join(joined)
     joined = _join_block_anchors(joined, anchors)
     rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path", result_type=pa.string())
     joined = joined.append_column("rel_path", rel_path)
@@ -235,6 +252,7 @@ def cpg2_edges__dfg_edges(
     lookup = _cfg_block_lookup(cfg_blocks, goids)
     anchors = _cfg_block_anchor(cfg_blocks)
     joined = _join_block_lookup(normalized_edges, lookup)
+    joined = normalize_table_for_join(joined)
     joined = _join_block_anchors(joined, anchors)
     rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path", result_type=pa.string())
     joined = joined.append_column("rel_path", rel_path)
@@ -312,6 +330,7 @@ def cpg2_edges__cdg_edges(
     lookup = _cfg_block_lookup(cfg_blocks, goids)
     anchors = _cfg_block_anchor(cfg_blocks)
     joined = _join_block_lookup(normalized_edges, lookup)
+    joined = normalize_table_for_join(joined)
     joined = _join_block_anchors(joined, anchors)
     rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path", result_type=pa.string())
     joined = joined.append_column("rel_path", rel_path)
@@ -397,15 +416,19 @@ def _cfg_block_lookup(cfg_blocks: pa.Table, goids: pa.Table) -> pa.Table:
         table_key=CFG_BLOCKS_TABLE_KEY,
         casts={"function_goid_h128": pa.decimal128(38, 0), "block_id": pa.string()},
     )
-    goid_ctx = _goid_context(goids)
+    normalized_blocks = normalize_table_for_join(normalized_blocks)
+    goid_ctx = normalize_table_for_join(_goid_context(goids))
+    join_spec = ArrowJoinSpec(on=["function_goid_h128"], how="left")
+    join_options = build_join_options(normalized_blocks, goid_ctx)
     joined = arrow_join_tables(
         normalized_blocks,
         goid_ctx,
-        spec=ArrowJoinSpec(on=["function_goid_h128"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     joined = rename_table_columns(joined, {"file_path": "rel_path"})
-    return joined.select(
-        ["function_goid_h128", "block_id", "block_idx", "rel_path", "repo", "commit"]
+    return normalize_table_for_join(
+        joined.select(["function_goid_h128", "block_id", "block_idx", "rel_path", "repo", "commit"])
     )
 
 
@@ -415,12 +438,13 @@ def _cfg_block_anchor(cfg_blocks: pa.Table) -> pa.Table:
         table_key=CFG_BLOCKS_TABLE_KEY,
         casts={"function_goid_h128": pa.decimal128(38, 0)},
     )
-    return build_anchor_map(
+    anchors = build_anchor_map(
         normalized,
         table_key=CFG_BLOCKS_TABLE_KEY,
         pk_columns=identity_keys(CFG_BLOCKS_TABLE_KEY),
         include_source_pk_json=False,
     )
+    return normalize_table_for_join(anchors)
 
 
 def _normalize_flow_edges(edges: pa.Table) -> pa.Table:
@@ -448,10 +472,15 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
             "commit": "src_commit",
         },
     )
+    edges = normalize_table_for_join(edges)
+    src_lookup = normalize_table_for_join(src_lookup)
+    join_spec = ArrowJoinSpec(on=["function_goid_h128", "src_block_id"], how="left")
+    join_options = build_join_options(edges, src_lookup)
     joined = arrow_join_tables(
         edges,
         src_lookup,
-        spec=ArrowJoinSpec(on=["function_goid_h128", "src_block_id"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     dst_lookup = rename_table_columns(
         lookup,
@@ -463,10 +492,15 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
             "commit": "dst_commit",
         },
     )
+    joined = normalize_table_for_join(joined)
+    dst_lookup = normalize_table_for_join(dst_lookup)
+    join_spec = ArrowJoinSpec(on=["function_goid_h128", "dst_block_id"], how="left")
+    join_options = build_join_options(joined, dst_lookup)
     return arrow_join_tables(
         joined,
         dst_lookup,
-        spec=ArrowJoinSpec(on=["function_goid_h128", "dst_block_id"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
 
 
@@ -479,19 +513,29 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
         anchors,
         {"block_idx": "src_block_idx", "cpg_node_id": "src_cpg_node_id"},
     )
+    edges = normalize_table_for_join(edges)
+    src_anchor = normalize_table_for_join(src_anchor)
+    join_spec = ArrowJoinSpec(on=["function_goid_h128", "src_block_idx"], how="left")
+    join_options = build_join_options(edges, src_anchor)
     joined = arrow_join_tables(
         edges,
         src_anchor,
-        spec=ArrowJoinSpec(on=["function_goid_h128", "src_block_idx"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     dst_anchor = rename_table_columns(
         anchors,
         {"block_idx": "dst_block_idx", "cpg_node_id": "dst_cpg_node_id"},
     )
+    joined = normalize_table_for_join(joined)
+    dst_anchor = normalize_table_for_join(dst_anchor)
+    join_spec = ArrowJoinSpec(on=["function_goid_h128", "dst_block_idx"], how="left")
+    join_options = build_join_options(joined, dst_anchor)
     return arrow_join_tables(
         joined,
         dst_anchor,
-        spec=ArrowJoinSpec(on=["function_goid_h128", "dst_block_idx"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
 
 
@@ -547,6 +591,21 @@ def _assign_ordinals(
 
 
 def _filter_valid_edges(table: pa.Table) -> pa.Table:
+    required = {"src_cpg_node_id", "dst_cpg_node_id"}
+    if not required.issubset(set(table.column_names)):
+        return table
+    if _EXPR_TYPE is not None:
+        try:
+            expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+            return table.filter(expr)
+        except (
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            TypeError,
+            ValueError,
+        ):
+            pass
     mask = and_kleene(
         is_valid_mask(table.column("src_cpg_node_id")),
         is_valid_mask(table.column("dst_cpg_node_id")),
@@ -555,6 +614,19 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
 
 
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
+    if "cpg_node_id" not in table.column_names:
+        return table
+    if _EXPR_TYPE is not None:
+        try:
+            return table.filter(is_valid_expr("cpg_node_id"))
+        except (
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            TypeError,
+            ValueError,
+        ):
+            pass
     mask = is_valid_mask(table.column("cpg_node_id"))
     return safe_filter(table, mask)
 

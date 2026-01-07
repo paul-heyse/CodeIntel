@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import rename_table_columns, select_table_columns
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
@@ -13,10 +14,18 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     identity_keys,
 )
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal
-from codeintel.build.tabular.arrow_ops import ArrowJoinSpec, arrow_join_tables
+from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinSpec,
+    JoinFilterClause,
+    arrow_join_tables,
+    build_join_options,
+    iter_rows,
+    join_filter_expr,
+    normalize_table_for_join,
+)
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
+from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.serialization.payload import encode_payload
 
@@ -24,6 +33,8 @@ CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 GOIDS_TABLE_KEY = "core.goids"
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
+
+_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True)
@@ -69,16 +80,32 @@ def cpg2_nodes__import_modules(
     if not required.issubset(set(import_modules.column_names)):
         return empty_table_for_table(CPG_NODES_TABLE_KEY)
     normalized = canonicalize_for_table(import_modules, table_key=IMPORT_MODULES_TABLE_KEY)
+    normalized = normalize_table_for_join(normalized)
     anchors = build_anchor_map(
         normalized,
         table_key=IMPORT_MODULES_TABLE_KEY,
         pk_columns=identity_keys(IMPORT_MODULES_TABLE_KEY),
         include_source_pk_json=True,
     )
+    anchors = normalize_table_for_join(anchors)
+    normalized = normalize_table_for_join(normalized)
+    join_spec = ArrowJoinSpec(on=["repo", "commit", "module"], how="left")
+    filter_expr = join_filter_expr(
+        left=normalized,
+        right=anchors,
+        spec=join_spec,
+        clause=JoinFilterClause(
+            field="cpg_node_id",
+            predicate=is_valid_expr,
+            side="right",
+        ),
+    )
+    join_options = build_join_options(normalized, anchors, filter_expression=filter_expr)
     joined = arrow_join_tables(
         normalized,
         anchors,
-        spec=ArrowJoinSpec(on=["repo", "commit", "module"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     joined = append_constant_columns(
         joined,
@@ -132,29 +159,60 @@ def cpg2_edges__call_graph_edges(
     if not required.issubset(set(call_edges.column_names)):
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
     normalized_edges = canonicalize_for_table(call_edges, table_key="graph.call_graph_edges")
+    normalized_edges = normalize_table_for_join(normalized_edges)
     anchor_base = build_anchor_map(
         canonicalize_for_table(goids, table_key=GOIDS_TABLE_KEY),
         table_key=GOIDS_TABLE_KEY,
         pk_columns=identity_keys(GOIDS_TABLE_KEY),
         include_source_pk_json=False,
     )
+    anchor_base = normalize_table_for_join(anchor_base)
     src_anchor = rename_table_columns(
         anchor_base,
         {"goid_h128": "caller_goid_h128", "cpg_node_id": "src_cpg_node_id"},
     )
+    src_anchor = normalize_table_for_join(src_anchor)
+    join_spec = ArrowJoinSpec(on=["caller_goid_h128"], how="left")
+    filter_expr = join_filter_expr(
+        left=normalized_edges,
+        right=src_anchor,
+        spec=join_spec,
+        clause=JoinFilterClause(
+            field="src_cpg_node_id",
+            predicate=is_valid_expr,
+            side="right",
+        ),
+    )
+    join_options = build_join_options(normalized_edges, src_anchor, filter_expression=filter_expr)
     joined = arrow_join_tables(
         normalized_edges,
         src_anchor,
-        spec=ArrowJoinSpec(on=["caller_goid_h128"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     dst_anchor = rename_table_columns(
         anchor_base,
         {"goid_h128": "callee_goid_h128", "cpg_node_id": "dst_cpg_node_id"},
     )
+    joined = normalize_table_for_join(joined)
+    dst_anchor = normalize_table_for_join(dst_anchor)
+    join_spec = ArrowJoinSpec(on=["callee_goid_h128"], how="left")
+    filter_expr = join_filter_expr(
+        left=joined,
+        right=dst_anchor,
+        spec=join_spec,
+        clause=JoinFilterClause(
+            field="dst_cpg_node_id",
+            predicate=is_valid_expr,
+            side="right",
+        ),
+    )
+    join_options = build_join_options(joined, dst_anchor, filter_expression=filter_expr)
     joined = arrow_join_tables(
         joined,
         dst_anchor,
-        spec=ArrowJoinSpec(on=["callee_goid_h128"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     ordinals = [
         cpg_edge_ordinal(
@@ -167,15 +225,16 @@ def cpg2_edges__call_graph_edges(
                 "callsite_col": row.get("callsite_col"),
             },
         )
-        for row in joined.select(
+        for row in iter_rows(
+            joined,
             [
                 "caller_goid_h128",
                 "callee_goid_h128",
                 "callsite_path",
                 "callsite_line",
                 "callsite_col",
-            ]
-        ).to_pylist()
+            ],
+        )
     ]
     extras = [
         _payload_bytes(
@@ -185,7 +244,7 @@ def cpg2_edges__call_graph_edges(
                 "kind": row.get("kind"),
             }
         )
-        for row in joined.select(["resolved_via", "confidence", "kind"]).to_pylist()
+        for row in iter_rows(joined, ["resolved_via", "confidence", "kind"])
     ]
     joined = joined.append_column("ordinal", pa.array(ordinals, type=pa.int64()))
     joined = joined.append_column("extras_json", pa.array(extras, type=pa.binary()))
@@ -231,6 +290,7 @@ def cpg2_edges__import_graph_edges(
     if not required.issubset(set(import_edges.column_names)):
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
     normalized_edges = canonicalize_for_table(import_edges, table_key="graph.import_graph_edges")
+    normalized_edges = normalize_table_for_join(normalized_edges)
     anchor_base = build_anchor_map(
         canonicalize_for_table(
             select_table_columns(import_modules, ["repo", "commit", "module"]),
@@ -240,23 +300,53 @@ def cpg2_edges__import_graph_edges(
         pk_columns=identity_keys(IMPORT_MODULES_TABLE_KEY),
         include_source_pk_json=False,
     )
+    anchor_base = normalize_table_for_join(anchor_base)
     src_anchor = rename_table_columns(
         anchor_base,
         {"module": "src_module", "cpg_node_id": "src_cpg_node_id"},
     )
+    src_anchor = normalize_table_for_join(src_anchor)
+    join_spec = ArrowJoinSpec(on=["repo", "commit", "src_module"], how="left")
+    filter_expr = join_filter_expr(
+        left=normalized_edges,
+        right=src_anchor,
+        spec=join_spec,
+        clause=JoinFilterClause(
+            field="src_cpg_node_id",
+            predicate=is_valid_expr,
+            side="right",
+        ),
+    )
+    join_options = build_join_options(normalized_edges, src_anchor, filter_expression=filter_expr)
     joined = arrow_join_tables(
         normalized_edges,
         src_anchor,
-        spec=ArrowJoinSpec(on=["repo", "commit", "src_module"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     dst_anchor = rename_table_columns(
         anchor_base,
         {"module": "dst_module", "cpg_node_id": "dst_cpg_node_id"},
     )
+    joined = normalize_table_for_join(joined)
+    dst_anchor = normalize_table_for_join(dst_anchor)
+    join_spec = ArrowJoinSpec(on=["repo", "commit", "dst_module"], how="left")
+    filter_expr = join_filter_expr(
+        left=joined,
+        right=dst_anchor,
+        spec=join_spec,
+        clause=JoinFilterClause(
+            field="dst_cpg_node_id",
+            predicate=is_valid_expr,
+            side="right",
+        ),
+    )
+    join_options = build_join_options(joined, dst_anchor, filter_expression=filter_expr)
     joined = arrow_join_tables(
         joined,
         dst_anchor,
-        spec=ArrowJoinSpec(on=["repo", "commit", "dst_module"], how="left"),
+        spec=join_spec,
+        options=join_options,
     )
     ordinals = [
         cpg_edge_ordinal(
@@ -267,7 +357,7 @@ def cpg2_edges__import_graph_edges(
                 "cycle_group": row.get("cycle_group"),
             },
         )
-        for row in joined.select(["src_module", "dst_module", "cycle_group"]).to_pylist()
+        for row in iter_rows(joined, ["src_module", "dst_module", "cycle_group"])
     ]
     extras = [
         _payload_bytes(
@@ -278,9 +368,10 @@ def cpg2_edges__import_graph_edges(
                 "module_layer": row.get("module_layer"),
             }
         )
-        for row in joined.select(
-            ["src_fan_out", "dst_fan_in", "cycle_group", "module_layer"]
-        ).to_pylist()
+        for row in iter_rows(
+            joined,
+            ["src_fan_out", "dst_fan_in", "cycle_group", "module_layer"],
+        )
     ]
     joined = joined.append_column("ordinal", pa.array(ordinals, type=pa.int64()))
     joined = joined.append_column("extras_json", pa.array(extras, type=pa.binary()))
@@ -310,6 +401,21 @@ def cpg2_edges__import_graph_edges(
 
 
 def _filter_valid_edges(table: pa.Table) -> pa.Table:
+    required = {"src_cpg_node_id", "dst_cpg_node_id"}
+    if not required.issubset(set(table.column_names)):
+        return table
+    if _EXPR_TYPE is not None:
+        try:
+            expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+            return table.filter(expr)
+        except (
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            TypeError,
+            ValueError,
+        ):
+            pass
     mask = and_kleene(
         is_valid_mask(table.column("src_cpg_node_id")),
         is_valid_mask(table.column("dst_cpg_node_id")),
@@ -318,6 +424,19 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
 
 
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
+    if "cpg_node_id" not in table.column_names:
+        return table
+    if _EXPR_TYPE is not None:
+        try:
+            return table.filter(is_valid_expr("cpg_node_id"))
+        except (
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            TypeError,
+            ValueError,
+        ):
+            pass
     mask = is_valid_mask(table.column("cpg_node_id"))
     return safe_filter(table, mask)
 

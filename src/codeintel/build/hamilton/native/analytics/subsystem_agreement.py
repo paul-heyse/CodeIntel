@@ -20,6 +20,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -61,8 +62,8 @@ def subsystem_agreement__base(
     inputs = SubsystemAgreementInputs(
         repo=env.repo,
         commit=env.commit,
-        subsystem_module_rows=subsystem_table.to_pylist(),
-        graph_metrics_module_rows=metrics_table.to_pylist(),
+        subsystem_module_rows=list(iter_rows(subsystem_table)),
+        graph_metrics_module_rows=list(iter_rows(metrics_table)),
     )
     rows = build_subsystem_agreement_rows(inputs)
     if not rows:

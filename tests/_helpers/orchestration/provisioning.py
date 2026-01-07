@@ -53,7 +53,7 @@ from codeintel.ingestion.adapters import (
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
-from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
+from codeintel.ingestion.compute.typing_ingest import TypingIngestContext, TypingIngestStep
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.runtime.runtime_bundle import RuntimeBundle
@@ -712,12 +712,15 @@ def _run_ingestion_steps(
         typing_step = TypingIngestStep(
             tools=setup.tool_adapter,
         )
+        typing_context = TypingIngestContext(
+            repo=repo,
+            commit=commit,
+            repo_root=str(setup.ctx.repo_root),
+        )
         typing_result = asyncio.run(
             typing_step.execute_async(
                 list(modules),
-                repo=repo,
-                commit=commit,
-                repo_root=str(setup.ctx.repo_root),
+                context=typing_context,
             )
         )
         if typing_result.result.success:

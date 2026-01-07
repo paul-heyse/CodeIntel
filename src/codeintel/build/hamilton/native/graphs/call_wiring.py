@@ -33,6 +33,7 @@ from codeintel.build.tabular.arrow_ops import (
     ArrowJoinSpec,
     align_table_to_contract,
     arrow_join_tables,
+    build_join_options,
     dedupe_table_for_table,
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
@@ -1971,6 +1972,7 @@ def cpg_call_targets(
             how="left",
             validate="m:1",
         ),
+        options=build_join_options(targets_table, entry_table),
     )
     joined = _drop_table_columns(joined, ["function_goid_h128"])
     joined = arrow_join_tables(
@@ -1982,6 +1984,7 @@ def cpg_call_targets(
             how="left",
             validate="m:1",
         ),
+        options=build_join_options(joined, exit_table),
     )
     joined = _drop_table_columns(joined, ["function_goid_h128"])
     joined = _rename_table_columns(

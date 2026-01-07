@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 import pyarrow as pa
 
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 
 if TYPE_CHECKING:
@@ -167,7 +168,7 @@ class FunctionGoidLoader:
             "start_line",
             "end_line",
         )
-        for record in selected.to_pylist():
+        for record in iter_rows(selected):
             if record.get("kind") not in {"function", "method"}:
                 continue
             goid_row: GoidRow = {
@@ -215,10 +216,9 @@ class FunctionGoidLoader:
 
 def _filter_table_by_snapshot(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
     available = set(frame.column_names)
-    rows = frame.to_pylist()
     filtered = [
         row
-        for row in rows
+        for row in iter_rows(frame)
         if (snapshot.repo == row.get("repo") if "repo" in available else True)
         and (snapshot.commit == row.get("commit") if "commit" in available else True)
     ]

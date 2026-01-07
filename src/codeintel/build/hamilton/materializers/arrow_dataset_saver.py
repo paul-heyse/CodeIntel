@@ -46,6 +46,7 @@ from codeintel.build.schemas.observations import (
     observe_batches,
     schema_drift_summary,
 )
+from codeintel.build.tabular.conversion import record_batch_reader_from_iterable, table_to_reader
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar import (
     LazyFrameStream,
@@ -447,30 +448,6 @@ def _materialize_dataset(
     return manifest, manifest_path
 
 
-def _record_batch_reader_from_iterable(data: Iterable[object]) -> pa.RecordBatchReader:
-    batch_iter = iter(data)
-    try:
-        first_batch = next(batch_iter)
-    except StopIteration as exc:
-        msg = "Record batch iterable is empty; schema cannot be inferred"
-        raise ValueError(msg) from exc
-    if not isinstance(first_batch, pa.RecordBatch):
-        msg = "Record batch iterable contains non-RecordBatch values"
-        raise TypeError(msg)
-    first_batch = cast("pa.RecordBatch", first_batch)
-    first_schema = first_batch.schema
-
-    def _iter_batches() -> Iterable[pa.RecordBatch]:
-        yield first_batch
-        for batch in batch_iter:
-            if not isinstance(batch, pa.RecordBatch):
-                msg = "Record batch iterable contains non-RecordBatch values"
-                raise TypeError(msg)
-            yield batch
-
-    return pa.RecordBatchReader.from_batches(first_schema, _iter_batches())
-
-
 def _normalize_tabular_data(data: TabularData) -> TabularData:
     if isinstance(data, pl.LazyFrame):
         return data
@@ -479,11 +456,16 @@ def _normalize_tabular_data(data: TabularData) -> TabularData:
     if isinstance(data, pa.RecordBatchReader):
         return data
     if isinstance(data, pa.Table):
-        table = cast("pa.Table", data)
-        batches = table.to_batches()
-        return pa.RecordBatchReader.from_batches(table.schema, batches)
+        return table_to_reader(cast("pa.Table", data))
     if isinstance(data, Iterable):
-        return _record_batch_reader_from_iterable(data)
+        reader = record_batch_reader_from_iterable(
+            data,
+            empty_policy="error",
+        )
+        if reader is None:
+            msg = "Record batch iterable is empty; schema cannot be inferred"
+            raise ValueError(msg)
+        return reader
     msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
     raise TypeError(msg)
 

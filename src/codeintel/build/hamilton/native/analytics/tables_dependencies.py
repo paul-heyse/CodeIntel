@@ -24,10 +24,12 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.query_results import coerce_optional_int
 from codeintel.core.serialization.json import decode_json_list
 from codeintel.core.serialization.payload import decode_payload
 
@@ -69,7 +71,7 @@ def _parse_json_list(value: object) -> list[str]:
 
 def _module_map(modules_frame: pa.Table) -> dict[str, str]:
     module_map: dict[str, str] = {}
-    for row in modules_frame.to_pylist():
+    for row in iter_rows(modules_frame):
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):
@@ -79,7 +81,7 @@ def _module_map(modules_frame: pa.Table) -> dict[str, str]:
 
 def _features_by_goid(features_frame: pa.Table) -> dict[int, FunctionAstFeatures]:
     features_map: dict[int, FunctionAstFeatures] = {}
-    for row in features_frame.to_pylist():
+    for row in iter_rows(features_frame):
         goid_raw = row.get("function_goid_h128")
         goid_value = normalize_decimal_id(goid_raw)
         if goid_value is None:
@@ -109,8 +111,16 @@ def _features_by_goid(features_frame: pa.Table) -> dict[int, FunctionAstFeatures
             http_server_libs=frozenset(_parse_json_list(row.get("http_server_libs"))),
             db_libs=frozenset(_parse_json_list(row.get("db_libs"))),
             message_libs=frozenset(_parse_json_list(row.get("message_libs"))),
-            config_read_count=int(row.get("config_read_count") or 0),
-            feature_flag_count=int(row.get("feature_flag_count") or 0),
+            config_read_count=coerce_optional_int(
+                row.get("config_read_count"),
+                ctx="external_dependencies.config_read_count",
+            )
+            or 0,
+            feature_flag_count=coerce_optional_int(
+                row.get("feature_flag_count"),
+                ctx="external_dependencies.feature_flag_count",
+            )
+            or 0,
             extra={},
         )
     return features_map

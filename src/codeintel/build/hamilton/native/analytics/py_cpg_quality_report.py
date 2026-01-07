@@ -19,6 +19,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -96,9 +97,8 @@ class _PyCpgQualityInputsB:
 
 def _reader_rows(table: pa.Table) -> Iterable[dict[str, object]]:
     for batch in table.to_batches():
-        if batch.num_rows == 0:
-            continue
-        yield from batch.to_pylist()
+        if batch.num_rows > 0:
+            yield from iter_rows(batch)
 
 
 def _reader_has_columns(table: pa.Table, columns: Iterable[str]) -> bool:

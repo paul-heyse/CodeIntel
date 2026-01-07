@@ -13,6 +13,7 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
+from codeintel.core.columnar.schema_ops import unify_schemas
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.manifests import ArrowDatasetManifest
 
@@ -197,12 +198,9 @@ def unify_dataset_schema(
     if len(schemas) == 1:
         return schemas[0]
     try:
-        return pa.unify_schemas(schemas, promote_options=schema_promote_options)
+        return unify_schemas(schemas, promote_options=schema_promote_options)
     except (TypeError, ValueError, pa.ArrowInvalid):
-        try:
-            return pa.unify_schemas(schemas)
-        except (TypeError, ValueError, pa.ArrowInvalid):
-            return dataset.schema
+        return dataset.schema
 
 
 def empty_reader_from_schema(schema: pa.Schema) -> pa.RecordBatchReader:

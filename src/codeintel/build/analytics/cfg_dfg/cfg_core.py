@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.build.analytics.cfg_dfg.helpers import degree_dict, parse_block_idx
+from codeintel.build.analytics.cfg_dfg.helpers import (
+    degree_dict,
+    parse_block_idx,
+    prefilter_table,
+)
 from codeintel.build.analytics.compute.graphs import (
     bounded_simple_path_count,
     build_cfg_graph,
@@ -18,6 +22,7 @@ from codeintel.build.analytics.compute.graphs import (
     cfg_reachable_nodes,
     dfg_component_stats,
 )
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 MAX_SIMPLE_PATHS = 1000
@@ -83,9 +88,18 @@ class CfgCentralityData:
     in_deg_map: dict[int, int]
 
 
+def _coerce_block_id(value: object) -> str | int | None:
+    if isinstance(value, (str, int)):
+        return value
+    return None
+
+
 def load_cfg_blocks(
     cfg_blocks_frame: pa.Table,
     cfg_edges_frame: pa.Table,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
 ) -> tuple[dict[int, list[tuple[int, str, int, int]]], dict[int, list[tuple[int, int, str]]]]:
     """
     Load CFG blocks and edges grouped by function GOID.
@@ -98,7 +112,13 @@ def load_cfg_blocks(
     blocks_by_fn: dict[int, list[tuple[int, str, int, int]]] = defaultdict(list)
     edges_by_fn: dict[int, list[tuple[int, int, str]]] = defaultdict(list)
 
-    for row in cfg_blocks_frame.to_pylist():
+    filtered_blocks = prefilter_table(
+        cfg_blocks_frame,
+        repo=repo,
+        commit=commit,
+        require_valid=("function_goid_h128", "block_idx"),
+    )
+    for row in iter_rows(filtered_blocks):
         fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         block_idx = normalize_decimal_id(row.get("block_idx"))
         if fn_id is None or block_idx is None:
@@ -115,12 +135,18 @@ def load_cfg_blocks(
             )
         )
 
-    for row in cfg_edges_frame.to_pylist():
+    filtered_edges = prefilter_table(
+        cfg_edges_frame,
+        repo=repo,
+        commit=commit,
+        require_valid=("function_goid_h128", "src_block_id", "dst_block_id"),
+    )
+    for row in iter_rows(filtered_edges):
         fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         if fn_id is None:
             continue
-        src_idx = parse_block_idx(row.get("src_block_id"))
-        dst_idx = parse_block_idx(row.get("dst_block_id"))
+        src_idx = parse_block_idx(_coerce_block_id(row.get("src_block_id")))
+        dst_idx = parse_block_idx(_coerce_block_id(row.get("dst_block_id")))
         if src_idx is None or dst_idx is None:
             continue
         edge_kind = row.get("edge_kind")

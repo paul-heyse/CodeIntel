@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 from sqlglot import exp
 
+from codeintel.build.tabular.arrow_ops import iter_rows
+
 if TYPE_CHECKING:
     from codeintel.build.analytics.utilities.persistence import DeleteScope
     from codeintel.core.gateway import BuildGateway
@@ -327,7 +329,7 @@ def validate_contract_rows(
     records: list[dict[str, object]]
     if table_schema is None:
         table = pa.Table.from_pylist(rows)
-        records = table.to_pylist()
+        records = list(iter_rows(table))
     else:
         expected_columns = [col.name for col in table_schema.columns]
         table = pa.Table.from_pylist(rows)
@@ -351,7 +353,7 @@ def validate_contract_rows(
             context=context,
             mode="strict",
         )
-        records = table.to_pylist()
+        records = list(iter_rows(table))
     column_types: dict[str, ColumnType] = (
         {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
     )

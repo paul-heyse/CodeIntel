@@ -23,6 +23,10 @@ from codeintel.build.graphs.engine.datasets import (
     scan_snapshot_table,
 )
 from codeintel.build.tabular.conversion import table_to_reader
+from codeintel.core.columnar.type_normalization import (
+    normalize_binary_view_table,
+    normalize_string_view_table,
+)
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
 from codeintel.core.query_results import iter_tuples_from_arrow_reader
@@ -70,6 +74,10 @@ def _iter_scoped_rows(
             if row_commit is not None and str(row_commit) != commit:
                 continue
         yield row
+
+
+def _normalize_view_table(table: pa.Table) -> pa.Table:
+    return normalize_binary_view_table(normalize_string_view_table(table))
 
 
 def _module_name_map(
@@ -265,7 +273,7 @@ def load_call_graph(
         return nx.DiGraph()
 
     graph = nx.DiGraph()
-    _add_call_edges(graph, table_to_reader(edge_table))
+    _add_call_edges(graph, table_to_reader(_normalize_view_table(edge_table)))
 
     node_table = scan_snapshot_table(
         SnapshotScanRequest(
@@ -278,7 +286,7 @@ def load_call_graph(
         )
     )
     if node_table is not None:
-        _add_call_nodes(graph, table_to_reader(node_table))
+        _add_call_nodes(graph, table_to_reader(_normalize_view_table(node_table)))
 
     return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
 
@@ -329,7 +337,9 @@ def load_import_graph(
 
     graph = nx.DiGraph()
     fallback_layer_by_module: dict[str, int] = {}
-    for src, dst, layer in iter_tuples_from_arrow_reader(table_to_reader(edge_table)):
+    for src, dst, layer in iter_tuples_from_arrow_reader(
+        table_to_reader(_normalize_view_table(edge_table))
+    ):
         if src is None or dst is None:
             continue
         source = str(src)
@@ -352,7 +362,9 @@ def load_import_graph(
         )
     )
     if module_table is not None:
-        for module_row in iter_tuples_from_arrow_reader(table_to_reader(module_table)):
+        for module_row in iter_tuples_from_arrow_reader(
+            table_to_reader(_normalize_view_table(module_table))
+        ):
             module_name, attrs = module_attrs_from_row(*module_row)
             graph.add_node(module_name, **attrs)
     elif fallback_layer_by_module:
@@ -591,9 +603,15 @@ def load_symbol_module_graph(
     )
     if module_table is None:
         return nx.Graph()
-    module_by_path = _module_name_map(table_to_reader(module_table), repo=repo, commit=commit)
+    module_by_path = _module_name_map(
+        table_to_reader(_normalize_view_table(module_table)),
+        repo=repo,
+        commit=commit,
+    )
     graph = nx.Graph()
-    for def_path, use_path in iter_tuples_from_arrow_reader(table_to_reader(edge_table)):
+    for def_path, use_path in iter_tuples_from_arrow_reader(
+        table_to_reader(_normalize_view_table(edge_table))
+    ):
         if def_path is None or use_path is None:
             continue
         def_module = module_by_path.get(str(def_path))
@@ -650,7 +668,9 @@ def load_symbol_function_graph(
         return nx.Graph()
 
     graph = nx.Graph()
-    for def_goid, use_goid in iter_tuples_from_arrow_reader(table_to_reader(edge_table)):
+    for def_goid, use_goid in iter_tuples_from_arrow_reader(
+        table_to_reader(_normalize_view_table(edge_table))
+    ):
         if def_goid is None or use_goid is None:
             continue
         left = normalize_decimal(def_goid)

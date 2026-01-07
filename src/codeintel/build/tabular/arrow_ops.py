@@ -4,29 +4,34 @@ Policy
 ------
 - Graph compute modules use Arrow tables/readers end-to-end and call these helpers.
 - Polars fallbacks are reserved for legacy or view/export paths only.
-- Join keys and cardinality expectations live in `docs/arrow_join_policy.md`.
+- Join keys and cardinality expectations live in `docs/architecture/arrow_join_policy.md`.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal, cast
 
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
+import pyarrow.json as paj
 
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular import array_ops as _array_ops
 from codeintel.build.tabular.compute_helpers import scalar_from_compute
 from codeintel.build.tabular.conversion import (
     lazyframe_to_reader,
     reader_to_table,
     table_to_frame,
+    table_to_reader,
     tabular_to_arrow_reader,
 )
+from codeintel.build.tabular.dedupe_ops import dedupe_table_for_table, dedupe_tabular
 from codeintel.build.tabular.frames import (
     JoinSpec,
     JoinStrategy,
@@ -34,16 +39,27 @@ from codeintel.build.tabular.frames import (
     join_validated,
 )
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.normalization import (
+    normalize_table_for_compute as _normalize_table_for_compute,
+)
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract as _align_reader
-from codeintel.core.columnar.streaming import DatasetScanOptions, build_scanner
+from codeintel.core.columnar.schema_ops import concat_tables_unified as _concat_tables_unified
+from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import scan_dataset
+from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.schemas.arrow_gen import (
     ArrowSchemaMetadata,
     ExtrasPolicy,
     arrow_contract_for_table_schema,
 )
-from codeintel.core.schemas.service import SchemaService
+
+ensure_array = _array_ops.ensure_array
+index_in = _array_ops.index_in
+normalize_binary_view_array = _array_ops.normalize_binary_view_array
+normalize_string_view_array = _array_ops.normalize_string_view_array
+take_by_key = _array_ops.take_by_key
+value_set_array = _array_ops.value_set_array
 
 _ARROW_JOIN_TYPES = {
     "left": "left outer",
@@ -54,6 +70,7 @@ _ARROW_JOIN_TYPES = {
 }
 
 LOG = logging.getLogger(__name__)
+_JOIN_THREAD_THRESHOLD = 200_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +86,27 @@ class ArrowJoinSpec:
     coalesce_keys: bool = True
     left_suffix: str | None = None
     right_suffix: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ArrowJoinOptions:
+    """Optional Arrow join tuning for filters and normalization."""
+
+    filter_expression: pc.Expression | None = None
+    use_threads: bool | None = True
+    normalize_inputs: bool = True
+
+
+JoinFilterSide = Literal["left", "right", "either"]
+
+
+@dataclass(frozen=True, slots=True)
+class JoinFilterClause:
+    """Specification for a residual join filter."""
+
+    field: str
+    predicate: Callable[[str], pc.Expression]
+    side: JoinFilterSide = "either"
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,28 +255,143 @@ def _resolve_join_keys(
     return (), None
 
 
-def _call_compute(
-    name: str,
-    args: Sequence[object],
+def _coalesced_keys(
+    keys: Sequence[str],
+    right_keys: Sequence[str] | None,
     *,
-    options: pc.FunctionOptions | None = None,
-) -> object | None:
-    try:
-        return pc.call_function(name, list(args), options=options)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return None
+    coalesce_keys: bool,
+) -> set[str]:
+    if not coalesce_keys:
+        return set()
+    resolved_right = keys if right_keys is None else right_keys
+    return set(keys) & set(resolved_right)
 
 
-def _array_from_compute(
-    name: str,
-    args: Sequence[object],
+def _resolved_right_suffix(
     *,
-    options: pc.FunctionOptions | None = None,
-) -> pa.Array | pa.ChunkedArray | None:
-    result = _call_compute(name, args, options=options)
-    if isinstance(result, (pa.Array, pa.ChunkedArray)):
-        return result
+    left_columns: set[str],
+    right_columns: set[str],
+    keys: Sequence[str],
+    right_keys: Sequence[str] | None,
+    spec: ArrowJoinSpec,
+) -> str | None:
+    right_suffix = spec.right_suffix
+    if spec.suffix and right_suffix is None:
+        right_suffix = spec.suffix
+    if right_suffix in {None, ""}:
+        overlapping = left_columns & right_columns
+        coalesced = _coalesced_keys(keys, right_keys, coalesce_keys=spec.coalesce_keys)
+        if overlapping - coalesced:
+            right_suffix = "_right"
+    return right_suffix
+
+
+def resolve_join_filter_field(
+    field: str,
+    *,
+    left: pa.Table,
+    right: pa.Table,
+    spec: ArrowJoinSpec,
+    side: JoinFilterSide = "either",
+) -> str | None:
+    """Resolve a join output field name for filter expressions.
+
+    Returns
+    -------
+    str | None
+        Resolved field name for the join output, if present.
+    """
+    left_columns = set(left.column_names)
+    right_columns = set(right.column_names)
+    keys, right_keys = _resolve_join_keys(on=spec.on, left_on=spec.left_on, right_on=spec.right_on)
+    coalesced = _coalesced_keys(keys, right_keys, coalesce_keys=spec.coalesce_keys)
+    right_suffix = _resolved_right_suffix(
+        left_columns=left_columns,
+        right_columns=right_columns,
+        keys=keys,
+        right_keys=right_keys,
+        spec=spec,
+    )
+    if side in {"left", "either"} and field in left_columns:
+        if spec.left_suffix and field in right_columns and field not in coalesced:
+            return f"{field}{spec.left_suffix}"
+        return field
+    if side in {"right", "either"} and field in right_columns:
+        if field in coalesced:
+            return None
+        if field in left_columns and right_suffix not in {None, ""}:
+            return f"{field}{right_suffix}"
+        return field
     return None
+
+
+def join_filter_expr(
+    *,
+    left: pa.Table,
+    right: pa.Table,
+    spec: ArrowJoinSpec,
+    clause: JoinFilterClause,
+) -> pc.Expression | None:
+    """Build a join filter expression if the field exists post-join.
+
+    Returns
+    -------
+    pyarrow.compute.Expression | None
+        Join filter expression when the field exists.
+    """
+    resolved = resolve_join_filter_field(
+        clause.field,
+        left=left,
+        right=right,
+        spec=spec,
+        side=clause.side,
+    )
+    if resolved is None:
+        return None
+    return clause.predicate(resolved)
+
+
+def combine_join_filters(*expressions: pc.Expression | None) -> pc.Expression | None:
+    """Combine join filter expressions using AND semantics.
+
+    Returns
+    -------
+    pyarrow.compute.Expression | None
+        Combined expression when inputs are provided.
+    """
+    resolved = [expr for expr in expressions if expr is not None]
+    if not resolved:
+        return None
+    combined = resolved[0]
+    for expr in resolved[1:]:
+        combined &= expr
+    return combined
+
+
+def build_join_options(
+    left: pa.Table,
+    right: pa.Table,
+    *,
+    filter_expression: pc.Expression | None = None,
+    use_threads: bool | None = None,
+    normalize_inputs: bool = True,
+) -> ArrowJoinOptions:
+    """Build join options with a size-based threading heuristic.
+
+    Returns
+    -------
+    ArrowJoinOptions
+        Join options for Arrow joins.
+    """
+    resolved_threads = use_threads
+    if resolved_threads is None:
+        total_rows = left.num_rows + right.num_rows
+        resolved_threads = total_rows >= _JOIN_THREAD_THRESHOLD
+    return ArrowJoinOptions(
+        filter_expression=filter_expression,
+        use_threads=resolved_threads,
+        normalize_inputs=normalize_inputs,
+    )
 
 
 def _is_list_type(data_type: pa.DataType) -> bool:
@@ -454,6 +607,29 @@ def _normalize_table_binary_views(table: pa.Table) -> pa.Table:
     return pa.Table.from_arrays(columns, names=list(table.column_names))
 
 
+def normalize_table_for_join(table: pa.Table) -> pa.Table:
+    """Normalize string/binary view types ahead of Arrow joins.
+
+    Returns
+    -------
+    pyarrow.Table
+        Table with view types normalized for join compatibility.
+    """
+    return _normalize_table_binary_views(_normalize_table_string_views(table))
+
+
+def normalize_table_for_compute(table: pa.Table) -> pa.Table:
+    """Normalize a table for compute-heavy kernels.
+
+    Returns
+    -------
+    pa.Table
+        Table with normalized view types, unified dictionaries, and combined chunks.
+    """
+    normalized = normalize_table_for_join(table)
+    return _normalize_table_for_compute(normalized)
+
+
 def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> None:
     if not keys:
         return
@@ -541,6 +717,7 @@ def arrow_join_tables(
     right: pa.Table,
     *,
     spec: ArrowJoinSpec,
+    options: ArrowJoinOptions | None = None,
 ) -> pa.Table:
     """Join two Arrow tables using the provided keys.
 
@@ -552,17 +729,25 @@ def arrow_join_tables(
         Right-hand table.
     spec
         Join configuration for Arrow joins.
+    options
+        Optional tuning for join filters, threading, and normalization.
 
     Raises
     ------
     ValueError
         If join keys are missing or if validation fails.
+    TypeError
+        If Arrow does not accept join options and no fallback applies.
 
     Returns
     -------
     pa.Table
         Joined Arrow table.
     """
+    resolved_options = options or ArrowJoinOptions()
+    filter_expression = resolved_options.filter_expression
+    use_threads = resolved_options.use_threads
+    normalize_inputs = resolved_options.normalize_inputs
     keys, right_keys = _resolve_join_keys(
         on=spec.on,
         left_on=spec.left_on,
@@ -581,12 +766,9 @@ def arrow_join_tables(
         if overlapping - coalesced:
             right_suffix = "_right"
     resolved_right_keys = keys if right_keys is None else right_keys
-    left = _normalize_table_binary_views(
-        _normalize_table_string_views(_normalize_join_key_columns(left, keys))
-    )
-    right = _normalize_table_binary_views(
-        _normalize_table_string_views(_normalize_join_key_columns(right, resolved_right_keys))
-    )
+    if normalize_inputs:
+        left = normalize_table_for_join(_normalize_join_key_columns(left, keys))
+        right = normalize_table_for_join(_normalize_join_key_columns(right, resolved_right_keys))
     _validate_join(
         left,
         right,
@@ -595,15 +777,26 @@ def arrow_join_tables(
         validate=spec.validate,
     )
     join_type = _ARROW_JOIN_TYPES.get(spec.how, spec.how)
-    return left.join(
-        right,
-        keys=tuple(keys),
-        right_keys=tuple(right_keys) if right_keys is not None else None,
-        join_type=join_type,
-        left_suffix=spec.left_suffix,
-        right_suffix=right_suffix,
-        coalesce_keys=spec.coalesce_keys,
-    )
+    join_kwargs = {
+        "keys": tuple(keys),
+        "right_keys": tuple(right_keys) if right_keys is not None else None,
+        "join_type": join_type,
+        "left_suffix": spec.left_suffix,
+        "right_suffix": right_suffix,
+        "coalesce_keys": spec.coalesce_keys,
+    }
+    if filter_expression is not None:
+        join_kwargs["filter_expression"] = filter_expression
+    if use_threads is not None:
+        join_kwargs["use_threads"] = use_threads
+    try:
+        return left.join(right, **join_kwargs)
+    except TypeError:
+        if filter_expression is None and use_threads is None:
+            raise
+        join_kwargs.pop("filter_expression", None)
+        join_kwargs.pop("use_threads", None)
+        return left.join(right, **join_kwargs)
 
 
 def _arrow_schema_for_table(
@@ -619,10 +812,6 @@ def _arrow_schema_for_table(
     table_schema = schema_service.require_table_schema(table_key)
     metadata = None if extras_policy is None else ArrowSchemaMetadata(extras_policy=extras_policy)
     return arrow_contract_for_table_schema(table_schema=table_schema, metadata=metadata)
-
-
-def _schema_service() -> SchemaService:
-    return get_schema_service()
 
 
 def align_reader_to_contract(
@@ -668,127 +857,7 @@ def concat_tables_unified(tables: Sequence[pa.Table]) -> pa.Table:
     pyarrow.Table
         Concatenated Arrow table with a unified schema.
     """
-    if not tables:
-        return pa.table({})
-    if len(tables) == 1:
-        return tables[0]
-    schemas = [table.schema for table in tables]
-    try:
-        unified = pa.unify_schemas(schemas, promote_options="permissive")
-    except (TypeError, ValueError, pa.ArrowInvalid):
-        unified = pa.unify_schemas(schemas)
-    aligned: list[pa.Table] = []
-    for table in tables:
-        if table.schema == unified:
-            aligned.append(table)
-            continue
-        try:
-            aligned.append(table.cast(unified, safe=False))
-        except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowNotImplementedError):
-            aligned.append(table)
-    try:
-        return pa.concat_tables(aligned, promote=True)
-    except (pa.ArrowInvalid, pa.ArrowTypeError):
-        return pa.concat_tables(aligned)
-
-
-def dedupe_table_for_table(
-    table_key: str,
-    table: pa.Table,
-    *,
-    prefer_columns: Sequence[str] | None = None,
-) -> pa.Table:
-    """Return a table with duplicate primary-key rows removed.
-
-    Returns
-    -------
-    pa.Table
-        Table with duplicate primary-key rows removed.
-    """
-    schema_service = _schema_service()
-    schema = schema_service.get_table_schema(table_key)
-    if schema is None or not schema.primary_key:
-        return table
-    key_columns = list(schema.primary_key)
-    if prefer_columns:
-        prefer = [name for name in prefer_columns if name in set(table.column_names)]
-        if prefer:
-            table = _sort_table_for_preference(table, prefer)
-    try:
-        return table.drop_duplicates(key_columns)
-    except (AttributeError, pa.ArrowNotImplementedError, pa.ArrowTypeError):
-        deduped = _dedupe_table_via_compute(table, key_columns=key_columns)
-        if deduped is not None:
-            return deduped
-        seen: set[tuple[object, ...]] = set()
-        rows: list[dict[str, object]] = []
-        for row in table.to_pylist():
-            key = tuple(row.get(col) for col in key_columns)
-            if key in seen:
-                continue
-            seen.add(key)
-            rows.append(row)
-        if not rows:
-            return pa.Table.from_batches([], schema=table.schema)
-        return pa.Table.from_pylist(rows, schema=table.schema)
-
-
-def _dedupe_table_via_compute(
-    table: pa.Table,
-    *,
-    key_columns: Sequence[str],
-) -> pa.Table | None:
-    if table.num_rows == 0:
-        return table
-    row_index_name = _row_index_name(table, base="_row_index")
-    row_index = _row_index_array(table.num_rows)
-    if row_index is None:
-        return None
-    try:
-        indexed = table.append_column(row_index_name, row_index)
-        grouped = indexed.group_by(list(key_columns)).aggregate([(row_index_name, "min")])
-        index_column = f"{row_index_name}_min"
-        if index_column not in grouped.column_names:
-            return None
-        indices = grouped.column(index_column)
-        mask = _array_from_compute("is_in", [row_index, indices])
-        if mask is None:
-            return None
-        return table.filter(mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return None
-
-
-def _row_index_array(length: int) -> pa.Array | None:
-    try:
-        return pa.array(range(length), type=pa.int64())
-    except (pa.ArrowInvalid, pa.ArrowTypeError):
-        return None
-
-
-def _row_index_name(table: pa.Table, *, base: str) -> str:
-    existing = set(table.column_names)
-    name = base
-    suffix = 1
-    while name in existing:
-        name = f"{base}_{suffix}"
-        suffix += 1
-    return name
-
-
-def _sort_table_for_preference(table: pa.Table, prefer_columns: Sequence[str]) -> pa.Table:
-    sort_keys = [(name, "descending") for name in prefer_columns]
-    options = pc.SortOptions(sort_keys=sort_keys)
-    try:
-        options = pc.SortOptions(sort_keys=sort_keys, null_placement="at_end")
-        indices = _call_compute("sort_indices", [table], options=options)
-    except (TypeError, pa.ArrowNotImplementedError):
-        indices = None
-    if indices is None:
-        indices = _call_compute("sort_indices", [table], options=options)
-    if indices is None:
-        return table
-    return table.take(indices)
+    return _concat_tables_unified(tables)
 
 
 def scan_parquet_dataset(
@@ -867,6 +936,7 @@ def arrow_join_frames(
     right: pl.DataFrame | pl.LazyFrame,
     *,
     spec: ArrowJoinSpec | JoinSpec,
+    options: ArrowJoinOptions | None = None,
 ) -> pl.DataFrame:
     """Collect, join in Arrow, and return a Polars DataFrame.
 
@@ -883,6 +953,7 @@ def arrow_join_frames(
             left_table,
             right_table,
             spec=resolved_spec,
+            options=options,
         )
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         return _polars_join_fallback(left, right, spec=resolved_spec)
@@ -894,6 +965,7 @@ def arrow_join_lazyframes(
     right: pl.LazyFrame,
     *,
     spec: JoinSpec | ArrowJoinSpec | None = None,
+    options: ArrowJoinOptions | None = None,
 ) -> pl.LazyFrame:
     """Join two LazyFrames via Arrow, returning a LazyFrame.
 
@@ -912,12 +984,138 @@ def arrow_join_lazyframes(
         left,
         right,
         spec=resolved,
+        options=options,
     )
     return joined.lazy()
 
 
+def iter_array_values(values: pa.Array | pa.ChunkedArray) -> Iterator[object]:
+    """Yield Python values from an Arrow array without materializing a full list.
+
+    Yields
+    ------
+    object
+        Python scalar values.
+    """
+    if isinstance(values, pa.ChunkedArray):
+        for chunk in values.iterchunks():
+            for item in chunk:
+                yield item.as_py()
+        return
+    for item in values:
+        yield item.as_py()
+
+
+def iter_rows(
+    table_or_batch: pa.Table | pa.RecordBatch,
+    columns: Sequence[str] | None = None,
+) -> Iterator[dict[str, object]]:
+    """Yield row dicts from a table or record batch without building a pylist.
+
+    Yields
+    ------
+    dict[str, object]
+        Row dictionaries.
+    """
+    if isinstance(table_or_batch, pa.Table):
+        column_names = list(columns) if columns is not None else list(table_or_batch.column_names)
+        if not column_names:
+            return
+        selected = table_or_batch.select(column_names)
+        for batch in selected.to_batches():
+            yield from iter_rows(batch, column_names)
+        return
+    batch = table_or_batch
+    column_names = list(columns) if columns is not None else list(batch.schema.names)
+    if not column_names:
+        return
+    arrays = [batch.column(column_name) for column_name in column_names]
+    for row_index in range(batch.num_rows):
+        yield {
+            column_name: arrays[idx][row_index].as_py()
+            for idx, column_name in enumerate(column_names)
+        }
+
+
+def group_list_or_polars(
+    table: pa.Table,
+    *,
+    keys: Sequence[str],
+    value_col: str,
+    maintain_order: bool = False,
+) -> pa.Table:
+    """Group rows into list aggregates, falling back to Polars when needed.
+
+    Returns
+    -------
+    pa.Table
+        Grouped table with list aggregates.
+    """
+    try:
+        return table.group_by(list(keys)).aggregate([(value_col, "list")])
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
+        frame = cast("pl.DataFrame", pl.from_arrow(table))
+        aggregated = (
+            frame.lazy()
+            .group_by(list(keys), maintain_order=maintain_order)
+            .agg(pl.col(value_col).implode().alias(value_col))
+            .collect()
+        )
+        return aggregated.to_arrow()
+
+
+def write_json_streaming(reader: pa.RecordBatchReader, output_path: str | Path) -> None:
+    """Write JSON using streaming Arrow record batches."""
+    writer = require_json_writer()
+    writer(reader, str(output_path))
+
+
+def json_writer_available() -> bool:
+    """Return whether pyarrow JSON streaming support is available.
+
+    Returns
+    -------
+    bool
+        True when the JSON writer exists in pyarrow.json.
+    """
+    return getattr(paj, "write_json", None) is not None
+
+
+def require_json_writer() -> Callable[[pa.RecordBatchReader, str], None]:
+    """Return the pyarrow JSON writer or raise when unavailable.
+
+    Returns
+    -------
+    Callable[[pa.RecordBatchReader, str], None]
+        pyarrow JSON writer function.
+
+    Raises
+    ------
+    AttributeError
+        If the pyarrow JSON writer is unavailable.
+    """
+    writer = getattr(paj, "write_json", None)
+    if writer is None:
+        msg = "pyarrow.json.write_json is unavailable"
+        raise AttributeError(msg)
+    return cast("Callable[[pa.RecordBatchReader, str], None]", writer)
+
+
+def write_json_streaming_table(
+    table: pa.Table,
+    output_path: str | Path,
+    *,
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+) -> None:
+    """Write JSON from an Arrow table using streaming record batches."""
+    reader = table_to_reader(table, batch_size=batch_size)
+    write_json_streaming(reader, output_path)
+
+
 __all__ = [
+    "ArrowJoinOptions",
     "ArrowJoinSpec",
+    "JoinFilterClause",
     "align_reader_to_contract",
     "align_table_to_contract",
     "arrow_join_frames",
@@ -925,8 +1123,27 @@ __all__ = [
     "arrow_join_tables",
     "arrow_table_from_lazyframe",
     "arrow_table_from_tabular",
+    "build_join_options",
+    "combine_join_filters",
     "concat_tables_unified",
     "dedupe_table_for_table",
+    "dedupe_tabular",
+    "ensure_array",
+    "group_list_or_polars",
+    "index_in",
+    "join_filter_expr",
+    "json_writer_available",
+    "normalize_binary_view_array",
+    "normalize_string_view_array",
+    "normalize_table_for_compute",
+    "normalize_table_for_join",
+    "require_json_writer",
+    "resolve_join_filter_field",
     "scan_parquet_dataset",
     "scan_parquet_table",
+    "table_to_reader",
+    "take_by_key",
+    "value_set_array",
+    "write_json_streaming",
+    "write_json_streaming_table",
 ]

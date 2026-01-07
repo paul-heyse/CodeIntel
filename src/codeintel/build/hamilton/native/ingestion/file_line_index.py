@@ -19,6 +19,7 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -33,7 +34,7 @@ FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
 
 def _resolve_module_paths(modules_table: pa.Table) -> dict[str, str | None]:
     paths: dict[str, str | None] = {}
-    for row in modules_table.to_pylist():
+    for row in iter_rows(modules_table):
         rel_path = row.get("path")
         if not isinstance(rel_path, str) or not rel_path:
             continue

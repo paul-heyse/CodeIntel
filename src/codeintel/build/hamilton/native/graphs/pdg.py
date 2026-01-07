@@ -9,9 +9,10 @@ from codeintel.build.graphs.assembly import (
     empty_reader,
     tabular_to_table,
 )
-from codeintel.build.tabular.arrow_ops import concat_tables_unified, dedupe_table_for_table
+from codeintel.build.tabular.arrow_ops import dedupe_table_for_table
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.schema_ops import concat_tables_unified
 
 PDG_EDGES_TABLE_KEY = "graph.pdg_edges"
 

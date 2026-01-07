@@ -5,12 +5,14 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from codeintel.core.columnar.compute_helpers import call_compute
+from codeintel.core.columnar.masks import is_valid_mask
 from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.schemas.arrow_gen import (
@@ -584,20 +586,15 @@ def _any_true(values: pa.Array | pa.ChunkedArray) -> bool:
 def _all_valid(values: pa.Array | pa.ChunkedArray) -> bool:
     if len(values) == 0:
         return True
-    is_valid = getattr(pc, "is_valid", None)
-    if not callable(is_valid):
-        return not _has_nulls(values)
     try:
-        mask = is_valid(values)
-        all_fn = getattr(pc, "all", None)
-        if callable(all_fn):
-            result = all_fn(mask)
-            as_py = getattr(result, "as_py", None)
-            if callable(as_py):
-                value = as_py()
-                return bool(value) if value is not None else False
+        mask = is_valid_mask(values)
+        result = call_compute("all", [mask])
+        if isinstance(result, pa.Scalar):
+            scalar = cast("pa.Scalar", result)
+            value = scalar.as_py()
+            return bool(value) if value is not None else False
         return not _has_nulls(values)
-    except (TypeError, pa.ArrowInvalid):
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
         return not _has_nulls(values)
 
 

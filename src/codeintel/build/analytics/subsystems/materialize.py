@@ -25,6 +25,7 @@ from codeintel.build.analytics.subsystems.affinity import (
 from codeintel.build.analytics.subsystems.edge_stats import (
     compute_subsystem_edge_stats,
 )
+from codeintel.build.tabular.arrow_ops import iter_rows
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.subsystems.affinity import (
@@ -295,7 +296,7 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = frame.to_pylist()
+    rows = list(iter_rows(frame))
     has_repo = "repo" in frame.column_names
     has_commit = "commit" in frame.column_names
     return [

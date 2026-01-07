@@ -410,9 +410,7 @@ def _summarize_arrow_table(table: pa.Table) -> dict[str, object]:
 
 
 def _summarize_polars_frame(frame: pl.DataFrame) -> dict[str, object]:
-    schema = dict(
-        zip(frame.columns, (str(dtype) for dtype in frame.dtypes), strict=False)
-    )
+    schema = dict(zip(frame.columns, (str(dtype) for dtype in frame.dtypes), strict=False))
     return {
         "row_count": frame.height,
         "column_count": frame.width,

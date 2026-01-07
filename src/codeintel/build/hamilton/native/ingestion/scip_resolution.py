@@ -25,7 +25,9 @@ from codeintel.build.tabular.arrow_ops import (
     ArrowJoinSpec,
     align_table_to_contract,
     arrow_join_tables,
+    build_join_options,
     dedupe_table_for_table,
+    iter_rows,
 )
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
@@ -164,11 +166,9 @@ def _symbol_goid_xref_table(
         pa.scalar(0, type=roles.type),
     )
     definitions = occurrences.filter(def_mask)
-    joined = arrow_join_tables(
-        definitions,
-        goids,
-        spec=ArrowJoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1"),
-    )
+    join_spec = ArrowJoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1")
+    join_options = build_join_options(definitions, goids)
+    joined = arrow_join_tables(definitions, goids, spec=join_spec, options=join_options)
     joined = joined.select(
         [
             "repo",
@@ -217,23 +217,24 @@ def _occurrence_span_xref_table(
             "goid_h128",
         ]
     )
+    join_spec = ArrowJoinSpec(
+        on=["repo", "commit", "scip_symbol"],
+        how="left",
+        validate="m:1",
+    )
+    join_options = build_join_options(occurrences, symbol_info)
     base = arrow_join_tables(
         occurrences,
         symbol_info,
-        spec=ArrowJoinSpec(
-            on=["repo", "commit", "scip_symbol"],
-            how="left",
-            validate="m:1",
-        ),
+        spec=join_spec,
+        options=join_options,
     )
+    join_options = build_join_options(base, goid_lookup)
     base = arrow_join_tables(
         base,
         goid_lookup,
-        spec=ArrowJoinSpec(
-            on=["repo", "commit", "scip_symbol"],
-            how="left",
-            validate="m:1",
-        ),
+        spec=join_spec,
+        options=join_options,
     )
     roles = base["roles"] if "roles" in base.column_names else None
     if roles is None:
@@ -321,7 +322,7 @@ def _build_syntax_node_indexes(
     nodes_table: pa.Table,
 ) -> dict[tuple[str, str], _SyntaxNodeIndex]:
     indexes: dict[tuple[str, str], _SyntaxNodeIndex] = {}
-    for row in nodes_table.to_pylist():
+    for row in iter_rows(nodes_table):
         rel_path = row.get("rel_path")
         producer = row.get("producer")
         node_id = row.get("node_id")
@@ -403,7 +404,7 @@ def _occurrence_syntax_xref_rows(
         return []
     indexes = _build_syntax_node_indexes(nodes_table)
     occurrences_by_path: dict[str, list[dict[str, object]]] = {}
-    for row in occurrences_table.to_pylist():
+    for row in iter_rows(occurrences_table):
         rel_path = row.get("rel_path")
         if not isinstance(rel_path, str):
             continue

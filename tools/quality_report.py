@@ -224,6 +224,10 @@ def main() -> int:
 
     commands = [
         CommandSpec(
+            name="pylist_guardrail",
+            args=["uv", "run", "python", "-m", "tools.pylist_guardrail"],
+        ),
+        CommandSpec(
             name="guardrails",
             args=[
                 "uv",

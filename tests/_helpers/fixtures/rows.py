@@ -437,7 +437,7 @@ def dataclass_row[RowType: InsertableRow](
         if field_def.default is not MISSING or field_def.default_factory is not MISSING:
             continue
         row_values[name] = value
-    return row_type(**row_values)
+    return cast("RowType", row_type(**row_values))
 
 
 def function_meta(

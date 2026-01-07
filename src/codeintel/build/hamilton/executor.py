@@ -118,6 +118,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.build_log import BuildLogContext
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
+
     class BuildExecutionOverrides(TypedDict, total=False):
         profile: str | None
         parallel_backend: str
@@ -550,9 +551,7 @@ def _node_filter_from_prefixes(
     normalized = tuple(prefixes)
 
     def _filter(node_name: str, _tags: dict[str, Any]) -> bool:
-        return any(
-            node_name == prefix or node_name.startswith(prefix) for prefix in normalized
-        )
+        return any(node_name == prefix or node_name.startswith(prefix) for prefix in normalized)
 
     return _filter
 
@@ -685,9 +684,7 @@ def _configure_cache_logger(
         settings.cache_logger_path.parent.mkdir(parents=True, exist_ok=True)
         handler = logging.FileHandler(settings.cache_logger_path, encoding="utf-8")
         handler.setLevel(level)
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
         logger.addHandler(handler)
     return _CacheLoggerHandle(
         logger=logger,
@@ -957,7 +954,9 @@ def _wait_for_hamilton_ui(handle: _HamiltonUiHandle, settings: _HamiltonUiSettin
     return True
 
 
-def _start_hamilton_ui(settings: _HamiltonUiSettings, *, repo_root: Path) -> _HamiltonUiHandle | None:
+def _start_hamilton_ui(
+    settings: _HamiltonUiSettings, *, repo_root: Path
+) -> _HamiltonUiHandle | None:
     if not settings.enabled:
         return None
     if not _is_local_ui_url(settings.api_url):
@@ -1386,10 +1385,14 @@ def _merge_tracker_settings(
             else base.capture_data_statistics
         ),
         max_list_length=(
-            overrides.max_list_length if overrides.max_list_length is not None else base.max_list_length
+            overrides.max_list_length
+            if overrides.max_list_length is not None
+            else base.max_list_length
         ),
         max_dict_length=(
-            overrides.max_dict_length if overrides.max_dict_length is not None else base.max_dict_length
+            overrides.max_dict_length
+            if overrides.max_dict_length is not None
+            else base.max_dict_length
         ),
         tags=overrides.tags if overrides.tags is not None else base.tags,
     )
@@ -2987,13 +2990,13 @@ def _write_failed_targets_diagnostic(
     try:
         diag_dir.mkdir(parents=True, exist_ok=True)
     except (OSError, RuntimeError) as exc:
-        log.warning("build.hamilton.failed_targets_dir_failed run_id=%s error=%s", context.run_id, exc)
+        log.warning(
+            "build.hamilton.failed_targets_dir_failed run_id=%s error=%s", context.run_id, exc
+        )
         return
 
     record_map = {
-        record.target: record
-        for record in outputs.values()
-        if isinstance(record, TargetRunRecord)
+        record.target: record for record in outputs.values() if isinstance(record, TargetRunRecord)
     }
     entries: list[dict[str, object]] = []
     for target in failed_targets:

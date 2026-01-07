@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 import networkx as nx
 import pyarrow as pa
 
+from codeintel.build.tabular.arrow_ops import iter_rows
+
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
 
@@ -259,7 +261,7 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = frame.to_pylist()
+    rows = list(iter_rows(frame))
     has_repo = "repo" in frame.column_names
     has_commit = "commit" in frame.column_names
     return [

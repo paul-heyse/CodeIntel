@@ -6,16 +6,25 @@ and dfg_core.py to eliminate code duplication.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
+import pyarrow.compute as pc
 
+from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_masks import equal_expr, is_in_expr, is_valid_expr
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     import networkx as nx
+    from pyarrow.compute import Expression as ComputeExpression
+else:
+    ComputeExpression = object
+
+_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 def degree_dict(
@@ -71,6 +80,49 @@ def parse_block_idx(block_id: str | int | None) -> int | None:
         return None
 
 
+def _combine_expr(
+    current: ComputeExpression | None,
+    next_expr: ComputeExpression,
+) -> ComputeExpression:
+    if current is None:
+        return next_expr
+    return cast("ComputeExpression", current & next_expr)
+
+
+def prefilter_table(
+    table: pa.Table,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+    kinds: Sequence[str] | None = None,
+    require_valid: Sequence[str] = (),
+) -> pa.Table:
+    """Prefilter a table using compute expressions when columns exist.
+
+    Returns
+    -------
+    pyarrow.Table
+        Filtered table when expressions apply.
+    """
+    column_names = set(table.column_names)
+    expr: ComputeExpression | None = None
+    if repo is not None and "repo" in column_names:
+        expr = _combine_expr(expr, equal_expr("repo", repo))
+    if commit is not None and "commit" in column_names:
+        expr = _combine_expr(expr, equal_expr("commit", commit))
+    if kinds and "kind" in column_names:
+        expr = _combine_expr(expr, is_in_expr("kind", value_set=kinds))
+    for name in require_valid:
+        if name in column_names:
+            expr = _combine_expr(expr, is_valid_expr(name))
+    if expr is None or _EXPR_TYPE is None:
+        return table
+    try:
+        return table.filter(expr)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return table
+
+
 def load_function_metadata(
     goids_frame: pa.Table,
     modules_frame: pa.Table,
@@ -97,18 +149,27 @@ def load_function_metadata(
         Mapping of GOID -> (rel_path, module, qualname).
     """
     module_by_path: dict[str, str] = {}
-    for row in modules_frame.to_pylist():
+    filtered_modules = prefilter_table(
+        modules_frame,
+        repo=repo,
+        commit=commit,
+        require_valid=("path", "module"),
+    )
+    for row in iter_rows(filtered_modules):
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):
             module_by_path[path] = module
 
     metadata: dict[int, tuple[str, str | None, str | None]] = {}
-    for row in goids_frame.to_pylist():
-        if row.get("repo") != repo or row.get("commit") != commit:
-            continue
-        if row.get("kind") not in {"function", "method"}:
-            continue
+    filtered_goids = prefilter_table(
+        goids_frame,
+        repo=repo,
+        commit=commit,
+        kinds=("function", "method"),
+        require_valid=("goid_h128", "rel_path"),
+    )
+    for row in iter_rows(filtered_goids):
         goid = normalize_decimal_id(row.get("goid_h128"))
         if goid is None:
             continue
@@ -129,4 +190,5 @@ __all__ = [
     "degree_dict",
     "load_function_metadata",
     "parse_block_idx",
+    "prefilter_table",
 ]

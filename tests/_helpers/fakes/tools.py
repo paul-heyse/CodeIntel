@@ -35,7 +35,7 @@ from tests._helpers.scip_proto import ensure_proto_module
 from tests._helpers.scip_proto import write_scip_index as write_proto_index
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from codeintel.ingestion.ports.tools import ScipRunRequest
 
@@ -410,61 +410,103 @@ class FakeToolService(ToolService):
         self.fake_config = config or FakeToolServiceConfig()
         self.calls: CallRecorder[ToolRunCall] = CallRecorder()
 
-    async def run_pyright(self, repo_root: Path) -> dict[str, int]:
+    async def run_pyright(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> Mapping[str, int]:
         """Run pyright and return configured error counts.
 
         Parameters
         ----------
         repo_root
             Repository root (logged but not used).
+        paths
+            Optional paths to scope diagnostics.
 
         Returns
         -------
         dict[str, int]
             Configured pyright errors.
         """
+        path_args = [str(path) for path in paths] if paths is not None else []
         self.calls.record(
-            ToolRunCall(tool="pyright", args=[], cwd=repo_root, timeout_ms=None, env=None)
+            ToolRunCall(
+                tool="pyright",
+                args=path_args,
+                cwd=repo_root,
+                timeout_ms=None,
+                env=None,
+            )
         )
         if self.fake_config.raise_on_pyright is not None:
             raise self.fake_config.raise_on_pyright
         return dict(self.fake_config.pyright_errors)
 
-    async def run_pyrefly(self, repo_root: Path) -> dict[str, int]:
+    async def run_pyrefly(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> Mapping[str, int]:
         """Run pyrefly and return configured error counts.
 
         Parameters
         ----------
         repo_root
             Repository root (logged but not used).
+        paths
+            Optional paths to scope diagnostics.
 
         Returns
         -------
         dict[str, int]
             Configured pyrefly errors.
         """
+        path_args = [str(path) for path in paths] if paths is not None else []
         self.calls.record(
-            ToolRunCall(tool="pyrefly", args=[], cwd=repo_root, timeout_ms=None, env=None)
+            ToolRunCall(
+                tool="pyrefly",
+                args=path_args,
+                cwd=repo_root,
+                timeout_ms=None,
+                env=None,
+            )
         )
         if self.fake_config.raise_on_pyrefly is not None:
             raise self.fake_config.raise_on_pyrefly
         return dict(self.fake_config.pyrefly_errors)
 
-    async def run_ruff(self, repo_root: Path) -> dict[str, int]:
+    async def run_ruff(
+        self,
+        repo_root: Path,
+        *,
+        paths: Sequence[Path] | None = None,
+    ) -> Mapping[str, int]:
         """Run ruff and return configured error counts.
 
         Parameters
         ----------
         repo_root
             Repository root (logged but not used).
+        paths
+            Optional paths to scope diagnostics.
 
         Returns
         -------
         dict[str, int]
             Configured ruff errors.
         """
+        path_args = [str(path) for path in paths] if paths is not None else []
         self.calls.record(
-            ToolRunCall(tool="ruff", args=[], cwd=repo_root, timeout_ms=None, env=None)
+            ToolRunCall(
+                tool="ruff",
+                args=path_args,
+                cwd=repo_root,
+                timeout_ms=None,
+                env=None,
+            )
         )
         if self.fake_config.raise_on_ruff is not None:
             raise self.fake_config.raise_on_ruff

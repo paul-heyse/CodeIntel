@@ -22,7 +22,7 @@ from codeintel.build.tabular.arrow_ops import (
     ArrowJoinSpec,
     align_table_to_contract,
     arrow_join_tables,
-    concat_tables_unified,
+    build_join_options,
     dedupe_table_for_table,
 )
 from codeintel.build.tabular.compute_masks import (
@@ -32,8 +32,10 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
 )
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.table_ops import ensure_table_columns
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
+from codeintel.core.columnar.schema_ops import concat_tables_unified
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -64,15 +66,7 @@ def _select_for_table(table: pa.Table, table_key: str) -> pa.Table:
     columns = _ordered_columns(table_key)
     if not columns:
         return table
-    return _ensure_table_columns(table, columns).select(columns)
-
-
-def _ensure_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
-    if not columns:
-        return table
-    existing = set(table.column_names)
-    arrays = [table[name] if name in existing else pa.nulls(table.num_rows) for name in columns]
-    return pa.Table.from_arrays(arrays, names=list(columns))
+    return ensure_table_columns(table, columns).select(columns)
 
 
 def _merge_column_names(schemas: list[list[str]]) -> list[str]:
@@ -95,7 +89,7 @@ def _align_tables_for_concat(tables: list[pa.Table]) -> list[pa.Table]:
         missing = [name for name in all_columns if name not in names]
         resolved = table
         if missing:
-            resolved = _ensure_table_columns(resolved, [*names, *missing])
+            resolved = ensure_table_columns(resolved, [*names, *missing])
         aligned.append(resolved.select(all_columns))
     return aligned
 
@@ -201,11 +195,9 @@ def _occurrence_resolution_table(
         "occ_end_col",
     ]
     # Contract: span rows are unique per occurrence join key.
-    return arrow_join_tables(
-        syntax,
-        span,
-        spec=ArrowJoinSpec(on=join_keys, how="left", validate="m:1"),
-    )
+    join_spec = ArrowJoinSpec(on=join_keys, how="left", validate="m:1")
+    join_options = build_join_options(syntax, span)
+    return arrow_join_tables(syntax, span, spec=join_spec, options=join_options)
 
 
 def _resolve_facts(
@@ -257,10 +249,12 @@ def _resolve_occurrence_joins(
     byte_spec = _occurrence_byte_join_spec()
     facts_with_bytes = _cast_join_key_int64(facts_with_bytes, byte_spec.left_on)
     occ_bytes = _cast_join_key_int64(occ_bytes, byte_spec.right_on)
+    join_options = build_join_options(facts_with_bytes, occ_bytes)
     bytes_join = arrow_join_tables(
         facts_with_bytes,
         occ_bytes,
         spec=byte_spec,
+        options=join_options,
     )
     bytes_join = _attach_column(bytes_join, "extras_json", extras_bytes)
     fallback = _filter_table(bytes_join, is_null_mask(bytes_join["scip_symbol"]))
@@ -289,7 +283,13 @@ def _line_join_occurrences(left: pa.Table, occurrences: pa.Table) -> pa.Table:
     line_spec = _occurrence_line_join_spec()
     stripped_left = _cast_join_key_int64(stripped_left, line_spec.left_on)
     occurrences = _cast_join_key_int64(occurrences, line_spec.right_on)
-    joined = arrow_join_tables(stripped_left, occurrences, spec=line_spec)
+    join_options = build_join_options(stripped_left, occurrences)
+    joined = arrow_join_tables(
+        stripped_left,
+        occurrences,
+        spec=line_spec,
+        options=join_options,
+    )
     return _attach_column(joined, "extras_json", extras_json)
 
 

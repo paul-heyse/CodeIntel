@@ -16,6 +16,7 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
     filter_python_modules,
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -129,7 +130,7 @@ def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
     if not required.issubset(set(modules_table.column_names)):
         return module_by_path
     filtered = filter_python_modules(modules_table)
-    for row in filtered.to_pylist():
+    for row in iter_rows(filtered):
         rel_path = row.get("path")
         module_name = row.get("module")
         language = row.get("language")
@@ -190,7 +191,7 @@ def _call_graph_index_rows(
         return None
     filtered = filter_python_goids(goids_table)
     rows: list[dict[str, object]] = []
-    for row in filtered.to_pylist():
+    for row in iter_rows(filtered):
         if row.get("kind") not in _FUNCTION_KINDS:
             continue
         rel_path = row.get("rel_path")
@@ -311,7 +312,7 @@ def _call_graph_node_rows(
     output_rows: list[dict[str, object]] = []
     matched_defs = 0
     total_defs = 0
-    for row in goids_table.to_pylist():
+    for row in iter_rows(goids_table):
         kind = row.get("kind")
         if kind not in _FUNCTION_KINDS:
             continue

@@ -34,6 +34,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
@@ -51,7 +52,7 @@ def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
     if not {"path", "module"}.issubset(set(modules_table.column_names)):
         return module_by_path
     filtered = filter_python_modules(modules_table)
-    for row in filtered.to_pylist():
+    for row in iter_rows(filtered):
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):
@@ -66,7 +67,7 @@ def _goid_resolver(
     if goids_table.num_rows == 0 or "rel_path" not in goids_table.column_names:
         return resolver
     filtered = filter_goids_with_spans(goids_table)
-    for row in filtered.to_pylist():
+    for row in iter_rows(filtered):
         rel_path = row.get("rel_path")
         goid_raw = row.get("goid_h128")
         start_line = row.get("start_line")
@@ -104,7 +105,7 @@ def _symbol_occurrences(occurrences_table: pa.Table) -> list[SymbolOccurrence]:
     if not required.issubset(set(occurrences_table.column_names)):
         return occurrences
     filtered = filter_symbol_occurrences(occurrences_table)
-    for row in filtered.to_pylist():
+    for row in iter_rows(filtered):
         symbol = row.get("symbol")
         rel_path = row.get("rel_path")
         start_line = row.get("start_line")

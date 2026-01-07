@@ -7,12 +7,19 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 import pyarrow as pa
+import pyarrow.compute as pc
 
-from codeintel.build.tabular.arrow_ops import align_table_to_contract, dedupe_table_for_table
+from codeintel.build.tabular.arrow_ops import (
+    align_table_to_contract,
+    dedupe_table_for_table,
+    iter_rows,
+)
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
+    is_valid_expr,
     is_valid_mask,
+    non_empty_string_expr,
     non_empty_string_mask,
 )
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
@@ -20,6 +27,8 @@ from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CDG_EDGES_TABLE_KEY = "graph.cdg_edges"
+
+_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True)
@@ -257,6 +266,13 @@ def _prefilter_cdg_blocks(blocks_table: pa.Table) -> pa.Table:
     if not required.issubset(set(blocks_table.column_names)):
         return blocks_table
     try:
+        if _EXPR_TYPE is not None:
+            expr = (
+                is_valid_expr("function_goid_h128")
+                & is_valid_expr("block_id")
+                & is_valid_expr("block_idx")
+            )
+            return blocks_table.filter(expr)
         goid_mask = is_valid_mask(blocks_table.column("function_goid_h128"))
         block_id_mask = is_valid_mask(blocks_table.column("block_id"))
         block_idx_mask = is_valid_mask(blocks_table.column("block_idx"))
@@ -274,6 +290,9 @@ def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
     if not required.issubset(set(edges_table.column_names)):
         return edges_table
     try:
+        if _EXPR_TYPE is not None:
+            expr = is_valid_expr("function_goid_h128") & non_empty_string_expr("edge_kind")
+            return edges_table.filter(expr)
         goid_mask = is_valid_mask(edges_table.column("function_goid_h128"))
         kind_mask = non_empty_string_mask(edges_table.column("edge_kind"))
         mask = and_kleene(goid_mask, kind_mask)
@@ -305,13 +324,13 @@ def cdg_edges(
         return empty_table_for_table(CDG_EDGES_TABLE_KEY)
 
     blocks_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
-    for row in blocks_table.to_pylist():
+    for row in iter_rows(blocks_table):
         function_goid = _coerce_int(row.get("function_goid_h128"))
         if function_goid is None:
             continue
         blocks_by_goid[function_goid].append(row)
     edges_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
-    for row in edges_table.to_pylist():
+    for row in iter_rows(edges_table):
         function_goid = _coerce_int(row.get("function_goid_h128"))
         if function_goid is None:
             continue

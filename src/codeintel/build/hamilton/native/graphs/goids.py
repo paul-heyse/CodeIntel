@@ -30,6 +30,7 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -97,7 +98,7 @@ def _module_frame(modules_table: pa.Table) -> list[dict[str, str]]:
         return []
     modules_table = filter_modules_with_language(modules_table)
     rows: list[dict[str, str]] = []
-    for row in modules_table.to_pylist():
+    for row in iter_rows(modules_table):
         path = row.get("path")
         module = row.get("module")
         language = row.get("language")
@@ -228,7 +229,7 @@ def _joined_ast_nodes(
     total = 0
     matched = 0
     filtered = filter_goid_ast_nodes(ast_nodes_table)
-    for row in filtered.to_pylist():
+    for row in iter_rows(filtered):
         node_type = row.get("node_type")
         if node_type not in _ALLOWED_NODE_TYPES:
             continue

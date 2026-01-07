@@ -12,6 +12,19 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.columnar.compute_config import (
+    DEFAULT_SCALAR_AGG,
+    DEFAULT_SCALAR_AGG_ALLOW_NULL,
+)
+from codeintel.core.columnar.compute_helpers import call_compute
+from codeintel.core.columnar.iter import iter_array_values
+from codeintel.core.columnar.masks import (
+    and_mask,
+    filter_valid,
+    invert_mask,
+    is_valid_mask,
+)
+from codeintel.core.columnar.set_ops import is_in_mask
 from codeintel.core.query_results import ScalarCoercionError
 from codeintel.core.table_key import is_valid_table_key
 from codeintel.storage.datasets.arrow_store import dataset_stats, scan_dataset
@@ -179,11 +192,13 @@ def safe_min_value(
     )
     if table is None or table.num_rows == 0:
         return None
-    value = _compute_scalar(
+    value = call_compute(
         "min",
         [table.column(column)],
-        options=pc.ScalarAggregateOptions(skip_nulls=True),
+        options=DEFAULT_SCALAR_AGG,
     )
+    if not isinstance(value, pa.Scalar):
+        return None
     return _coerce_optional_float(value, ctx=f"{table_key}.{column}.min")
 
 
@@ -209,11 +224,13 @@ def safe_max_value(
     )
     if table is None or table.num_rows == 0:
         return None
-    value = _compute_scalar(
+    value = call_compute(
         "max",
         [table.column(column)],
-        options=pc.ScalarAggregateOptions(skip_nulls=True),
+        options=DEFAULT_SCALAR_AGG,
     )
+    if not isinstance(value, pa.Scalar):
+        return None
     return _coerce_optional_float(value, ctx=f"{table_key}.{column}.max")
 
 
@@ -248,7 +265,7 @@ def safe_count_non_positive(
     computed = _count_non_positive(values)
     if computed is not None:
         return computed
-    count = sum(1 for value in values.to_pylist() if _is_non_positive(value))
+    count = sum(1 for value in iter_array_values(values) if _is_non_positive(value))
     return int(count)
 
 
@@ -278,12 +295,26 @@ def safe_count_duplicates(
     computed = _count_duplicates(values)
     if computed is not None:
         return computed
-    python_values = [value for value in values.to_pylist() if value is not None]
-    try:
-        distinct = len(set(python_values))
-    except TypeError:
-        distinct = len({repr(value) for value in python_values})
-    return len(python_values) - distinct
+    total = 0
+    distinct_values: set[object] = set()
+    distinct_repr: set[str] = set()
+    use_repr = False
+    for value in iter_array_values(values):
+        if value is None:
+            continue
+        total += 1
+        if use_repr:
+            distinct_repr.add(repr(value))
+            continue
+        try:
+            distinct_values.add(value)
+        except TypeError:
+            use_repr = True
+            distinct_repr = {repr(item) for item in distinct_values}
+            distinct_values.clear()
+            distinct_repr.add(repr(value))
+    distinct = len(distinct_repr) if use_repr else len(distinct_values)
+    return total - distinct
 
 
 def safe_not_null_fraction(
@@ -312,15 +343,15 @@ def safe_not_null_fraction(
     if total == 0:
         return 0.0
     values = table.column(column)
-    total_value = _compute_scalar(
+    total_value = call_compute(
         "count",
         [values],
-        options=pc.ScalarAggregateOptions(skip_nulls=False),
+        options=DEFAULT_SCALAR_AGG_ALLOW_NULL,
     )
-    non_null_value = _compute_scalar(
+    non_null_value = call_compute(
         "count",
         [values],
-        options=pc.ScalarAggregateOptions(skip_nulls=True),
+        options=DEFAULT_SCALAR_AGG,
     )
     total_count = _as_int(total_value)
     non_null_count = _as_int(non_null_value)
@@ -365,10 +396,12 @@ def safe_count_orphan_refs(
     )
     if computed is not None:
         return computed
-    target_filtered = [value for value in target_values.to_pylist() if value is not None]
-    target_set = set(target_filtered)
+    target_set: set[object] = set()
+    for value in iter_array_values(target_values):
+        if value is not None:
+            target_set.add(value)
     count = 0
-    for value in source_values.to_pylist():
+    for value in iter_array_values(source_values):
         if value is None:
             if fk.allow_null:
                 count += 1
@@ -467,19 +500,6 @@ def _coerce_optional_float(value: object | None, *, ctx: str) -> float | None:
         return None
 
 
-def _compute_scalar(
-    name: str,
-    args: list[object],
-    *,
-    options: pc.FunctionOptions | None = None,
-) -> object | None:
-    try:
-        result = pc.call_function(name, args, options=options)
-    except (pa.ArrowInvalid, pa.ArrowTypeError, ValueError):
-        return None
-    return result.as_py() if hasattr(result, "as_py") else result
-
-
 def _count_options_only_valid() -> pc.FunctionOptions | None:
     options_type = getattr(pc, "CountOptions", None)
     if options_type is None:
@@ -490,45 +510,18 @@ def _count_options_only_valid() -> pc.FunctionOptions | None:
         return None
 
 
-def _set_lookup_options(
-    value_set: pa.Array | pa.ChunkedArray,
-) -> pc.FunctionOptions | None:
-    options_type = getattr(pc, "SetLookupOptions", None)
-    if options_type is None:
-        return None
-    try:
-        return options_type(value_set=value_set)
-    except TypeError:
-        return None
-
-
-def _compute_array(
-    name: str,
-    args: list[object],
-    *,
-    options: pc.FunctionOptions | None = None,
-) -> pa.Array | pa.ChunkedArray | None:
-    try:
-        result = pc.call_function(name, args, options=options)
-    except (pa.ArrowInvalid, pa.ArrowTypeError, ValueError):
-        return None
-    if isinstance(result, (pa.Array, pa.ChunkedArray)):
-        return result
-    return None
-
-
 def _null_count(values: pa.ChunkedArray) -> int:
-    mask = _compute_array("is_null", [values])
-    if mask is None:
+    mask = call_compute("is_null", [values])
+    if not isinstance(mask, (pa.Array, pa.ChunkedArray)):
         return _as_int(values.null_count)
     return _sum_mask(mask)
 
 
 def _sum_mask(mask: pa.Array | pa.ChunkedArray) -> int:
-    total = _compute_scalar(
+    total = call_compute(
         "sum",
         [mask],
-        options=pc.ScalarAggregateOptions(skip_nulls=True),
+        options=DEFAULT_SCALAR_AGG,
     )
     return _as_int(total)
 
@@ -573,23 +566,23 @@ def _count_non_positive(values: pa.ChunkedArray) -> int | None:
     scalar = _numeric_zero(data_type)
     if scalar is None:
         return None
-    mask = _compute_array("less_equal", [values, scalar])
-    if mask is None:
+    mask = call_compute("less_equal", [values, scalar])
+    if not isinstance(mask, (pa.Array, pa.ChunkedArray)):
         return None
     return _sum_mask(mask)
 
 
 def _count_duplicates(values: pa.ChunkedArray) -> int | None:
     options = _count_options_only_valid()
-    total_value = _compute_scalar("count", [values], options=options)
-    if total_value is None and options is not None:
-        total_value = _compute_scalar("count", [values])
-    if total_value is None:
+    total_value = call_compute("count", [values], options=options)
+    if not isinstance(total_value, pa.Scalar) and options is not None:
+        total_value = call_compute("count", [values])
+    if not isinstance(total_value, pa.Scalar):
         return None
-    distinct_value = _compute_scalar("count_distinct", [values], options=options)
-    if distinct_value is None and options is not None:
-        distinct_value = _compute_scalar("count_distinct", [values])
-    if distinct_value is None:
+    distinct_value = call_compute("count_distinct", [values], options=options)
+    if not isinstance(distinct_value, pa.Scalar) and options is not None:
+        distinct_value = call_compute("count_distinct", [values])
+    if not isinstance(distinct_value, pa.Scalar):
         return None
     total_count = _as_int(total_value)
     distinct_count = _as_int(distinct_value)
@@ -605,19 +598,19 @@ def _count_orphan_refs(
     allow_null: bool,
 ) -> int | None:
     filtered_target = _filter_valid_values(target_values)
-    options = _set_lookup_options(filtered_target) if filtered_target is not None else None
-    in_mask = _compute_array("is_in", [source_values], options=options) if options else None
-    not_in_mask = _compute_array("invert", [in_mask]) if in_mask is not None else None
-    valid_mask = _compute_array("is_valid", [source_values]) if not_in_mask is not None else None
-    orphan_mask = (
-        _compute_array("and_kleene", [valid_mask, not_in_mask]) if valid_mask is not None else None
-    )
-    if orphan_mask is None:
+    if filtered_target is None:
+        return None
+    try:
+        in_mask = is_in_mask(source_values, target=filtered_target)
+        not_in_mask = invert_mask(in_mask)
+        valid_mask = is_valid_mask(source_values)
+        orphan_mask = and_mask(valid_mask, not_in_mask)
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
         return None
     orphan_count = _sum_mask(orphan_mask)
     if allow_null:
-        null_mask = _compute_array("is_null", [source_values])
-        if null_mask is None:
+        null_mask = call_compute("is_null", [source_values])
+        if not isinstance(null_mask, (pa.Array, pa.ChunkedArray)):
             return None
         orphan_count += _sum_mask(null_mask)
     return orphan_count
@@ -626,10 +619,10 @@ def _count_orphan_refs(
 def _filter_valid_values(
     values: pa.ChunkedArray,
 ) -> pa.Array | pa.ChunkedArray | None:
-    mask = _compute_array("is_valid", [values])
-    if mask is None:
+    try:
+        return filter_valid(values)
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
         return None
-    return _compute_array("filter", [values, mask])
 
 
 def _count_non_positive_filtered(dataset: ds.Dataset, *, column: str) -> int | None:

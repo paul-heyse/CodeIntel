@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import io
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -42,7 +43,8 @@ class _BatchRecorder:
 def test_write_jsonl_records_uses_default_batch_size() -> None:
     """write_jsonl_records uses the canonical default batch size."""
     rel = _BatchRecorder()
-    handle = io.StringIO()
-    count = write_jsonl_records(handle, rel=rel)
+    with tempfile.TemporaryDirectory() as tempdir:
+        output_path = Path(tempdir) / "output.jsonl"
+        count = write_jsonl_records(output_path, rel=rel)
     expect_equal(count, 0)
     expect_equal(rel.batch_sizes, [DEFAULT_ARROW_BATCH_SIZE], label="batch size")

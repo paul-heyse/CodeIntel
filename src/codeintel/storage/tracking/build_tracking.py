@@ -18,6 +18,10 @@ import pyarrow as pa
 from sqlglot import exp
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
+from codeintel.core.columnar.compute_helpers import call_compute, require_array
+from codeintel.core.columnar.iter import iter_array_values
+from codeintel.core.columnar.masks import and_mask, fill_null_false, invert_mask
+from codeintel.core.columnar.normalization import normalize_array
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract
 from codeintel.core.gateway import ScipRunRecordProtocol
@@ -374,12 +378,40 @@ class BuildTracking:
         repo: str,
         commit: str,
     ) -> pa.Array:
-        targets = table.column("target").to_pylist()
-        repos = table.column("repo").to_pylist()
-        commits = table.column("commit").to_pylist()
+        targets = table.column("target")
+        repos = table.column("repo")
+        commits = table.column("commit")
+        try:
+            target_mask = require_array(
+                call_compute("equal", [targets, pa.scalar(target)]),
+                name="equal",
+            )
+            repo_mask = require_array(
+                call_compute("equal", [repos, pa.scalar(repo)]),
+                name="equal",
+            )
+            commit_mask = require_array(
+                call_compute("equal", [commits, pa.scalar(commit)]),
+                name="equal",
+            )
+            combined = and_mask(target_mask, and_mask(repo_mask, commit_mask))
+            return normalize_array(fill_null_false(combined))
+        except (
+            TypeError,
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            ValueError,
+        ):
+            pass
         mask = [
             row_target == target and row_repo == repo and row_commit == commit
-            for row_target, row_repo, row_commit in zip(targets, repos, commits, strict=True)
+            for row_target, row_repo, row_commit in zip(
+                iter_array_values(targets),
+                iter_array_values(repos),
+                iter_array_values(commits),
+                strict=True,
+            )
         ]
         return pa.array(mask, type=pa.bool_())
 
@@ -390,17 +422,50 @@ class BuildTracking:
         repo: str,
         commit: str,
     ) -> pa.Array:
-        repos = table.column("repo").to_pylist()
-        commits = table.column("commit").to_pylist()
+        repos = table.column("repo")
+        commits = table.column("commit")
+        try:
+            repo_mask = require_array(
+                call_compute("equal", [repos, pa.scalar(repo)]),
+                name="equal",
+            )
+            commit_mask = require_array(
+                call_compute("equal", [commits, pa.scalar(commit)]),
+                name="equal",
+            )
+            combined = and_mask(repo_mask, commit_mask)
+            return normalize_array(fill_null_false(combined))
+        except (
+            TypeError,
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            ValueError,
+        ):
+            pass
         mask = [
             row_repo == repo and row_commit == commit
-            for row_repo, row_commit in zip(repos, commits, strict=True)
+            for row_repo, row_commit in zip(
+                iter_array_values(repos),
+                iter_array_values(commits),
+                strict=True,
+            )
         ]
         return pa.array(mask, type=pa.bool_())
 
     @staticmethod
     def _invert_mask(mask: pa.Array) -> pa.Array:
-        values = [not value for value in mask.to_pylist()]
+        try:
+            return normalize_array(invert_mask(fill_null_false(mask)))
+        except (
+            TypeError,
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            ValueError,
+        ):
+            pass
+        values = [not value for value in iter_array_values(mask)]
         return pa.array(values, type=pa.bool_())
 
     @staticmethod

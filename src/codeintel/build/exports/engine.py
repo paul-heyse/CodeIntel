@@ -189,14 +189,12 @@ def export_jsonl_for_table(
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     start = perf_counter()
-    rows_written = 0
-    with output_path.open("w", encoding="utf-8") as handle:
-        reader = build_export_reader(
-            gateway,
-            table_key,
-            batch_size=_EXPORT_RECORD_BATCH_SIZE,
-        )
-        rows_written = write_jsonl_reader(handle, reader=reader)
+    reader = build_export_reader(
+        gateway,
+        table_key,
+        batch_size=_EXPORT_RECORD_BATCH_SIZE,
+    )
+    rows_written = write_jsonl_reader(output_path, reader=reader)
     duration = perf_counter() - start
     write_audit_entry(
         ExportAuditRecord(
@@ -300,8 +298,7 @@ def export_jsonl_for_table_from_snapshot(
         table_key=target.table_name,
         batch_size=_EXPORT_RECORD_BATCH_SIZE,
     )
-    with target.output_path.open("w", encoding="utf-8") as handle:
-        rows_written = write_jsonl_reader(handle=handle, reader=reader)
+    rows_written = write_jsonl_reader(target.output_path, reader=reader)
     duration = perf_counter() - start
     write_audit_entry(
         ExportAuditRecord(

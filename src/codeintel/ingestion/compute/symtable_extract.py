@@ -49,6 +49,7 @@ def _safe_int32(value: object) -> int | None:
         return None
     return value
 
+
 PY_SYM_SCOPES_TABLE_KEY = "core.py_sym_scopes"
 PY_SYM_SYMBOLS_TABLE_KEY = "core.py_sym_symbols"
 PY_SYM_SCOPE_EDGES_TABLE_KEY = "core.py_sym_scope_edges"

@@ -13,6 +13,7 @@ import msgspec
 import pyarrow as pa
 
 from codeintel.build.analytics.utilities.ast import safe_unparse
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
@@ -354,9 +355,10 @@ def _function_rows_from_frame(
     else:
         return []
     result: list[tuple[int, str, str, int | None]] = []
-    for row in filtered.select(
-        [goid_column, "rel_path", "qualname", "start_line", "end_line"]
-    ).to_pylist():
+    for row in iter_rows(
+        filtered,
+        [goid_column, "rel_path", "qualname", "start_line", "end_line"],
+    ):
         goid_raw = row.get(goid_column)
         rel_path = row.get("rel_path")
         qualname = row.get("qualname")
@@ -391,7 +393,8 @@ def _effects_from_frame(
     if filtered.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, object]] = {}
-    for row in filtered.select(
+    for row in iter_rows(
+        filtered,
         [
             "function_goid_h128",
             "touches_db",
@@ -401,8 +404,8 @@ def _effects_from_frame(
             "modifies_globals",
             "modifies_closure",
             "spawns_threads_or_tasks",
-        ]
-    ).to_pylist():
+        ],
+    ):
         goid_raw = row.get("function_goid_h128")
         touches_db = row.get("touches_db")
         uses_io = row.get("uses_io")
@@ -438,14 +441,15 @@ def _contracts_from_frame(
     if filtered.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, object]] = {}
-    for row in filtered.select(
+    for row in iter_rows(
+        filtered,
         [
             "function_goid_h128",
             "preconditions_json",
             "raises_json",
             "param_nullability_json",
-        ]
-    ).to_pylist():
+        ],
+    ):
         goid_raw = row.get("function_goid_h128")
         preconditions = row.get("preconditions_json")
         raises = row.get("raises_json")
@@ -473,7 +477,10 @@ def _graph_metrics_from_frame(
     if filtered.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, int]] = {}
-    for row in filtered.select(["function_goid_h128", "call_fan_in", "call_fan_out"]).to_pylist():
+    for row in iter_rows(
+        filtered,
+        ["function_goid_h128", "call_fan_in", "call_fan_out"],
+    ):
         goid_raw = row.get("function_goid_h128")
         call_fan_in = row.get("call_fan_in")
         call_fan_out = row.get("call_fan_out")
@@ -499,7 +506,7 @@ def _module_meta_from_frame(
     if filtered.num_rows == 0:
         return {}
     meta: dict[str, ModuleRecord] = {}
-    for row in filtered.select(["module", "path", "tags"]).to_pylist():
+    for row in iter_rows(filtered, ["module", "path", "tags"]):
         module = row.get("module")
         path = row.get("path")
         tags = row.get("tags")

@@ -22,6 +22,7 @@ from codeintel.build.analytics.utilities.datasets import validate_contract_rows
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.schemas import get_contract_for_table_key
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 
@@ -242,7 +243,7 @@ def _rows_from_tabular(
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
         table = cast("pa.Table", rows)
-        return table.to_pylist()
+        return list(iter_rows(table))
     return [dict(row) for row in rows]
 
 

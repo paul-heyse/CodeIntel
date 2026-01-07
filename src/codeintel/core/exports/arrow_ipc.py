@@ -2,57 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from inspect import signature
 
 import pyarrow as pa
 
+from codeintel.core.columnar import ipc_ops as _ipc_ops
 from codeintel.core.columnar.schema_metadata import merge_metadata
 
 ARROW_IPC_STREAM_MIME = "application/vnd.apache.arrow.stream"
 
-
-class ArrowIpcStreamError(ValueError):
-    """Raised when Arrow IPC streaming fails."""
-
-
-class _ChunkedIpcSink:
-    """File-like sink that buffers IPC writes into discrete chunks."""
-
-    def __init__(self) -> None:
-        self._chunks: list[bytes] = []
-        self._closed = False
-        self._size = 0
-
-    def write(self, data: bytes | memoryview) -> int:
-        if self._closed:
-            msg = "Arrow IPC sink is closed"
-            raise ArrowIpcStreamError(msg)
-        if not data:
-            return 0
-        chunk = bytes(data)
-        self._chunks.append(chunk)
-        self._size += len(chunk)
-        return len(chunk)
-
-    def flush(self) -> None:
-        if self._closed:
-            return
-
-    def close(self) -> None:
-        self._closed = True
-
-    @property
-    def closed(self) -> bool:
-        return self._closed
-
-    def tell(self) -> int:
-        return self._size
-
-    def drain(self) -> Iterator[bytes]:
-        chunks = self._chunks
-        self._chunks = []
-        yield from chunks
+ArrowIpcStreamError = _ipc_ops.ArrowIpcStreamError
+_iter_ipc_stream = _ipc_ops.iter_ipc_stream
 
 
 def default_ipc_write_options() -> pa.ipc.IpcWriteOptions:
@@ -204,7 +165,7 @@ def iter_ipc_stream(
     batch_metadata: Mapping[str, object] | None = None,
     options: pa.ipc.IpcWriteOptions | None = None,
     cancel_check: Callable[[], None] | None = None,
-) -> Iterator[bytes]:
+) -> Iterable[bytes]:
     """Yield Arrow IPC stream bytes for a RecordBatchReader.
 
     Parameters
@@ -220,39 +181,19 @@ def iter_ipc_stream(
     cancel_check
         Optional cancellation hook invoked between record batches.
 
-    Yields
-    ------
-    bytes
+    Returns
+    -------
+    Iterable[bytes]
         IPC stream bytes chunk-by-chunk.
     """
-    sink = _ChunkedIpcSink()
-    resolved_schema = reader.schema
-    if metadata:
-        resolved_schema = _merge_schema_metadata(resolved_schema, metadata)
     write_options = options or default_ipc_write_options()
-    with pa.ipc.new_stream(sink, resolved_schema, options=write_options) as writer:
-        for batch in reader:
-            if cancel_check is not None:
-                cancel_check()
-            resolved_batch = _apply_batch_metadata(batch, batch_metadata)
-            writer.write_batch(resolved_batch)
-            yield from sink.drain()
-    yield from sink.drain()
-
-
-def _apply_batch_metadata(
-    batch: pa.RecordBatch,
-    metadata: Mapping[str, object] | None,
-) -> pa.RecordBatch:
-    if not metadata:
-        return batch
-    replace = getattr(batch, "replace_schema_metadata", None)
-    if not callable(replace):
-        return batch
-    merged = merge_metadata(batch.schema.metadata, metadata, overwrite=False)
-    if merged == batch.schema.metadata:
-        return batch
-    return replace(merged)
+    return _iter_ipc_stream(
+        reader,
+        metadata=metadata,
+        batch_metadata=batch_metadata,
+        options=write_options,
+        cancel_check=cancel_check,
+    )
 
 
 __all__ = [

@@ -16,6 +16,7 @@ import pyarrow as pa
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
@@ -400,7 +401,7 @@ def _unresolved_call_counts_from_frame(
     has_caller = "caller_goid_h128" in edges_frame.column_names
     if not has_caller:
         return counts
-    for row in edges_frame.to_pylist():
+    for row in iter_rows(edges_frame):
         if has_repo and row.get("repo") != repo:
             continue
         if has_commit and row.get("commit") != commit:
@@ -441,7 +442,7 @@ def _filter_edges_rows(
     has_repo = "repo" in edges_frame.column_names
     has_commit = "commit" in edges_frame.column_names
     rows: list[dict[str, object]] = []
-    for row in edges_frame.to_pylist():
+    for row in iter_rows(edges_frame):
         if has_repo and row.get("repo") != repo:
             continue
         if has_commit and row.get("commit") != commit:
@@ -466,7 +467,7 @@ def _add_call_edges(graph: nx.DiGraph, rows: Iterable[Mapping[str, object]]) -> 
 def _add_call_nodes(graph: nx.DiGraph, nodes_frame: pa.Table | None) -> None:
     if nodes_frame is None or nodes_frame.num_rows == 0:
         return
-    for row in nodes_frame.to_pylist():
+    for row in iter_rows(nodes_frame):
         goid = normalize_decimal_id(row.get("goid_h128"))
         if goid is None:
             continue

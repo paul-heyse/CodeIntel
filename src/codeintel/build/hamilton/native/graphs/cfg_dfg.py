@@ -18,8 +18,9 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
     filter_python_goids,
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
+from codeintel.build.tabular.arrow_ops import iter_array_values, iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import non_empty_string_mask
+from codeintel.build.tabular.compute_masks import non_empty_string_expr, non_empty_string_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -32,6 +33,7 @@ CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
 DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
 _FUNCTION_GOID_TYPE = pa.decimal128(38, 0)
+_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,26 +60,32 @@ class _CfgDfgAnalysis:
     dfg_edges: tuple[DFGEdgeRow, ...]
 
 
+def _filter_non_empty_paths(table: pa.Table) -> pa.Table:
+    if table.num_rows == 0 or "path" not in table.column_names:
+        return table
+    try:
+        if _EXPR_TYPE is not None:
+            return table.filter(non_empty_string_expr("path"))
+        path_mask = non_empty_string_mask(table.column("path"))
+        return safe_filter(table, path_mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return table
+
+
 def _collect_ast_function_keys(
     ast_nodes_table: pa.Table,
 ) -> tuple[dict[str, set[tuple[int, str]]], set[str]]:
     function_keys_by_path: dict[str, set[tuple[int, str]]] = {}
     paths: set[str] = set()
-    if ast_nodes_table.num_rows == 0 or "path" not in ast_nodes_table.column_names:
+    required = {"path", "node_type", "name", "lineno"}
+    if ast_nodes_table.num_rows == 0 or not required.issubset(set(ast_nodes_table.column_names)):
         return function_keys_by_path, paths
-    if not {"node_type", "name", "lineno"}.issubset(set(ast_nodes_table.column_names)):
-        return function_keys_by_path, paths
-    path_table = ast_nodes_table
-    try:
-        path_mask = non_empty_string_mask(ast_nodes_table.column("path"))
-        path_table = safe_filter(ast_nodes_table, path_mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        path_table = ast_nodes_table
-    for path in path_table.column("path").to_pylist():
+    path_table = _filter_non_empty_paths(ast_nodes_table)
+    for path in iter_array_values(path_table.column("path")):
         if isinstance(path, str) and path:
             paths.add(path)
     filtered = filter_function_ast_nodes(ast_nodes_table)
-    for row in filtered.to_pylist():
+    for row in iter_rows(filtered):
         path = row.get("path")
         name = row.get("name")
         lineno = row.get("lineno")
@@ -102,7 +110,7 @@ def _collect_goids_by_path(
     if not required.issubset(set(goids_table.column_names)):
         return goids_by_path
     filtered = filter_python_goids(goids_table)
-    for row in filtered.to_pylist():
+    for row in iter_rows(filtered):
         if row.get("kind") not in {"function", "method"}:
             continue
         language = row.get("language")
