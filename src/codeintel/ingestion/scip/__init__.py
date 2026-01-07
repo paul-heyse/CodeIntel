@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from codeintel.ingestion.scip.protobuf_parser import ScipParsedIndex, parse_index
+from codeintel.ingestion.scip.protobuf_parser import (
+    ScipParsedIndex,
+    parse_index,
+    rebase_parsed_index,
+)
 from codeintel.ingestion.scip.rows import (
     SCIP_DIAGNOSTICS_TABLE_KEY,
     SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
@@ -39,4 +43,5 @@ __all__ = [
     "build_symbol_relationship_rows",
     "build_symbol_rows",
     "parse_index",
+    "rebase_parsed_index",
 ]

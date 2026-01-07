@@ -468,6 +468,7 @@ class ToolService:
             output_scip=request.output_scip,
             target_dir=request.target_dir,
             rel_paths=request.rel_paths,
+            environment_json=request.environment_json,
             proto_module_path=request.proto_module_path,
             timeout_s=request.timeout_s,
         )

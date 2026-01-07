@@ -12,8 +12,13 @@ from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from tests._helpers.fixtures.repos import write_tree
 
 
-def _reader_to_dicts(reader: pa.RecordBatchReader) -> list[dict[str, object]]:
-    table = pa.Table.from_batches(reader, schema=reader.schema)
+def _reader_to_dicts(
+    reader: pa.RecordBatchReader | pa.Table,
+) -> list[dict[str, object]]:
+    if isinstance(reader, pa.Table):
+        table = reader
+    else:
+        table = pa.Table.from_batches(reader, schema=reader.schema)
     return list(table.to_pylist())
 
 

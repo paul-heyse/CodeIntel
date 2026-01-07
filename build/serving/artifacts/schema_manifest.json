@@ -1188,7 +1188,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "b9b91d004244a9be3aa0f3baee5d077d75f2a5bd5ea5bcb1884d37c09c33ce1a"
+          "716ef5f0d0e90d20065a997c83e27f38249dee06b203eba33fd8f7a72a1a0766"
         ],
         "source_table_keys": [
           "core.scip_symbol_goid_xref"
@@ -2982,7 +2982,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "b9b91d004244a9be3aa0f3baee5d077d75f2a5bd5ea5bcb1884d37c09c33ce1a"
+          "716ef5f0d0e90d20065a997c83e27f38249dee06b203eba33fd8f7a72a1a0766"
         ],
         "source_table_keys": [
           "core.scip_symbol_goid_xref"
@@ -12773,6 +12773,18 @@
         },
         {
           "description": null,
+          "name": "match_kind",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "match_confidence",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
           "name": "created_at",
           "nullable": false,
           "type": "TIMESTAMP"
@@ -12808,7 +12820,7 @@
       "producer_target": "scip_resolution",
       "producer_version": "1",
       "schema": "core",
-      "schema_hash": "b9b91d004244a9be3aa0f3baee5d077d75f2a5bd5ea5bcb1884d37c09c33ce1a",
+      "schema_hash": "716ef5f0d0e90d20065a997c83e27f38249dee06b203eba33fd8f7a72a1a0766",
       "table_key": "core.scip_symbol_goid_xref"
     },
     {

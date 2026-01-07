@@ -57,6 +57,8 @@ class ScipIngestOptions:
     ----------
     scope_paths
         Optional prefixes to limit processing to matching files.
+    environment_json
+        Optional scip-python environment JSON file.
     include_references
         Whether to include symbol references in output.
     include_implementations
@@ -82,6 +84,7 @@ class ScipIngestOptions:
     """
 
     scope_paths: list[str] | None = None
+    environment_json: Path | None = None
     include_references: bool = True
     include_implementations: bool = True
     max_file_size_kb: int = 102400

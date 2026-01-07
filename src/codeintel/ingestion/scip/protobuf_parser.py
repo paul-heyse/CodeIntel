@@ -6,6 +6,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, cast
+from urllib.parse import unquote, urlparse
 
 from codeintel.ingestion.ports.tools import ScipDocument, ScipOccurrence, ScipSymbol
 from codeintel.ingestion.scip.models import (
@@ -35,6 +36,7 @@ class ScipParsedIndex:
     relationships: tuple[ScipSymbolRelationship, ...]
     diagnostics: tuple[ScipDiagnostic, ...]
     external_symbols: tuple[ScipExternalSymbol, ...]
+    project_root: Path | None
 
 
 _RANGE_LEN_SAME_LINE = 3
@@ -95,6 +97,7 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
     field_numbers = _index_field_numbers(index)
 
     text_document_encoding: str | None = None
+    project_root: Path | None = None
     documents: list[ScipDocument] = []
     symbol_infos: list[ScipSymbolInfo] = []
     relationships: list[ScipSymbolRelationship] = []
@@ -108,6 +111,7 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
             text_document_encoding = _normalize_text_document_encoding(
                 getattr(metadata, "text_document_encoding", 0)
             )
+            project_root = _parse_project_root(getattr(metadata, "project_root", None))
             continue
         if field_no == field_numbers.documents:
             doc = module.Document()
@@ -144,7 +148,103 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
         relationships=tuple(relationships),
         diagnostics=tuple(diagnostics),
         external_symbols=tuple(external_symbols),
+        project_root=project_root,
     )
+
+
+def rebase_parsed_index(parsed: ScipParsedIndex, repo_root: Path) -> ScipParsedIndex:
+    """Rebase document and diagnostic paths to repo_root."""
+    project_root = parsed.project_root
+    if project_root is None:
+        return parsed
+    project_root = project_root.resolve()
+    repo_root = repo_root.resolve()
+    if project_root == repo_root:
+        return parsed
+
+    rebased_docs: list[ScipDocument] = []
+    rel_path_map: dict[str, str] = {}
+    docs_changed = False
+    for doc in parsed.documents:
+        rebased = _rebase_rel_path(project_root, repo_root, doc.relative_path)
+        if rebased is None or rebased == doc.relative_path:
+            rebased_docs.append(doc)
+            continue
+        rel_path_map[doc.relative_path] = rebased
+        docs_changed = True
+        rebased_docs.append(
+            ScipDocument(
+                relative_path=rebased,
+                symbols=doc.symbols,
+                occurrences=doc.occurrences,
+                position_encoding=doc.position_encoding,
+                text_document_encoding=doc.text_document_encoding,
+            )
+        )
+
+    rebased_diagnostics: list[ScipDiagnostic] = []
+    diagnostics_changed = False
+    for diag in parsed.diagnostics:
+        rebased = rel_path_map.get(diag.rel_path)
+        if rebased is None:
+            rebased = _rebase_rel_path(project_root, repo_root, diag.rel_path)
+        if rebased is None or rebased == diag.rel_path:
+            rebased_diagnostics.append(diag)
+            continue
+        diagnostics_changed = True
+        rebased_diagnostics.append(
+            ScipDiagnostic(
+                rel_path=rebased,
+                start_line=diag.start_line,
+                start_col=diag.start_col,
+                end_line=diag.end_line,
+                end_col=diag.end_col,
+                position_encoding=diag.position_encoding,
+                text_document_encoding=diag.text_document_encoding,
+                severity=diag.severity,
+                code=diag.code,
+                message=diag.message,
+                source=diag.source,
+            )
+        )
+
+    if not docs_changed and not diagnostics_changed:
+        return parsed
+
+    return ScipParsedIndex(
+        documents=tuple(rebased_docs),
+        symbol_infos=parsed.symbol_infos,
+        relationships=parsed.relationships,
+        diagnostics=tuple(rebased_diagnostics),
+        external_symbols=parsed.external_symbols,
+        project_root=parsed.project_root,
+    )
+
+
+def _parse_project_root(value: str | None) -> Path | None:
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme and parsed.scheme != "file":
+        return None
+    if parsed.scheme == "file":
+        path = unquote(parsed.path)
+        if parsed.netloc:
+            path = f"//{parsed.netloc}{path}"
+    else:
+        path = unquote(value)
+    if not path:
+        return None
+    return Path(path)
+
+
+def _rebase_rel_path(project_root: Path, repo_root: Path, rel_path: str) -> str | None:
+    abs_path = project_root / rel_path
+    try:
+        rebased = abs_path.relative_to(repo_root)
+    except ValueError:
+        return None
+    return rebased.as_posix()
 
 
 def _parse_document(
@@ -483,4 +583,5 @@ __all__ = [
     "load_index",
     "load_proto_module",
     "parse_index",
+    "rebase_parsed_index",
 ]

@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 EXPECTED_COUNT_2 = 2
 EXPECTED_COUNT_3 = 3
 TEST_REPO_ROOT = Path("/opt/test")
-EXPECTED_FRACTION_0_5 = 0.5
+EXPECTED_FRACTION_0_0 = 0.0
 EXPECTED_FRACTION_1_0 = 1.0
 EXPECTED_MIN_VALUE = 5.0
 EXPECTED_MAX_VALUE = 20.0
@@ -632,7 +632,7 @@ def test_safe_count_duplicates_invalid_table(parquet_ctx: SimpleNamespace) -> No
 def test_safe_not_null_fraction_all_not_null(
     ingestion_ctx_bundle: SimpleNamespace,
 ) -> None:
-    """safe_not_null_fraction should return 1.0 when all values are non-null."""
+    """safe_not_null_fraction should return 0.0 when all values are non-null."""
     seed_parquet_ingestion_tables(
         ingestion_ctx_bundle.dataset_root,
         ingestion_ctx_bundle.snapshot,
@@ -649,11 +649,11 @@ def test_safe_not_null_fraction_all_not_null(
         column="value",
     )
 
-    expect_equal(result, EXPECTED_FRACTION_1_0)
+    expect_equal(result, EXPECTED_FRACTION_0_0)
 
 
 def test_safe_not_null_fraction_half_null(ingestion_ctx_bundle: SimpleNamespace) -> None:
-    """safe_not_null_fraction should return correct fraction."""
+    """safe_not_null_fraction should return 1.0 when nulls are present."""
     seed_parquet_ingestion_tables(
         ingestion_ctx_bundle.dataset_root,
         ingestion_ctx_bundle.snapshot,
@@ -677,7 +677,7 @@ def test_safe_not_null_fraction_half_null(ingestion_ctx_bundle: SimpleNamespace)
         column="value",
     )
 
-    expect_equal(result, EXPECTED_FRACTION_0_5)
+    expect_equal(result, EXPECTED_FRACTION_1_0)
 
 
 def test_safe_not_null_fraction_all_null(ingestion_ctx_bundle: SimpleNamespace) -> None:

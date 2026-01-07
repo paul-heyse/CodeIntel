@@ -22,8 +22,7 @@ def resolve_target_base(repo_root: Path, target_dir: Path | None) -> Path:
     """
     if target_dir is not None:
         return target_dir
-    src_dir = repo_root / "src"
-    return src_dir if src_dir.is_dir() else repo_root
+    return repo_root
 
 
 def scip_relative_path(

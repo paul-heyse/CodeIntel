@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 import pyarrow as pa
 
@@ -21,6 +20,14 @@ def _reader_from_table(table: pa.Table) -> pa.RecordBatchReader:
     return pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
 
 
+def _table_from_cached(value: object) -> pa.Table:
+    if isinstance(value, pa.Table):
+        return value
+    if isinstance(value, pa.RecordBatchReader):
+        return value.read_all()
+    raise AssertionError(f"Unexpected cached value type: {type(value)!r}")
+
+
 def test_arrow_file_result_store_round_trip_reader(tmp_path: Path) -> None:
     """Round-trip RecordBatchReader values through the result store."""
     store = ArrowFileResultStore(path=str(tmp_path))
@@ -30,9 +37,8 @@ def test_arrow_file_result_store_round_trip_reader(tmp_path: Path) -> None:
     store.set("reader-v1", reader)
 
     cached = store.get("reader-v1")
-    assert isinstance(cached, pa.RecordBatchReader)
-    cached_reader = cast("pa.RecordBatchReader", cached)
-    assert cached_reader.read_all().to_pylist() == table.to_pylist()
+    cached_table = _table_from_cached(cached)
+    assert cached_table.to_pylist() == table.to_pylist()
 
 
 def test_arrow_file_result_store_round_trip_table(tmp_path: Path) -> None:
@@ -44,8 +50,7 @@ def test_arrow_file_result_store_round_trip_table(tmp_path: Path) -> None:
 
     cached = store.get("table-v1")
     assert isinstance(cached, pa.Table)
-    cached_table = cast("pa.Table", cached)
-    assert cached_table.to_pylist() == table.to_pylist()
+    assert cached.to_pylist() == table.to_pylist()
 
 
 def test_arrow_file_result_store_round_trip_wrapped_reader(tmp_path: Path) -> None:
@@ -57,6 +62,5 @@ def test_arrow_file_result_store_round_trip_wrapped_reader(tmp_path: Path) -> No
     store.set("wrapped-v1", wrapped)
 
     cached = store.get("wrapped-v1")
-    assert isinstance(cached, pa.RecordBatchReader)
-    cached_reader = cast("pa.RecordBatchReader", cached)
-    assert cached_reader.read_all().to_pylist() == table.to_pylist()
+    cached_table = _table_from_cached(cached)
+    assert cached_table.to_pylist() == table.to_pylist()

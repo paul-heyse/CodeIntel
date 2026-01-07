@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Self
 
-from codeintel.build.hamilton.native.analytics.function_types import FUNCTION_TYPES_TABLE_KEY
 from tests._helpers.assertions.table_assertions import assert_table_has_rows
 from tests._helpers.fixtures.repos import write_graph_metrics_repo
 from tests._helpers.harnesses.hamilton_build import (
@@ -22,6 +21,7 @@ if TYPE_CHECKING:
 
 
 DEFAULT_ANALYTICS_TARGETS: tuple[str, ...] = ("function_types",)
+FUNCTION_TYPES_TABLE_KEY = "analytics.function_types"
 
 
 @dataclass

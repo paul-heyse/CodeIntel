@@ -19,7 +19,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolNotFoundError,
     ToolRunOptions,
 )
-from codeintel.ingestion.scip.cli import build_scip_python_args
+from codeintel.ingestion.scip.cli import build_scip_python_args, ensure_pip_available
 from codeintel.ingestion.scip.hash_resolver import FileDigestResolver
 from codeintel.ingestion.scip.index_store import (
     MergeIndexContext,
@@ -99,6 +99,7 @@ class ScipIncrementalConfig:
     tools_config: ToolsConfig
     tool_runner: ToolRunner
     scope_paths: Sequence[str] | None
+    environment_json: Path | None
     max_file_size_kb: int
     timeout_seconds: int
     target_dir: Path | None
@@ -121,6 +122,7 @@ class _ScipRunConfig:
     tool_runner: ToolRunner
     target_base: Path
     timeout_seconds: int
+    environment_json: Path | None
 
 
 @dataclass(frozen=True)
@@ -237,6 +239,7 @@ def update_index_incremental(
         result = _full_rebuild(
             run_config=context.run_config,
             output_scip=context.config.output_scip,
+            scope_paths=context.config.scope_paths,
             manifest_file=context.manifest_file,
             telemetry=telemetry,
             error=None,
@@ -306,6 +309,7 @@ def _build_run_context(config: ScipIncrementalConfig) -> _IncrementalRunContext:
         tool_runner=config.tool_runner,
         target_base=target_base,
         timeout_seconds=config.timeout_seconds,
+        environment_json=config.environment_json,
     )
     total_modules = len(config.modules)
     changed_modules = tuple(config.change_set.added) + tuple(config.change_set.modified)
@@ -369,6 +373,7 @@ def _load_base_index_or_full_rebuild(
         result = _full_rebuild(
             run_config=context.run_config,
             output_scip=context.config.output_scip,
+            scope_paths=context.config.scope_paths,
             manifest_file=context.manifest_file,
             telemetry=context.config.telemetry,
             error=str(exc),
@@ -493,6 +498,7 @@ def _index_shards_or_full_rebuild(
         result = _full_rebuild(
             run_config=plan.context.run_config,
             output_scip=plan.context.config.output_scip,
+            scope_paths=plan.context.config.scope_paths,
             manifest_file=plan.context.manifest_file,
             telemetry=plan.context.config.telemetry,
             error=str(exc),
@@ -519,6 +525,7 @@ def _full_rebuild(
     *,
     run_config: _ScipRunConfig,
     output_scip: Path,
+    scope_paths: Sequence[str] | None,
     manifest_file: Path,
     telemetry: ScipRunTelemetry | None,
     error: str | None = None,
@@ -532,6 +539,7 @@ def _full_rebuild(
             run_config=run_config,
             output_scip=output_scip,
             rel_paths=None,
+            scope_paths=scope_paths,
             log_prefix="scip-python full",
         )
         tool_ms = _elapsed_ms(tool_start)
@@ -865,6 +873,7 @@ def _index_changed_modules(request: _ShardIndexRequest) -> _ShardIndexResult:
             run_config=request.run_config,
             output_scip=batch_path,
             rel_paths=rel_paths,
+            scope_paths=None,
             log_prefix=f"scip-python batch {idx}/{len(batches)}",
         )
         tool_ms += _elapsed_ms(tool_start)
@@ -907,17 +916,22 @@ def _run_scip_python(
     run_config: _ScipRunConfig,
     output_scip: Path,
     rel_paths: Sequence[str] | None,
+    scope_paths: Sequence[str] | None,
     log_prefix: str | None = None,
 ) -> None:
     trace_enabled = _scip_trace_enabled()
     progress_interval = (
         _SCIP_TRACE_PROGRESS_INTERVAL_S if trace_enabled else _SCIP_PROGRESS_INTERVAL_S
     )
+    if run_config.environment_json is None:
+        ensure_pip_available()
     args = build_scip_python_args(
         target_base=run_config.target_base,
         output_scip=output_scip,
         project_name=run_config.tools_config.scip_project_name,
         rel_paths=rel_paths,
+        scope_paths=scope_paths,
+        environment_json=run_config.environment_json,
     )
     result = asyncio.run(
         run_config.tool_runner.run_async(

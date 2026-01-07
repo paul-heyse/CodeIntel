@@ -105,6 +105,7 @@ def _sample_ast_nodes_frame() -> pl.DataFrame:
             "node_type": ["Module", "FunctionDef", "FunctionDef"],
             "name": ["app", "helper", "main"],
             "qualname": ["app", "app.helper", "app.main"],
+            "parent_qualname": [None, "app", "app"],
             "lineno": [None, 3, 7],
             "end_lineno": [None, 5, 8],
         }

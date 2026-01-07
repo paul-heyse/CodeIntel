@@ -11,11 +11,20 @@ import pytest
 
 from codeintel.build.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.function_ast_features import (
-    function_ast_features__base,
-)
-from codeintel.build.hamilton.native.analytics.function_types import function_types__base
 from codeintel.core.validation.reporters import FunctionValidationReporter
+
+try:
+    from codeintel.build.hamilton.native.analytics.function_ast_features import (
+        function_ast_features__base,
+    )
+    from codeintel.build.hamilton.native.analytics.function_types import function_types__base
+except RuntimeError as exc:
+    if "SchemaService has not been configured" in str(exc):
+        pytest.skip(
+            "SchemaService is required for v1 analytics scaffold nodes.",
+            allow_module_level=True,
+        )
+    raise
 
 try:
     import polars as pl

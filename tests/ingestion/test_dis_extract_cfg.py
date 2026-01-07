@@ -40,7 +40,9 @@ def test_dis_extract_cfg_edges(tmp_path: Path) -> None:
     assert _reader_row_count(result.cfg_edge_rows_reader) > 0
 
 
-def _reader_to_dicts(reader: pa.RecordBatchReader) -> list[dict[str, object]]:
+def _reader_to_dicts(
+    reader: pa.RecordBatchReader | pa.Table,
+) -> list[dict[str, object]]:
     """Convert a RecordBatchReader into row dictionaries for assertions.
 
     Returns
@@ -48,11 +50,14 @@ def _reader_to_dicts(reader: pa.RecordBatchReader) -> list[dict[str, object]]:
     list[dict[str, object]]
         Rows converted from the reader stream.
     """
-    table = pa.Table.from_batches(reader, schema=reader.schema)
+    if isinstance(reader, pa.Table):
+        table = reader
+    else:
+        table = pa.Table.from_batches(reader, schema=reader.schema)
     return list(table.to_pylist())
 
 
-def _reader_row_count(reader: pa.RecordBatchReader) -> int:
+def _reader_row_count(reader: pa.RecordBatchReader | pa.Table) -> int:
     """Count rows in a RecordBatchReader without materializing a table.
 
     Returns
@@ -60,6 +65,8 @@ def _reader_row_count(reader: pa.RecordBatchReader) -> int:
     int
         Total number of rows across batches.
     """
+    if isinstance(reader, pa.Table):
+        return reader.num_rows
     return sum(batch.num_rows for batch in reader)
 
 

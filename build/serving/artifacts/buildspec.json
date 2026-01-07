@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "0def753057a285727d74363042df66cc241a3cf7705acc2e9e487071519d445b",
+  "buildspec_hash": "2a8d9752ac7a02ad167096bc71629fb4d2fc27a6bd880e466252d1096985aae7",
   "datasets": [
     {
       "schema_hash": "bfd52893bcac939b2dcdbb656760191635dc5e27a83cc07d5173e5fd82e7860d",
@@ -346,7 +346,7 @@
       "table_key": "core.scip_occurrences"
     },
     {
-      "schema_hash": "b9b91d004244a9be3aa0f3baee5d077d75f2a5bd5ea5bcb1884d37c09c33ce1a",
+      "schema_hash": "716ef5f0d0e90d20065a997c83e27f38249dee06b203eba33fd8f7a72a1a0766",
       "table_key": "core.scip_symbol_goid_xref"
     },
     {

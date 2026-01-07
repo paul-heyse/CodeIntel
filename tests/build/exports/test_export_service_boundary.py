@@ -49,6 +49,9 @@ class _RecordingGateway:
     def exports(self) -> _RecordingExportService:
         return self._exports
 
+    def relation_from_table_key(self, table_key: str) -> DuckDBRelation:
+        return self._base.relation_from_table_key(table_key)
+
 
 def _seed_export_table(con: DuckDBPyConnection) -> None:
     ensure_production_schemas(con)

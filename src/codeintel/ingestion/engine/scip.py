@@ -25,12 +25,12 @@ from codeintel.ingestion.engine.plugins import (
     ToolStatus,
 )
 from codeintel.ingestion.engine.results import ScipDocument, ScipIndexResult, ScipOccurrence
-from codeintel.ingestion.scip.cli import build_scip_python_args
+from codeintel.ingestion.scip.cli import build_scip_python_args, ensure_pip_available
 from codeintel.ingestion.scip.index_store import write_index_proto
 from codeintel.ingestion.scip.paths import resolve_target_base
 from codeintel.ingestion.scip.proto import load_generated_module
 from codeintel.ingestion.scip.proto_types import ScipProtoModule
-from codeintel.ingestion.scip.protobuf_parser import parse_index
+from codeintel.ingestion.scip.protobuf_parser import parse_index, rebase_parsed_index
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -49,6 +49,7 @@ def _mkdir_parents(path: Path) -> None:
 def _parse_scip_index(
     scip_path: Path,
     proto_module_path: Path,
+    repo_root: Path,
 ) -> ScipIndexResult:
     """Parse index.scip via protobuf into a ScipIndexResult.
 
@@ -58,6 +59,7 @@ def _parse_scip_index(
         Parsed index result with documents and occurrences.
     """
     parsed = parse_index(scip_path, proto_module_path)
+    parsed = rebase_parsed_index(parsed, repo_root)
     documents = []
     for doc in parsed.documents:
         occurrences = tuple(
@@ -114,7 +116,7 @@ class ScipPlugin(ToolPlugin):
             datasets=("core.scip_symbols", "core.goid_crosswalk"),
             spec=ToolSpec(
                 required_kwargs=("output_scip", "proto_module_path"),
-                optional_kwargs=("target_dir", "rel_paths", "timeout_s"),
+                optional_kwargs=("target_dir", "rel_paths", "environment_json", "timeout_s"),
             ),
         )
     )
@@ -122,7 +124,14 @@ class ScipPlugin(ToolPlugin):
     def _validate_kwargs(
         self,
         kwargs: dict[str, object],
-    ) -> tuple[Path, Path, Path | None, tuple[str, ...] | None, float | None]:
+    ) -> tuple[
+        Path,
+        Path,
+        Path | None,
+        tuple[str, ...] | None,
+        Path | None,
+        float | None,
+    ]:
         """Validate and extract keyword arguments for run method.
 
         Parameters
@@ -132,8 +141,9 @@ class ScipPlugin(ToolPlugin):
 
         Returns
         -------
-        tuple[Path, Path, Path | None, tuple[str, ...] | None, float | None]
-            Tuple of (output_scip, proto_module_path, target_dir, rel_paths, timeout_s).
+        tuple[Path, Path, Path | None, tuple[str, ...] | None, Path | None, float | None]
+            Tuple of (output_scip, proto_module_path, target_dir, rel_paths,
+            environment_json, timeout_s).
 
         Raises
         ------
@@ -145,6 +155,7 @@ class ScipPlugin(ToolPlugin):
         target_dir_obj = kwargs.get("target_dir")
         rel_paths_obj = kwargs.get("rel_paths")
         proto_module_obj = kwargs.get("proto_module_path")
+        environment_obj = kwargs.get("environment_json")
         timeout_obj = kwargs.get("timeout_s")
 
         if not isinstance(output_scip_obj, Path):
@@ -159,13 +170,23 @@ class ScipPlugin(ToolPlugin):
         if not isinstance(proto_module_obj, Path):
             message = "scip-python plugin requires proto_module_path of type Path"
             raise TypeError(message)
+        if environment_obj is not None and not isinstance(environment_obj, Path):
+            message = "scip-python plugin requires environment_json to be Path or None"
+            raise TypeError(message)
         if timeout_obj is not None and not isinstance(timeout_obj, Real):
             message = "scip-python plugin requires timeout_s to be a number or None"
             raise TypeError(message)
 
         rel_paths = tuple(rel_paths_obj) if rel_paths_obj is not None else None
         timeout_s = float(timeout_obj) if isinstance(timeout_obj, Real) else None
-        return output_scip_obj, proto_module_obj, target_dir_obj, rel_paths, timeout_s
+        return (
+            output_scip_obj,
+            proto_module_obj,
+            target_dir_obj,
+            rel_paths,
+            environment_obj,
+            timeout_s,
+        )
 
     async def run(
         self,
@@ -177,16 +198,21 @@ class ScipPlugin(ToolPlugin):
         Run scip-python index to produce a parsed index.
 
         When rel_paths is provided, only those paths are targeted; otherwise
-        the full repo (or target_dir/src) is indexed.
+        the full repo (or target_dir) is indexed.
 
         Returns
         -------
         ToolPluginResult
             Normalized execution result with parsed ScipIndexResult.
         """
-        output_scip, proto_module_path, target_dir, rel_paths, timeout_s = self._validate_kwargs(
-            dict(kwargs)
-        )
+        (
+            output_scip,
+            proto_module_path,
+            target_dir,
+            rel_paths,
+            environment_json,
+            timeout_s,
+        ) = self._validate_kwargs(dict(kwargs))
 
         result: ToolPluginResult | None = None
         try:
@@ -195,6 +221,7 @@ class ScipPlugin(ToolPlugin):
                 output_scip=output_scip,
                 target_dir=target_dir,
                 rel_paths=rel_paths,
+                environment_json=environment_json,
                 timeout_s=timeout_s,
             )
         except ToolNotFoundError as exc:
@@ -235,12 +262,22 @@ class ScipPlugin(ToolPlugin):
                     error=exc,
                     parsed=ScipIndexResult.empty(),
                 )
+        except ValueError as exc:
+            result = ToolPluginResult(
+                tool=ToolName.SCIP_PYTHON,
+                status=ToolStatus.FAILED,
+                artifacts={"index_scip": output_scip},
+                run=None,
+                error=exc,
+                parsed=ScipIndexResult.empty(),
+            )
 
         if result is None:
             parsed = await to_thread.run_sync(
                 _parse_scip_index,
                 output_scip,
                 proto_module_path,
+                repo_root,
             )
             result = ToolPluginResult(
                 tool=ToolName.SCIP_PYTHON,
@@ -260,16 +297,21 @@ class ScipPlugin(ToolPlugin):
         output_scip: Path,
         target_dir: Path | None,
         rel_paths: Sequence[str] | None,
+        environment_json: Path | None,
         timeout_s: float | None,
     ) -> ToolRunResult:
         target_base = await to_thread.run_sync(resolve_target_base, repo_root, target_dir)
         await to_thread.run_sync(_mkdir_parents, output_scip.parent)
 
+        if environment_json is None:
+            ensure_pip_available()
         args = build_scip_python_args(
             target_base=target_base,
             output_scip=output_scip,
             project_name=self.tools_config.scip_project_name,
             rel_paths=rel_paths,
+            scope_paths=None,
+            environment_json=environment_json,
         )
 
         result = await self.runner.run_async(

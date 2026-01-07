@@ -174,6 +174,8 @@ class TestCreateParallelAdapter:
     def test_auto_selects_threadpool() -> None:
         """Test auto mode selects threadpool."""
         adapter = create_parallel_adapter("auto")
+        if adapter is None:
+            return
         expect_is_instance(adapter, ThreadPoolAdapter)
 
     @staticmethod

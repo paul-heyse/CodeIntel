@@ -89,6 +89,7 @@ from codeintel.ingestion.scip import (
     ScipParsedIndex,
     ScipRowContext,
     parse_index,
+    rebase_parsed_index,
 )
 from codeintel.ingestion.scip.incremental import (
     ScipIncrementalConfig,
@@ -690,6 +691,7 @@ def _apply_file_line_index(
         relationships=parsed.relationships,
         diagnostics=parsed.diagnostics,
         external_symbols=parsed.external_symbols,
+        project_root=parsed.project_root,
     )
 
 
@@ -868,6 +870,7 @@ def _execute_scip_incremental(
             tools_config=env.providers.tool_runner.tools_config,
             tool_runner=env.providers.tool_runner,
             scope_paths=run_config.options.scope_paths,
+            environment_json=run_config.options.environment_json,
             max_file_size_kb=run_config.options.max_file_size_kb,
             timeout_seconds=run_config.options.timeout_seconds,
             target_dir=None,
@@ -1148,6 +1151,7 @@ def _build_scip_ingest_result(
     proto_module_path = cast("Path", inputs.proto_module_path)
     try:
         parsed: ScipParsedIndex = parse_index(output_scip, proto_module_path)
+        parsed = rebase_parsed_index(parsed, Path(env.snapshot.repo_root))
         parsed = _apply_file_line_index(env, parsed)
         payload = _build_scip_row_payload(env, parsed, inputs.options)
     except (OSError, AttributeError, KeyError, RuntimeError, TypeError, ValueError):

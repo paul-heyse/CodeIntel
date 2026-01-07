@@ -10,22 +10,31 @@ from typing import cast
 import pytest
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.cfg_dfg_metrics import (
-    cfg_block_metrics__base,
-    cfg_dfg_metrics_analysis,
-    cfg_dfg_metrics_inputs,
-    cfg_function_metrics__base,
-    cfg_function_metrics_ext__base,
-    dfg_block_metrics__base,
-    dfg_function_metrics__base,
-    dfg_function_metrics_ext__base,
-)
-from codeintel.build.hamilton.native.graphs.cfg_dfg import (
-    cfg_blocks_compute,
-    cfg_dfg_analysis,
-    cfg_edges_compute,
-    dfg_edges_compute,
-)
+
+try:
+    from codeintel.build.hamilton.native.analytics.cfg_dfg_metrics import (
+        cfg_block_metrics__base,
+        cfg_dfg_metrics_analysis,
+        cfg_dfg_metrics_inputs,
+        cfg_function_metrics__base,
+        cfg_function_metrics_ext__base,
+        dfg_block_metrics__base,
+        dfg_function_metrics__base,
+        dfg_function_metrics_ext__base,
+    )
+    from codeintel.build.hamilton.native.graphs.cfg_dfg import (
+        cfg_blocks_compute,
+        cfg_dfg_analysis,
+        cfg_edges_compute,
+        dfg_edges_compute,
+    )
+except RuntimeError as exc:
+    if "SchemaService has not been configured" in str(exc):
+        pytest.skip(
+            "SchemaService is required for CFG/DFG metrics nodes.",
+            allow_module_level=True,
+        )
+    raise
 
 try:
     import polars as pl

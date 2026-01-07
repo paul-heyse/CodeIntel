@@ -219,6 +219,8 @@ class ScipRunRequest:
         Optional repo subdirectory to index.
     rel_paths
         Optional repo-relative paths to index.
+    environment_json
+        Optional environment JSON passed to scip-python.
     timeout_s
         Optional timeout override (seconds).
     """
@@ -228,6 +230,7 @@ class ScipRunRequest:
     proto_module_path: Path
     target_dir: Path | None = None
     rel_paths: Sequence[str] | None = None
+    environment_json: Path | None = None
     timeout_s: float | None = None
 
 
