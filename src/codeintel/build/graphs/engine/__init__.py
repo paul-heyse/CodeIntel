@@ -1,7 +1,8 @@
 """Graph engine abstractions for analytics consumers.
 
 This package provides the backend-agnostic interface for building and
-caching analytics graphs, along with the NetworkX-backed implementation.
+caching analytics graphs, along with the NetworkX-backed implementation and
+compatibility shims for rustworkx migration.
 
 Key Components
 --------------
@@ -32,6 +33,7 @@ from codeintel.build.graphs.engine.cache import GraphCache
 from codeintel.build.graphs.engine.factory import EngineBuildOptions, build_graph_engine
 from codeintel.build.graphs.engine.nx_engine import NxGraphEngine
 from codeintel.build.graphs.engine.protocol import GraphEngine, GraphKind
+from codeintel.build.graphs.engine.rx_engine import RxGraphEngine
 from codeintel.build.graphs.engine.views import (
     load_call_graph,
     load_config_module_bipartite,
@@ -47,6 +49,7 @@ __all__ = [
     "GraphEngine",
     "GraphKind",
     "NxGraphEngine",
+    "RxGraphEngine",
     "build_graph_engine",
     "load_call_graph",
     "load_config_module_bipartite",

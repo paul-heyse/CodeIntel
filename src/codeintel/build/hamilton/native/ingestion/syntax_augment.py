@@ -16,10 +16,11 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.ingestion import SyntaxAugmentOptions
 from codeintel.build.hamilton.native.patterns import (
+    MultiTableTargetContext,
     RelationTableSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.tabular.array_ops import ensure_array
@@ -1133,11 +1134,18 @@ def syntax_augment__ts_weld_coverage__base(
 
 
 _MODULE = sys.modules[__name__]
-_SYNTAX_AUGMENT_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="ingestion",
-    target_name=SYNTAX_AUGMENT_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
+_SYNTAX_AUGMENT_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
+    context=MultiTableTargetContext(
+        domain="ingestion",
+        target_name=SYNTAX_AUGMENT_TARGET_NAME,
+        tables=(),
+        table_materializations_node="syntax_augment__table_materializations",
+        anchor_node_name="t__syntax_augment",
+        save_spec_factory=RelationTableSaveSpec,
+        default_input_type=pa.Table,
+    ),
+    table_contexts=(
+        TableTargetTableContext(
             table_key=SYNTAX_NODES_AUGMENTED_TABLE_KEY,
             base_node="syntax_augment__syntax_nodes__base",
             save_spec=RelationTableSaveSpec(
@@ -1147,9 +1155,8 @@ _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = TableTargetSpec(
                 ),
             ),
             node_name="syntax_augment__syntax_nodes",
-            input_type=pa.Table,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=SYNTAX_EDGES_AUGMENTED_TABLE_KEY,
             base_node="syntax_augment__syntax_edges__base",
             save_spec=RelationTableSaveSpec(
@@ -1159,25 +1166,18 @@ _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = TableTargetSpec(
                 ),
             ),
             node_name="syntax_augment__syntax_edges",
-            input_type=pa.Table,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=TS_XREF_TABLE_KEY,
             base_node="syntax_augment__ts_syntax_node_xref__base",
-            save_spec=RelationTableSaveSpec(table_key=TS_XREF_TABLE_KEY),
             node_name="syntax_augment__ts_syntax_node_xref",
-            input_type=pa.Table,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=TS_WELD_COVERAGE_TABLE_KEY,
             base_node="syntax_augment__ts_weld_coverage__base",
-            save_spec=RelationTableSaveSpec(table_key=TS_WELD_COVERAGE_TABLE_KEY),
             node_name="syntax_augment__ts_weld_coverage",
-            input_type=pa.Table,
         ),
     ),
-    table_materializations_node="syntax_augment__table_materializations",
-    anchor_node_name="t__syntax_augment",
 )
 attach_table_target_template(_MODULE, spec=_SYNTAX_AUGMENT_TABLE_TARGET_SPEC)
 syntax_augment__syntax_nodes = _MODULE.syntax_augment__syntax_nodes

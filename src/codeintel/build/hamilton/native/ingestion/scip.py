@@ -32,13 +32,14 @@ from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
 from codeintel.build.hamilton.native.patterns import (
     ArtifactSaveSpec,
     IngestStep,
+    MultiTableTargetContext,
     RelationTableSaveSpec,
     SaverContext,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetTableContext,
     ToolFinalizeContext,
     ToolRunContext,
     attach_table_target_template,
+    build_multi_table_target_spec_from_contexts,
     finalize_target_from_materializations,
     run_tool_step,
     save_artifact,
@@ -1314,62 +1315,53 @@ def scip__materializations(
     }
 
 
-_SCIP_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="ingestion",
-    target_name=SCIP_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
+_SCIP_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
+    context=MultiTableTargetContext(
+        domain="ingestion",
+        target_name=SCIP_TARGET_NAME,
+        tables=(),
+        table_materializations_node="scip__table_materializations",
+        attach_anchor=False,
+        save_spec_factory=RelationTableSaveSpec,
+        default_input_type=InferableTabularInput,
+    ),
+    table_contexts=(
+        TableTargetTableContext(
             table_key=SCIP_SYMBOLS_TABLE_KEY,
             base_node="scip__symbol_rows__base",
-            save_spec=RelationTableSaveSpec(table_key=SCIP_SYMBOLS_TABLE_KEY),
             node_name="scip__symbol_rows",
-            input_type=InferableTabularInput,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=SCIP_OCCURRENCES_TABLE_KEY,
             base_node="scip__occurrence_rows__base",
-            save_spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCES_TABLE_KEY),
             node_name="scip__occurrence_rows",
-            input_type=InferableTabularInput,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=SCIP_SYMBOL_INFO_TABLE_KEY,
             base_node="scip__symbol_info_rows__base",
-            save_spec=RelationTableSaveSpec(table_key=SCIP_SYMBOL_INFO_TABLE_KEY),
             node_name="scip__symbol_info_rows",
-            input_type=InferableTabularInput,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=SCIP_RELATIONSHIPS_TABLE_KEY,
             base_node="scip__relationship_rows__base",
-            save_spec=RelationTableSaveSpec(table_key=SCIP_RELATIONSHIPS_TABLE_KEY),
             node_name="scip__relationship_rows",
-            input_type=InferableTabularInput,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=SCIP_DIAGNOSTICS_TABLE_KEY,
             base_node="scip__diagnostic_rows__base",
-            save_spec=RelationTableSaveSpec(table_key=SCIP_DIAGNOSTICS_TABLE_KEY),
             node_name="scip__diagnostic_rows",
-            input_type=InferableTabularInput,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
             base_node="scip__external_symbol_rows__base",
-            save_spec=RelationTableSaveSpec(table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
             node_name="scip__external_symbol_rows",
-            input_type=InferableTabularInput,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=SCIP_MODULE_STATE_TABLE_KEY,
             base_node="scip__module_state_rows__base",
-            save_spec=RelationTableSaveSpec(table_key=SCIP_MODULE_STATE_TABLE_KEY),
             node_name="scip__module_state_rows",
-            input_type=InferableTabularInput,
         ),
     ),
-    table_materializations_node="scip__table_materializations",
-    attach_anchor=False,
 )
 attach_table_target_template(_MODULE, spec=_SCIP_TABLE_TARGET_SPEC)
 scip__symbol_rows = _MODULE.scip__symbol_rows

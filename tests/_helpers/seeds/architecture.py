@@ -13,6 +13,7 @@ from codeintel.build.analytics.utilities.datasets import (
 )
 from codeintel.build.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.storage import StorageContext
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
@@ -206,7 +207,7 @@ def seed_architecture(
         repo=repo,
         commit=commit,
         now=now,
-        warehouse=Warehouse(gateway),
+        warehouse=Warehouse(context=StorageContext(gateway=gateway)),
         append=MaterializeOptions(mode="append"),
         repo_root=repo_root,
         rel_path=rel_path,

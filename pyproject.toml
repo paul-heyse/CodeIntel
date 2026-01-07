@@ -133,6 +133,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "pathspec>=0.12.1",
     "pyre-check>=0.9.25",
+    "rustworkx>=0.17.1",
 ]
 
 [project.scripts]

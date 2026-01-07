@@ -15,6 +15,15 @@
 3. Context over parameters: pass a typed context instead of 6-10 loosely related args.
 4. Design phase: hard cutovers are fine; remove legacy modules instead of deprecating.
 
+## Status Summary
+- Phase 1: completed (core helper consolidation cutover done).
+- Phase 2: completed (runtime bundle unification done).
+- Phase 3: completed (shared contexts wired across CLI/serving/ingestion/storage).
+- Phase 4: completed (import audit confirms no remaining legacy storage helper imports).
+- Phase 5: pending (pyright/pyrefly still failing after recent refactors).
+- Context adoption sweep: Repo scan now uses `ChangeRequest.from_context` when an ingestion context is provided.
+- Context adoption sweep: Test helpers now accept `StorageContext` and analytics contract tests derive repo/commit via `StorageContext`.
+
 ---
 
 ## Phase 1: Consolidate duplicate helpers into core
@@ -155,7 +164,7 @@ class RuntimeBundle:
 ---
 
 ## Phase 3: Shared context objects
-**Status**: pending
+**Status**: completed
 
 ### 3.1 RunContext (canonical)
 **Problem**: Multiple run identity definitions across CLI and observability.
@@ -271,7 +280,7 @@ class IngestionContext:
 ---
 
 ## Phase 4: Migration and cleanup (hard cutover)
-**Status**: partially completed (storage duplicates removed as part of Phase 1)
+**Status**: completed (core consolidation done; import audit clean)
 
 **Actions**
 - Remove duplicated storage modules (replace with re-exports if needed).
@@ -290,7 +299,7 @@ class IngestionContext:
 ---
 
 ## Phase 5: Validation (design-phase minimal checks)
-**Status**: completed
+**Status**: pending
 
 - Import-only smoke check: ensure no broken imports after deletions.
 - Run the typing/lint suite after all migrations:
@@ -311,49 +320,49 @@ class IngestionContext:
 ## Phased Checklist (Exact per-file steps)
 
 ### Phase 1 Checklist: Core helper consolidation
-- Delete `src/codeintel/storage/views/discovery.py` (imports now point to core).
-- Delete `src/codeintel/storage/views/inventory.py` (imports now point to core).
-- Delete `src/codeintel/storage/views/protocol.py` (imports now point to core).
-- Delete `src/codeintel/storage/views/generated_view_builders.py` (imports now point to core).
-- Delete `src/codeintel/storage/datasets/paths.py` (imports now point to core).
-- Delete `src/codeintel/storage/datasets/manifests.py` (imports now point to core).
-- Delete `src/codeintel/storage/datasets/parquet_metadata.py` (imports now point to core).
-- Delete `src/codeintel/storage/queries/safe.py` (imports now point to core).
-- Delete `src/codeintel/storage/datasets/arrow_store.py` (imports now point to core).
-- Update import sites to use core modules (including tests):
+- [x] Delete `src/codeintel/storage/views/discovery.py` (imports now point to core).
+- [x] Delete `src/codeintel/storage/views/inventory.py` (imports now point to core).
+- [x] Delete `src/codeintel/storage/views/protocol.py` (imports now point to core).
+- [x] Delete `src/codeintel/storage/views/generated_view_builders.py` (imports now point to core).
+- [x] Delete `src/codeintel/storage/datasets/paths.py` (imports now point to core).
+- [x] Delete `src/codeintel/storage/datasets/manifests.py` (imports now point to core).
+- [x] Delete `src/codeintel/storage/datasets/parquet_metadata.py` (imports now point to core).
+- [x] Delete `src/codeintel/storage/queries/safe.py` (imports now point to core).
+- [x] Delete `src/codeintel/storage/datasets/arrow_store.py` (imports now point to core).
+- [x] Update import sites to use core modules (including tests):
   - `src/codeintel/storage/metadata/*`
   - `src/codeintel/storage/repositories/*`
   - `src/codeintel/storage/views/*`
   - `tests/**`
 
 ### Phase 2 Checklist: Runtime bundle unification
-- Rename `src/codeintel/runtime/runtime_bundle.py` types to `HamiltonRuntimeBundle`.
-- Update `src/codeintel/runtime/registry.py` to use `HamiltonRuntimeBundle`.
-- Update `src/codeintel/runtime/compose.py` to return `HamiltonRuntimeBundle`.
-- Update `src/codeintel/runtime/registry_service.py` to use `HamiltonRuntimeBundle`.
-- Update imports across runtime/build/cli/tests to use `HamiltonRuntimeBundle`.
+- [x] Rename `src/codeintel/runtime/runtime_bundle.py` types to `HamiltonRuntimeBundle`.
+- [x] Update `src/codeintel/runtime/registry.py` to use `HamiltonRuntimeBundle`.
+- [x] Update `src/codeintel/runtime/compose.py` to return `HamiltonRuntimeBundle`.
+- [x] Update `src/codeintel/runtime/registry_service.py` to use `HamiltonRuntimeBundle`.
+- [x] Update imports across runtime/build/cli/tests to use `HamiltonRuntimeBundle`.
 
 ### Phase 3 Checklist: Shared contexts
-- Add `src/codeintel/core/storage/context.py` (StorageContext) and wire into:
+- [x] Add `src/codeintel/core/storage/context.py` (StorageContext) and wire into:
   - `src/codeintel/storage/gateway/*`
   - `src/codeintel/storage/warehouse.py`
   - `src/codeintel/storage/repositories/*`
-- Add `src/codeintel/core/queries/context.py` (QueryContext) and update:
+- [x] Add `src/codeintel/core/queries/context.py` (QueryContext) and update:
   - `src/codeintel/core/queries/safe.py`
   - `src/codeintel/storage/queries/safe.py` (re-export or wrapper)
-- Add `src/codeintel/serving/context.py` and replace:
+- [x] Add `src/codeintel/serving/context.py` and replace:
   - `src/codeintel/serving/runtime.py`
   - `src/codeintel/serving/http/state.py`
   - `src/codeintel/serving/mcp/runtime.py`
-- Add `src/codeintel/ingestion/context.py` and update:
+- [x] Add `src/codeintel/ingestion/context.py` and update:
   - `src/codeintel/ingestion/compute/*`
   - `src/codeintel/ingestion/engine/*`
   - `src/codeintel/ingestion/adapters/*`
-- Rename CLI-specific `RunContext` in `src/codeintel/observability/cli.py` to `CliInvocationContext` and update references.
-- Update `src/codeintel/cli/context.py` to use `core.execution.context.RunContext` for run identity.
+- [x] Rename CLI-specific `RunContext` in `src/codeintel/observability/cli.py` to `CliInvocationContext` and update references.
+- [x] Update `src/codeintel/cli/context.py` to use `core.execution.context.RunContext` for run identity.
 
 ### Phase 4 Checklist: Hard cutover cleanup
-- Remove legacy storage modules after import updates:
+- [x] Remove legacy storage modules after import updates:
   - `src/codeintel/storage/views/discovery.py`
   - `src/codeintel/storage/views/inventory.py`
   - `src/codeintel/storage/views/protocol.py`
@@ -363,10 +372,9 @@ class IngestionContext:
   - `src/codeintel/storage/datasets/parquet_metadata.py`
   - `src/codeintel/storage/queries/safe.py`
   - `src/codeintel/storage/datasets/arrow_store.py`
-- Ensure no remaining imports from removed modules (repo-wide search).
+- [x] Ensure no remaining imports from removed modules (repo-wide search).
 
 ### Phase 5 Checklist: Validation
-- Run the repo-level checks:
-  - `uv run ruff check --fix`
-  - `uv run pyright --warnings --pythonversion=3.13`
-  - `uv run pyrefly check`
+- [x] Run `uv run ruff check --fix`
+- [ ] Run `uv run pyright --warnings --pythonversion=3.13` and fix outstanding errors
+- [ ] Run `uv run pyrefly check` and fix outstanding errors

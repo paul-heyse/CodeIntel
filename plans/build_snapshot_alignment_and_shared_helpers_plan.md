@@ -83,11 +83,18 @@
   - `src/codeintel/build/hamilton/native/export/serving_artifacts.py`
   - `src/codeintel/build/hamilton/native/graphs/symbol_use.py`
   - `src/codeintel/build/hamilton/native/ingestion/file_line_index.py`
+- Migrated remaining multi-table targets to the shared helper and exported table context:
+  - `src/codeintel/build/hamilton/native/analytics/entrypoints.py`
+  - `src/codeintel/build/hamilton/native/analytics/data_models.py` (data_models)
+  - `src/codeintel/build/hamilton/native/analytics/tables_dependencies.py`
+  - `src/codeintel/build/hamilton/native/graphs/graph_targets.py`
+  - `src/codeintel/build/hamilton/native/graphs/goids.py`
+  - `src/codeintel/build/hamilton/native/ingestion/scip_resolution.py`
+  - `src/codeintel/build/hamilton/native/patterns/__init__.py` (export TableTargetTableContext)
 
 ## Remaining Duplication and Drift (Selected)
-- Table target scaffolding repeated outside the initial templates:
-  - Remaining targets listed below under Table Target Spec Factory (function_contracts and
-    function_effects already migrated).
+- Table target scaffolding consolidation complete; remaining TableTargetSpec usage is
+  centralized in `src/codeintel/build/hamilton/native/patterns/table_target.py`.
 
 ## Proposed Shared Modules and Ownership
 - `src/codeintel/build/scopes/snapshot.py` (new)
@@ -783,6 +790,383 @@ File targets:
 - `src/codeintel/build/hamilton/native/graphs/symbol_use.py`
 - `src/codeintel/build/hamilton/native/graphs/graph_targets.py`
 
+### Multi-table TableTargetSpec helper (new scope)
+
+Location: `src/codeintel/build/hamilton/native/patterns/table_target.py`
+
+```python
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable
+
+import pyarrow as pa
+
+from codeintel.build.hamilton.native.patterns.savers import DatasetSaveSpec
+from codeintel.build.hamilton.native.patterns.table_target import (
+    TableTargetSpec,
+    TableTargetTableSpec,
+)
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
+
+
+@dataclass(frozen=True, slots=True)
+class MultiTableTargetContext:
+    domain: str
+    target_name: str
+    tables: tuple[TableTargetTableSpec, ...]
+    table_materializations_node: str | None = None
+    anchor_node_name: str | None = None
+    attach_anchor: bool = True
+
+    @staticmethod
+    def build_table_spec(
+        *,
+        table_key: str,
+        base_node: str,
+        contract: TableContractSpec,
+        input_type: type[pa.Table] = pa.Table,
+        save_spec: DatasetSaveSpec | None = None,
+        node_name: str | None = None,
+        extra_tags: dict[str, str] | None = None,
+    ) -> TableTargetTableSpec:
+        return TableTargetTableSpec(
+            table_key=table_key,
+            base_node=base_node,
+            contract=contract,
+            save_spec=save_spec or DatasetSaveSpec(table_key=table_key),
+            node_name=node_name or f"{table_key}__table",
+            input_type=input_type,
+            extra_tags=extra_tags,
+        )
+
+
+def build_multi_table_target_spec(
+    *,
+    context: MultiTableTargetContext,
+) -> TableTargetSpec:
+    return TableTargetSpec(
+        domain=context.domain,
+        target_name=context.target_name,
+        tables=context.tables,
+        table_materializations_node=(
+            context.table_materializations_node
+            or f"{context.target_name}__table_materializations"
+        ),
+        anchor_node_name=(
+            f"t__{context.target_name}" if context.attach_anchor else None
+        )
+        if context.anchor_node_name is None
+        else context.anchor_node_name,
+    )
+```
+
+Usage pattern:
+
+```python
+tables = (
+    MultiTableTargetContext.build_table_spec(
+        table_key=CALL_GRAPH_TABLE_KEY,
+        base_node="call_graph__base",
+        contract=CALL_GRAPH_CONTRACT,
+        node_name="call_graph__table",
+    ),
+    MultiTableTargetContext.build_table_spec(
+        table_key=IMPORT_GRAPH_TABLE_KEY,
+        base_node="import_graph__base",
+        contract=IMPORT_GRAPH_CONTRACT,
+        node_name="import_graph__table",
+    ),
+)
+context = MultiTableTargetContext(
+    domain="analytics",
+    target_name="config_graphs",
+    tables=tables,
+)
+spec = build_multi_table_target_spec(context=context)
+attach_table_target_template(_MODULE, spec=spec)
+```
+
+File targets (remaining multi-table migrations):
+- `src/codeintel/build/hamilton/native/analytics/semantic_roles.py`
+- `src/codeintel/build/hamilton/native/analytics/subsystems.py`
+- `src/codeintel/build/hamilton/native/analytics/config_graphs.py`
+- `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
+- `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`
+- `src/codeintel/build/hamilton/native/ingestion/ingest_targets.py`
+- `src/codeintel/build/hamilton/native/ingestion/scip.py`
+- `src/codeintel/build/hamilton/native/ingestion/syntax_enrich.py`
+- `src/codeintel/build/hamilton/native/ingestion/syntax_augment.py`
+
+Implementation checklist:
+1. Add `MultiTableTargetContext` and `build_multi_table_target_spec` to
+   `src/codeintel/build/hamilton/native/patterns/table_target.py` and export them in
+   `src/codeintel/build/hamilton/native/patterns/__init__.py`.
+2. Identify every multi-table `TableTargetSpec` construction and replace with the helper:
+   - Build `tables` via `MultiTableTargetContext.build_table_spec`.
+   - Standardize `table_materializations_node` and `anchor_node_name` defaults.
+3. Ensure all `TableTargetTableSpec` fields are preserved (contract, input_type, save_spec,
+   node_name, extra_tags).
+4. Remove any local helper functions that only existed to construct multi-table specs.
+5. Validate that anchor nodes are still attached where required (set `attach_anchor=False`
+   when not needed).
+6. Confirm table names remain stable (node/table keys unchanged) to avoid materialization drift.
+
+### Multi-table TableTarget refinements (additional scope)
+
+Location: `src/codeintel/build/hamilton/native/patterns/table_target.py`
+
+#### 1) Context-level defaults for save specs and input types
+Allow `MultiTableTargetContext` to carry defaults for save specs and input types so
+relation-heavy targets can avoid repetitive `RelationTableSaveSpec` and input types.
+
+```python
+from __future__ import annotations
+
+from collections.abc import Callable
+
+
+@dataclass(frozen=True, slots=True)
+class MultiTableTargetContext:
+    domain: str
+    target_name: str
+    tables: tuple[TableTargetTableSpec, ...]
+    spec: TargetSpecDescriptor | None = None
+    extra_tags: Mapping[TagKey, TagValue] | None = None
+    table_materializations_node: str | None = None
+    anchor_node_name: str | None = None
+    attach_anchor: bool = True
+    save_spec_factory: Callable[[str], DatasetSaveSpec | RelationTableSaveSpec] | None = None
+    default_input_type: object | None = None
+
+    @staticmethod
+    def build_table_spec(
+        *,
+        context: TableTargetTableContext | None = None,
+        table_key: str | None = None,
+        base_node: str | None = None,
+        contract: TableContractSpec | None = None,
+        save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None,
+        node_name: str | None = None,
+        input_type: object | None = None,
+        extra_tags: Mapping[TagKey, TagValue] | None = None,
+        save_spec_factory: Callable[[str], DatasetSaveSpec | RelationTableSaveSpec] | None = None,
+        default_input_type: object | None = None,
+    ) -> TableTargetTableSpec:
+        if context is None:
+            if table_key is None or base_node is None:
+                msg = "table_key and base_node are required when context is not provided"
+                raise ValueError(msg)
+            context = TableTargetTableContext(
+                table_key=table_key,
+                base_node=base_node,
+                contract=contract,
+                save_spec=save_spec,
+                node_name=node_name,
+                input_type=input_type,
+                extra_tags=extra_tags,
+            )
+        resolved_save_spec = context.save_spec
+        if resolved_save_spec is None and save_spec_factory is not None:
+            resolved_save_spec = save_spec_factory(context.table_key)
+        if resolved_save_spec is None:
+            resolved_save_spec = DatasetSaveSpec(table_key=context.table_key)
+        resolved_input_type = context.input_type or default_input_type
+        return TableTargetTableSpec(
+            table_key=context.table_key,
+            base_node=context.base_node,
+            contract=context.contract,
+            save_spec=resolved_save_spec,
+            node_name=context.node_name,
+            input_type=resolved_input_type,
+            extra_tags=context.extra_tags,
+        )
+```
+
+Targets:
+- `src/codeintel/build/hamilton/native/ingestion/scip.py`
+- `src/codeintel/build/hamilton/native/ingestion/ingest_targets.py`
+- `src/codeintel/build/hamilton/native/ingestion/syntax_enrich.py`
+- `src/codeintel/build/hamilton/native/ingestion/syntax_augment.py`
+
+#### 2) Multi-table builder from contexts
+Provide a convenience factory to accept `TableTargetTableContext` entries directly.
+
+```python
+def build_multi_table_target_spec_from_contexts(
+    *,
+    domain: str,
+    target_name: str,
+    table_contexts: Sequence[TableTargetTableContext],
+    spec: TargetSpecDescriptor | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
+    table_materializations_node: str | None = None,
+    anchor_node_name: str | None = None,
+    attach_anchor: bool = True,
+    save_spec_factory: Callable[[str], DatasetSaveSpec | RelationTableSaveSpec] | None = None,
+    default_input_type: object | None = None,
+) -> TableTargetSpec:
+    tables = tuple(
+        MultiTableTargetContext.build_table_spec(
+            context=ctx,
+            save_spec_factory=save_spec_factory,
+            default_input_type=default_input_type,
+        )
+        for ctx in table_contexts
+    )
+    return build_multi_table_target_spec(
+        context=MultiTableTargetContext(
+            domain=domain,
+            target_name=target_name,
+            tables=tables,
+            spec=spec,
+            extra_tags=extra_tags,
+            table_materializations_node=table_materializations_node,
+            anchor_node_name=anchor_node_name,
+            attach_anchor=attach_anchor,
+            save_spec_factory=save_spec_factory,
+            default_input_type=default_input_type,
+        )
+    )
+```
+
+Targets:
+- `src/codeintel/build/hamilton/native/analytics/cfg_dfg_metrics.py`
+- `src/codeintel/build/hamilton/native/ingestion/scip.py`
+- `src/codeintel/build/hamilton/native/ingestion/syntax_augment.py`
+
+#### 3) Contract-derived table contexts
+Add a helper to derive table contexts from `TableContractSpec` so `input_name` remains
+the base-node source of truth.
+
+```python
+@dataclass(frozen=True, slots=True)
+class TableTargetTableContext:
+    table_key: str
+    base_node: str
+    contract: TableContractSpec | None = None
+    save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None
+    node_name: str | None = None
+    input_type: object | None = None
+    extra_tags: Mapping[TagKey, TagValue] | None = None
+
+    @staticmethod
+    def from_contract(
+        contract: TableContractSpec,
+        *,
+        base_node: str | None = None,
+        node_name: str | None = None,
+        save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None,
+        input_type: object | None = None,
+        extra_tags: Mapping[TagKey, TagValue] | None = None,
+    ) -> "TableTargetTableContext":
+        return TableTargetTableContext(
+            table_key=contract.table_key,
+            base_node=base_node or contract.input_name,
+            contract=contract,
+            save_spec=save_spec,
+            node_name=node_name,
+            input_type=input_type,
+            extra_tags=extra_tags,
+        )
+```
+
+Targets:
+- `src/codeintel/build/hamilton/native/analytics/semantic_roles.py`
+- `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
+- `src/codeintel/build/hamilton/native/analytics/entrypoints.py`
+
+#### 4) Save-spec helper builders
+Provide explicit helpers for common save-spec patterns (dataset vs relation tables).
+
+```python
+@staticmethod
+def build_dataset_table_spec(
+    *,
+    table_key: str,
+    base_node: str,
+    contract: TableContractSpec | None = None,
+    partition_columns: tuple[str, ...] = (),
+    collect_group: str | None = None,
+    validation_profile: ValidationProfile | None = None,
+    output_name: str | None = None,
+    node_name: str | None = None,
+    input_type: object | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
+) -> TableTargetTableSpec:
+    return MultiTableTargetContext.build_table_spec(
+        table_key=table_key,
+        base_node=base_node,
+        contract=contract,
+        save_spec=DatasetSaveSpec(
+            table_key=table_key,
+            partition_columns=partition_columns,
+            collect_group=collect_group,
+            validation_profile=validation_profile,
+            output_name=output_name,
+        ),
+        node_name=node_name,
+        input_type=input_type,
+        extra_tags=extra_tags,
+    )
+
+
+@staticmethod
+def build_relation_table_spec(
+    *,
+    table_key: str,
+    base_node: str,
+    contract: TableContractSpec | None = None,
+    validation_profile: ValidationProfile | None = None,
+    output_name: str | None = None,
+    node_name: str | None = None,
+    input_type: object | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
+) -> TableTargetTableSpec:
+    return MultiTableTargetContext.build_table_spec(
+        table_key=table_key,
+        base_node=base_node,
+        contract=contract,
+        save_spec=RelationTableSaveSpec(
+            table_key=table_key,
+            validation_profile=validation_profile,
+            output_name=output_name,
+        ),
+        node_name=node_name,
+        input_type=input_type,
+        extra_tags=extra_tags,
+    )
+```
+
+Targets:
+- `src/codeintel/build/hamilton/native/graphs/graph_targets.py`
+- `src/codeintel/build/hamilton/native/ingestion/ingest_targets.py`
+- `src/codeintel/build/hamilton/native/ingestion/scip.py`
+- `src/codeintel/build/hamilton/native/ingestion/syntax_enrich.py`
+- `src/codeintel/build/hamilton/native/ingestion/syntax_augment.py`
+
+#### 5) Optional naming policy helper
+Centralize non-standard table node naming patterns to avoid drifting strings.
+
+```python
+def table_node_name_for_target(*, target_name: str, suffix: str) -> str:
+    return f"{target_name}__{suffix}_table"
+```
+
+Targets:
+- `src/codeintel/build/hamilton/native/graphs/graph_targets.py`
+- `src/codeintel/build/hamilton/native/graphs/goids.py`
+
+Implementation checklist (refinements):
+1. Extend `MultiTableTargetContext` with `save_spec_factory` and `default_input_type`,
+   and thread defaults through `build_table_spec`.
+2. Add `build_multi_table_target_spec_from_contexts` convenience builder.
+3. Add `TableTargetTableContext.from_contract` for contract-driven base nodes.
+4. Add `build_dataset_table_spec` / `build_relation_table_spec` helpers and migrate
+   repetitive Dataset/Relation save-spec blocks.
+5. Optional: add a naming helper for consistent node names where targets diverge from
+   `__base` conventions.
+
 ## Implementation Steps
 1. Add `scopes` package and move dulwich snapshot logic out of
    `src/codeintel/build/schemas/inference_service.py`. (done)
@@ -806,8 +1190,8 @@ File targets:
    Arrow join call sites in build pipelines. (done for cpg2 planes + syntax_augment)
 9. Add TableTargetContext + TableTargetSpec factory and update at least two
    analytics targets as a template (function_contracts, function_effects). (done)
-10. Expand TableTargetContext adoption across remaining multi-table targets and remove
-    duplicated target scaffolding helpers where appropriate.
+10. Decide whether to add a multi-table TableTarget builder (parallel to TableTargetContext).
+    Adopted; migrated multi-table targets across analytics, ingestion, and graphs. (done)
 
 ## Testing Plan
 - SnapshotScope filtering:

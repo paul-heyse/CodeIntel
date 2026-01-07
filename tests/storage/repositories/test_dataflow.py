@@ -107,9 +107,7 @@ def dataflow_repo(dataflow_ctx: TestContext) -> DataflowRepository:
         Repository instance configured for the seeded context.
     """
     return DataflowRepository(
-        gateway=dataflow_ctx.gateway,
-        repo=dataflow_ctx.repo,
-        commit=dataflow_ctx.commit,
+        context=dataflow_ctx.storage_context,
     )
 
 

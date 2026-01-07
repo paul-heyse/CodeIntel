@@ -58,7 +58,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.build.graphs import compute, ports
-    from codeintel.build.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
+    from codeintel.build.graphs.engine import GraphEngine, GraphKind, NxGraphEngine, RxGraphEngine
     from codeintel.core.catalog import FunctionSpan
     from codeintel.core.resources import ResourceRegistry
     from codeintel.storage.catalog import CatalogService
@@ -70,6 +70,7 @@ __all__ = [
     "GraphKind",
     "NxGraphEngine",
     "ResourceRegistry",
+    "RxGraphEngine",
     "compute",
     "ports",
 ]
@@ -80,6 +81,7 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "GraphEngine": ("codeintel.build.graphs.engine", "GraphEngine"),
     "GraphKind": ("codeintel.build.graphs.engine", "GraphKind"),
     "NxGraphEngine": ("codeintel.build.graphs.engine", "NxGraphEngine"),
+    "RxGraphEngine": ("codeintel.build.graphs.engine", "RxGraphEngine"),
     "ResourceRegistry": ("codeintel.core.resources", "ResourceRegistry"),
 }
 

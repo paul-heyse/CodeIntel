@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.core.storage import StorageContext
 from codeintel.storage.helpers.module_index import load_module_map
 from codeintel.storage.warehouse import Warehouse
 from tests._helpers.assertions import (
@@ -71,7 +72,7 @@ def test_load_module_map_filters_by_language(
     repo = "test/repo"
     commit = "abc123"
 
-    warehouse = Warehouse(fresh_gateway)
+    warehouse = Warehouse(context=StorageContext(gateway=fresh_gateway))
     warehouse.materialize_mappings(
         "core.modules",
         [

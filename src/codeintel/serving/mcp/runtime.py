@@ -186,6 +186,7 @@ class QueryLimiter:
             with anyio.fail_after(timeout_s):
                 return await coro_fn(*args, **kwargs)
 
+
 def query_limiter_from_settings(settings: ServingSettings) -> QueryLimiter:
     """Build a query limiter from serving settings.
 

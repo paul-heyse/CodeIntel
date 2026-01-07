@@ -25,6 +25,7 @@ from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.repositories.datasets import DatasetReadRepository
 from tests._helpers import docs_views_ready_gateway, seed_call_graph_scoping
+from tests._helpers.context import make_storage_context
 from tests._helpers.docs_views import list_indexes, seed_subsystem
 
 if TYPE_CHECKING:
@@ -69,7 +70,8 @@ def test_docs_views_registered_in_metadata(docs_views_gateway: StorageGateway) -
 def test_docs_view_readable_via_dataset_rows(docs_views_gateway: StorageGateway) -> None:
     """Docs views remain readable through DatasetReadRepository slices."""
     bootstrap_metadata_datasets(docs_views_gateway.con)
-    repo = DatasetReadRepository(gateway=docs_views_gateway, repo="demo/repo", commit="deadbeef")
+    context = make_storage_context(docs_views_gateway, repo="demo/repo", commit="deadbeef")
+    repo = DatasetReadRepository(context=context)
     rows = repo.read_dataset_rows("docs.v_function_architecture", limit=5, offset=0)
     if not isinstance(rows, list):
         pytest.fail("Expected list from dataset_rows")

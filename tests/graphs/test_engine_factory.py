@@ -51,3 +51,31 @@ def test_build_graph_engine_cpu_backend_leaves_env_clean(graph_gateway: StorageG
     expect_true(
         "NX_CUGRAPH_AUTOCONFIG" not in env, message="CPU backend should not set GPU env flags"
     )
+
+
+def test_build_graph_engine_rustworkx_disables_gpu(graph_gateway: StorageGateway) -> None:
+    """Rustworkx selection should skip GPU enablement."""
+    env: dict[str, str] = {}
+    engine = build_graph_engine(
+        snapshot=("demo/repo", "deadbeef"),
+        dataset_root_dir=graph_gateway.datasets.dataset_root_dir,
+        options=EngineBuildOptions(
+            graph_backend=GraphBackendConfig(
+                use_gpu=True,
+                backend="nx-cugraph",
+                strict=False,
+                engine="rustworkx",
+            ),
+            env=env,
+        ),
+    )
+    expect_true(not engine.use_gpu, message="Rustworkx engine should not request GPU")
+    expect_true(
+        "NX_CUGRAPH_AUTOCONFIG" not in env,
+        message="Rustworkx engine should not set GPU env flags",
+    )
+    graph = engine.call_graph()
+    expect_true(
+        isinstance(graph, nx.DiGraph),
+        message="Rustworkx compatibility shim should return a DiGraph",
+    )

@@ -12,6 +12,7 @@ import pytest
 from codeintel.core.datasets.arrow_store import write_dataset
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.storage import StorageContext
 from codeintel.storage.datasets.registry import DatasetRegistry
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
@@ -80,7 +81,7 @@ def test_warehouse_reads_parquet_without_duckdb_tables(tmp_path: Path) -> None:
         commit=snapshot_id,
     )
     gateway = DuckDBGateway(config=config, datasets=registry, con=con)
-    warehouse = Warehouse(gateway=gateway)
+    warehouse = Warehouse(context=StorageContext(gateway=gateway))
     try:
         expect_true(
             not gateway.policy.table_exists(

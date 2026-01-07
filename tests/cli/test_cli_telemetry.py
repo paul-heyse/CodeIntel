@@ -68,7 +68,7 @@ def test_run_cli_with_telemetry_calls_shutdown_on_parse_error() -> None:
 class _DummyFlags:
     verbose: int = 1
     json: bool = False
-    run_context: cli_observability.RunContext | None = None
+    run_context: cli_observability.CliInvocationContext | None = None
 
 
 def test_flatten_arg_names_includes_shared_flags() -> None:

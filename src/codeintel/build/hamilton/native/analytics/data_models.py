@@ -21,11 +21,11 @@ from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_f
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
+    MultiTableTargetContext,
     TableTargetContext,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec,
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -232,37 +232,42 @@ def data_model_relationships__base(
 
 
 _MODULE = sys.modules[__name__]
-_DATA_MODELS_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=DATA_MODELS_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=DATA_MODELS_TABLE_KEY,
-            base_node="data_models__base",
-            contract=DATA_MODELS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=DATA_MODELS_TABLE_KEY),
-            node_name="data_models__table",
-            input_type=pa.Table,
+_DATA_MODELS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+    context=MultiTableTargetContext(
+        domain="analytics",
+        target_name=DATA_MODELS_TARGET_NAME,
+        tables=(
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=DATA_MODELS_TABLE_KEY,
+                    base_node="data_models__base",
+                    contract=DATA_MODELS_CONTRACT,
+                    node_name="data_models__table",
+                    input_type=pa.Table,
+                ),
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=DATA_MODEL_FIELDS_TABLE_KEY,
+                    base_node="data_model_fields__base",
+                    contract=DATA_MODEL_FIELDS_CONTRACT,
+                    node_name="data_model_fields__table",
+                    input_type=pa.Table,
+                ),
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
+                    base_node="data_model_relationships__base",
+                    contract=DATA_MODEL_RELATIONSHIPS_CONTRACT,
+                    node_name="data_model_relationships__table",
+                    input_type=pa.Table,
+                ),
+            ),
         ),
-        TableTargetTableSpec(
-            table_key=DATA_MODEL_FIELDS_TABLE_KEY,
-            base_node="data_model_fields__base",
-            contract=DATA_MODEL_FIELDS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=DATA_MODEL_FIELDS_TABLE_KEY),
-            node_name="data_model_fields__table",
-            input_type=pa.Table,
-        ),
-        TableTargetTableSpec(
-            table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
-            base_node="data_model_relationships__base",
-            contract=DATA_MODEL_RELATIONSHIPS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
-            node_name="data_model_relationships__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="data_models__table_materializations",
-    anchor_node_name="t__data_models",
+        table_materializations_node="data_models__table_materializations",
+        anchor_node_name="t__data_models",
+    )
 )
 attach_table_target_template(_MODULE, spec=_DATA_MODELS_TABLE_TARGET_SPEC)
 data_models__table = _MODULE.data_models__table

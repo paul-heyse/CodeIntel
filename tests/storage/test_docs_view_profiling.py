@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.core.storage import StorageContext
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.warehouse import Warehouse
 from tests._helpers import docs_views_ready_gateway
@@ -47,7 +48,7 @@ def docs_profile_db(tmp_path: Path) -> Path:
 
 def test_explain_table_returns_plan_text(docs_views_gateway: StorageGateway) -> None:
     """Verify Warehouse.explain_table returns EXPLAIN plan text."""
-    warehouse = Warehouse(docs_views_gateway)
+    warehouse = Warehouse(context=StorageContext(gateway=docs_views_gateway))
     plan = warehouse.explain_table("docs.v_subsystem_profile", analyze=False)
     expect_is_instance(plan, str)
     expect_true(len(plan) > 0)
@@ -55,7 +56,7 @@ def test_explain_table_returns_plan_text(docs_views_gateway: StorageGateway) -> 
 
 def test_explain_table_analyze_returns_plan_text(docs_views_gateway: StorageGateway) -> None:
     """Verify Warehouse.explain_table returns EXPLAIN ANALYZE plan text."""
-    warehouse = Warehouse(docs_views_gateway)
+    warehouse = Warehouse(context=StorageContext(gateway=docs_views_gateway))
     plan = warehouse.explain_table("docs.v_subsystem_profile", analyze=True)
     expect_is_instance(plan, str)
     expect_true(len(plan) > 0)
@@ -66,7 +67,7 @@ def test_profile_views_creates_artifacts(docs_profile_db: Path, tmp_path: Path) 
     output_dir = tmp_path / "profiling_output"
     gateway = open_gateway(StorageConfig.for_readonly(docs_profile_db))
     try:
-        warehouse = Warehouse(gateway)
+        warehouse = Warehouse(context=StorageContext(gateway=gateway))
         warehouse.profile_views(
             views=_DOCS_VIEWS,
             output_dir=output_dir,
@@ -94,7 +95,7 @@ def test_profile_views_analyze_mode_creates_artifacts(
     output_dir = tmp_path / "profiling_output"
     gateway = open_gateway(StorageConfig.for_readonly(docs_profile_db))
     try:
-        warehouse = Warehouse(gateway)
+        warehouse = Warehouse(context=StorageContext(gateway=gateway))
         warehouse.profile_views(
             views=_DOCS_VIEWS,
             output_dir=output_dir,

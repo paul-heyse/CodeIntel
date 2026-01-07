@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular.compute_helpers import array_from_compute, call_compute
 from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_reader
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_rows
@@ -27,30 +28,6 @@ def _schema_service_optional() -> SchemaService | None:
         return get_schema_service()
     except (RuntimeError, TypeError):
         return None
-
-
-def _call_compute(
-    name: str,
-    args: Sequence[object],
-    *,
-    options: pc.FunctionOptions | None = None,
-) -> object | None:
-    try:
-        return pc.call_function(name, list(args), options=options)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return None
-
-
-def _array_from_compute(
-    name: str,
-    args: Sequence[object],
-    *,
-    options: pc.FunctionOptions | None = None,
-) -> pa.Array | pa.ChunkedArray | None:
-    result = _call_compute(name, args, options=options)
-    if isinstance(result, (pa.Array, pa.ChunkedArray)):
-        return result
-    return None
 
 
 def _row_index_array(length: int) -> pa.Array | None:
@@ -75,11 +52,11 @@ def _sort_table_for_preference(table: pa.Table, prefer_columns: Sequence[str]) -
     options = pc.SortOptions(sort_keys=sort_keys)
     try:
         options = pc.SortOptions(sort_keys=sort_keys, null_placement="at_end")
-        indices = _call_compute("sort_indices", [table], options=options)
+        indices = call_compute("sort_indices", [table], options=options)
     except (TypeError, pa.ArrowNotImplementedError):
         indices = None
     if indices is None:
-        indices = _call_compute("sort_indices", [table], options=options)
+        indices = call_compute("sort_indices", [table], options=options)
     if indices is None:
         return table
     return table.take(indices)
@@ -103,7 +80,7 @@ def _dedupe_table_via_compute(
         if index_column not in grouped.column_names:
             return None
         indices = grouped.column(index_column)
-        mask = _array_from_compute("is_in", [row_index, indices])
+        mask = array_from_compute("is_in", [row_index, indices])
         if mask is None:
             return None
         return table.filter(mask)

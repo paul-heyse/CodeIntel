@@ -31,7 +31,6 @@ from tests._helpers.seeds.graph import GRAPH_PACK
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from duckdb import DuckDBPyConnection
 
@@ -574,7 +573,13 @@ def make_storage_context(
     commit: str = "abc123",
     repo_root: Path | None = None,
 ) -> StorageContext:
-    """Build a StorageContext for tests without a full TestContext."""
+    """Build a StorageContext for tests without a full TestContext.
+
+    Returns
+    -------
+    StorageContext
+        Storage context configured with a resolved snapshot reference.
+    """
     resolved_root = repo_root or Path.cwd()
     resolved_snapshot = snapshot or SnapshotRef(
         repo=repo,

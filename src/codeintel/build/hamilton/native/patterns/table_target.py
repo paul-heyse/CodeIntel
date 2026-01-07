@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from types import ModuleType
 from typing import cast
 
@@ -85,6 +85,65 @@ class TableTargetContext:
     attach_anchor: bool = True
 
 
+@dataclass(frozen=True, slots=True)
+class TableTargetTableContext:
+    """Context for constructing table specs inside multi-table targets."""
+
+    table_key: str
+    base_node: str
+    contract: TableContractSpec | None = None
+    save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None
+    node_name: str | None = None
+    input_type: object | None = None
+    extra_tags: Mapping[TagKey, TagValue] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MultiTableTargetContext:
+    """Context for constructing multi-table target specs."""
+
+    domain: str
+    target_name: str
+    tables: tuple[TableTargetTableSpec, ...]
+    spec: TargetSpecDescriptor | None = None
+    extra_tags: Mapping[TagKey, TagValue] | None = None
+    table_materializations_node: str | None = None
+    anchor_node_name: str | None = None
+    attach_anchor: bool = True
+    save_spec_factory: Callable[[str], DatasetSaveSpec | RelationTableSaveSpec] | None = None
+    default_input_type: object | None = None
+
+    @staticmethod
+    def build_table_spec(
+        *,
+        context: TableTargetTableContext,
+        save_spec_factory: Callable[[str], DatasetSaveSpec | RelationTableSaveSpec] | None = None,
+        default_input_type: object | None = None,
+    ) -> TableTargetTableSpec:
+        """Build a table spec for a multi-table target.
+
+        Returns
+        -------
+        TableTargetTableSpec
+            Table specification derived from the provided context.
+        """
+        resolved_save_spec = context.save_spec
+        if resolved_save_spec is None and save_spec_factory is not None:
+            resolved_save_spec = save_spec_factory(context.table_key)
+        if resolved_save_spec is None:
+            resolved_save_spec = DatasetSaveSpec(table_key=context.table_key)
+        resolved_input_type = context.input_type or default_input_type
+        return TableTargetTableSpec(
+            table_key=context.table_key,
+            base_node=context.base_node,
+            contract=context.contract,
+            save_spec=resolved_save_spec,
+            node_name=context.node_name,
+            input_type=resolved_input_type,
+            extra_tags=context.extra_tags,
+        )
+
+
 def build_single_table_target_spec(*, context: TableTargetContext) -> TableTargetSpec:
     """Build a TableTargetSpec for a single table target.
 
@@ -119,6 +178,55 @@ def build_single_table_target_spec(*, context: TableTargetContext) -> TableTarge
         anchor_node_name=anchor_node_name,
         attach_anchor=context.attach_anchor,
     )
+
+
+def build_multi_table_target_spec(*, context: MultiTableTargetContext) -> TableTargetSpec:
+    """Build a TableTargetSpec for a multi-table target.
+
+    Returns
+    -------
+    TableTargetSpec
+        Standardized target spec configured for a multi-table output.
+    """
+    table_materializations_node = (
+        context.table_materializations_node or f"{context.target_name}__table_materializations"
+    )
+    anchor_node_name = None
+    if context.attach_anchor:
+        anchor_node_name = context.anchor_node_name or f"t__{context.target_name}"
+    return TableTargetSpec(
+        domain=context.domain,
+        target_name=context.target_name,
+        tables=context.tables,
+        spec=context.spec,
+        extra_tags=context.extra_tags,
+        table_materializations_node=table_materializations_node,
+        anchor_node_name=anchor_node_name,
+        attach_anchor=context.attach_anchor,
+    )
+
+
+def build_multi_table_target_spec_from_contexts(
+    *,
+    context: MultiTableTargetContext,
+    table_contexts: Sequence[TableTargetTableContext],
+) -> TableTargetSpec:
+    """Build a TableTargetSpec from table contexts for multi-table targets.
+
+    Returns
+    -------
+    TableTargetSpec
+        Standardized target spec configured for a multi-table output.
+    """
+    tables = tuple(
+        MultiTableTargetContext.build_table_spec(
+            context=table_context,
+            save_spec_factory=context.save_spec_factory,
+            default_input_type=context.default_input_type,
+        )
+        for table_context in table_contexts
+    )
+    return build_multi_table_target_spec(context=replace(context, tables=tables))
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,9 +510,13 @@ def _validate_table_spec(table_spec: TableTargetTableSpec) -> None:
 
 
 __all__ = [
+    "MultiTableTargetContext",
     "TableTargetContext",
     "TableTargetSpec",
+    "TableTargetTableContext",
     "TableTargetTableSpec",
     "attach_table_target_template",
+    "build_multi_table_target_spec",
+    "build_multi_table_target_spec_from_contexts",
     "build_single_table_target_spec",
 ]

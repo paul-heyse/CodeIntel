@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.schemas import configure_schema_service, get_schema_provider
+from codeintel.core.storage import StorageContext
 from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 from codeintel.storage.repositories import (
     DataModelsRepository,
@@ -19,6 +20,7 @@ from codeintel.storage.repositories import (
     TestRepository,
 )
 from codeintel.storage.warehouse import Warehouse
+from tests._helpers.context import make_storage_context
 from tests._helpers.fixtures.rows import (
     DataModelFieldSeed,
     DataModelRelationshipSeed,
@@ -80,13 +82,14 @@ def _repos_for_gateway(
     SubsystemRepository,
     DatasetReadRepository,
 ]:
+    context = make_storage_context(gateway, repo=repo, commit=commit)
     return (
-        FunctionRepository(gateway, repo, commit),
-        ModuleRepository(gateway, repo, commit),
-        TestRepository(gateway, repo, commit),
-        GraphRepository(gateway, repo, commit),
-        SubsystemRepository(gateway, repo, commit),
-        DatasetReadRepository(gateway, repo, commit),
+        FunctionRepository(context=context),
+        ModuleRepository(context=context),
+        TestRepository(context=context),
+        GraphRepository(context=context),
+        SubsystemRepository(context=context),
+        DatasetReadRepository(context=context),
     )
 
 
@@ -203,11 +206,12 @@ def test_module_repository_reads(docs_export_gateway: TestContext) -> None:
 
 def test_subsystem_repository_reads(subsystem_repo_ctx: TestContext) -> None:
     """Subsystem repository should return seeded subsystem summaries and memberships."""
-    subsystems = SubsystemRepository(
+    context = make_storage_context(
         subsystem_repo_ctx.gateway,
-        subsystem_repo_ctx.repo,
-        subsystem_repo_ctx.commit,
+        repo=subsystem_repo_ctx.repo,
+        commit=subsystem_repo_ctx.commit,
     )
+    subsystems = SubsystemRepository(context=context)
 
     summaries = subsystems.list_subsystems(limit=5)
     _expect_true(len(summaries) > 0, "subsystem summary count should be non-zero")
@@ -223,7 +227,7 @@ def test_data_model_accessors(docs_export_gateway: TestContext) -> None:
     """Data model accessors should surface normalized rows directly."""
     ctx = docs_export_gateway
     gateway = ctx.gateway
-    warehouse = Warehouse(gateway)
+    warehouse = Warehouse(context=StorageContext(gateway=gateway))
     repo = ctx.repo
     commit = ctx.commit
     now = datetime.now().astimezone()
@@ -285,7 +289,8 @@ def test_data_model_accessors(docs_export_gateway: TestContext) -> None:
         [_as_mapping(relationship_row, "analytics.data_model_relationships")],
     )
 
-    normalized = DataModelsRepository(gateway, repo, commit).list_models_normalized()
+    context = make_storage_context(gateway, repo=repo, commit=commit)
+    normalized = DataModelsRepository(context=context).list_models_normalized()
     _expect_equal(len(normalized), 1, "normalized model count mismatch")
     model = normalized[0]
     _expect_equal(model.model_id, "ModelA", "model id mismatch")

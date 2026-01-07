@@ -11,10 +11,11 @@ import pyarrow.compute as pc
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
+    MultiTableTargetContext,
     RelationTableSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.schemas.service import get_schema_service
@@ -483,41 +484,57 @@ def syntax_enrich__imports_resolved__base(
 
 
 _MODULE = sys.modules[__name__]
-_SYNTAX_ENRICH_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="ingestion",
-    target_name=SYNTAX_ENRICH_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=SYNTAX_DEFS_RESOLVED_TABLE_KEY,
-            base_node="syntax_enrich__defs_resolved__base",
-            save_spec=RelationTableSaveSpec(table_key=SYNTAX_DEFS_RESOLVED_TABLE_KEY),
-            node_name="syntax_enrich__defs_resolved",
-            input_type=InferableTabularInput,
+_SYNTAX_ENRICH_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+    context=MultiTableTargetContext(
+        domain="ingestion",
+        target_name=SYNTAX_ENRICH_TARGET_NAME,
+        tables=(
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SYNTAX_DEFS_RESOLVED_TABLE_KEY,
+                    base_node="syntax_enrich__defs_resolved__base",
+                    node_name="syntax_enrich__defs_resolved",
+                    input_type=InferableTabularInput,
+                ),
+                save_spec_factory=RelationTableSaveSpec,
+                default_input_type=InferableTabularInput,
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SYNTAX_REFS_RESOLVED_TABLE_KEY,
+                    base_node="syntax_enrich__refs_resolved__base",
+                    node_name="syntax_enrich__refs_resolved",
+                    input_type=InferableTabularInput,
+                ),
+                save_spec_factory=RelationTableSaveSpec,
+                default_input_type=InferableTabularInput,
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SYNTAX_CALLS_RESOLVED_TABLE_KEY,
+                    base_node="syntax_enrich__calls_resolved__base",
+                    node_name="syntax_enrich__calls_resolved",
+                    input_type=InferableTabularInput,
+                ),
+                save_spec_factory=RelationTableSaveSpec,
+                default_input_type=InferableTabularInput,
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SYNTAX_IMPORTS_RESOLVED_TABLE_KEY,
+                    base_node="syntax_enrich__imports_resolved__base",
+                    node_name="syntax_enrich__imports_resolved",
+                    input_type=InferableTabularInput,
+                ),
+                save_spec_factory=RelationTableSaveSpec,
+                default_input_type=InferableTabularInput,
+            ),
         ),
-        TableTargetTableSpec(
-            table_key=SYNTAX_REFS_RESOLVED_TABLE_KEY,
-            base_node="syntax_enrich__refs_resolved__base",
-            save_spec=RelationTableSaveSpec(table_key=SYNTAX_REFS_RESOLVED_TABLE_KEY),
-            node_name="syntax_enrich__refs_resolved",
-            input_type=InferableTabularInput,
-        ),
-        TableTargetTableSpec(
-            table_key=SYNTAX_CALLS_RESOLVED_TABLE_KEY,
-            base_node="syntax_enrich__calls_resolved__base",
-            save_spec=RelationTableSaveSpec(table_key=SYNTAX_CALLS_RESOLVED_TABLE_KEY),
-            node_name="syntax_enrich__calls_resolved",
-            input_type=InferableTabularInput,
-        ),
-        TableTargetTableSpec(
-            table_key=SYNTAX_IMPORTS_RESOLVED_TABLE_KEY,
-            base_node="syntax_enrich__imports_resolved__base",
-            save_spec=RelationTableSaveSpec(table_key=SYNTAX_IMPORTS_RESOLVED_TABLE_KEY),
-            node_name="syntax_enrich__imports_resolved",
-            input_type=InferableTabularInput,
-        ),
-    ),
-    table_materializations_node="syntax_enrich__table_materializations",
-    anchor_node_name="t__syntax_enrich",
+        table_materializations_node="syntax_enrich__table_materializations",
+        anchor_node_name="t__syntax_enrich",
+        save_spec_factory=RelationTableSaveSpec,
+        default_input_type=InferableTabularInput,
+    )
 )
 attach_table_target_template(_MODULE, spec=_SYNTAX_ENRICH_TABLE_TARGET_SPEC)
 syntax_enrich__defs_resolved = _MODULE.syntax_enrich__defs_resolved

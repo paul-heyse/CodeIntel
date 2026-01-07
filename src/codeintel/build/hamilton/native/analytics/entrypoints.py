@@ -22,10 +22,10 @@ from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_f
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    MultiTableTargetContext,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -320,29 +320,33 @@ def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pa.Table:
 
 
 _MODULE = sys.modules[__name__]
-_ENTRYPOINTS_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=ENTRYPOINTS_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=ENTRYPOINTS_TABLE_KEY,
-            base_node="entrypoints__base",
-            contract=ENTRYPOINTS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=ENTRYPOINTS_TABLE_KEY),
-            node_name="entrypoints__table",
-            input_type=pa.Table,
+_ENTRYPOINTS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+    context=MultiTableTargetContext(
+        domain="analytics",
+        target_name=ENTRYPOINTS_TARGET_NAME,
+        tables=(
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=ENTRYPOINTS_TABLE_KEY,
+                    base_node="entrypoints__base",
+                    contract=ENTRYPOINTS_CONTRACT,
+                    node_name="entrypoints__table",
+                    input_type=pa.Table,
+                ),
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=ENTRYPOINT_TESTS_TABLE_KEY,
+                    base_node="entrypoint_tests__base",
+                    contract=ENTRYPOINT_TESTS_CONTRACT,
+                    node_name="entrypoint_tests__table",
+                    input_type=pa.Table,
+                ),
+            ),
         ),
-        TableTargetTableSpec(
-            table_key=ENTRYPOINT_TESTS_TABLE_KEY,
-            base_node="entrypoint_tests__base",
-            contract=ENTRYPOINT_TESTS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=ENTRYPOINT_TESTS_TABLE_KEY),
-            node_name="entrypoint_tests__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="entrypoints__table_materializations",
-    anchor_node_name="t__entrypoints",
+        table_materializations_node="entrypoints__table_materializations",
+        anchor_node_name="t__entrypoints",
+    )
 )
 attach_table_target_template(_MODULE, spec=_ENTRYPOINTS_TABLE_TARGET_SPEC)
 entrypoints__table = _MODULE.entrypoints__table

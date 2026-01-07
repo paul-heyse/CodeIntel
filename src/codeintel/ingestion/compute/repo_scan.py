@@ -158,14 +158,22 @@ class RepoScanStep:
         modules = _dedupe_modules(modules)
         log.info("Discovered %d modules in %s", len(modules), resolved_root)
 
-        change_request = ChangeRequest(
-            repo=resolved_repo,
-            commit=resolved_commit,
-            repo_root=resolved_root,
-            language="python",
-            full_rebuild=full_rebuild,
-            scan_profile=resolved_profile,
-        )
+        if context is not None:
+            change_request = ChangeRequest.from_context(
+                context=context,
+                language="python",
+                full_rebuild=full_rebuild,
+                scan_profile=resolved_profile,
+            )
+        else:
+            change_request = ChangeRequest(
+                repo=resolved_repo,
+                commit=resolved_commit,
+                repo_root=resolved_root,
+                language="python",
+                full_rebuild=full_rebuild,
+                scan_profile=resolved_profile,
+            )
         change_set = self._change_detection.compute_changes(change_request, modules)
 
         module_buffer = columnar_buffer_for_table_key(MODULES_TABLE_KEY)

@@ -40,11 +40,12 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.context import TestContext
 
+from codeintel.config.primitives import SnapshotRef
+from codeintel.core.storage import StorageContext
 
 TEST_MAX_CONDITIONS = 10
 GOID_SIMPLE = 10001
@@ -188,7 +189,8 @@ def _seed_docstrings(
         examples=[],
         created_at=now,
     )
-    Warehouse(gateway).materialize_mappings("core.docstrings", [row])
+    warehouse = Warehouse(context=StorageContext(gateway=gateway))
+    warehouse.materialize_mappings("core.docstrings", [row])
 
 
 def _seed_function_types(
@@ -220,7 +222,8 @@ def _seed_function_types(
         param_types=param_types or {},
         created_at=now,
     )
-    Warehouse(gateway).materialize_mappings("analytics.function_types", [row])
+    warehouse = Warehouse(context=StorageContext(gateway=gateway))
+    warehouse.materialize_mappings("analytics.function_types", [row])
 
 
 def _build_and_write_contract_rows(

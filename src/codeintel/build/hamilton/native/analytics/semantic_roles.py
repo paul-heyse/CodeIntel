@@ -19,10 +19,10 @@ from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_f
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    MultiTableTargetContext,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -292,29 +292,33 @@ def semantic_roles_modules__base(
 
 
 _MODULE = sys.modules[__name__]
-_SEMANTIC_ROLES_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=SEMANTIC_ROLES_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY,
-            base_node="semantic_roles_functions__base",
-            contract=SEMANTIC_ROLES_FUNCTIONS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
-            node_name="semantic_roles_functions__table",
-            input_type=pa.Table,
+_SEMANTIC_ROLES_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+    context=MultiTableTargetContext(
+        domain="analytics",
+        target_name=SEMANTIC_ROLES_TARGET_NAME,
+        tables=(
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY,
+                    base_node="semantic_roles_functions__base",
+                    contract=SEMANTIC_ROLES_FUNCTIONS_CONTRACT,
+                    node_name="semantic_roles_functions__table",
+                    input_type=pa.Table,
+                ),
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY,
+                    base_node="semantic_roles_modules__base",
+                    contract=SEMANTIC_ROLES_MODULES_CONTRACT,
+                    node_name="semantic_roles_modules__table",
+                    input_type=pa.Table,
+                ),
+            ),
         ),
-        TableTargetTableSpec(
-            table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY,
-            base_node="semantic_roles_modules__base",
-            contract=SEMANTIC_ROLES_MODULES_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY),
-            node_name="semantic_roles_modules__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="semantic_roles__table_materializations",
-    anchor_node_name="t__semantic_roles",
+        table_materializations_node="semantic_roles__table_materializations",
+        anchor_node_name="t__semantic_roles",
+    )
 )
 attach_table_target_template(_MODULE, spec=_SEMANTIC_ROLES_TABLE_TARGET_SPEC)
 semantic_roles_functions__table = _MODULE.semantic_roles_functions__table

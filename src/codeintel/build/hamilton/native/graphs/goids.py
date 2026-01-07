@@ -25,9 +25,10 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
 )
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    MultiTableTargetContext,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import iter_rows
@@ -57,6 +58,13 @@ def _columns_for_table(table_key: str) -> tuple[str, ...]:
 
 GOIDS_COLUMNS = _columns_for_table(GOIDS_TABLE_KEY)
 GOID_CROSSWALK_COLUMNS = _columns_for_table(GOID_CROSSWALK_TABLE_KEY)
+
+
+def _partitioned_save_spec(table_key: str) -> DatasetSaveSpec:
+    return DatasetSaveSpec(
+        table_key=table_key,
+        partition_columns=("repo", "commit"),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -402,33 +410,37 @@ def goid_crosswalk__base(goids_analysis: _GoidsAnalysis) -> InferableTabularInpu
 
 
 _MODULE = sys.modules[__name__]
-_GOIDS_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="ingestion",
-    target_name=GOIDS_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=GOIDS_TABLE_KEY,
-            base_node="goids__base",
-            save_spec=DatasetSaveSpec(
-                table_key=GOIDS_TABLE_KEY,
-                partition_columns=("repo", "commit"),
+_GOIDS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+    context=MultiTableTargetContext(
+        domain="ingestion",
+        target_name=GOIDS_TARGET_NAME,
+        tables=(
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=GOIDS_TABLE_KEY,
+                    base_node="goids__base",
+                    node_name="goids__table",
+                    input_type=InferableTabularInput,
+                ),
+                save_spec_factory=_partitioned_save_spec,
+                default_input_type=InferableTabularInput,
             ),
-            node_name="goids__table",
-            input_type=InferableTabularInput,
-        ),
-        TableTargetTableSpec(
-            table_key=GOID_CROSSWALK_TABLE_KEY,
-            base_node="goid_crosswalk__base",
-            save_spec=DatasetSaveSpec(
-                table_key=GOID_CROSSWALK_TABLE_KEY,
-                partition_columns=("repo", "commit"),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=GOID_CROSSWALK_TABLE_KEY,
+                    base_node="goid_crosswalk__base",
+                    node_name="goid_crosswalk__table",
+                    input_type=InferableTabularInput,
+                ),
+                save_spec_factory=_partitioned_save_spec,
+                default_input_type=InferableTabularInput,
             ),
-            node_name="goid_crosswalk__table",
-            input_type=InferableTabularInput,
         ),
-    ),
-    table_materializations_node="goids__table_materializations",
-    anchor_node_name="t__goids",
+        table_materializations_node="goids__table_materializations",
+        anchor_node_name="t__goids",
+        save_spec_factory=_partitioned_save_spec,
+        default_input_type=InferableTabularInput,
+    )
 )
 attach_table_target_template(_MODULE, spec=_GOIDS_TABLE_TARGET_SPEC)
 goids__table = _MODULE.goids__table

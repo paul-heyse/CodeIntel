@@ -37,8 +37,50 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+GRAPH_CACHE_VERSION = "v2"
 GraphCacheValue = nx.Graph | nx.DiGraph
 GraphT = TypeVar("GraphT", nx.Graph, nx.DiGraph)
+
+
+def _coerce_int(value: object) -> int | None:
+    """Coerce a primitive value into an integer when possible.
+
+    Returns
+    -------
+    int | None
+        Coerced integer value, or None when coercion is not possible.
+    """
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, (bytes, bytearray, str)):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _safe_graph_count(graph: object, *, primary: str, fallback: str) -> int | None:
+    """Fetch graph counts from known methods without raising.
+
+    Returns
+    -------
+    int | None
+        Count from the first available method or None on failure.
+    """
+    for attr in (primary, fallback):
+        func = getattr(graph, attr, None)
+        if callable(func):
+            try:
+                value = func()
+            except (RuntimeError, TypeError, ValueError):
+                return None
+            return _coerce_int(value)
+    return None
 
 
 @dataclass(frozen=True)
@@ -232,9 +274,11 @@ class GraphRuntimeOptions:
     @property
     def use_gpu(self) -> bool:
         """Compute whether GPU execution is preferred."""
-        if self.backend is not None:
-            return bool(self.backend.use_gpu)
-        return False
+        if self.backend is None:
+            return False
+        if self.backend.engine == "rustworkx":
+            return False
+        return bool(self.backend.use_gpu)
 
     @property
     def resolved_eager(self) -> bool:
@@ -364,6 +408,8 @@ class GraphRuntime:
     @property
     def use_gpu(self) -> bool:
         """Flag indicating whether the backend prefers GPU execution."""
+        if self.backend.engine == "rustworkx":
+            return False
         return self.backend.use_gpu
 
     def ensure_call_graph(self) -> nx.DiGraph:
@@ -494,9 +540,11 @@ class GraphRuntime:
         safe_commit = self.options.snapshot.commit
         raw_name = getattr(kind, "name", None)
         kind_name = raw_name.lower() if isinstance(raw_name, str) else str(kind).lower()
+        use_gpu = self.use_gpu
         base = (
             f"{safe_repo}__{safe_commit}"
-            f"__{self.backend.backend}__{self.backend.use_gpu}"
+            f"__{self.backend.backend}__{use_gpu}"
+            f"__{self.backend.engine}__{GRAPH_CACHE_VERSION}"
             f"__{kind_name}"
         )
         return self.options.graph_cache_dir / base
@@ -509,16 +557,18 @@ class GraphRuntime:
             return None
         try:
             lines = meta_path.read_text(encoding="utf-8").splitlines()
-            expected_fields = 4
+            expected_fields = 6
             if len(lines) < expected_fields:
                 return None
-            repo, commit, backend, use_gpu_str = lines[:4]
+            version, engine, repo, commit, backend, use_gpu_str = lines[:6]
+            if version != GRAPH_CACHE_VERSION or engine != self.backend.engine:
+                return None
             if (
                 self.options.snapshot is None
                 or repo != self.options.snapshot.repo
                 or commit != self.options.snapshot.commit
                 or backend != self.backend.backend
-                or (use_gpu_str == "true") != self.backend.use_gpu
+                or (use_gpu_str == "true") != self.use_gpu
             ):
                 return None
             with graph_path.open("r", encoding="utf-8") as fh:
@@ -540,29 +590,47 @@ class GraphRuntime:
             serialized = json_graph.node_link_data(graph)
             with graph_path.open("w", encoding="utf-8") as fh:
                 json.dump(serialized, fh)
-            use_gpu_str = "true" if self.backend.use_gpu else "false"
+            use_gpu_str = "true" if self.use_gpu else "false"
             meta_path.write_text(
-                "\n".join([snapshot.repo, snapshot.commit, self.backend.backend, use_gpu_str]),
+                "\n".join(
+                    [
+                        GRAPH_CACHE_VERSION,
+                        self.backend.engine,
+                        snapshot.repo,
+                        snapshot.commit,
+                        self.backend.backend,
+                        use_gpu_str,
+                    ]
+                ),
                 encoding="utf-8",
             )
         except (OSError, TypeError, ValueError):
             return
 
     def _log_graph_stats(self, name: str, graph: nx.Graph, *, cache_hit: bool) -> None:
-        try:
-            node_count = graph.number_of_nodes()
-            edge_count = graph.number_of_edges()
-        except (RuntimeError, TypeError, AttributeError):
+        node_count = _safe_graph_count(
+            graph,
+            primary="number_of_nodes",
+            fallback="num_nodes",
+        )
+        edge_count = _safe_graph_count(
+            graph,
+            primary="number_of_edges",
+            fallback="num_edges",
+        )
+        if node_count is None or edge_count is None:
             node_count = -1
             edge_count = -1
         log.info(
-            "graph_runtime.ensure.%s nodes=%d edges=%d cache_hit=%s use_gpu=%s backend=%s",
+            "graph_runtime.ensure.%s nodes=%d edges=%d cache_hit=%s use_gpu=%s "
+            "backend=%s engine=%s",
             name,
             node_count,
             edge_count,
             cache_hit,
-            self.backend.use_gpu,
+            self.use_gpu,
             self.backend.backend,
+            self.backend.engine,
         )
 
 
@@ -612,12 +680,17 @@ def build_graph_runtime(
         )
     backend_info = getattr(engine, "backend_info", None)
     runtime = GraphRuntime(options=options, engine=engine, backend_info=backend_info)
+    effective_use_gpu = (
+        resolved_backend.use_gpu if resolved_backend.engine != "rustworkx" else False
+    )
     log.info(
-        "graph_runtime.built snapshot=%s@%s backend=%s use_gpu=%s features=%s",
+        "graph_runtime.built snapshot=%s@%s backend=%s use_gpu=%s engine=%s "
+        "features=%s",
         options.snapshot.repo if options.snapshot else None,
         options.snapshot.commit if options.snapshot else None,
         resolved_backend.backend,
-        resolved_backend.use_gpu,
+        effective_use_gpu,
+        resolved_backend.engine,
         options.features,
     )
 
@@ -760,8 +833,9 @@ class GraphRuntimePool:
             snapshot.repo,
             snapshot.commit,
             backend.backend,
-            backend.use_gpu,
+            options.use_gpu,
             backend.strict,
+            backend.engine,
             options.graphs,
             options.eager,
             options.validate,

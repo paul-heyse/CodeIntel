@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
+from codeintel.core.storage import StorageContext
 from codeintel.storage.catalog import CatalogService, FunctionCatalog
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 
@@ -27,7 +28,7 @@ class CatalogCtx(Protocol):
 
 CatalogLike = FunctionCatalog | CatalogService | MockFunctionCatalog
 CatalogInput = CatalogLike | object
-type CatalogCtxLike = CatalogCtx | TestContext
+type CatalogCtxLike = CatalogCtx | StorageContext | TestContext
 
 
 def _normalize_catalog(catalog: CatalogInput) -> FunctionCatalog | MockFunctionCatalog:

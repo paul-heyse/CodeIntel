@@ -25,10 +25,12 @@ from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_op
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    MultiTableTargetContext,
+    TableTargetContext,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec,
+    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -479,66 +481,69 @@ def config_projection_module_edges__base(
 
 
 _MODULE = sys.modules[__name__]
-_CONFIG_DATA_FLOW_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=CONFIG_DATA_FLOW_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=CONFIG_DATA_FLOW_TABLE_KEY,
-            base_node="config_data_flow__base",
-            contract=CONFIG_DATA_FLOW_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=CONFIG_DATA_FLOW_TABLE_KEY),
-            node_name="config_data_flow__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="config_data_flow__table_materializations",
-    anchor_node_name="t__config_data_flow",
+_CONFIG_DATA_FLOW_TABLE_TARGET_SPEC = build_single_table_target_spec(
+    context=TableTargetContext(
+        domain="analytics",
+        target_name=CONFIG_DATA_FLOW_TARGET_NAME,
+        table_key=CONFIG_DATA_FLOW_TABLE_KEY,
+        base_node="config_data_flow__base",
+        contract=CONFIG_DATA_FLOW_CONTRACT,
+        node_name="config_data_flow__table",
+        input_type=pa.Table,
+        table_materializations_node="config_data_flow__table_materializations",
+        anchor_node_name="t__config_data_flow",
+    )
 )
 attach_table_target_template(_MODULE, spec=_CONFIG_DATA_FLOW_TABLE_TARGET_SPEC)
 config_data_flow__table = _MODULE.config_data_flow__table
 config_data_flow__table_materializations = _MODULE.config_data_flow__table_materializations
 t__config_data_flow = _MODULE.t__config_data_flow
 
-_CONFIG_GRAPH_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=CONFIG_GRAPH_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=CONFIG_GRAPH_KEYS_TABLE_KEY,
-            base_node="config_graph_metrics_keys__base",
-            contract=CONFIG_GRAPH_KEYS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_KEYS_TABLE_KEY),
-            node_name="config_graph_metrics_keys__table",
-            input_type=pa.Table,
+_CONFIG_GRAPH_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+    context=MultiTableTargetContext(
+        domain="analytics",
+        target_name=CONFIG_GRAPH_TARGET_NAME,
+        tables=(
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=CONFIG_GRAPH_KEYS_TABLE_KEY,
+                    base_node="config_graph_metrics_keys__base",
+                    contract=CONFIG_GRAPH_KEYS_CONTRACT,
+                    node_name="config_graph_metrics_keys__table",
+                    input_type=pa.Table,
+                ),
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=CONFIG_GRAPH_MODULES_TABLE_KEY,
+                    base_node="config_graph_metrics_modules__base",
+                    contract=CONFIG_GRAPH_MODULES_CONTRACT,
+                    node_name="config_graph_metrics_modules__table",
+                    input_type=pa.Table,
+                ),
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
+                    base_node="config_projection_key_edges__base",
+                    contract=CONFIG_GRAPH_KEY_EDGES_CONTRACT,
+                    node_name="config_projection_key_edges__table",
+                    input_type=pa.Table,
+                ),
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
+                    base_node="config_projection_module_edges__base",
+                    contract=CONFIG_GRAPH_MODULE_EDGES_CONTRACT,
+                    node_name="config_projection_module_edges__table",
+                    input_type=pa.Table,
+                ),
+            ),
         ),
-        TableTargetTableSpec(
-            table_key=CONFIG_GRAPH_MODULES_TABLE_KEY,
-            base_node="config_graph_metrics_modules__base",
-            contract=CONFIG_GRAPH_MODULES_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_MODULES_TABLE_KEY),
-            node_name="config_graph_metrics_modules__table",
-            input_type=pa.Table,
-        ),
-        TableTargetTableSpec(
-            table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
-            base_node="config_projection_key_edges__base",
-            contract=CONFIG_GRAPH_KEY_EDGES_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY),
-            node_name="config_projection_key_edges__table",
-            input_type=pa.Table,
-        ),
-        TableTargetTableSpec(
-            table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
-            base_node="config_projection_module_edges__base",
-            contract=CONFIG_GRAPH_MODULE_EDGES_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY),
-            node_name="config_projection_module_edges__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="config_graph_metrics__table_materializations",
-    anchor_node_name="t__config_graph_metrics",
+        table_materializations_node="config_graph_metrics__table_materializations",
+        anchor_node_name="t__config_graph_metrics",
+    )
 )
 attach_table_target_template(_MODULE, spec=_CONFIG_GRAPH_TABLE_TARGET_SPEC)
 config_graph_metrics_keys__table = _MODULE.config_graph_metrics_keys__table

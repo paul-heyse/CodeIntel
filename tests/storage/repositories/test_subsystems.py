@@ -35,14 +35,22 @@ def subsystem_ctx(test_ctx: TestContext) -> TestContext:
     return test_ctx.require(SUBSYSTEM_ANALYTICS_PACK)
 
 
+def _repo(ctx: TestContext) -> SubsystemRepository:
+    """Build a SubsystemRepository for the provided context.
+
+    Returns
+    -------
+    SubsystemRepository
+        Repository bound to the provided test context.
+    """
+    return SubsystemRepository(context=ctx.storage_context)
+
+
 def test_list_subsystems_returns_rows(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify list_subsystems returns subsystem rows."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
     result = repository.list_subsystems(limit=10)
 
     expect_is_instance(result, list)
@@ -52,10 +60,7 @@ def test_list_subsystems_respects_limit(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify list_subsystems respects the limit parameter."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
     result = repository.list_subsystems(limit=1)
 
     expect_true(len(result) <= 1)
@@ -65,10 +70,7 @@ def test_list_subsystems_filters_by_role(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify list_subsystems filters by role when specified."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
 
     result_with_role = repository.list_subsystems(limit=10, role="api")
 
@@ -79,10 +81,7 @@ def test_list_subsystems_searches_by_query(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify list_subsystems filters by search query."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
 
     result_with_query = repository.list_subsystems(limit=10, query="api")
 
@@ -93,10 +92,7 @@ def test_get_subsystem_summary_returns_row(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify get_subsystem_summary returns subsystem row."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
     result = repository.get_subsystem_summary("subsysdemo")
 
     if result is not None:
@@ -107,10 +103,7 @@ def test_get_subsystem_summary_returns_none_for_missing(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify get_subsystem_summary returns None for missing subsystem."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
     result = repository.get_subsystem_summary("nonexistent_subsystem")
 
     expect_is_none(result)
@@ -120,10 +113,7 @@ def test_search_subsystems_is_alias_for_list(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify search_subsystems is alias for list_subsystems."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
     list_result = repository.list_subsystems(limit=10)
     search_result = repository.search_subsystems(limit=10)
 
@@ -134,10 +124,7 @@ def test_list_subsystem_modules_returns_rows(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify list_subsystem_modules returns module rows."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
     result = repository.list_subsystem_modules("subsysdemo")
 
     expect_is_instance(result, list)
@@ -147,10 +134,7 @@ def test_list_subsystem_memberships_returns_rows(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify list_subsystem_memberships returns membership rows."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
     result = repository.list_subsystem_memberships()
 
     expect_is_instance(result, list)
@@ -160,10 +144,7 @@ def test_list_subsystems_for_module_returns_rows(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify list_subsystems_for_module returns subsystem rows."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
     result = repository.list_subsystems_for_module("pkg.mod")
 
     expect_is_instance(result, list)
@@ -173,10 +154,7 @@ def test_list_subsystem_profiles_returns_rows(
     subsystem_ctx: TestContext,
 ) -> None:
     """Verify list_subsystem_profiles returns profile rows."""
-    repo = subsystem_ctx.repo
-    commit = subsystem_ctx.commit
-
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
     result = repository.list_subsystem_profiles(limit=10)
 
     expect_is_instance(result, list)
@@ -189,7 +167,7 @@ def test_list_subsystem_profiles_uses_cache_when_present(
     repo = subsystem_ctx.repo
     commit = subsystem_ctx.commit
 
-    warehouse = Warehouse(subsystem_ctx.gateway)
+    warehouse = Warehouse(context=subsystem_ctx.storage_context)
     warehouse.materialize_mappings(
         "analytics.subsystem_profile_cache",
         [
@@ -222,7 +200,7 @@ def test_list_subsystem_profiles_uses_cache_when_present(
         ],
     )
 
-    repository = SubsystemRepository(gateway=subsystem_ctx.gateway, repo=repo, commit=commit)
+    repository = _repo(subsystem_ctx)
     result = repository.list_subsystem_profiles(limit=10)
 
     has_cached = any(row.get("subsystem_id") == "cached_sub" for row in result)

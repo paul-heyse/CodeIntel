@@ -15,10 +15,11 @@ from google.protobuf.struct_pb2 import NullValue, Struct
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
+    MultiTableTargetContext,
     RelationTableSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import (
@@ -550,34 +551,47 @@ def scip_resolution__occurrence_syntax_xref__base(
 
 
 _MODULE = sys.modules[__name__]
-_SCIP_RESOLUTION_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="ingestion",
-    target_name=SCIP_RESOLUTION_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
-            base_node="scip_resolution__symbol_goid_xref__base",
-            save_spec=RelationTableSaveSpec(table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY),
-            node_name="scip_resolution__symbol_goid_xref",
-            input_type=InferableTabularInput,
+_SCIP_RESOLUTION_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+    context=MultiTableTargetContext(
+        domain="ingestion",
+        target_name=SCIP_RESOLUTION_TARGET_NAME,
+        tables=(
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
+                    base_node="scip_resolution__symbol_goid_xref__base",
+                    node_name="scip_resolution__symbol_goid_xref",
+                    input_type=InferableTabularInput,
+                ),
+                save_spec_factory=RelationTableSaveSpec,
+                default_input_type=InferableTabularInput,
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
+                    base_node="scip_resolution__occurrence_span_xref__base",
+                    node_name="scip_resolution__occurrence_span_xref",
+                    input_type=InferableTabularInput,
+                ),
+                save_spec_factory=RelationTableSaveSpec,
+                default_input_type=InferableTabularInput,
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
+                    base_node="scip_resolution__occurrence_syntax_xref__base",
+                    node_name="scip_resolution__occurrence_syntax_xref",
+                    input_type=InferableTabularInput,
+                ),
+                save_spec_factory=RelationTableSaveSpec,
+                default_input_type=InferableTabularInput,
+            ),
         ),
-        TableTargetTableSpec(
-            table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
-            base_node="scip_resolution__occurrence_span_xref__base",
-            save_spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY),
-            node_name="scip_resolution__occurrence_span_xref",
-            input_type=InferableTabularInput,
-        ),
-        TableTargetTableSpec(
-            table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
-            base_node="scip_resolution__occurrence_syntax_xref__base",
-            save_spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY),
-            node_name="scip_resolution__occurrence_syntax_xref",
-            input_type=InferableTabularInput,
-        ),
-    ),
-    table_materializations_node="scip_resolution__table_materializations",
-    anchor_node_name="t__scip_resolution",
+        table_materializations_node="scip_resolution__table_materializations",
+        anchor_node_name="t__scip_resolution",
+        save_spec_factory=RelationTableSaveSpec,
+        default_input_type=InferableTabularInput,
+    )
 )
 attach_table_target_template(_MODULE, spec=_SCIP_RESOLUTION_TABLE_TARGET_SPEC)
 scip_resolution__symbol_goid_xref = _MODULE.scip_resolution__symbol_goid_xref

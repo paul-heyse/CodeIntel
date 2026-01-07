@@ -8,6 +8,7 @@ import pyarrow as pa
 
 from codeintel.build.tabular.duckdb_relation import coerce_to_relation
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.storage import StorageContext
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.expectation_assertions import expect_equal
 from tests._helpers.columnar_tables import materialize_table_from_rows
@@ -23,7 +24,7 @@ def test_warehouse_materialize_variants_write_equivalent_rows(
     tmp_path: Path,
 ) -> None:
     """Warehouse materialize_* variants persist equivalent content."""
-    warehouse = Warehouse(fresh_gateway)
+    warehouse = Warehouse(context=StorageContext(gateway=fresh_gateway))
     snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
     options = MaterializeOptions(snapshot=snapshot, mode="replace")
     table_key = "core.repo_map"

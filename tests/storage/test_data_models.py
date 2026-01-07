@@ -30,6 +30,7 @@ from tests._helpers.assertions import (
     expect_not_in,
     expect_true,
 )
+from tests._helpers.context import make_storage_context
 from tests._helpers.fixtures.rows import (
     DataModelFieldSeed,
     DataModelRelationshipSeed,
@@ -55,6 +56,21 @@ def data_models_ctx(test_ctx: TestContext) -> TestContext:
     """
     test_ctx.require(DATA_MODELS_PACK)
     return test_ctx
+
+
+def _repo(
+    ctx: TestContext,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> DataModelsRepository:
+    if repo is None and commit is None:
+        return DataModelsRepository(context=ctx.storage_context)
+    if repo is None or commit is None:
+        message = "repo and commit must both be provided for override"
+        raise ValueError(message)
+    context = make_storage_context(ctx.gateway, repo=repo, commit=commit, repo_root=ctx.repo_root)
+    return DataModelsRepository(context=context)
 
 
 def _insert_models(ctx: TestContext, seeds: list[DataModelSeed]) -> None:
@@ -355,9 +371,7 @@ def test_normalized_data_model_stores_nested_data() -> None:
 
 def test_fetch_models_returns_empty_list(data_models_ctx: TestContext) -> None:
     """Verify fetch_models returns empty list when no data."""
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_models()
+    result = _repo(data_models_ctx).list_models()
     expect_is_instance(result, list)
     expect_length(result, 0)
 
@@ -394,14 +408,10 @@ def test_fetch_models_filters_by_repo_commit(data_models_ctx: TestContext) -> No
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_models()
+    result = _repo(data_models_ctx).list_models()
     expect_length(result, 1)
 
-    result_other = DataModelsRepository(
-        data_models_ctx.gateway, "other/repo", "def456"
-    ).list_models()
+    result_other = _repo(data_models_ctx, repo="other/repo", commit="def456").list_models()
     expect_length(result_other, 1)
 
 
@@ -429,9 +439,7 @@ def test_fetch_models_parses_all_fields(data_models_ctx: TestContext) -> None:
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_models()
+    result = _repo(data_models_ctx).list_models()
     expect_length(result, 1)
 
     model = result[0]
@@ -475,9 +483,7 @@ def test_fetch_models_parses_base_classes_from_json(
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_models()
+    result = _repo(data_models_ctx).list_models()
     model = result[0]
     expect_length(model.base_classes, EXPECTED_COUNT_2)
     expect_equal(model.base_classes[0]["name"], "Base1")
@@ -505,9 +511,7 @@ def test_fetch_models_handles_goid_as_decimal(data_models_ctx: TestContext) -> N
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_models()
+    result = _repo(data_models_ctx).list_models()
     model = result[0]
     expect_is_not_none(model.goid_h128)
     expect_is_instance(model.goid_h128, int)
@@ -535,17 +539,13 @@ def test_fetch_models_returns_multiple(data_models_ctx: TestContext) -> None:
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_models()
+    result = _repo(data_models_ctx).list_models()
     expect_length(result, EXPECTED_COUNT_3)
 
 
 def test_fetch_fields_returns_empty_list(data_models_ctx: TestContext) -> None:
     """Verify fetch_fields returns empty list when no data."""
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_fields()
+    result = _repo(data_models_ctx).list_fields()
     expect_is_instance(result, list)
     expect_length(result, 0)
 
@@ -574,9 +574,7 @@ def test_fetch_fields_parses_all_fields(data_models_ctx: TestContext) -> None:
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_fields()
+    result = _repo(data_models_ctx).list_fields()
     expect_length(result, 1)
 
     field = result[0]
@@ -617,9 +615,7 @@ def test_fetch_fields_filters_by_model_ids(data_models_ctx: TestContext) -> None
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_fields(model_ids=["model_1", "model_2"])
+    result = _repo(data_models_ctx).list_fields(model_ids=["model_1", "model_2"])
     expect_length(result, EXPECTED_COUNT_2)
 
     model_ids = {f.model_id for f in result}
@@ -653,9 +649,7 @@ def test_fetch_fields_without_model_ids_returns_all(
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_fields()
+    result = _repo(data_models_ctx).list_fields()
     expect_length(result, EXPECTED_COUNT_2)
 
 
@@ -683,9 +677,7 @@ def test_fetch_fields_parses_constraints_json(data_models_ctx: TestContext) -> N
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_fields()
+    result = _repo(data_models_ctx).list_fields()
     field = result[0]
     expect_equal(field.constraints, {"pattern": "^.+@.+$", "max_length": 255})
 
@@ -694,9 +686,7 @@ def test_fetch_relationships_returns_empty_list(
     data_models_ctx: TestContext,
 ) -> None:
     """Verify fetch_relationships returns empty list when no data."""
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_relationships()
+    result = _repo(data_models_ctx).list_relationships()
     expect_is_instance(result, list)
     expect_length(result, 0)
 
@@ -729,9 +719,7 @@ def test_fetch_relationships_parses_all_fields(
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_relationships()
+    result = _repo(data_models_ctx).list_relationships()
     expect_length(result, 1)
 
     rel = result[0]
@@ -778,9 +766,7 @@ def test_fetch_relationships_filters_by_model_ids(
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_relationships(model_ids=["model_1"])
+    result = _repo(data_models_ctx).list_relationships(model_ids=["model_1"])
     expect_length(result, 1)
     expect_equal(result[0].source_model_id, "model_1")
 
@@ -813,9 +799,7 @@ def test_fetch_relationships_handles_nullable_fields(
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_relationships()
+    result = _repo(data_models_ctx).list_relationships()
     rel = result[0]
     expect_is_none(rel.target_module)
     expect_is_none(rel.target_model_name)
@@ -829,9 +813,7 @@ def test_fetch_models_normalized_returns_empty_list(
     data_models_ctx: TestContext,
 ) -> None:
     """Verify fetch_models_normalized returns empty list when no data."""
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_models_normalized()
+    result = _repo(data_models_ctx).list_models_normalized()
     expect_is_instance(result, list)
     expect_length(result, 0)
 
@@ -897,9 +879,7 @@ def test_fetch_models_normalized_joins_data(data_models_ctx: TestContext) -> Non
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_models_normalized()
+    result = _repo(data_models_ctx).list_models_normalized()
     expect_length(result, 1)
 
     model = result[0]
@@ -935,9 +915,7 @@ def test_fetch_models_normalized_filters_by_model_ids(
         ],
     )
 
-    result = DataModelsRepository(
-        data_models_ctx.gateway, data_models_ctx.repo, data_models_ctx.commit
-    ).list_models_normalized(model_ids=["model_0", "model_1"])
+    result = _repo(data_models_ctx).list_models_normalized(model_ids=["model_0", "model_1"])
     expect_length(result, EXPECTED_COUNT_2)
 
     model_ids = {m.model_id for m in result}

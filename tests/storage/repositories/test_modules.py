@@ -24,7 +24,7 @@ def _repo(ctx: TestContext) -> ModuleRepository:
     ModuleRepository
         Repository bound to the given test context.
     """
-    return ModuleRepository(gateway=ctx.gateway, repo=ctx.repo, commit=ctx.commit)
+    return ModuleRepository(context=ctx.storage_context)
 
 
 def test_list_modules_returns_sorted_list(test_ctx: TestContext) -> None:

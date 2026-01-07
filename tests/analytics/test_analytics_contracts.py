@@ -15,6 +15,7 @@ from codeintel.build.analytics.utilities.datasets import (
 from codeintel.build.analytics.utilities.persistence import DeleteScope
 from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.core.schemas.row_models import row_model_for_table_key
+from codeintel.core.storage import StorageContext
 from codeintel.storage.catalog import FunctionCatalog
 from tests._helpers import TestScenario
 from tests._helpers.analytics_domain import make_graph_metric_function_row
@@ -36,29 +37,43 @@ if TYPE_CHECKING:
 class ContractCtx:
     """Context for contract validation tests."""
 
-    gateway: StorageGateway
-    repo: str
-    commit: str
+    storage_context: StorageContext
+
+    @property
+    def gateway(self) -> StorageGateway:
+        """Return the underlying storage gateway."""
+        return self.storage_context.gateway
+
+    @property
+    def repo(self) -> str:
+        """Return the repository identifier."""
+        return self.storage_context.repo
+
+    @property
+    def commit(self) -> str:
+        """Return the commit identifier."""
+        return self.storage_context.commit
 
 
 def _graph_metrics_functions_row(ctx: ContractCtx) -> Mapping[str, object]:
     now = datetime.now(UTC)
+    storage_context = ctx.storage_context
     catalog = FunctionCatalog(
         functions=[
             function_meta(
                 goid=10,
                 rel_path="pkg/mod.py",
                 qualname="pkg.mod.fn",
-                snapshot=(ctx.repo, ctx.commit),
+                snapshot=(storage_context.repo, storage_context.commit),
                 line_span=(1, 2),
             )
         ],
         module_by_path={"pkg/mod.py": "pkg.mod"},
     )
-    ensure_catalog_with_goids(ctx, catalog)
+    ensure_catalog_with_goids(storage_context, catalog)
     return make_graph_metric_function_row(
-        repo=ctx.repo,
-        commit=ctx.commit,
+        repo=storage_context.repo,
+        commit=storage_context.commit,
         function_goid_h128=10,
         overrides={
             "call_fan_in": 1,
@@ -120,7 +135,8 @@ def contract_ctx(tmp_path: Path) -> Iterator[ContractCtx]:
     """
     ctx: TestContext = TestScenario.minimal().build(tmp_path)
     try:
-        yield ContractCtx(gateway=ctx.gateway, repo=ctx.repo, commit=ctx.commit)
+        storage_context = StorageContext(gateway=ctx.gateway, snapshot=ctx.snapshot)
+        yield ContractCtx(storage_context=storage_context)
     finally:
         ctx.close()
 

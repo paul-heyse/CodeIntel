@@ -465,7 +465,7 @@ class ScanProfiles:
 
 @dataclass(frozen=True)
 class GraphBackendConfig:
-    """Configuration for selecting the NetworkX execution backend.
+    """Configuration for selecting the graph execution backend.
 
     Attributes
     ----------
@@ -475,11 +475,14 @@ class GraphBackendConfig:
         Backend identifier: "auto", "cpu", or "nx-cugraph".
     strict : bool
         Raise when the requested backend cannot be enabled.
+    engine : str
+        Graph engine implementation: "networkx" or "rustworkx".
     """
 
     use_gpu: bool = False
     backend: Literal["auto", "cpu", "nx-cugraph"] = "auto"
     strict: bool = False
+    engine: Literal["networkx", "rustworkx"] = "networkx"
 
 
 @dataclass(frozen=True)

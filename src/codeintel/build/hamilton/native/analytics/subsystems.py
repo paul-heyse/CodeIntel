@@ -15,10 +15,10 @@ from codeintel.build.analytics.subsystems.materialize import (
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    MultiTableTargetContext,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -163,29 +163,33 @@ def subsystem_modules__base(subsystem_rows: SubsystemRows) -> pa.Table:
 
 
 _MODULE = sys.modules[__name__]
-_SUBSYSTEMS_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=SUBSYSTEMS_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=SUBSYSTEMS_TABLE_KEY,
-            base_node="subsystems__base",
-            contract=SUBSYSTEMS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=SUBSYSTEMS_TABLE_KEY),
-            node_name="subsystems__table",
-            input_type=pa.Table,
+_SUBSYSTEMS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+    context=MultiTableTargetContext(
+        domain="analytics",
+        target_name=SUBSYSTEMS_TARGET_NAME,
+        tables=(
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SUBSYSTEMS_TABLE_KEY,
+                    base_node="subsystems__base",
+                    contract=SUBSYSTEMS_CONTRACT,
+                    node_name="subsystems__table",
+                    input_type=pa.Table,
+                ),
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=SUBSYSTEM_MODULES_TABLE_KEY,
+                    base_node="subsystem_modules__base",
+                    contract=SUBSYSTEM_MODULES_CONTRACT,
+                    node_name="subsystem_modules__table",
+                    input_type=pa.Table,
+                ),
+            ),
         ),
-        TableTargetTableSpec(
-            table_key=SUBSYSTEM_MODULES_TABLE_KEY,
-            base_node="subsystem_modules__base",
-            contract=SUBSYSTEM_MODULES_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_MODULES_TABLE_KEY),
-            node_name="subsystem_modules__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="subsystems__table_materializations",
-    anchor_node_name="t__subsystems",
+        table_materializations_node="subsystems__table_materializations",
+        anchor_node_name="t__subsystems",
+    )
 )
 attach_table_target_template(_MODULE, spec=_SUBSYSTEMS_TABLE_TARGET_SPEC)
 subsystems__table = _MODULE.subsystems__table

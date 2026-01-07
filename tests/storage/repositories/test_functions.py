@@ -14,6 +14,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.context import make_storage_context
 from tests._helpers.fixtures.rows import (
     FunctionValidationRow,
     insert_rows,
@@ -31,9 +32,11 @@ VALIDATION_GOID_BETA = 900_002
 def test_resolve_function_goid_passthrough(fresh_gateway: StorageGateway) -> None:
     """Verify resolve_function_goid returns passthrough when goid_h128 provided."""
     repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
+        context=make_storage_context(
+            fresh_gateway,
+            repo="test/repo",
+            commit="abc123",
+        )
     )
 
     result = repo.resolve_function_goid(goid_h128=12345)
@@ -47,9 +50,11 @@ def test_resolve_function_goid_returns_none_when_no_identifiers(
 ) -> None:
     """Verify resolve_function_goid returns None when no identifiers provided."""
     repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
+        context=make_storage_context(
+            fresh_gateway,
+            repo="test/repo",
+            commit="abc123",
+        )
     )
 
     result = repo.resolve_function_goid()
@@ -93,11 +98,7 @@ def test_list_function_validation_filters_by_goid(metrics_ctx: TestContext) -> N
     ]
     insert_rows(metrics_ctx.gateway, rows)
 
-    repo = FunctionRepository(
-        gateway=metrics_ctx.gateway,
-        repo=metrics_ctx.repo,
-        commit=metrics_ctx.commit,
-    )
+    repo = FunctionRepository(context=metrics_ctx.storage_context)
 
     results = repo.list_function_validation(goid_h128=VALIDATION_GOID_ALPHA)
 
@@ -114,9 +115,11 @@ def test_get_function_architecture_returns_none_when_not_found(
 ) -> None:
     """Verify get_function_architecture returns None when no match."""
     repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
+        context=make_storage_context(
+            fresh_gateway,
+            repo="test/repo",
+            commit="abc123",
+        )
     )
 
     result = repo.get_function_architecture(99999)
@@ -129,9 +132,11 @@ def test_list_function_goids_returns_empty_when_no_data(
 ) -> None:
     """Verify list_function_goids returns empty list when no functions."""
     repo = FunctionRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
+        context=make_storage_context(
+            fresh_gateway,
+            repo="test/repo",
+            commit="abc123",
+        )
     )
 
     result = repo.list_function_goids()
@@ -143,11 +148,7 @@ def test_function_repository_with_docs_export(
     docs_export_gateway: TestContext,
 ) -> None:
     """Verify FunctionRepository works with full docs export gateway."""
-    repo = FunctionRepository(
-        gateway=docs_export_gateway.gateway,
-        repo=docs_export_gateway.repo,
-        commit=docs_export_gateway.commit,
-    )
+    repo = FunctionRepository(context=docs_export_gateway.storage_context)
 
     goid = expect_is_not_none(repo.resolve_function_goid(urn="urn:foo"))
 

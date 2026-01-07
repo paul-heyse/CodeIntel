@@ -32,9 +32,10 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    MultiTableTargetContext,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -503,80 +504,62 @@ def dfg_function_metrics_ext__base(
     )
 
 
+def _cfg_dfg_save_spec(table_key: str) -> DatasetSaveSpec:
+    return DatasetSaveSpec(
+        table_key=table_key,
+        partition_columns=("repo", "commit"),
+    )
+
+
 _MODULE = sys.modules[__name__]
-_CFG_DFG_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=CFG_DFG_METRICS_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
+_CFG_DFG_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
+    context=MultiTableTargetContext(
+        domain="analytics",
+        target_name=CFG_DFG_METRICS_TARGET_NAME,
+        tables=(),
+        table_materializations_node="cfg_dfg_metrics__table_materializations",
+        anchor_node_name="t__cfg_dfg_metrics",
+        save_spec_factory=_cfg_dfg_save_spec,
+        default_input_type=pa.Table,
+    ),
+    table_contexts=(
+        TableTargetTableContext(
             table_key=CFG_FUNCTION_METRICS_TABLE_KEY,
             base_node="cfg_function_metrics__base",
             contract=CFG_FUNCTION_METRICS_CONTRACT,
-            save_spec=DatasetSaveSpec(
-                table_key=CFG_FUNCTION_METRICS_TABLE_KEY,
-                partition_columns=("repo", "commit"),
-            ),
             node_name="cfg_function_metrics__table",
-            input_type=pa.Table,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=CFG_BLOCK_METRICS_TABLE_KEY,
             base_node="cfg_block_metrics__base",
             contract=CFG_BLOCK_METRICS_CONTRACT,
-            save_spec=DatasetSaveSpec(
-                table_key=CFG_BLOCK_METRICS_TABLE_KEY,
-                partition_columns=("repo", "commit"),
-            ),
             node_name="cfg_block_metrics__table",
-            input_type=pa.Table,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
             base_node="cfg_function_metrics_ext__base",
             contract=CFG_FUNCTION_METRICS_EXT_CONTRACT,
-            save_spec=DatasetSaveSpec(
-                table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-                partition_columns=("repo", "commit"),
-            ),
             node_name="cfg_function_metrics_ext__table",
-            input_type=pa.Table,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
             base_node="dfg_function_metrics__base",
             contract=DFG_FUNCTION_METRICS_CONTRACT,
-            save_spec=DatasetSaveSpec(
-                table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
-                partition_columns=("repo", "commit"),
-            ),
             node_name="dfg_function_metrics__table",
-            input_type=pa.Table,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=DFG_BLOCK_METRICS_TABLE_KEY,
             base_node="dfg_block_metrics__base",
             contract=DFG_BLOCK_METRICS_CONTRACT,
-            save_spec=DatasetSaveSpec(
-                table_key=DFG_BLOCK_METRICS_TABLE_KEY,
-                partition_columns=("repo", "commit"),
-            ),
             node_name="dfg_block_metrics__table",
-            input_type=pa.Table,
         ),
-        TableTargetTableSpec(
+        TableTargetTableContext(
             table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
             base_node="dfg_function_metrics_ext__base",
             contract=DFG_FUNCTION_METRICS_EXT_CONTRACT,
-            save_spec=DatasetSaveSpec(
-                table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-                partition_columns=("repo", "commit"),
-            ),
             node_name="dfg_function_metrics_ext__table",
-            input_type=pa.Table,
         ),
     ),
-    table_materializations_node="cfg_dfg_metrics__table_materializations",
-    anchor_node_name="t__cfg_dfg_metrics",
 )
 attach_table_target_template(_MODULE, spec=_CFG_DFG_TABLE_TARGET_SPEC)
 cfg_function_metrics__table = _MODULE.cfg_function_metrics__table

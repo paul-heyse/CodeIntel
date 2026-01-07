@@ -20,6 +20,7 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+from tests._helpers.context import make_storage_context
 from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -35,6 +36,11 @@ EXPECTED_COUNT_1 = 1
 EXPECTED_COUNT_2 = 2
 EXPECTED_GOID_CALLER = 1001
 EXPECTED_GOID_CALLEE = 1002
+
+
+def _graph_repo(gateway: StorageGateway, repo: str, commit: str) -> GraphRepository:
+    context = make_storage_context(gateway, repo=repo, commit=commit)
+    return GraphRepository(context=context)
 
 
 def _seed_call_graph_data(
@@ -129,11 +135,7 @@ def _seed_call_graph_data(
 
 def test_graph_repository_is_frozen(fresh_gateway: StorageGateway) -> None:
     """Verify GraphRepository is immutable."""
-    repo = GraphRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _graph_repo(fresh_gateway, "test/repo", "abc123")
     assert_frozen(repo, "repo", "other")
 
 
@@ -141,11 +143,7 @@ def test_graph_repository_inherits_base_repository(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify GraphRepository inherits from BaseRepository."""
-    repo = GraphRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _graph_repo(fresh_gateway, "test/repo", "abc123")
     expect_is_instance(repo, BaseRepository)
     expect_true(repo.con is fresh_gateway.con)
 
@@ -154,11 +152,7 @@ def test_get_outgoing_callgraph_neighbors_returns_empty_list(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify get_outgoing_callgraph_neighbors returns empty list when no data."""
-    repo = GraphRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _graph_repo(fresh_gateway, "test/repo", "abc123")
     result = repo.get_outgoing_callgraph_neighbors(EXPECTED_GOID_CALLER, limit=10)
     expect_empty(result)
 
@@ -167,11 +161,7 @@ def test_get_incoming_callgraph_neighbors_returns_empty_list(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Verify get_incoming_callgraph_neighbors returns empty list when no data."""
-    repo = GraphRepository(
-        gateway=fresh_gateway,
-        repo="test/repo",
-        commit="abc123",
-    )
+    repo = _graph_repo(fresh_gateway, "test/repo", "abc123")
     result = repo.get_incoming_callgraph_neighbors(EXPECTED_GOID_CALLEE, limit=10)
     expect_empty(result)
 
@@ -184,11 +174,7 @@ def test_get_outgoing_callgraph_neighbors_with_data(
     commit = "abc123"
     caller_goid, callee_goid = _seed_call_graph_data(fresh_gateway, repo_slug, commit)
 
-    graph_repo = GraphRepository(
-        gateway=fresh_gateway,
-        repo=repo_slug,
-        commit=commit,
-    )
+    graph_repo = _graph_repo(fresh_gateway, repo_slug, commit)
     result = graph_repo.get_outgoing_callgraph_neighbors(caller_goid, limit=10)
 
     expect_length(result, EXPECTED_COUNT_1)
@@ -204,11 +190,7 @@ def test_get_incoming_callgraph_neighbors_with_data(
     commit = "abc123"
     caller_goid, callee_goid = _seed_call_graph_data(fresh_gateway, repo_slug, commit)
 
-    graph_repo = GraphRepository(
-        gateway=fresh_gateway,
-        repo=repo_slug,
-        commit=commit,
-    )
+    graph_repo = _graph_repo(fresh_gateway, repo_slug, commit)
     result = graph_repo.get_incoming_callgraph_neighbors(callee_goid, limit=10)
 
     expect_length(result, EXPECTED_COUNT_1)
@@ -222,11 +204,7 @@ def test_get_outgoing_callgraph_neighbors_filters_by_repo_commit(
     """Verify get_outgoing_callgraph_neighbors filters by repo/commit."""
     _seed_call_graph_data(fresh_gateway, "repo1", "commit1")
 
-    graph_repo = GraphRepository(
-        gateway=fresh_gateway,
-        repo="other/repo",
-        commit="other_commit",
-    )
+    graph_repo = _graph_repo(fresh_gateway, "other/repo", "other_commit")
     result = graph_repo.get_outgoing_callgraph_neighbors(EXPECTED_GOID_CALLER, limit=10)
     expect_empty(result)
 
@@ -307,11 +285,7 @@ def test_get_outgoing_callgraph_neighbors_respects_limit(
             ],
         )
 
-    graph_repo = GraphRepository(
-        gateway=fresh_gateway,
-        repo=repo_slug,
-        commit=commit,
-    )
+    graph_repo = _graph_repo(fresh_gateway, repo_slug, commit)
     result = graph_repo.get_outgoing_callgraph_neighbors(
         EXPECTED_GOID_CALLER, limit=EXPECTED_COUNT_2
     )

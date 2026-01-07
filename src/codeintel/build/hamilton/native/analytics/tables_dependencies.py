@@ -17,10 +17,10 @@ from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_f
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    MultiTableTargetContext,
+    TableTargetTableContext,
     attach_table_target_template,
+    build_multi_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -199,29 +199,33 @@ def external_dependencies__base(
 
 
 _MODULE = sys.modules[__name__]
-_EXTERNAL_DEPS_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=EXTERNAL_DEPS_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
-            base_node="external_dependency_calls__base",
-            contract=EXTERNAL_DEPENDENCY_CALLS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
-            node_name="external_dependency_calls__table",
-            input_type=pa.Table,
+_EXTERNAL_DEPS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+    context=MultiTableTargetContext(
+        domain="analytics",
+        target_name=EXTERNAL_DEPS_TARGET_NAME,
+        tables=(
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
+                    base_node="external_dependency_calls__base",
+                    contract=EXTERNAL_DEPENDENCY_CALLS_CONTRACT,
+                    node_name="external_dependency_calls__table",
+                    input_type=pa.Table,
+                ),
+            ),
+            MultiTableTargetContext.build_table_spec(
+                context=TableTargetTableContext(
+                    table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
+                    base_node="external_dependencies__base",
+                    contract=EXTERNAL_DEPENDENCIES_CONTRACT,
+                    node_name="external_dependencies__table",
+                    input_type=pa.Table,
+                ),
+            ),
         ),
-        TableTargetTableSpec(
-            table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
-            base_node="external_dependencies__base",
-            contract=EXTERNAL_DEPENDENCIES_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY),
-            node_name="external_dependencies__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="external_deps__table_materializations",
-    anchor_node_name="t__external_deps",
+        table_materializations_node="external_deps__table_materializations",
+        anchor_node_name="t__external_deps",
+    )
 )
 attach_table_target_template(_MODULE, spec=_EXTERNAL_DEPS_TABLE_TARGET_SPEC)
 external_dependency_calls__table = _MODULE.external_dependency_calls__table

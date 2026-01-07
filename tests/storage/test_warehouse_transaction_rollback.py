@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.storage import StorageContext
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.expectation_assertions import expect_equal
@@ -24,7 +25,7 @@ def test_materialize_rows_replace_rolls_back_on_write_failure(
     tmp_path: Path,
 ) -> None:
     """Ensure snapshot-scoped replace is atomic (delete + write)."""
-    warehouse = Warehouse(fresh_gateway)
+    warehouse = Warehouse(context=StorageContext(gateway=fresh_gateway))
     snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=tmp_path)
     options = MaterializeOptions(snapshot=snapshot, mode="replace")
 
