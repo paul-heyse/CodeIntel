@@ -98,9 +98,7 @@ def _make_star_graph() -> RxGraphStore:
     RxGraphStore
         An out-star directed graph store.
     """
-    return _directed_store(
-        [("Hub", "A"), ("Hub", "B"), ("Hub", "C"), ("Hub", "D")]
-    )
+    return _directed_store([("Hub", "A"), ("Hub", "B"), ("Hub", "C"), ("Hub", "D")])
 
 
 def _make_reverse_star_graph() -> RxGraphStore:
@@ -112,9 +110,7 @@ def _make_reverse_star_graph() -> RxGraphStore:
     RxGraphStore
         An in-star directed graph store.
     """
-    return _directed_store(
-        [("A", "Hub"), ("B", "Hub"), ("C", "Hub"), ("D", "Hub")]
-    )
+    return _directed_store([("A", "Hub"), ("B", "Hub"), ("C", "Hub"), ("D", "Hub")])
 
 
 def _make_call_graph_realistic() -> RxGraphStore:
@@ -407,7 +403,7 @@ def test_betweenness_unnormalized() -> None:
     graph = _make_call_graph_realistic()
     result = compute_betweenness(graph, normalized=False)
 
-    expect_length(result, graph.number_of_nodes())
+    expect_length(result, graph.graph.num_nodes())
 
 
 def test_betweenness_sampled_with_k() -> None:

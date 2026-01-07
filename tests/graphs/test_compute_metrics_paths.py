@@ -15,6 +15,7 @@ from codeintel.build.graphs.compute.metrics.paths import (
     compute_reachable_nodes,
     count_simple_paths,
 )
+from codeintel.build.graphs.rx.store import RxGraphStore
 from tests._helpers.assertions import expect_equal, expect_length, expect_true
 from tests._helpers.fixtures.graphs import (
     chain_graph,
@@ -39,6 +40,11 @@ CUTOFF_DEFAULT: Final[int] = 10
 CUTOFF_SHORT: Final[int] = 1
 AVG_PATH_TOLERANCE: Final[float] = 0.01
 AVG_PATH_ZERO: Final[float] = 0.0
+
+
+def _add_edges(store: RxGraphStore, edges: list[tuple[object, object]]) -> None:
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
 
 
 def test_simple_paths_empty_graph() -> None:
@@ -116,7 +122,8 @@ def test_simple_paths_max_paths_limit() -> None:
     """Max paths parameter limits count."""
     graph = empty_digraph()
 
-    graph.add_edges_from(
+    _add_edges(
+        graph,
         [
             ("A", "B"),
             ("A", "C"),
@@ -124,7 +131,7 @@ def test_simple_paths_max_paths_limit() -> None:
             ("B", "D"),
             ("C", "D"),
             ("E", "D"),
-        ]
+        ],
     )
     result = count_simple_paths(
         graph, ["A"], ["D"], max_paths=MAX_PATHS_LIMITED, cutoff=CUTOFF_DEFAULT
@@ -148,7 +155,7 @@ def test_simple_paths_cutoff_limit() -> None:
 def test_simple_paths_self_loop_handled() -> None:
     """Source equals target handled (simple paths exclude loops)."""
     graph = empty_digraph()
-    graph.add_edge("A", "A")
+    graph.add_weighted_edge("A", "A", weight=1.0)
 
     result = count_simple_paths(
         graph, ["A"], ["A"], max_paths=MAX_PATHS_DEFAULT, cutoff=CUTOFF_DEFAULT
@@ -382,7 +389,7 @@ def test_reachable_tree_graphs(depth: int, branching: int) -> None:
     graph = tree_graph(depth, branching)
     reachable = compute_reachable_nodes(graph, "N0")
 
-    expect_length(reachable, graph.number_of_nodes())
+    expect_length(reachable, graph.graph.num_nodes())
 
 
 @pytest.mark.parametrize(

@@ -23,6 +23,7 @@ from codeintel.build.analytics.compute.graphs import (
     dfg_component_stats,
 )
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -253,6 +254,25 @@ def cfg_fn_rows(
     tuple[tuple[object, ...], list[tuple[object, ...]]]
         Function metrics row and block metrics rows.
     """
+    centrality_data = _compute_centrality_data(ctx.graph, ctx.entry_idx, ctx.graph_ctx)
+    graph_store = ensure_store(ctx.graph)
+    fn_row = _cfg_function_row(ctx, graph_store, centrality_data)
+    block_rows = _cfg_block_rows(ctx, graph_store, centrality_data)
+    return fn_row, block_rows
+
+
+def _cfg_function_row(
+    ctx: CfgFnContext,
+    store: RxGraphStore,
+    centrality_data: CfgCentralityData,
+) -> tuple[object, ...]:
+    """Build the function-level CFG metrics row.
+
+    Returns
+    -------
+    tuple[object, ...]
+        Function metrics row matching analytics.cfg_function_metrics schema.
+    """
     sccs = ctx.sccs
     loops = loop_stats(sccs)
     has_cycles = any(len(comp) > 1 for comp in sccs)
@@ -260,8 +280,6 @@ def cfg_fn_rows(
     longest_path_len = cfg_longest_path_length(ctx.graph, ctx.entry_idx, is_dag=is_dag)
     avg_spl = cfg_avg_shortest_path_length(ctx.graph, ctx.entry_idx)
     branching = branching_stats(ctx.graph)
-    centrality_data = _compute_centrality_data(ctx.graph, ctx.entry_idx, ctx.graph_ctx)
-    loop_nodes_set = loop_nodes(sccs)
     dom_frontier_mean = (
         sum(centrality_data.dom_frontier_sizes.values()) / len(centrality_data.dom_frontier_sizes)
         if centrality_data.dom_frontier_sizes
@@ -272,17 +290,15 @@ def cfg_fn_rows(
         if centrality_data.dom_frontier_sizes
         else 0
     )
-
-    graph_store = ensure_store(ctx.graph)
-    fn_row = (
+    return (
         ctx.fn_goid,
         ctx.repo,
         ctx.commit,
         ctx.rel_path,
         ctx.module,
         ctx.qualname,
-        graph_store.graph.num_nodes(),
-        graph_store.graph.num_edges(),
+        store.graph.num_nodes(),
+        store.graph.num_edges(),
         has_cycles,
         len(sccs),
         longest_path_len,
@@ -305,11 +321,25 @@ def cfg_fn_rows(
         1,
     )
 
-    block_rows: list[tuple[object, ...]] = []
-    for node in graph_store.node_ids():
+
+def _cfg_block_rows(
+    ctx: CfgFnContext,
+    store: RxGraphStore,
+    centrality_data: CfgCentralityData,
+) -> list[tuple[object, ...]]:
+    """Build block-level CFG metrics rows.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Block metrics rows matching analytics.cfg_block_metrics schema.
+    """
+    loop_nodes_set = loop_nodes(ctx.sccs)
+    rows: list[tuple[object, ...]] = []
+    for node in store.node_ids():
         node_idx = int(str(node))
-        data = graph_store.get_node_attrs(node)
-        block_rows.append(
+        data = store.get_node_attrs(node)
+        rows.append(
             (
                 ctx.fn_goid,
                 ctx.repo,
@@ -331,7 +361,7 @@ def cfg_fn_rows(
                 1,
             )
         )
-    return fn_row, block_rows
+    return rows
 
 
 def cfg_ext_row(

@@ -23,6 +23,7 @@ from codeintel.build.graphs.compute.metrics.statistics import (
     get_out_degree_values,
     get_out_degrees,
 )
+from codeintel.build.graphs.rx.algos import to_undirected_store
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
@@ -180,7 +181,7 @@ def test_degrees_empty_graph() -> None:
 
 def test_degrees_chain_undirected() -> None:
     """Undirected chain has correct degrees."""
-    graph = chain_graph(4).to_undirected()
+    graph = to_undirected_store(chain_graph(4))
     result = get_degrees(graph)
 
     degree_dict = dict(result)
@@ -220,7 +221,7 @@ def test_out_degree_values() -> None:
 
 def test_degree_values() -> None:
     """Get just the degree values (undirected)."""
-    graph = chain_graph(3).to_undirected()
+    graph = to_undirected_store(chain_graph(3))
     result = get_degree_values(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_THREE)

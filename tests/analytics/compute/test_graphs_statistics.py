@@ -6,6 +6,8 @@ on directed graphs and the rustworkx store wrappers.
 
 from __future__ import annotations
 
+from collections.abc import Hashable, Iterable
+
 from codeintel.build.graphs.compute.metrics.statistics import (
     GraphStatistics,
     compute_graph_statistics,
@@ -42,18 +44,18 @@ TRIANGLE_DEGREE = 2
 PATH_MIDDLE_DEGREE = 2
 
 
-def _add_edges(store: RxGraphStore, edges: list[tuple[object, object]]) -> None:
+def _add_edges(store: RxGraphStore, edges: Iterable[tuple[Hashable, Hashable]]) -> None:
     for src, dst in edges:
         store.add_weighted_edge(src, dst, weight=1.0)
 
 
-def _directed_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+def _directed_store(edges: Iterable[tuple[Hashable, Hashable]]) -> RxGraphStore:
     store = RxGraphStore.directed()
     _add_edges(store, edges)
     return store
 
 
-def _undirected_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+def _undirected_store(edges: Iterable[tuple[Hashable, Hashable]]) -> RxGraphStore:
     store = RxGraphStore.undirected()
     _add_edges(store, edges)
     return store
@@ -183,9 +185,7 @@ def _make_complete_graph() -> RxGraphStore:
         A complete directed graph store with 4 nodes.
     """
     nodes = ["A", "B", "C", "D"]
-    edges = [
-        (source, target) for source in nodes for target in nodes if source != target
-    ]
+    edges = [(source, target) for source in nodes for target in nodes if source != target]
     return _directed_store(edges)
 
 

@@ -6,6 +6,7 @@ component analysis, and structural metrics without any database I/O.
 
 from __future__ import annotations
 
+from collections.abc import Hashable, Iterable
 from typing import Final
 
 import pytest
@@ -89,18 +90,18 @@ TRIANGLES_PER_NODE_K4: Final[int] = 3
 CORE_NUMBER_K4: Final[int] = 3
 
 
-def _add_edges(store: RxGraphStore, edges: list[tuple[object, object]]) -> None:
+def _add_edges(store: RxGraphStore, edges: Iterable[tuple[Hashable, Hashable]]) -> None:
     for src, dst in edges:
         store.add_weighted_edge(src, dst, weight=1.0)
 
 
-def _directed_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+def _directed_store(edges: Iterable[tuple[Hashable, Hashable]]) -> RxGraphStore:
     store = RxGraphStore.directed()
     _add_edges(store, edges)
     return store
 
 
-def _undirected_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+def _undirected_store(edges: Iterable[tuple[Hashable, Hashable]]) -> RxGraphStore:
     store = RxGraphStore.undirected()
     _add_edges(store, edges)
     return store

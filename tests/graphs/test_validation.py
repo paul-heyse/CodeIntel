@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Final
 
 import pytest
 
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.graphs.validation import (
     GraphValidationOptions,
     GraphValidationRunRequest,
@@ -48,6 +49,17 @@ TEST_REPO: Final = "test/repo"
 TEST_COMMIT: Final = "abc123"
 EXPECTED_ONE: Final = 1
 EXPECTED_TWO: Final = 2
+
+
+def _add_node(store: RxGraphStore, node_id: object, attrs: dict[str, object] | None = None) -> None:
+    if attrs:
+        store.set_node_attrs(node_id, attrs)
+        return
+    store.ensure_node(node_id)
+
+
+def _add_edge(store: RxGraphStore, src: object, dst: object) -> None:
+    store.add_weighted_edge(src, dst, weight=1.0)
 
 
 def test_run_graph_validations_emits_warnings(
@@ -157,12 +169,12 @@ def test_call_graph_check_with_isolated_nodes() -> None:
     """CallGraphStructureCheck detects isolated function nodes."""
     graph = empty_digraph()
 
-    graph.add_node(1, kind="function")
-    graph.add_node(2, kind="function")
+    _add_node(graph, 1, {"kind": "function"})
+    _add_node(graph, 2, {"kind": "function"})
 
-    graph.add_edge(3, 4)
-    graph.nodes[3]["kind"] = "function"
-    graph.nodes[4]["kind"] = "function"
+    _add_edge(graph, 3, 4)
+    _add_node(graph, 3, {"kind": "function"})
+    _add_node(graph, 4, {"kind": "function"})
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -187,12 +199,12 @@ def test_call_graph_check_with_scc() -> None:
     graph = empty_digraph()
 
     for i in range(5):
-        graph.add_node(i, kind="function")
-    graph.add_edge(0, 1)
-    graph.add_edge(1, 2)
-    graph.add_edge(2, 3)
-    graph.add_edge(3, 4)
-    graph.add_edge(4, 0)
+        _add_node(graph, i, {"kind": "function"})
+    _add_edge(graph, 0, 1)
+    _add_edge(graph, 1, 2)
+    _add_edge(graph, 2, 3)
+    _add_edge(graph, 3, 4)
+    _add_edge(graph, 4, 0)
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -213,10 +225,10 @@ def test_call_graph_check_with_hub_nodes() -> None:
     graph = empty_digraph()
 
     hub_node = 0
-    graph.add_node(hub_node, kind="function")
+    _add_node(graph, hub_node, {"kind": "function"})
     for i in range(1, 101):
-        graph.add_node(i, kind="function")
-        graph.add_edge(hub_node, i)
+        _add_node(graph, i, {"kind": "function"})
+        _add_edge(graph, hub_node, i)
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -255,9 +267,9 @@ def test_import_cycle_check_detects_large_cycles() -> None:
     graph = empty_digraph()
     cycle_modules = ["pkg.a", "pkg.b", "pkg.c", "pkg.d", "pkg.e", "pkg.f", "pkg.g"]
     for mod in cycle_modules:
-        graph.add_node(mod)
+        _add_node(graph, mod)
     for i in range(len(cycle_modules)):
-        graph.add_edge(cycle_modules[i], cycle_modules[(i + 1) % len(cycle_modules)])
+        _add_edge(graph, cycle_modules[i], cycle_modules[(i + 1) % len(cycle_modules)])
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -275,10 +287,10 @@ def test_import_cycle_check_detects_large_cycles() -> None:
 def test_import_cycle_check_detects_cross_package_cycles() -> None:
     """ImportCycleCheck detects cycles crossing package boundaries."""
     graph = empty_digraph()
-    graph.add_node("pkg1.a")
-    graph.add_node("pkg2.b")
-    graph.add_edge("pkg1.a", "pkg2.b")
-    graph.add_edge("pkg2.b", "pkg1.a")
+    _add_node(graph, "pkg1.a")
+    _add_node(graph, "pkg2.b")
+    _add_edge(graph, "pkg1.a", "pkg2.b")
+    _add_edge(graph, "pkg2.b", "pkg1.a")
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -301,11 +313,11 @@ def test_import_hub_check_detects_hubs() -> None:
     graph = empty_digraph()
 
     hub = "core.utils"
-    graph.add_node(hub)
+    _add_node(graph, hub)
     for i in range(50):
         target = f"module{i}"
-        graph.add_node(target)
-        graph.add_edge(hub, target)
+        _add_node(graph, target)
+        _add_edge(graph, hub, target)
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -324,9 +336,9 @@ def test_import_upward_check_detects_layer_violations() -> None:
     """ImportUpwardCheck detects imports against layering."""
     graph = empty_digraph()
 
-    graph.add_node("deep.module", layer=3)
-    graph.add_node("shallow.module", layer=1)
-    graph.add_edge("deep.module", "shallow.module")
+    _add_node(graph, "deep.module", {"layer": 3})
+    _add_node(graph, "shallow.module", {"layer": 1})
+    _add_edge(graph, "deep.module", "shallow.module")
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -345,9 +357,9 @@ def test_import_upward_check_ignores_downward() -> None:
     """ImportUpwardCheck ignores proper layered imports."""
     graph = empty_digraph()
 
-    graph.add_node("shallow.module", layer=1)
-    graph.add_node("deep.module", layer=3)
-    graph.add_edge("shallow.module", "deep.module")
+    _add_node(graph, "shallow.module", {"layer": 1})
+    _add_node(graph, "deep.module", {"layer": 3})
+    _add_edge(graph, "shallow.module", "deep.module")
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -368,12 +380,12 @@ def test_import_bridge_check_detects_bridges() -> None:
 
     modules = ["a.mod", "b.bridge", "c.mod", "d.mod", "e.mod"]
     for mod in modules:
-        graph.add_node(mod)
+        _add_node(graph, mod)
 
-    graph.add_edge("a.mod", "b.bridge")
-    graph.add_edge("b.bridge", "c.mod")
-    graph.add_edge("b.bridge", "d.mod")
-    graph.add_edge("b.bridge", "e.mod")
+    _add_edge(graph, "a.mod", "b.bridge")
+    _add_edge(graph, "b.bridge", "c.mod")
+    _add_edge(graph, "b.bridge", "d.mod")
+    _add_edge(graph, "b.bridge", "e.mod")
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -392,8 +404,8 @@ def test_import_graph_check_combines_checks() -> None:
     """ImportGraphStructureCheck runs all import checks."""
     graph = empty_digraph()
 
-    graph.add_edge("pkg.a", "pkg.b")
-    graph.add_edge("pkg.b", "pkg.c")
+    _add_edge(graph, "pkg.a", "pkg.b")
+    _add_edge(graph, "pkg.b", "pkg.c")
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -413,11 +425,11 @@ def test_symbol_graph_check_detects_hubs() -> None:
     graph = empty_graph()
 
     hub = "common_symbol"
-    graph.add_node(hub)
+    _add_node(graph, hub)
     for i in range(100):
         node = f"module_{i}"
-        graph.add_node(node)
-        graph.add_edge(hub, node)
+        _add_node(graph, node)
+        _add_edge(graph, hub, node)
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,
@@ -454,12 +466,12 @@ def test_config_key_check_detects_broad_usage() -> None:
     graph = empty_graph()
 
     config_key = ("config_path", "common.key")
-    graph.add_node(config_key, bipartite=0)
+    _add_node(graph, config_key, {"bipartite": 0})
 
     for i in range(50):
         module = f"module_{i}"
-        graph.add_node(module, bipartite=1)
-        graph.add_edge(config_key, module)
+        _add_node(graph, module, {"bipartite": 1})
+        _add_edge(graph, config_key, module)
 
     ctx = GraphValidationContext(
         dataset_root_dir=None,

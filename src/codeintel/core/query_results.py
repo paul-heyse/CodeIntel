@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, cast
 import polars as pl
 import pyarrow as pa
 
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBRelation
 from codeintel.core.schemas.row_models import normalize_row_value
@@ -532,24 +533,12 @@ def iter_tuples_from_arrow_reader(
     tuple[object, ...]
         Row tuples in column order.
 
-    Raises
-    ------
-    ValueError
-        If requested columns are missing from the Arrow batch.
     """
-    batches: Iterable[pa.RecordBatch] = reader
-    for batch in batches:
+    for batch in reader:
         _raise_if_cancelled(cancel_check)
         if batch.num_rows == 0:
             continue
-        column_names = list(batch.schema.names) if columns is None else list(columns)
-        data_by_name = batch.to_pydict()
-        missing = [name for name in column_names if name not in data_by_name]
-        if missing:
-            msg = f"Missing columns in Arrow batch: {', '.join(missing)}"
-            raise ValueError(msg)
-        column_values = [data_by_name[name] for name in column_names]
-        yield from zip(*column_values, strict=True)
+        yield from iter_tuples(batch, columns=columns)
 
 
 def iter_tuples_from_relation(

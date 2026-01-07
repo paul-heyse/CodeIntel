@@ -416,7 +416,7 @@ def test_all_dominance_complex_cfg() -> None:
             ("loop", "body"),
             ("body", "loop"),
             ("loop", "exit"),
-        ]
+        ],
     )
     result = compute_all_dominance(graph, entry="entry")
 

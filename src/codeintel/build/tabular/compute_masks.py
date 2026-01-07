@@ -337,12 +337,12 @@ class FilterExprContext:
 
 
 __all__ = [
+    "FilterExprContext",
     "and_kleene",
     "bit_wise_and",
     "ensure_array",
     "equal_expr",
     "equal_mask",
-    "FilterExprContext",
     "index_in_values",
     "invert_mask",
     "is_in_expr",

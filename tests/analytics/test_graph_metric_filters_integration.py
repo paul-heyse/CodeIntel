@@ -87,7 +87,7 @@ def test_filters_prune_metrics(graph_runtime_ctx: GraphRuntimeHarness) -> None:
 def test_filter_call_graph_prunes_nodes() -> None:
     """Call graph filter should restrict nodes to the provided GOIDs."""
     graph = chain_graph(3)
-    allowed_nodes = set(list(graph.nodes)[:2])
+    allowed_nodes = set(graph.node_ids()[:2])
     filters = GraphMetricFilters(function_goids=allowed_nodes)
 
     filtered = filters.filter_call_graph(graph)
@@ -105,7 +105,12 @@ def test_filter_import_graph_noop_without_modules() -> None:
     filtered = filters.filter_import_graph(graph)
 
     assert_filtered_graph(
-        filtered, expected_nodes=set(graph.nodes), expected_edges=set(graph.edges)
+        filtered,
+        expected_nodes=set(graph.node_ids()),
+        expected_edges={
+            (graph.index_to_id[src_idx], graph.index_to_id[dst_idx])
+            for src_idx, dst_idx in graph.graph.edge_list()
+        },
     )
     assert_component_counts(filtered, weak=1, strong=2)
 
@@ -146,7 +151,7 @@ def test_filter_subsystem_graph_prunes_nodes() -> None:
 def test_filter_call_graph_preserves_component_counts() -> None:
     """Filtering a disconnected graph should preserve component totals."""
     graph = disconnected_graph()
-    filters = GraphMetricFilters(function_goids=set(graph.nodes))
+    filters = GraphMetricFilters(function_goids=set(graph.node_ids()))
 
     filtered = filters.filter_call_graph(graph)
 

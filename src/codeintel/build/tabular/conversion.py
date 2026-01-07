@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Literal
 
 import polars as pl
 import pyarrow as pa
 import pyarrow.dataset as pa_ds
 
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.types import InferableTabularInput, TabularRelation
 from codeintel.core.columnar import LazyFrameStream, coerce_arrow_reader
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
@@ -220,6 +221,28 @@ def tabular_to_arrow_table(value: InferableTabularInput) -> pa.Table:
     return reader_to_table(reader)
 
 
+def tabular_to_scoped_table(
+    value: InferableTabularInput,
+    *,
+    columns: Sequence[str] | None,
+    scope: SnapshotScope | None,
+    require_scope_columns: bool,
+) -> pa.Table:
+    """Convert an inferable tabular input into a scoped Arrow table.
+
+    Returns
+    -------
+    pa.Table
+        Arrow table projected to columns and filtered by snapshot scope.
+    """
+    table = tabular_to_arrow_table(value)
+    if scope is not None:
+        table = scope.filter_arrow_table(table, require_columns=require_scope_columns)
+    if columns is not None:
+        table = table.select(list(columns))
+    return table
+
+
 def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
     """Convert an inferable tabular input to a Polars LazyFrame.
 
@@ -376,4 +399,5 @@ __all__ = [
     "tabular_to_arrow_table",
     "tabular_to_frame",
     "tabular_to_lazyframe",
+    "tabular_to_scoped_table",
 ]

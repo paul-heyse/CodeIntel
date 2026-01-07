@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from importlib import import_module
-from typing import TYPE_CHECKING, Final, TypedDict, TypeVar, Unpack, cast
+from typing import TYPE_CHECKING, Final, TypedDict, Unpack, cast
 
 from duckdb import Error as DuckDBError
 
@@ -381,12 +381,12 @@ class GraphRuntimeDouble:
         self,
         attr: str,
         *,
-        loader: Callable[[], _GraphT | None],
-        default_factory: Callable[[], _GraphT],
+        loader: Callable[[], RxGraphStore | None],
+        default_factory: Callable[[], RxGraphStore],
         return_default_on_missing: bool = True,
-    ) -> _GraphT | None:
+    ) -> RxGraphStore | None:
         graph_candidate = getattr(self, attr, None)
-        graph: _GraphT | None = graph_candidate if isinstance(graph_candidate, RxGraphStore) else None
+        graph = graph_candidate if isinstance(graph_candidate, RxGraphStore) else None
         if graph is None and self.gateway and self.snapshot:
             graph = loader()
         if graph is None and return_default_on_missing:
@@ -543,9 +543,9 @@ class GraphEngineAdapter(GraphEngine):
 
     @staticmethod
     def _ensure_graph(
-        loader: Callable[[], _GraphT | None],
-        graph_factory: Callable[[], _GraphT],
-    ) -> _GraphT:
+        loader: Callable[[], RxGraphStore | None],
+        graph_factory: Callable[[], RxGraphStore],
+    ) -> RxGraphStore:
         return loader() or graph_factory()
 
 
@@ -800,4 +800,3 @@ __all__ = [
     "graph_engine_with_cache",
     "runtime_with_graphs",
 ]
-_GraphT = TypeVar("_GraphT", bound=RxGraphStore)

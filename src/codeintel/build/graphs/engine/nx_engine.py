@@ -83,7 +83,7 @@ class NxGraphEngine:
             Cached or freshly materialized call graph store.
         """
         metadata = self._graph_cache_metadata(GraphKind.CALL_GRAPH)
-        graph = self._cache.get(
+        return self._cache.get(
             GraphKind.CALL_GRAPH,
             lambda: views.load_call_graph(
                 self.dataset_root_dir,
@@ -93,7 +93,6 @@ class NxGraphEngine:
             ),
             metadata=metadata,
         )
-        return graph
 
     def load_call_graph(self) -> RxGraphStore:
         """
@@ -116,7 +115,7 @@ class NxGraphEngine:
             Cached or freshly materialized import graph store.
         """
         metadata = self._graph_cache_metadata(GraphKind.IMPORT_GRAPH)
-        graph = self._cache.get(
+        return self._cache.get(
             GraphKind.IMPORT_GRAPH,
             lambda: views.load_import_graph(
                 self.dataset_root_dir,
@@ -126,7 +125,6 @@ class NxGraphEngine:
             ),
             metadata=metadata,
         )
-        return graph
 
     def load_import_graph(self) -> RxGraphStore:
         """

@@ -21,7 +21,8 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.scopes.snapshot import SnapshotScope
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import table_for_rows
 
@@ -52,10 +53,27 @@ def function_effects__base(
     pa.Table
         Reader with function effects rows.
     """
-    goids_frame = tabular_to_arrow_table(q__core__goids).select(
-        ["goid_h128", "rel_path", "qualname", "start_line", "end_line", "urn", "kind"]
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    goids_frame = tabular_to_scoped_table(
+        q__core__goids,
+        columns=[
+            "goid_h128",
+            "rel_path",
+            "qualname",
+            "start_line",
+            "end_line",
+            "urn",
+            "kind",
+        ],
+        scope=scope,
+        require_scope_columns=False,
     )
-    modules_frame = tabular_to_arrow_table(q__core__modules).select(["path", "module"])
+    modules_frame = tabular_to_scoped_table(
+        q__core__modules,
+        columns=["path", "module"],
+        scope=scope,
+        require_scope_columns=False,
+    )
     catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,
@@ -68,11 +86,17 @@ def function_effects__base(
         catalog_provider=catalog,
         ast_map=ast_map,
         missing_goids=missing,
-        call_graph_edges=tabular_to_arrow_table(q__graph__call_graph_edges).select(
-            ["repo", "commit", "caller_goid_h128", "callee_goid_h128"]
+        call_graph_edges=tabular_to_scoped_table(
+            q__graph__call_graph_edges,
+            columns=["repo", "commit", "caller_goid_h128", "callee_goid_h128"],
+            scope=scope,
+            require_scope_columns=True,
         ),
-        call_graph_nodes=tabular_to_arrow_table(q__graph__call_graph_nodes).select(
-            ["goid_h128", "kind"]
+        call_graph_nodes=tabular_to_scoped_table(
+            q__graph__call_graph_nodes,
+            columns=["goid_h128", "kind"],
+            scope=scope,
+            require_scope_columns=False,
         ),
     )
     rows = build_function_effects_rows(env.snapshot, inputs=inputs)

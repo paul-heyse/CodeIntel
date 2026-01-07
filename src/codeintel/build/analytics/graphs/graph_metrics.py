@@ -8,7 +8,7 @@ architectural bottlenecks and coupling signals.
 from __future__ import annotations
 
 import logging
-from collections.abc import Hashable, Mapping
+from collections.abc import Collection, Hashable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -55,7 +55,7 @@ SymbolModuleEdges = tuple[set[str], dict[str, set[str]], dict[str, set[str]]]
 ComponentMeta = Mapping[str, Mapping[str, int | bool]]
 
 
-def _filter_store(graph: GraphInput, allowed: set[Hashable]) -> RxGraphStore:
+def _filter_store(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphStore:
     store = ensure_store(graph)
     if store.is_directed:
         filtered = RxGraphStore.directed(

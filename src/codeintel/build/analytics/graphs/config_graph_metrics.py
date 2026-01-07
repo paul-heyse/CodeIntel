@@ -26,6 +26,7 @@ from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
+from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 
@@ -83,13 +84,7 @@ def _projection_rows(
     context: ProjectionContext,
     targets: ProjectionTargets,
 ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
-    node_contract = get_contract_for_table_key(targets.node_table_key)
-    edge_contract = get_contract_for_table_key(targets.edge_table_key)
-    node_columns = node_contract.schema.column_names() if node_contract.schema else []
-    edge_columns = edge_contract.schema.column_names() if edge_contract.schema else []
-    node_id_col = node_columns[NODE_ID_INDEX] if len(node_columns) > NODE_ID_INDEX else "node"
-    src_col = next((col for col in edge_columns if col.startswith("src_")), "src")
-    dst_col = next((col for col in edge_columns if col.startswith("dst_")), "dst")
+    node_contract, edge_contract, node_id_col, src_col, dst_col = _projection_contracts(targets)
 
     proj_store = ensure_store(proj)
     node_dicts = [
@@ -137,6 +132,19 @@ def _projection_rows(
         [node_serializer(row) for row in node_rows],
         [edge_serializer(row) for row in edge_rows],
     )
+
+
+def _projection_contracts(
+    targets: ProjectionTargets,
+) -> tuple[DatasetContract, DatasetContract, str, str, str]:
+    node_contract = get_contract_for_table_key(targets.node_table_key)
+    edge_contract = get_contract_for_table_key(targets.edge_table_key)
+    node_columns = node_contract.schema.column_names() if node_contract.schema else []
+    edge_columns = edge_contract.schema.column_names() if edge_contract.schema else []
+    node_id_col = node_columns[NODE_ID_INDEX] if len(node_columns) > NODE_ID_INDEX else "node"
+    src_col = next((col for col in edge_columns if col.startswith("src_")), "src")
+    dst_col = next((col for col in edge_columns if col.startswith("dst_")), "dst")
+    return node_contract, edge_contract, node_id_col, src_col, dst_col
 
 
 def _projection_node_id(node: object) -> str:

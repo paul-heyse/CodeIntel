@@ -10,22 +10,12 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from codeintel.build.tabular.compute_masks import equal_expr
+from codeintel.build.scopes.snapshot import SnapshotScanContext
 from codeintel.build.tabular.conversion import reader_to_table
-from codeintel.core.columnar.streaming import DatasetScanOptions
-from codeintel.core.constants import (
-    DEFAULT_ARROW_BATCH_READAHEAD,
-    DEFAULT_ARROW_BATCH_SIZE,
-    DEFAULT_ARROW_CACHE_METADATA,
-    DEFAULT_ARROW_FRAGMENT_READAHEAD,
-    DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
-    DEFAULT_ARROW_PARQUET_PRE_BUFFER,
-    DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
-    DEFAULT_ARROW_USE_THREADS,
-)
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.datasets.scanner_ops import build_scanner
+from codeintel.core.runtime.loader import load_runtime_settings
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -43,14 +33,14 @@ class SnapshotScanRequest:
     columns: tuple[str, ...] | None = None
     repo: str | None = None
     commit: str | None = None
-    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
-    batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
-    fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
-    use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
-    cache_metadata: bool | None = DEFAULT_ARROW_CACHE_METADATA
-    parquet_pre_buffer: bool | None = DEFAULT_ARROW_PARQUET_PRE_BUFFER
-    parquet_use_buffered_stream: bool | None = DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM
-    parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
+    batch_size: int | None = None
+    batch_readahead: int | None = None
+    fragment_readahead: int | None = None
+    use_threads: bool | None = None
+    cache_metadata: bool | None = None
+    parquet_pre_buffer: bool | None = None
+    parquet_use_buffered_stream: bool | None = None
+    parquet_buffer_size: int | None = None
     unify_schemas: bool = True
 
 
@@ -131,24 +121,43 @@ def scan_snapshot_reader(
     dataset = _scan_dataset(request.dataset_root, request.table_key, request.snapshot_id)
     if dataset is None:
         return None
-    filter_expression = _snapshot_filter_expression(
-        dataset,
+    scan_ctx = SnapshotScanContext(
         repo=request.repo,
         commit=request.commit,
+        settings=load_runtime_settings().build.arrow_scan,
     )
+    filter_expression = scan_ctx.filter_expr(dataset.schema)
     resolved_columns = _resolve_columns(dataset, request.columns)
     if resolved_columns is None and request.columns is not None:
         return None
-    options = DatasetScanOptions(
+    options = scan_ctx.scan_options(
+        columns=resolved_columns,
         batch_size=request.batch_size,
-        batch_readahead=request.batch_readahead,
-        fragment_readahead=request.fragment_readahead,
+    )
+    options = replace(
+        options,
+        batch_readahead=request.batch_readahead
+        if request.batch_readahead is not None
+        else options.batch_readahead,
+        fragment_readahead=request.fragment_readahead
+        if request.fragment_readahead is not None
+        else options.fragment_readahead,
         filter_expression=filter_expression,
-        cache_metadata=request.cache_metadata,
-        use_threads=request.use_threads,
-        parquet_pre_buffer=request.parquet_pre_buffer,
-        parquet_use_buffered_stream=request.parquet_use_buffered_stream,
-        parquet_buffer_size=request.parquet_buffer_size,
+        cache_metadata=request.cache_metadata
+        if request.cache_metadata is not None
+        else options.cache_metadata,
+        use_threads=(
+            request.use_threads if request.use_threads is not None else options.use_threads
+        ),
+        parquet_pre_buffer=request.parquet_pre_buffer
+        if request.parquet_pre_buffer is not None
+        else options.parquet_pre_buffer,
+        parquet_use_buffered_stream=request.parquet_use_buffered_stream
+        if request.parquet_use_buffered_stream is not None
+        else options.parquet_use_buffered_stream,
+        parquet_buffer_size=request.parquet_buffer_size
+        if request.parquet_buffer_size is not None
+        else options.parquet_buffer_size,
         columns=resolved_columns,
         unify_schemas=request.unify_schemas,
     )
@@ -201,22 +210,6 @@ def _scan_dataset(dataset_root: Path, table_key: str, snapshot_id: str) -> ds.Da
     except (OSError, ValueError, pa.ArrowInvalid) as exc:
         LOG.warning("Dataset scan failed for %s@%s: %s", table_key, snapshot_id, exc)
         return None
-
-
-def _snapshot_filter_expression(
-    dataset: ds.Dataset,
-    *,
-    repo: str | None,
-    commit: str | None,
-) -> ds.Expression | None:
-    names = set(dataset.schema.names)
-    expression: ds.Expression | None = None
-    if repo is not None and "repo" in names:
-        expression = equal_expr("repo", repo)
-    if commit is not None and "commit" in names:
-        commit_expr = equal_expr("commit", commit)
-        expression = commit_expr if expression is None else expression & commit_expr
-    return expression
 
 
 def _resolve_columns(

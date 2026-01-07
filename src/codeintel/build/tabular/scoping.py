@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_arrow_table, tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 
 
@@ -34,9 +34,12 @@ def collect_scoped_rows(
     if missing:
         msg = f"Missing columns for scoped rows: {missing}"
         raise ValueError(msg)
-    scoped = scope.filter_arrow_table(table, require_columns=require_scope_columns)
-    if columns:
-        scoped = scoped.select(list(columns))
+    scoped = tabular_to_scoped_table(
+        table,
+        columns=columns,
+        scope=scope,
+        require_scope_columns=require_scope_columns,
+    )
     if scoped.num_rows == 0:
         return []
     return list(iter_rows(scoped))

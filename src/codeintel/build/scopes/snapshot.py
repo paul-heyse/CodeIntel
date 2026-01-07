@@ -97,8 +97,8 @@ class SnapshotScope:
 class SnapshotScanContext:
     """Context for snapshot-aligned dataset scanning."""
 
-    repo: str
-    commit: str
+    repo: str | None
+    commit: str | None
     settings: ArrowScanSettings
 
     @classmethod
@@ -126,9 +126,13 @@ class SnapshotScanContext:
         pyarrow.dataset.Expression | None
             Filter expression for repo/commit, or None if columns are missing.
         """
-        if "repo" not in schema.names or "commit" not in schema.names:
-            return None
-        return equal_expr("repo", self.repo) & equal_expr("commit", self.commit)
+        expression: ds.Expression | None = None
+        if self.repo is not None and "repo" in schema.names:
+            expression = equal_expr("repo", self.repo)
+        if self.commit is not None and "commit" in schema.names:
+            commit_expr = equal_expr("commit", self.commit)
+            expression = commit_expr if expression is None else expression & commit_expr
+        return expression
 
     def scan_options(
         self,

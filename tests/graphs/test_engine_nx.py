@@ -123,9 +123,7 @@ def test_engine_matches_views_for_core_graphs(
         snapshot=snapshot,
     )
 
-    comparisons: list[
-        tuple[str, Callable[[], RxGraphStore], Callable[[], RxGraphStore]]
-    ] = [
+    comparisons: list[tuple[str, Callable[[], RxGraphStore], Callable[[], RxGraphStore]]] = [
         (
             "call_graph",
             lambda: graph_views.load_call_graph(dataset_root, snapshot.repo, snapshot.commit),

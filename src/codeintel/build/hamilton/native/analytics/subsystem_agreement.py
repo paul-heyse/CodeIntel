@@ -19,8 +19,9 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
@@ -49,11 +50,18 @@ def subsystem_agreement__base(
     pa.Table
         Reader containing subsystem agreement rows.
     """
-    subsystem_table = tabular_to_arrow_table(q__analytics__subsystem_modules).select(
-        ["repo", "commit", "module", "subsystem_id"]
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    subsystem_table = tabular_to_scoped_table(
+        q__analytics__subsystem_modules,
+        columns=["repo", "commit", "module", "subsystem_id"],
+        scope=scope,
+        require_scope_columns=True,
     )
-    metrics_table = tabular_to_arrow_table(q__analytics__graph_metrics_modules_ext).select(
-        ["repo", "commit", "module", "import_community_id"]
+    metrics_table = tabular_to_scoped_table(
+        q__analytics__graph_metrics_modules_ext,
+        columns=["repo", "commit", "module", "import_community_id"],
+        scope=scope,
+        require_scope_columns=True,
     )
     inputs = SubsystemAgreementInputs(
         repo=env.repo,

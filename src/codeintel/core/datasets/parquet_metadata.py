@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
@@ -81,6 +84,31 @@ def column_types_from_metadata(schema: pa.Schema) -> dict[str, ColumnType] | Non
     return {column.name: column.type for column in table_schema.columns}
 
 
+@dataclass(frozen=True, slots=True)
+class DatasetMetadataContext:
+    """Context for reading dataset-level Parquet metadata."""
+
+    dataset_root: Path
+    table_key: str
+
+    def read_metadata(self) -> pq.FileMetaData | None:
+        """Return Parquet metadata for the dataset when available.
+
+        Returns
+        -------
+        pyarrow.parquet.FileMetaData | None
+            Parquet metadata when present, otherwise None.
+        """
+        metadata_path = self.dataset_root / "_metadata"
+        if not metadata_path.is_file():
+            return None
+        try:
+            parquet_file = pq.ParquetFile(metadata_path)
+        except (OSError, ValueError, pa.ArrowInvalid):
+            return None
+        return parquet_file.metadata
+
+
 def _columns_from_mapping(
     columns_obj: Mapping[str, object],
     nullability_map: Mapping[str, bool],
@@ -105,6 +133,7 @@ def _columns_from_mapping(
 
 
 __all__ = [
+    "DatasetMetadataContext",
     "column_types_from_metadata",
     "metadata_from_schema",
     "table_schema_from_dataset",

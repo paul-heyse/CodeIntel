@@ -7,6 +7,7 @@ between module-level and function-level metrics computation.
 
 from __future__ import annotations
 
+from collections.abc import Collection, Hashable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -67,7 +68,7 @@ class UndirectedMetricInputs[TNode]:
     runtime: GraphRuntimeOptions | None = None
 
 
-def _filter_nodes(graph: GraphInput, allowed: set[object]) -> RxGraphStore:
+def _filter_nodes(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphStore:
     store = ensure_store(graph)
     if store.is_directed:
         filtered = RxGraphStore.directed(

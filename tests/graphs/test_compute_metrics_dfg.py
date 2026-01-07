@@ -19,6 +19,7 @@ from codeintel.build.graphs.compute.metrics.dfg import (
     compute_use_def_chains,
     find_dfg_cycles,
 )
+from codeintel.build.graphs.rx.store import RxGraphStore
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
@@ -62,6 +63,11 @@ MAX_DEPTH_DEFAULT: Final[int] = 100
 MAX_DEPTH_LIMITED: Final[int] = 2
 CYCLE_LIMIT_DEFAULT: Final[int] = 100
 CYCLE_LIMIT_ONE: Final[int] = 1
+
+
+def _add_edges(store: RxGraphStore, edges: list[tuple[object, object]]) -> None:
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
 
 
 def test_path_lengths_empty_graph_returns_empty() -> None:
@@ -211,11 +217,9 @@ def test_dfg_components_mixed_graph() -> None:
     """Graph with both cycle and dag parts."""
     graph = empty_digraph()
 
-    graph.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
-
-    graph.add_edges_from([("D", "E")])
-
-    graph.add_edge("C", "D")
+    _add_edges(graph, [("A", "B"), ("B", "C"), ("C", "A")])
+    _add_edges(graph, [("D", "E")])
+    graph.add_weighted_edge("C", "D", weight=1.0)
 
     scc, wcc = compute_dfg_components(graph)
 
@@ -234,7 +238,7 @@ def test_def_use_chains_empty_graph_returns_empty() -> None:
 def test_def_use_chains_single_node() -> None:
     """Single node has empty chain."""
     graph = empty_digraph()
-    graph.add_node("def")
+    graph.ensure_node("def")
     result = compute_def_use_chains(graph)
 
     expect_length(result, 1)
@@ -289,7 +293,7 @@ def test_use_def_chains_empty_graph_returns_empty() -> None:
 def test_use_def_chains_single_node() -> None:
     """Single node has empty chain."""
     graph = empty_digraph()
-    graph.add_node("use")
+    graph.ensure_node("use")
     result = compute_use_def_chains(graph)
 
     expect_length(result, 1)
@@ -336,7 +340,7 @@ def test_dfg_density_empty_graph_returns_zero() -> None:
 def test_dfg_density_single_node_returns_zero() -> None:
     """Single node graph returns zero density."""
     graph = empty_digraph()
-    graph.add_node("A")
+    graph.ensure_node("A")
     result = compute_dfg_density(graph)
     expect_equal(result, DENSITY_ZERO)
 
@@ -429,8 +433,8 @@ def test_find_cycles_limit_respected() -> None:
     graph = empty_digraph()
 
     for i in range(5):
-        graph.add_edge(f"A{i}", f"B{i}")
-        graph.add_edge(f"B{i}", f"A{i}")
+        graph.add_weighted_edge(f"A{i}", f"B{i}", weight=1.0)
+        graph.add_weighted_edge(f"B{i}", f"A{i}", weight=1.0)
 
     result = find_dfg_cycles(graph, limit=CYCLE_LIMIT_ONE)
 
@@ -451,11 +455,9 @@ def test_find_cycles_with_dag_part() -> None:
     """Graph with both cycle and DAG parts."""
     graph = empty_digraph()
 
-    graph.add_edges_from([("start", "A"), ("end", "exit")])
-
-    graph.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
-
-    graph.add_edge("C", "end")
+    _add_edges(graph, [("start", "A"), ("end", "exit")])
+    _add_edges(graph, [("A", "B"), ("B", "C"), ("C", "A")])
+    graph.add_weighted_edge("C", "end", weight=1.0)
 
     expect_has_cycle(graph)
     result = find_dfg_cycles(graph)
@@ -514,12 +516,12 @@ def test_density_various_graphs(node_count: int, edge_count: int, expected_densi
     """Density calculation for various graph configurations."""
     graph = empty_digraph()
     for i in range(node_count):
-        graph.add_node(i)
+        graph.ensure_node(i)
     edges_added = 0
     for i in range(node_count):
         for j in range(node_count):
             if i != j and edges_added < edge_count:
-                graph.add_edge(i, j)
+                graph.add_weighted_edge(i, j, weight=1.0)
                 edges_added += 1
 
     result = compute_dfg_density(graph)

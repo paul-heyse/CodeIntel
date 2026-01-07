@@ -174,6 +174,30 @@ class TableTargetContext:
         return build_single_table_target_spec(context=resolved_context)
 
 
+def build_table_target_specs(
+    *,
+    context: TableTargetContext,
+    table_keys: Sequence[str],
+    relation: bool,
+) -> list[TableTargetSpec]:
+    """Build TableTargetSpec entries for multiple table keys.
+
+    Returns
+    -------
+    list[TableTargetSpec]
+        Table target specs for each requested table key.
+    """
+    specs: list[TableTargetSpec] = []
+    for table_key in table_keys:
+        updated_context = replace(context, table_key=table_key)
+        if relation:
+            spec = TableTargetContext.build_relation_table_spec(context=updated_context)
+        else:
+            spec = TableTargetContext.build_dataset_table_spec(context=updated_context)
+        specs.append(spec)
+    return specs
+
+
 @dataclass(frozen=True, slots=True)
 class DatasetSaveSpecOptions:
     """Options for dataset save specs."""
@@ -742,4 +766,5 @@ __all__ = [
     "build_multi_table_target_spec",
     "build_multi_table_target_spec_from_contexts",
     "build_single_table_target_spec",
+    "build_table_target_specs",
 ]

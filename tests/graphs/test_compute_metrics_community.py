@@ -204,8 +204,8 @@ def test_louvain_resolution_parameter() -> None:
 def test_louvain_weighted_edges() -> None:
     """Weighted edges are respected."""
     graph = bridged_cliques_graph(2, 2)
-    graph.add_edge("a0", "b0", weight=100.0)
-    graph.add_edge("a1", "b1", weight=0.001)
+    graph.add_weighted_edge("a0", "b0", weight=100.0)
+    graph.add_weighted_edge("a1", "b1", weight=0.001)
 
     result = detect_communities_louvain(graph, weight="weight")
 
@@ -293,9 +293,7 @@ def test_modularity_single_community() -> None:
 def test_modularity_optimal_partition() -> None:
     """Well-separated communities have high modularity."""
     graph = bridged_cliques_graph(3, 3)
-    communities = {
-        node: 0 if str(node).startswith("a") else 1 for node in graph.node_ids()
-    }
+    communities = {node: 0 if str(node).startswith("a") else 1 for node in graph.node_ids()}
     result = compute_modularity(graph, communities)
 
     expect_true(result > 0)

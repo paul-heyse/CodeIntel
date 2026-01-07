@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import TYPE_CHECKING, Final, Literal
 
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
@@ -271,7 +272,7 @@ def barbell_graph_small(
     path_nodes = [clique_size - 1]
     path_nodes.extend(range(clique_size, clique_size + bridge_size))
     path_nodes.append(right_start)
-    for left, right in zip(path_nodes, path_nodes[1:], strict=True):
+    for left, right in pairwise(path_nodes):
         store.add_weighted_edge(left, right, weight=1.0)
     return store
 

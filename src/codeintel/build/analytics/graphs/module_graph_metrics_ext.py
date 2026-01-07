@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+import rustworkx as rx
 
 from codeintel.build.analytics.compute.graphs import (
     centrality_directed,
@@ -55,8 +57,10 @@ class ModuleGraphSlices:
 
 def _node_degree(store: RxGraphStore, node_idx: int) -> int:
     if store.is_directed:
-        return int(store.graph.in_degree(node_idx) + store.graph.out_degree(node_idx))
-    return int(store.graph.degree(node_idx))
+        directed = cast("rx.PyDiGraph[object, float]", store.graph)
+        return int(directed.in_degree(node_idx) + directed.out_degree(node_idx))
+    undirected = cast("rx.PyGraph[object, float]", store.graph)
+    return int(undirected.degree(node_idx))
 
 
 def _rich_club_cutoff(degree_map: dict[str, int]) -> int:

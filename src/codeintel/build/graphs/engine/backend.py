@@ -26,7 +26,13 @@ class BackendEnablement:
 
 
 def _enable_nx_cugraph_backend() -> None:
-    """Raise because rustworkx has no GPU backend."""
+    """Raise because rustworkx has no GPU backend.
+
+    Raises
+    ------
+    RuntimeError
+        Always raised because GPU backend is unavailable.
+    """
     message = "Rustworkx execution is CPU-only; GPU backend is unavailable."
     raise RuntimeError(message)
 

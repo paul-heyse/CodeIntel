@@ -158,6 +158,17 @@ def ensure_store(
     raise TypeError(message)
 
 
+def graph_to_store(graph: GraphInput) -> RxGraphStore:
+    """Coerce a graph input into an RxGraphStore.
+
+    Returns
+    -------
+    RxGraphStore
+        Store representation of the input.
+    """
+    return ensure_store(graph)
+
+
 def _directed_graph(store: RxGraphStore) -> DirectedRxGraph:
     if not store.is_directed:
         message = "Expected a directed graph store"
@@ -1178,6 +1189,7 @@ __all__ = [
     "ensure_store",
     "graph_edge_count",
     "graph_node_count",
+    "graph_to_store",
     "harmonic_centrality_by_id",
     "in_degree_centrality_by_id",
     "out_degree_centrality_by_id",

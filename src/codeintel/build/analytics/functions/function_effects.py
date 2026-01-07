@@ -375,27 +375,51 @@ def _compute_transitive_effects(
         node_idx = store.id_to_index.get(node_id)
         if node_idx is None:
             continue
-        hits: set[int] = set()
-        visited: set[int] = {node_idx}
-        queue: deque[tuple[int, int]] = deque([(node_idx, 0)])
-        while queue:
-            current_idx, depth = queue.popleft()
-            if depth >= max_depth:
-                continue
-            for succ_idx in directed_graph.successor_indices(current_idx):
-                if succ_idx in visited:
-                    continue
-                visited.add(succ_idx)
-                succ_id = store.index_to_id[succ_idx]
-                succ = int(str(succ_id))
-                if direct_flags.get(succ):
-                    hits.add(succ)
-                queue.append((succ_idx, depth + 1))
-            if hits:
-                break
+        hits = _transitive_hits_for_node(
+            store,
+            directed_graph,
+            direct_flags,
+            node_idx,
+            max_depth,
+        )
         if hits:
             transitive[node] = hits
     return transitive
+
+
+def _transitive_hits_for_node(
+    store: RxGraphStore,
+    directed_graph: rx.PyDiGraph,
+    direct_flags: dict[int, bool],
+    node_idx: int,
+    max_depth: int,
+) -> set[int]:
+    """Compute transitive effect hits for a single node.
+
+    Returns
+    -------
+    set[int]
+        GOIDs for reachable nodes with direct effects.
+    """
+    hits: set[int] = set()
+    visited: set[int] = {node_idx}
+    queue: deque[tuple[int, int]] = deque([(node_idx, 0)])
+    while queue:
+        current_idx, depth = queue.popleft()
+        if depth >= max_depth:
+            continue
+        for succ_idx in directed_graph.successor_indices(current_idx):
+            if succ_idx in visited:
+                continue
+            visited.add(succ_idx)
+            succ_id = store.index_to_id[succ_idx]
+            succ = int(str(succ_id))
+            if direct_flags.get(succ):
+                hits.add(succ)
+            queue.append((succ_idx, depth + 1))
+        if hits:
+            break
+    return hits
 
 
 def _unresolved_call_counts_from_frame(

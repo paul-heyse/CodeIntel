@@ -21,10 +21,8 @@ from codeintel.build.graphs.engine.datasets import (
     scan_snapshot_reader,
 )
 from codeintel.build.graphs.rx import RxGraphStore
-from codeintel.core.columnar.type_normalization import (
-    normalize_binary_view_array,
-    normalize_string_view_array,
-)
+from codeintel.core.columnar.iter import iter_tuples as iter_arrow_tuples
+from codeintel.core.columnar.type_normalization import normalize_reader
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
 
@@ -71,58 +69,13 @@ def _iter_scoped_rows(
         yield row
 
 
-def _normalize_view_batch(batch: pa.RecordBatch) -> pa.RecordBatch:
-    arrays: list[pa.Array] = []
-    fields: list[pa.Field] = []
-    changed = False
-    for idx, field in enumerate(batch.schema):
-        array = batch.column(idx)
-        normalized = normalize_string_view_array(array)
-        normalized = normalize_binary_view_array(normalized)
-        if normalized.type != array.type:
-            changed = True
-        arrays.append(normalized)
-        fields.append(
-            pa.field(
-                field.name,
-                normalized.type,
-                nullable=field.nullable,
-                metadata=field.metadata,
-            )
-        )
-    if not changed:
-        return batch
-    schema = pa.schema(fields, metadata=batch.schema.metadata)
-    return pa.RecordBatch.from_arrays(arrays, schema=schema)
-
-
-def _iter_tuples_from_batch(
-    batch: pa.RecordBatch,
-    *,
-    columns: Sequence[str] | None = None,
-) -> Iterable[tuple[object, ...]]:
-    if batch.num_rows == 0:
-        return
-    column_names = list(batch.schema.names) if columns is None else list(columns)
-    data_by_name = batch.to_pydict()
-    missing = [name for name in column_names if name not in data_by_name]
-    if missing:
-        msg = f"Missing columns in Arrow batch: {', '.join(missing)}"
-        raise ValueError(msg)
-    column_values = [data_by_name[name] for name in column_names]
-    yield from zip(*column_values, strict=True)
-
-
 def _iter_tuples(
     reader: pa.RecordBatchReader,
     *,
     columns: Sequence[str] | None = None,
 ) -> Iterable[tuple[object, ...]]:
-    for batch in reader:
-        if batch.num_rows == 0:
-            continue
-        normalized = _normalize_view_batch(batch)
-        yield from _iter_tuples_from_batch(normalized, columns=columns)
+    for batch in normalize_reader(reader):
+        yield from iter_arrow_tuples(batch, columns=columns)
 
 
 def _empty_graph(*, directed: bool) -> RxGraphStore:

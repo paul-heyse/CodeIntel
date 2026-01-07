@@ -59,10 +59,6 @@ def build_graph_engine(
     RxGraphEngine
         Configured engine, seeded when possible.
 
-    Raises
-    ------
-    ValueError
-        If an unsupported graph backend is requested.
     """
     opts = options or EngineBuildOptions()
     if opts.graph_backend is not None and opts.graph_backend.use_gpu:

@@ -423,7 +423,6 @@ def require_projection_graph(
     AssertionError
         If the projection graph is ``None``.
     """
-    expect_is_not_none(graph, message=message or "Expected projection graph")
     if graph is None:
         raise AssertionError(message or "Expected projection graph")
     return ensure_store(graph)

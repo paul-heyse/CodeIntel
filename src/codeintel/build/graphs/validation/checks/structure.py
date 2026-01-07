@@ -9,7 +9,9 @@ Check classes implement CheckProtocol from core/validation.
 from __future__ import annotations
 
 from collections.abc import Hashable
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
+
+import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.components import find_strongly_connected
 from codeintel.build.graphs.engine.datasets import dataset_snapshot_exists
@@ -309,8 +311,10 @@ class ConfigKeyCheck(GraphCheckBase):
 
 def _node_degree(store: RxGraphStore, node_idx: int) -> int:
     if store.is_directed:
-        return int(store.graph.in_degree(node_idx) + store.graph.out_degree(node_idx))
-    return int(store.graph.degree(node_idx))
+        directed = cast("rx.PyDiGraph[object, float]", store.graph)
+        return int(directed.in_degree(node_idx) + directed.out_degree(node_idx))
+    undirected = cast("rx.PyGraph[object, float]", store.graph)
+    return int(undirected.degree(node_idx))
 
 
 def _strongly_connected_sets(graph: GraphInput) -> list[set[Hashable]]:
@@ -507,14 +511,10 @@ def _import_hub_findings_impl(
     findings: list[dict[str, object]] = []
     store = ensure_directed_store(import_graph)
     degree_threshold = hub_threshold(store.graph.num_nodes())
-    degree_map: dict[str, int] = {}
-    for node_id in store.node_ids():
-        node_idx = store.id_to_index.get(node_id)
-        if node_idx is None:
-            continue
-        out_deg = int(store.graph.out_degree(node_idx))
-        in_deg = int(store.graph.in_degree(node_idx))
-        degree_map[str(node_id)] = out_deg + in_deg
+    degree_map = {
+        str(node_id): _node_degree(store, store.id_to_index[node_id])
+        for node_id in store.node_ids()
+    }
     hubs = [node for node, deg in degree_map.items() if deg > degree_threshold]
     if hubs:
         sample = ", ".join(sorted(hubs)[:SAMPLE_LIMIT])

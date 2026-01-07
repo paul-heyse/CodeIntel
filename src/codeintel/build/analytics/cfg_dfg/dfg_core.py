@@ -5,9 +5,10 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
+import rustworkx as rx
 
 from codeintel.build.analytics.cfg_dfg.helpers import (
     degree_dict,
@@ -25,7 +26,7 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
 )
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -52,7 +53,8 @@ class DfgFnContext:
     rel_path: str
     module: str | None
     qualname: str | None
-    graph: GraphInput
+    graph: RxGraphStore
+    edges: list[tuple[int, int, str, str, bool, str]]
     phi_edges: int
     symbol_count: int
     components_count: int
@@ -152,9 +154,8 @@ def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
     graph, phi_edges, symbol_count = build_dfg_graph(inputs.edges)
     dfg_in_deg = degree_dict(graph, direction="in")
     dfg_out_deg = degree_dict(graph, direction="out")
-    store = ensure_store(graph)
-    dfg_phi_in = {int(str(node)): 0 for node in store.node_ids()}
-    dfg_phi_out = {int(str(node)): 0 for node in store.node_ids()}
+    dfg_phi_in = {int(str(node_id)): 0 for node_id in graph.node_ids()}
+    dfg_phi_out = {int(str(node_id)): 0 for node_id in graph.node_ids()}
     for src, dst, _src_var, _dst_var, via_phi, _use_kind in inputs.edges:
         if not via_phi:
             continue
@@ -186,6 +187,7 @@ def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
         module=meta[1],
         qualname=meta[2],
         graph=graph,
+        edges=list(inputs.edges),
         phi_edges=phi_edges,
         symbol_count=symbol_count,
         components_count=component_stats[0],
@@ -219,7 +221,6 @@ def dfg_fn_row(ctx: DfgFnContext) -> tuple[object, ...]:
     """
     in_degs = list(ctx.dfg_in_deg.values())
     out_degs = list(ctx.dfg_out_deg.values())
-    graph_store = ensure_store(ctx.graph)
     return (
         _to_decimal(ctx.fn_goid),
         ctx.repo,
@@ -227,8 +228,8 @@ def dfg_fn_row(ctx: DfgFnContext) -> tuple[object, ...]:
         ctx.rel_path,
         ctx.module,
         ctx.qualname,
-        graph_store.graph.num_nodes(),
-        graph_store.graph.num_edges(),
+        ctx.graph.graph.num_nodes(),
+        ctx.graph.graph.num_edges(),
         ctx.phi_edges,
         ctx.symbol_count,
         ctx.components_count,
@@ -260,8 +261,8 @@ def dfg_block_rows(ctx: DfgFnContext) -> list[tuple[object, ...]]:
     """
     loop_nodes = {node for comp in ctx.sccs if len(comp) > 1 for node in comp}
     rows: list[tuple[object, ...]] = []
-    for node in ctx.graph.nodes:
-        node_idx = int(str(node))
+    for node_id in ctx.graph.node_ids():
+        node_idx = int(str(node_id))
         rows.append(
             (
                 _to_decimal(ctx.fn_goid),
@@ -293,11 +294,11 @@ def dfg_ext_row(ctx: DfgFnContext) -> tuple[object, ...]:
     tuple[object, ...]
         Row matching analytics.dfg_function_metrics_ext schema.
     """
-    edge_kinds = Counter(data.get("use_kind") for _, _, data in ctx.graph.edges(data=True))
+    edge_kinds = Counter(edge[5] for edge in ctx.edges)
     data_flow_edges = edge_kinds.get("data-flow", 0)
     intra_block_edges = edge_kinds.get("intra-block", 0)
-    phi_edges = sum(1 for _, _, data in ctx.graph.edges(data=True) if data.get("via_phi"))
-    total_edges = ctx.graph.number_of_edges() or 1
+    phi_edges = sum(1 for edge in ctx.edges if edge[4])
+    total_edges = ctx.graph.graph.num_edges() or 1
     phi_ratio = phi_edges / total_edges
     other_kinds = sum(
         count
@@ -305,8 +306,17 @@ def dfg_ext_row(ctx: DfgFnContext) -> tuple[object, ...]:
         if kind not in {"data-flow", "intra-block", "phi"}
     )
 
-    sources = {node for node in ctx.graph.nodes if ctx.graph.in_degree(node) == 0}
-    sinks = {node for node in ctx.graph.nodes if ctx.graph.out_degree(node) == 0}
+    directed = cast("rx.PyDiGraph[object, float]", ctx.graph.graph)
+    sources = {
+        node_id
+        for node_id in ctx.graph.node_ids()
+        if directed.in_degree(ctx.graph.id_to_index[node_id]) == 0
+    }
+    sinks = {
+        node_id
+        for node_id in ctx.graph.node_ids()
+        if directed.out_degree(ctx.graph.id_to_index[node_id]) == 0
+    }
     simple_paths = bounded_simple_path_count(
         ctx.graph,
         sources,

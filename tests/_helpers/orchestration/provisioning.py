@@ -40,6 +40,7 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
 from codeintel.build.config import BuildConfig
 from codeintel.build.graphs.builders import build_symbol_module_edges
 from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
+from codeintel.build.graphs.rx.algos import ensure_store
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.providers import create_default_providers
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
@@ -292,7 +293,7 @@ def _call_graph_for_graph_metrics(
         ("goid_h128", "kind"),
         [],
     )
-    return build_call_graph_from_rows(call_edge_rows, call_node_rows)
+    return ensure_store(build_call_graph_from_rows(call_edge_rows, call_node_rows))
 
 
 def _import_graph_for_graph_metrics(
@@ -313,7 +314,7 @@ def _import_graph_for_graph_metrics(
         ("module", "scc_id", "component_size", "layer"),
         [snapshot.repo, snapshot.commit],
     )
-    import_graph = build_import_graph_from_rows(import_edge_rows, import_module_rows)
+    import_graph = ensure_store(build_import_graph_from_rows(import_edge_rows, import_module_rows))
     component_meta = component_metadata_from_import_rows(import_module_rows)
     return import_graph, component_meta
 
@@ -330,8 +331,8 @@ def _symbol_graph_inputs_for_graph_metrics(
     )
     return (
         build_symbol_module_edges(symbol_rows, module_by_path),
-        build_symbol_module_graph(symbol_rows, module_by_path),
-        build_symbol_function_graph(symbol_rows),
+        ensure_store(build_symbol_module_graph(symbol_rows, module_by_path)),
+        ensure_store(build_symbol_function_graph(symbol_rows)),
     )
 
 
@@ -347,11 +348,13 @@ def _config_bipartite_for_graph_metrics(
         ("repo", "commit", "key", "reference_modules"),
         [snapshot.repo, snapshot.commit],
     )
-    return build_config_module_bipartite(
-        config_rows,
-        allowed_modules=module_names,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
+    return ensure_store(
+        build_config_module_bipartite(
+            config_rows,
+            allowed_modules=module_names,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
     )
 
 

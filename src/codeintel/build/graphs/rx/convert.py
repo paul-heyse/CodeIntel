@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Hashable
+
 import rustworkx as rx
 
 from codeintel.build.graphs.rx.payloads import decode_node_payload
@@ -18,9 +20,9 @@ def store_from_rx(graph: RxGraph) -> RxGraphStore:
     RxGraphStore
         Rustworkx graph store populated from the rustworkx payloads.
     """
-    id_to_index: dict[object, int] = {}
-    index_to_id: dict[int, object] = {}
-    node_attrs: dict[object, dict[str, object]] = {}
+    id_to_index: dict[Hashable, int] = {}
+    index_to_id: dict[int, Hashable] = {}
+    node_attrs: dict[Hashable, dict[str, object]] = {}
     for node_idx in graph.node_indices():
         node_id, attrs = decode_node_payload(graph.get_node_data(node_idx))
         id_to_index[node_id] = node_idx
