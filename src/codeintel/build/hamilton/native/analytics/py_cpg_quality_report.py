@@ -360,11 +360,7 @@ def py_cpg_quality_report__base(
 
 _MODULE = sys.modules[__name__]
 _PY_CPG_QUALITY_REPORT_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=PY_CPG_QUALITY_REPORT_TARGET_NAME,
-        table_key=PY_CPG_QUALITY_REPORT_TABLE_KEY,
-        base_node="py_cpg_quality_report__base",
+    context=TableTargetContext.from_contract(
         contract=PY_CPG_QUALITY_REPORT_CONTRACT,
         input_type=pa.Table,
     )

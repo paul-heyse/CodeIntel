@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Hashable
+from collections.abc import Hashable, Mapping
 from dataclasses import dataclass
 
 import rustworkx as rx
 
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, stable_key
+from codeintel.build.graphs.rx.payloads import encode_node_payload
 
-RxGraph = rx.PyGraph[Hashable, float] | rx.PyDiGraph[Hashable, float]
+RxGraph = rx.PyGraph[object, float] | rx.PyDiGraph[object, float]
 
 
 @dataclass(slots=True)
@@ -19,6 +20,7 @@ class RxGraphStore:
     graph: RxGraph
     id_to_index: dict[Hashable, int]
     index_to_id: dict[int, Hashable]
+    node_attrs: dict[Hashable, dict[str, object]]
     is_directed: bool
 
     @classmethod
@@ -40,7 +42,13 @@ class RxGraphStore:
             node_count_hint=node_hint,
             edge_count_hint=edge_hint,
         )
-        return cls(graph=graph, id_to_index={}, index_to_id={}, is_directed=True)
+        return cls(
+            graph=graph,
+            id_to_index={},
+            index_to_id={},
+            node_attrs={},
+            is_directed=True,
+        )
 
     @classmethod
     def undirected(
@@ -61,7 +69,13 @@ class RxGraphStore:
             node_count_hint=node_hint,
             edge_count_hint=edge_hint,
         )
-        return cls(graph=graph, id_to_index={}, index_to_id={}, is_directed=False)
+        return cls(
+            graph=graph,
+            id_to_index={},
+            index_to_id={},
+            node_attrs={},
+            is_directed=False,
+        )
 
     def ensure_node(self, node_id: Hashable) -> int:
         """Return the node index for a domain ID, adding it when missing.
@@ -74,7 +88,9 @@ class RxGraphStore:
         existing = self.id_to_index.get(node_id)
         if existing is not None:
             return existing
-        index = self.graph.add_node(node_id)
+        attrs = self.node_attrs.setdefault(node_id, {})
+        payload = encode_node_payload(node_id, attrs)
+        index = self.graph.add_node(payload)
         self.id_to_index[node_id] = index
         self.index_to_id[index] = node_id
         return index
@@ -98,6 +114,30 @@ class RxGraphStore:
             Domain ID stored at the node index.
         """
         return self.index_to_id[index]
+
+    def get_node_attrs(self, node_id: Hashable) -> dict[str, object]:
+        """Return the attribute mapping for a node ID.
+
+        Returns
+        -------
+        dict[str, object]
+            Node attribute mapping, or an empty dict if absent.
+        """
+        attrs = self.node_attrs.get(node_id)
+        if attrs is None:
+            return {}
+        return dict(attrs)
+
+    def set_node_attrs(self, node_id: Hashable, attrs: Mapping[str, object]) -> None:
+        """Merge attributes into the node payload."""
+        if not attrs:
+            self.ensure_node(node_id)
+            return
+        current = self.node_attrs.setdefault(node_id, {})
+        current.update(attrs)
+        index = self.ensure_node(node_id)
+        payload = encode_node_payload(node_id, current)
+        self.graph[index] = payload
 
     def node_ids(self) -> list[Hashable]:
         """Return domain IDs in a deterministic ordering.

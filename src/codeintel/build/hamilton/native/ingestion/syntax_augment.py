@@ -36,7 +36,7 @@ from codeintel.build.tabular.arrow_ops import (
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import constant_array
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import cast_array, safe_filter, take_array
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     equal_mask,
@@ -48,7 +48,7 @@ from codeintel.build.tabular.compute_masks import (
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
-from codeintel.core.columnar.schema_ops import concat_tables_unified, unify_schemas
+from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.spans import normalize_byte_span
 
@@ -335,7 +335,7 @@ def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
             "ts_node_id": joined["ts_node_id"],
             "syntax_node_id": joined["syntax_node_id"],
             "match_kind": match_kind,
-            "candidate_count": pc.cast(candidate_count, pa.int64()),
+            "candidate_count": cast_array(candidate_count, pa.int64(), safe=True),
         }
     )
     return _reader_from_table(TS_XREF_TABLE_KEY, table)
@@ -767,7 +767,7 @@ def _augment_syntax_nodes(syntax_nodes: pa.Table, ts_payloads: pa.Table) -> pa.T
     node_ids = ensure_array(syntax_nodes["node_id"])
     payload_ids = ensure_array(ts_payloads["syntax_node_id"])
     indices = _index_lookup_indices(node_ids, payload_ids)
-    ts_nodes = pc.take(ensure_array(ts_payloads["ts_nodes"]), indices)
+    ts_nodes = take_array(ensure_array(ts_payloads["ts_nodes"]), indices)
     ast_nodes = _ast_nodes_from_extras(syntax_nodes)
     extras = pa.StructArray.from_arrays(
         [ensure_array(ast_nodes), ensure_array(ts_nodes)],
@@ -816,8 +816,8 @@ def _weld_coverage_table(
     joined = arrow_join_tables(ts_counts, mapped_counts, spec=join_spec, options=join_options)
     mapped = pc.fill_null(_column_or_null(joined, "mapped_count"), pa.scalar(0))
     total = _column_or_null(joined, "ts_node_count")
-    total_float = pc.cast(total, pa.float64())
-    mapped_float = pc.cast(mapped, pa.float64())
+    total_float = cast_array(total, pa.float64(), safe=True)
+    mapped_float = cast_array(mapped, pa.float64(), safe=True)
     zero_mask = equal_mask(total, pa.scalar(0))
     ratio = _if_else(zero_mask, pa.scalar(0.0), _divide(mapped_float, total_float))
     return pa.table(
@@ -967,18 +967,10 @@ def _filter_libcst_rows(
     return frame.filter(invert_mask(libcst_mask))
 
 
-def _align_tables_for_concat(left: pa.Table, right: pa.Table) -> tuple[pa.Table, pa.Table]:
-    if left.schema == right.schema:
-        return left, right
-    unified = unify_schemas([left.schema, right.schema])
-    return left.cast(unified), right.cast(unified)
-
-
 def _concat_if_non_empty(base: pa.Table, extra: pa.Table) -> pa.Table:
     if extra.num_rows == 0:
         return base
-    left, right = _align_tables_for_concat(base, extra)
-    return concat_tables_unified([left, right])
+    return concat_tables_unified([base, extra])
 
 
 def _filter_by_paths(table: pa.Table, paths: pa.Array | pa.ChunkedArray) -> pa.Table:

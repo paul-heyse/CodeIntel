@@ -250,11 +250,7 @@ def function_ast_features__base(
 
 _MODULE = sys.modules[__name__]
 _FUNCTION_AST_FEATURES_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
-        table_key=FUNCTION_AST_FEATURES_TABLE_KEY,
-        base_node="function_ast_features__base",
+    context=TableTargetContext.from_contract(
         contract=FUNCTION_AST_FEATURES_CONTRACT,
         input_type=pa.Table,
     )

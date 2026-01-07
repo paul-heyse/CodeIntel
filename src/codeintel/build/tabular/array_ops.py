@@ -7,6 +7,7 @@ from collections.abc import Sequence
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.build.tabular.compute_helpers import cast_array, take_array
 from codeintel.core.columnar import normalization as _core_normalization
 from codeintel.core.columnar import type_normalization as _type_normalization
 
@@ -51,12 +52,12 @@ def value_set_array(
     if like is not None:
         if pa.types.is_string_view(like.type):
             try:
-                resolved = pc.cast(resolved, pa.string())
+                resolved = cast_array(resolved, pa.string(), safe=True)
             except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
                 return resolved
         elif is_binary_view_type(like.type):
             try:
-                resolved = pc.cast(resolved, pa.binary())
+                resolved = cast_array(resolved, pa.binary(), safe=True)
             except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
                 return resolved
     return resolved
@@ -93,7 +94,7 @@ def take_by_key(
         Values aligned to the key order.
     """
     indices = index_in(keys, value_set=key_set)
-    return pc.take(ensure_array(values), indices)
+    return take_array(ensure_array(values), indices)
 
 
 __all__ = [

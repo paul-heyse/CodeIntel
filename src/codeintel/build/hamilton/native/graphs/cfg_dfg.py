@@ -19,7 +19,7 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.arrow_ops import iter_array_values, iter_rows
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import cast_array, safe_filter
 from codeintel.build.tabular.compute_masks import non_empty_string_expr, non_empty_string_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
@@ -408,7 +408,7 @@ def _cast_function_goid(table: pa.Table) -> pa.Table:
     if field.type == _FUNCTION_GOID_TYPE:
         return table
     column = table.column(index)
-    casted = pc.cast(column, _FUNCTION_GOID_TYPE)
+    casted = cast_array(column, _FUNCTION_GOID_TYPE, safe=True)
     return table.set_column(index, field.name, casted)
 
 

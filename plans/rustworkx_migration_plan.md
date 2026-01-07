@@ -98,98 +98,82 @@ Normalize rustworkx return types into deterministic Python containers:
 Remove nx-cugraph backend selection and simplify GraphBackendConfig to a
 rustworkx-only execution model.
 
-## Implementation Phases
+## Aggressive Migration Plan (Big-Bang Cutover)
 
-### Implementation Status (Phase 0/1 Baseline Complete)
-- Added `GraphBackendConfig.engine` for backend selection (`networkx` vs `rustworkx`).
-- Added rustworkx selection in graph engine factory with a NetworkX compatibility shim.
-- Added cache versioning/engine metadata in graph runtime cache files.
+### Current Baseline (Implemented)
+- Added `GraphBackendConfig.engine` and cache versioning/engine metadata.
 - Added rustworkx foundation modules:
   - `src/codeintel/build/graphs/rx/store.py`
   - `src/codeintel/build/graphs/rx/normalize.py`
   - `src/codeintel/build/graphs/rx/serialization.py`
   - `src/codeintel/build/graphs/rx/errors.py`
-- Added focused tests for Rx store, normalization, and serialization:
+  - `src/codeintel/build/graphs/rx/payloads.py`
+  - `src/codeintel/build/graphs/rx/convert.py`
+- Updated `RxGraphStore` to persist node attributes in payloads.
+- Replaced NetworkX builders in `src/codeintel/build/graphs/builders.py` with rustworkx stores,
+  converting to NetworkX only at the API boundary.
+- Converted loaders in `src/codeintel/build/graphs/engine/views.py` to build rustworkx graphs
+  and return NetworkX graphs via conversion.
+- Replaced the compatibility shim with a real `RxGraphEngine` and made the factory ignore
+  GPU/backend preferences (rustworkx-only execution).
+- Switched graph cache read/write to rustworkx node-link JSON (`GRAPH_CACHE_VERSION = "v3"`).
+- Updated tests for rustworkx store/serialization and engine/view parity:
   - `tests/graphs/test_rx_store.py`
   - `tests/graphs/test_rx_normalize.py`
   - `tests/graphs/test_rx_serialization.py`
+  - `tests/graphs/test_engine_nx.py`
+  - `tests/graphs/test_engine_factory.py`
 
-### Phase 0: Dependency and Safety Prep
-- [x] Add `rustworkx` dependency to `pyproject.toml`.
-- [x] Create a feature flag or config override to select rustworkx vs NetworkX
-  during migration (short-lived, removed after Phase 4).
-- [ ] Add CI guardrails for deterministic output ordering of graph results.
-- [x] Add a minimal compatibility shim to keep tests runnable during Phase 1-2.
+### Workstreams (Run in Parallel; No Gradual Rollout)
 
-Acceptance:
-- `uv sync` resolves rustworkx.
-- Graph-related tests can run with a compatibility shim enabled.
+Workstream A: Engine + Graph Construction (Complete Replacement)
+- Status: Implemented (see Current Baseline).
+- Compatibility boundary remains: analytics still consume NetworkX graphs while
+  rustworkx is the internal construction engine.
 
-### Phase 1: Graph Store + Serialization Layer
-- [x] Implement `RxGraphStore` (directed + undirected variants).
-- [x] Add mapping utilities (domain ID <-> node index) with stable sorting.
-- [x] Add return type normalizers for rustworkx custom containers.
-- [x] Add `rx.node_link_json` serialization wrapper with cache versioning.
-- [x] Add a rustworkx error adapter for consistent error envelopes.
+Workstream B: Algorithm + Metrics Migration (Parity First)
+- Port `src/codeintel/core/compute/centrality.py`.
+- Replace `src/codeintel/build/graphs/compute/metrics/*` with rustworkx/custom
+  implementations (harmonic, clustering/triangles, constraint/effective size,
+  bipartite projection).
+- Apply deterministic ordering, NaN handling, and tolerance policies across
+  all algorithm wrappers and outputs.
 
-Acceptance:
-- [x] Create and serialize a small graph and rehydrate with identical nodes/edges.
-- [x] All store APIs are typed and return domain ID keyed results.
-- [x] Cache versioning prevents mixing NetworkX and rustworkx cache files.
+Workstream C: Analytics + Validation + Tests (Full Cutover)
+- Update analytics orchestrators and subsystem metrics to consume rustworkx.
+- Migrate validation checks to rustworkx-compatible operations.
+- Replace NetworkX fixtures/tests and remove `typings/networkx`.
 
-### Phase 2: Graph Builders and Engine
-- Replace NetworkX in `src/codeintel/build/graphs/builders.py`.
-- Convert loaders in `src/codeintel/build/graphs/engine/views.py`.
-- Replace `NxGraphEngine` with `RxGraphEngine`.
-- Update cache in `src/codeintel/build/graphs/runtime/runtime.py`.
-- Update `GraphBackendConfig` and backend selection to rustworkx-only.
+### Next Actions (Recommended, Two Sets)
 
-Acceptance:
-- Call graph/import graph/symbol graphs load end-to-end with rustworkx.
-- Graph cache read/write works with rustworkx node-link JSON.
-- Graph engine protocol still returns domain IDs (not indices).
+Set 1 — Workstream B (Algorithms + Metrics Parity)
+- Add rustworkx-first algorithm wrappers (`rx/algos.py`) with deterministic ordering,
+  NaN policies, and tolerance handling (harmonic, clustering/triangles,
+  constraint/effective size, bipartite projection).
+- Port `src/codeintel/core/compute/centrality.py` to rustworkx wrappers.
+- Replace `src/codeintel/build/graphs/compute/metrics/*` implementations to
+  use rustworkx or custom algorithms and return stable, normalized containers.
+- Update algorithm-focused tests for deterministic ordering and tolerance.
 
-### Phase 3: Algorithm Layer Migration
-Migrate each algorithm set to rustworkx or custom implementations:
-- Centrality: pagerank, betweenness, closeness, eigenvector, harmonic (custom).
-- Components: SCC/WCC/connected, condensation, bridges, articulation points.
-- Paths: all_simple_paths, shortest path lengths, descendants/ancestors.
-- Structural metrics: clustering, triangles, core number, constraint,
-  effective size (custom).
-- Community detection and bipartite projections (custom).
-- Graph stats: density, diameter estimate, avg shortest path estimate.
+Set 2 — Workstream C (Analytics Cutover + Cleanup)
+- Update analytics consumers (`build/analytics/graphs/*`, `build/analytics/subsystems/*`,
+  `build/analytics/cfg_dfg/*`, `build/analytics/functions/function_effects.py`) to
+  call rustworkx wrappers and remove direct NetworkX usage.
+- Migrate validation checks and fixtures to rustworkx-compatible operations.
+- Remove NetworkX dependency/stubs from `pyproject.toml`, `uv.lock`,
+  and `typings/networkx`, then update any remaining type annotations
+  and protocol interfaces to rustworkx-first types.
 
-Acceptance:
-- Unit tests cover all metrics with deterministic output ordering.
-- Numeric tolerances match current baselines.
-- Weighted vs unweighted behavior is documented and enforced.
+### Cutover Checklist (Single Switchover)
+- Delete the compatibility shim and engine flag; rustworkx only.
+- Remove `networkx` dependency and stubs from `pyproject.toml` / `uv.lock`.
+- Run quality report and segmented pytest; verify metrics tables unchanged.
+- Document rustworkx API usage and deterministic policies.
 
-### Phase 4: Analytics and Validation
-- Update analytics modules to consume RxGraphStore or rustworkx graphs.
-- Migrate validation checks and subsystem utilities.
-- Ensure graph metrics tables are unchanged.
-- Audit any use of NetworkX graph views and replace with explicit subgraphs.
-
-Acceptance:
-- Analytics targets produce identical row counts and schemas.
-- Validation findings remain stable for known fixtures.
-
-### Phase 5: Tests and Cleanup
-- Replace NetworkX fixtures with rustworkx fixtures.
-- Remove `networkx` deps and `typings/networkx`.
-- Remove temporary compatibility shims and flags.
-
-Acceptance:
-- All tests pass without NetworkX installed.
+### Acceptance (Big-Bang)
 - No NetworkX imports remain under `src/` or `tests/`.
-
-### Phase 6: Performance and Determinism Hardening
-- Add `node_count_hint` and `edge_count_hint` where counts are known.
-- Ensure all result maps are sorted before persistence.
-- Add perf benchmarks for centrality and path routines on large graphs.
-
-Acceptance:
-- Metrics pipelines complete within current runtime budgets.
+- Graph metrics tables match current schemas and row counts.
+- All tests pass using rustworkx exclusively.
 
 ## Algorithm Mapping
 

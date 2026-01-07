@@ -25,7 +25,7 @@ from codeintel.build.tabular.arrow_ops import (
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import safe_filter, scalar_from_compute
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.serialization.payload import encode_payload
@@ -276,10 +276,10 @@ def _join_anchor_with_filter(
 def _count_valid(table: pa.Table, column: str) -> int:
     if column not in table.column_names:
         return 0
-    result = pc.call_function("sum", [is_valid_mask(table[column])])
-    if isinstance(result, pa.Scalar):
-        return int(result.as_py() or 0)
-    return int(result or 0)
+    total = scalar_from_compute("sum", [is_valid_mask(table[column])])
+    if isinstance(total, (int, float)):
+        return int(total)
+    return 0
 
 
 def _empty_node_table() -> pa.Table:

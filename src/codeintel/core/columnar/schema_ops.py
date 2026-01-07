@@ -61,25 +61,60 @@ def concat_tables_unified(
         return pa.table({})
     if len(tables) == 1:
         return tables[0]
-    unified = unify_schemas([table.schema for table in tables], promote_options=promote_options)
-    aligned: list[pa.Table] = []
-    for table in tables:
-        if table.schema == unified:
-            aligned.append(table)
-            continue
-        try:
-            aligned.append(table.cast(unified, safe=False))
-        except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowNotImplementedError):
-            aligned.append(table)
+    _, aligned = align_tables_to_schema(tables, promote_options=promote_options, safe=False)
     try:
         return pa.concat_tables(aligned, promote=True)
     except (pa.ArrowInvalid, pa.ArrowTypeError):
         return pa.concat_tables(aligned)
 
 
+def align_tables_to_schema(
+    tables: Sequence[pa.Table],
+    *,
+    schema: pa.Schema | None = None,
+    promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS,
+    safe: bool = False,
+) -> tuple[pa.Schema, list[pa.Table]]:
+    """Return a target schema and tables aligned to it.
+
+    Parameters
+    ----------
+    tables
+        Tables to align.
+    schema
+        Optional explicit schema to align to. When omitted, a unified schema is used.
+    promote_options
+        Schema promotion behavior to use when unifying schemas.
+    safe
+        Whether to enforce safe Arrow casts during alignment.
+
+    Returns
+    -------
+    tuple[pyarrow.Schema, list[pyarrow.Table]]
+        Target schema and aligned tables.
+    """
+    if not tables:
+        return pa.schema([]), []
+    target_schema = schema or unify_schemas(
+        [table.schema for table in tables],
+        promote_options=promote_options,
+    )
+    aligned: list[pa.Table] = []
+    for table in tables:
+        if table.schema == target_schema:
+            aligned.append(table)
+            continue
+        try:
+            aligned.append(table.cast(target_schema, safe=safe))
+        except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowNotImplementedError):
+            aligned.append(table)
+    return target_schema, aligned
+
+
 __all__ = [
     "DEFAULT_SCHEMA_PROMOTE_OPTIONS",
     "SchemaPromoteOptions",
+    "align_tables_to_schema",
     "concat_tables_unified",
     "unify_schemas",
 ]

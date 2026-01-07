@@ -95,11 +95,7 @@ def graph_validation__base(
 
 _MODULE = sys.modules[__name__]
 _GRAPH_VALIDATION_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=GRAPH_VALIDATION_TARGET_NAME,
-        table_key=GRAPH_VALIDATION_TABLE_KEY,
-        base_node="graph_validation__base",
+    context=TableTargetContext.from_contract(
         contract=GRAPH_VALIDATION_CONTRACT,
         input_type=pa.Table,
     )

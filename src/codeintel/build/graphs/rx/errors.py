@@ -25,6 +25,7 @@ RX_EXCEPTIONS = (
     StopSearch,
 )
 
+
 class RxGraphError(RuntimeError):
     """Exception wrapper that preserves rustworkx error context."""
 

@@ -11,7 +11,12 @@ import pyarrow.dataset as ds
 from codeintel.core.columnar.schema_ops import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.columnar.streaming import build_scanner as _build_scanner
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.constants import (
+    DEFAULT_ARROW_BATCH_READAHEAD,
+    DEFAULT_ARROW_BATCH_SIZE,
+    DEFAULT_ARROW_FRAGMENT_READAHEAD,
+    DEFAULT_ARROW_USE_THREADS,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,9 +26,9 @@ class ScannerParams:
     columns: Sequence[str] | None = None
     filter_expression: ds.Expression | None = None
     batch_size: int | None = None
-    batch_readahead: int | None = None
-    fragment_readahead: int | None = None
-    use_threads: bool | None = None
+    batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
+    fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
+    use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
     memory_pool: pa.MemoryPool | None = None
     schema: pa.Schema | None = None
     unify_schemas: bool = False

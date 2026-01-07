@@ -326,18 +326,14 @@ _ENTRYPOINTS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         target_name=ENTRYPOINTS_TARGET_NAME,
         tables=(
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=ENTRYPOINTS_TABLE_KEY,
-                    base_node="entrypoints__base",
+                context=TableTargetTableContext.from_contract(
                     contract=ENTRYPOINTS_CONTRACT,
                     node_name="entrypoints__table",
                     input_type=pa.Table,
                 ),
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=ENTRYPOINT_TESTS_TABLE_KEY,
-                    base_node="entrypoint_tests__base",
+                context=TableTargetTableContext.from_contract(
                     contract=ENTRYPOINT_TESTS_CONTRACT,
                     node_name="entrypoint_tests__table",
                     input_type=pa.Table,

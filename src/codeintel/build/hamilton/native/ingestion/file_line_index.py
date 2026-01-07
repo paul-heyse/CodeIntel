@@ -13,10 +13,9 @@ import pyarrow as pa
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
+    DatasetSaveSpecOptions,
     TableTargetContext,
     attach_table_target_template,
-    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import iter_rows
@@ -142,18 +141,15 @@ def file_line_index__base(
 
 
 _MODULE = sys.modules[__name__]
-_FILE_LINE_INDEX_TABLE_TARGET_SPEC = build_single_table_target_spec(
+_FILE_LINE_INDEX_TABLE_TARGET_SPEC = TableTargetContext.build_dataset_table_spec(
     context=TableTargetContext(
         domain="ingestion",
         target_name=FILE_LINE_INDEX_TARGET_NAME,
         table_key=FILE_LINE_INDEX_TABLE_KEY,
         base_node="file_line_index__base",
         input_type=pa.Table,
-        save_spec=DatasetSaveSpec(
-            table_key=FILE_LINE_INDEX_TABLE_KEY,
-            partition_columns=("repo", "commit"),
-        ),
-    )
+    ),
+    save_options=DatasetSaveSpecOptions(partition_columns=("repo", "commit")),
 )
 attach_table_target_template(_MODULE, spec=_FILE_LINE_INDEX_TABLE_TARGET_SPEC)
 file_line_index__table = _MODULE.file_line_index__table

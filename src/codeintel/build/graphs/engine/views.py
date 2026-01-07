@@ -7,7 +7,6 @@ fallthrough is intentionally disallowed in this layer.
 
 from __future__ import annotations
 
-import importlib
 import json
 import logging
 from collections.abc import Iterable
@@ -15,14 +14,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import networkx as nx
-
 from codeintel.build.graphs.builders import EdgeWeightPolicy, add_weighted_edge
 from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
     scan_snapshot_reader,
     scan_snapshot_table,
 )
+from codeintel.build.graphs.rx import RxGraphStore, rx_to_networkx
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.core.columnar.type_normalization import (
     normalize_binary_view_table,
@@ -33,6 +31,7 @@ from codeintel.core.data_models.ids import normalize_decimal_id as normalize_dec
 from codeintel.core.query_results import iter_tuples_from_arrow_reader
 
 if TYPE_CHECKING:
+    import networkx as nx
     import pyarrow as pa
 
 log = logging.getLogger(__name__)
@@ -82,6 +81,11 @@ def _normalize_view_table(table: pa.Table) -> pa.Table:
     return normalize_binary_view_table(normalize_string_view_table(table))
 
 
+def _empty_graph(*, directed: bool) -> nx.Graph:
+    store = RxGraphStore.directed() if directed else RxGraphStore.undirected()
+    return rx_to_networkx(store.graph)
+
+
 def _module_name_map(
     reader: object,
     *,
@@ -106,31 +110,29 @@ def _module_name_map(
     return module_by_path
 
 
-def _add_call_edges(graph: nx.DiGraph, reader: object) -> None:
+def _add_call_edges(store: RxGraphStore, reader: object) -> None:
     for caller_raw, callee_raw in iter_tuples_from_arrow_reader(reader):
         caller = normalize_decimal(caller_raw)
         callee = normalize_decimal(callee_raw)
         if caller is None or callee is None:
             continue
-        add_weighted_edge(graph, caller, callee, policy=_EDGE_WEIGHT_POLICY)
+        add_weighted_edge(store, caller, callee, policy=_EDGE_WEIGHT_POLICY)
 
 
-def _add_call_nodes(graph: nx.DiGraph, reader: object) -> None:
+def _add_call_nodes(store: RxGraphStore, reader: object) -> None:
     for node_raw, kind in iter_tuples_from_arrow_reader(reader):
         node = normalize_decimal(node_raw)
         if node is None:
             continue
-        if node in graph:
-            continue
         attrs: dict[str, object] = {}
         if kind is not None:
             attrs["kind"] = str(kind)
-        graph.add_node(node, **attrs)
+        store.set_node_attrs(node, attrs)
 
 
 def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
     """
-    Optionally shift a NetworkX graph toward a GPU backend.
+    No-op for rustworkx-backed execution (CPU-only).
 
     Parameters
     ----------
@@ -144,16 +146,8 @@ def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
     nx.Graph
         The original graph or a GPU-backed equivalent.
     """
-    if not use_gpu:
-        return graph
-
-    try:
-        importlib.import_module("nx_cugraph")
-    except ImportError:
-        log.debug("nx_cugraph not installed; leaving graph on CPU backend.")
-        return graph
-
-    log.debug("GPU backend requested; relying on nx_cugraph backend dispatch.")
+    if use_gpu:
+        log.debug("GPU backend requested; rustworkx execution is CPU-only.")
     return graph
 
 
@@ -226,7 +220,7 @@ def load_call_graph(
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.call_graph_edges")
     if dataset_root is None:
-        return nx.DiGraph()
+        return cast("nx.DiGraph", _empty_graph(directed=True))
     edge_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -238,10 +232,10 @@ def load_call_graph(
         )
     )
     if edge_table is None:
-        return nx.DiGraph()
+        return cast("nx.DiGraph", _empty_graph(directed=True))
 
-    graph = nx.DiGraph()
-    _add_call_edges(graph, table_to_reader(_normalize_view_table(edge_table)))
+    store = RxGraphStore.directed()
+    _add_call_edges(store, table_to_reader(_normalize_view_table(edge_table)))
 
     node_table = scan_snapshot_table(
         SnapshotScanRequest(
@@ -254,8 +248,9 @@ def load_call_graph(
         )
     )
     if node_table is not None:
-        _add_call_nodes(graph, table_to_reader(_normalize_view_table(node_table)))
+        _add_call_nodes(store, table_to_reader(_normalize_view_table(node_table)))
 
+    graph = rx_to_networkx(store.graph)
     return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
 
 
@@ -289,7 +284,7 @@ def load_import_graph(
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.import_graph_edges")
     if dataset_root is None:
-        return nx.DiGraph()
+        return cast("nx.DiGraph", _empty_graph(directed=True))
     edge_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -301,9 +296,9 @@ def load_import_graph(
         )
     )
     if edge_table is None:
-        return nx.DiGraph()
+        return cast("nx.DiGraph", _empty_graph(directed=True))
 
-    graph = nx.DiGraph()
+    store = RxGraphStore.directed()
     fallback_layer_by_module: dict[str, int] = {}
     for src, dst, layer in iter_tuples_from_arrow_reader(
         table_to_reader(_normalize_view_table(edge_table))
@@ -315,7 +310,7 @@ def load_import_graph(
         layer_value = as_int(layer)
         if layer_value is not None:
             fallback_layer_by_module[source] = layer_value
-        add_weighted_edge(graph, source, target, policy=_EDGE_WEIGHT_POLICY)
+        add_weighted_edge(store, source, target, policy=_EDGE_WEIGHT_POLICY)
 
     module_table = scan_snapshot_table(
         SnapshotScanRequest(
@@ -332,11 +327,11 @@ def load_import_graph(
             table_to_reader(_normalize_view_table(module_table))
         ):
             module_name, attrs = module_attrs_from_row(*module_row)
-            graph.add_node(module_name, **attrs)
+            store.set_node_attrs(module_name, attrs)
     elif fallback_layer_by_module:
-        graph.add_nodes_from(
-            [(module, {"layer": layer}) for module, layer in fallback_layer_by_module.items()]
-        )
+        for module, layer in fallback_layer_by_module.items():
+            store.set_node_attrs(module, {"layer": layer})
+    graph = rx_to_networkx(store.graph)
     return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
 
 
@@ -392,7 +387,7 @@ def _allowed_modules_from_reader(
 
 
 def _populate_config_graph(
-    graph: nx.Graph,
+    store: RxGraphStore,
     config_reader: pa.RecordBatchReader,
     *,
     repo: str,
@@ -413,8 +408,7 @@ def _populate_config_graph(
             stats.empty_refs += 1
             continue
         key_node = ("c", str(key))
-        if not graph.has_node(key_node):
-            graph.add_node(key_node, bipartite=0)
+        store.set_node_attrs(key_node, {"bipartite": 0})
 
         raw_modules = parse_reference_modules(ref_modules, set())
         stats.parsed_modules += len(raw_modules)
@@ -430,9 +424,8 @@ def _populate_config_graph(
 
         for module_name in filtered_modules:
             module_node = ("m", module_name)
-            if not graph.has_node(module_node):
-                graph.add_node(module_node, bipartite=1)
-            add_weighted_edge(graph, key_node, module_node, policy=_EDGE_WEIGHT_POLICY)
+            store.set_node_attrs(module_node, {"bipartite": 1})
+            add_weighted_edge(store, key_node, module_node, policy=_EDGE_WEIGHT_POLICY)
     return stats
 
 
@@ -467,7 +460,7 @@ def load_config_module_bipartite(
     """
     dataset_root = _ensure_dataset_root(dataset_root, "analytics.config_values")
     if dataset_root is None:
-        return nx.Graph()
+        return _empty_graph(directed=False)
     modules_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -477,7 +470,7 @@ def load_config_module_bipartite(
         )
     )
     if modules_reader is None:
-        return nx.Graph()
+        return _empty_graph(directed=False)
     allowed_modules = _allowed_modules_from_reader(modules_reader, repo=repo, commit=commit)
 
     config_reader = _scan_snapshot_reader(
@@ -489,16 +482,17 @@ def load_config_module_bipartite(
         )
     )
     if config_reader is None:
-        return nx.Graph()
+        return _empty_graph(directed=False)
 
-    graph = nx.Graph()
+    store = RxGraphStore.undirected()
     stats = _populate_config_graph(
-        graph,
+        store,
         config_reader,
         repo=repo,
         commit=commit,
         allowed_modules=allowed_modules,
     )
+    graph = rx_to_networkx(store.graph)
     log.info(
         "Config bipartite built: rows=%d empty_refs=%d allowed_modules=%d "
         "parsed_modules=%d kept_modules=%d dropped_modules=%d graph_nodes=%d edges=%d",
@@ -544,7 +538,7 @@ def load_symbol_module_graph(
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
-        return nx.Graph()
+        return _empty_graph(directed=False)
     edge_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -554,7 +548,7 @@ def load_symbol_module_graph(
         )
     )
     if edge_table is None:
-        return nx.Graph()
+        return _empty_graph(directed=False)
     module_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -564,13 +558,13 @@ def load_symbol_module_graph(
         )
     )
     if module_table is None:
-        return nx.Graph()
+        return _empty_graph(directed=False)
     module_by_path = _module_name_map(
         table_to_reader(_normalize_view_table(module_table)),
         repo=repo,
         commit=commit,
     )
-    graph = nx.Graph()
+    store = RxGraphStore.undirected()
     for def_path, use_path in iter_tuples_from_arrow_reader(
         table_to_reader(_normalize_view_table(edge_table))
     ):
@@ -582,7 +576,8 @@ def load_symbol_module_graph(
             continue
         if def_module == use_module:
             continue
-        add_weighted_edge(graph, use_module, def_module, policy=_EDGE_WEIGHT_POLICY)
+        add_weighted_edge(store, use_module, def_module, policy=_EDGE_WEIGHT_POLICY)
+    graph = rx_to_networkx(store.graph)
     return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
 
 
@@ -613,7 +608,7 @@ def load_symbol_function_graph(
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
-        return nx.Graph()
+        return _empty_graph(directed=False)
     edge_table = scan_snapshot_table(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -623,9 +618,9 @@ def load_symbol_function_graph(
         )
     )
     if edge_table is None:
-        return nx.Graph()
+        return _empty_graph(directed=False)
 
-    graph = nx.Graph()
+    store = RxGraphStore.undirected()
     for def_goid, use_goid in iter_tuples_from_arrow_reader(
         table_to_reader(_normalize_view_table(edge_table))
     ):
@@ -635,7 +630,8 @@ def load_symbol_function_graph(
         right = normalize_decimal(use_goid)
         if left is None or right is None or left == right:
             continue
-        add_weighted_edge(graph, left, right, policy=_EDGE_WEIGHT_POLICY)
+        add_weighted_edge(store, left, right, policy=_EDGE_WEIGHT_POLICY)
+    graph = rx_to_networkx(store.graph)
     return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
 
 

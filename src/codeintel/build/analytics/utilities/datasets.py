@@ -17,6 +17,7 @@ import pyarrow as pa
 from sqlglot import exp
 
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_columns import append_constant_columns
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.utilities.persistence import DeleteScope
@@ -339,8 +340,8 @@ def validate_contract_rows(
             message = f"Unexpected columns for {table_key}: {extras}"
             raise ValueError(message)
         missing = [name for name in expected_columns if name not in table.column_names]
-        for name in missing:
-            table = table.append_column(name, pa.array([None] * table.num_rows))
+        if missing:
+            table = append_constant_columns(table, dict.fromkeys(missing))
         table = table.select(expected_columns)
         context = ColumnarValidationContext(
             table_schema=table_schema,

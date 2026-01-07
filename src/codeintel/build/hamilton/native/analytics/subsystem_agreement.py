@@ -73,11 +73,7 @@ def subsystem_agreement__base(
 
 _MODULE = sys.modules[__name__]
 _SUBSYSTEM_AGREEMENT_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
-        table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY,
-        base_node="subsystem_agreement__base",
+    context=TableTargetContext.from_contract(
         contract=SUBSYSTEM_AGREEMENT_CONTRACT,
         input_type=pa.Table,
     )

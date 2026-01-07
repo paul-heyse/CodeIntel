@@ -482,16 +482,10 @@ def config_projection_module_edges__base(
 
 _MODULE = sys.modules[__name__]
 _CONFIG_DATA_FLOW_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=CONFIG_DATA_FLOW_TARGET_NAME,
-        table_key=CONFIG_DATA_FLOW_TABLE_KEY,
-        base_node="config_data_flow__base",
+    context=TableTargetContext.from_contract(
         contract=CONFIG_DATA_FLOW_CONTRACT,
         node_name="config_data_flow__table",
         input_type=pa.Table,
-        table_materializations_node="config_data_flow__table_materializations",
-        anchor_node_name="t__config_data_flow",
     )
 )
 attach_table_target_template(_MODULE, spec=_CONFIG_DATA_FLOW_TABLE_TARGET_SPEC)
@@ -505,36 +499,28 @@ _CONFIG_GRAPH_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         target_name=CONFIG_GRAPH_TARGET_NAME,
         tables=(
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=CONFIG_GRAPH_KEYS_TABLE_KEY,
-                    base_node="config_graph_metrics_keys__base",
+                context=TableTargetTableContext.from_contract(
                     contract=CONFIG_GRAPH_KEYS_CONTRACT,
                     node_name="config_graph_metrics_keys__table",
                     input_type=pa.Table,
                 ),
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=CONFIG_GRAPH_MODULES_TABLE_KEY,
-                    base_node="config_graph_metrics_modules__base",
+                context=TableTargetTableContext.from_contract(
                     contract=CONFIG_GRAPH_MODULES_CONTRACT,
                     node_name="config_graph_metrics_modules__table",
                     input_type=pa.Table,
                 ),
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
-                    base_node="config_projection_key_edges__base",
+                context=TableTargetTableContext.from_contract(
                     contract=CONFIG_GRAPH_KEY_EDGES_CONTRACT,
                     node_name="config_projection_key_edges__table",
                     input_type=pa.Table,
                 ),
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
-                    base_node="config_projection_module_edges__base",
+                context=TableTargetTableContext.from_contract(
                     contract=CONFIG_GRAPH_MODULE_EDGES_CONTRACT,
                     node_name="config_projection_module_edges__table",
                     input_type=pa.Table,

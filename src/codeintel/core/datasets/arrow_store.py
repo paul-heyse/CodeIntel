@@ -535,10 +535,11 @@ def _parquet_write_options(
         kwargs["compression"] = options.compression
     if options.data_page_size and "data_page_size" in signature.parameters:
         kwargs["data_page_size"] = options.data_page_size
-    if (options.dictionary_encode or options.dictionary_encode_columns) and "use_dictionary" in (
-        signature.parameters
-    ):
-        kwargs["use_dictionary"] = True
+    if "use_dictionary" in signature.parameters:
+        if options.dictionary_encode_columns:
+            kwargs["use_dictionary"] = list(options.dictionary_encode_columns)
+        elif options.dictionary_encode:
+            kwargs["use_dictionary"] = True
     if kwargs:
         return parquet_format, cast("FileWriteOptions", make_options(**kwargs))
     return parquet_format, cast("FileWriteOptions", make_options())

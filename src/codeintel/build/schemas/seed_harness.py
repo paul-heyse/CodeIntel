@@ -15,6 +15,7 @@ import pyarrow as pa
 
 from codeintel.core.columnar.ipc import schema_from_ipc_payload
 from codeintel.core.columnar.streaming import (
+    DatasetScanOptions,
     empty_reader_from_schema,
     sample_reader,
     scan_dataset_reader,
@@ -229,12 +230,12 @@ class DatasetSeedHarness:
         )
         if not snapshot_dir.is_dir():
             return None
-        reader = scan_dataset_reader(
-            snapshot_dir,
-            columns=schema.names,
+        options = DatasetScanOptions(
             batch_size=self.scan_settings.batch_size,
+            columns=schema.names,
             fragment_readahead=self.scan_settings.fragment_readahead,
         )
+        reader = scan_dataset_reader(snapshot_dir, options=options)
         if reader is None:
             return None
         return sample_reader(reader, max_rows=self.scan_settings.sample_rows)

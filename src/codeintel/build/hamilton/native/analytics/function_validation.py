@@ -54,11 +54,7 @@ def function_validation__base(
 
 _MODULE = sys.modules[__name__]
 _FUNCTION_VALIDATION_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=FUNCTION_VALIDATION_TARGET_NAME,
-        table_key=FUNCTION_VALIDATION_TABLE_KEY,
-        base_node="function_validation__base",
+    context=TableTargetContext.from_contract(
         contract=FUNCTION_VALIDATION_CONTRACT,
         input_type=pa.Table,
     )

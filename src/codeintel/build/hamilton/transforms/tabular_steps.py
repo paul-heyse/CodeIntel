@@ -10,6 +10,7 @@ import polars.datatypes as pl_datatypes
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import TabularInput
 
@@ -201,13 +202,9 @@ def _filter_table(table: pa.Table, indices: Sequence[int]) -> pa.Table:
 
 
 def _valid_mask(table: pa.Table, indices: Sequence[int]) -> pa.Array:
-    first = pc.call_function("is_valid", [table.column(indices[0])])
-    mask = first
+    mask = is_valid_mask(table.column(indices[0]))
     for index in indices[1:]:
-        mask = pc.call_function(
-            "and_kleene",
-            [mask, pc.call_function("is_valid", [table.column(index)])],
-        )
+        mask = and_kleene(mask, is_valid_mask(table.column(index)))
     return mask
 
 

@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import rename_table_columns, select_table_columns, table_rows
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_node_id, cpg_source_pk_json
+from codeintel.build.tabular.compute_helpers import cast_array
 
 IDENTITY_KEY_REGISTRY: dict[str, tuple[str, ...]] = {
     "core.syntax_nodes": ("repo", "commit", "rel_path", "producer", "node_id"),
@@ -216,7 +216,7 @@ def canonicalize_table(
             index = normalized.schema.get_field_index(column_name)
             if index < 0:
                 continue
-            casted = pc.cast(normalized[column_name], target_type)
+            casted = cast_array(normalized[column_name], target_type, safe=True)
             normalized = normalized.set_column(index, column_name, casted)
     return normalized
 

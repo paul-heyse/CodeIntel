@@ -27,7 +27,7 @@ from codeintel.build.tabular.arrow_ops import (
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import cast_array, safe_filter
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.build.tabular.conversion import table_to_frame
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -587,7 +587,7 @@ def _coalesce_rel_path(
     result = pc.call_function("if_else", [src_valid, src, dst])
     if result_type is None:
         return result
-    return pc.cast(result, result_type, safe=False)
+    return cast_array(result, result_type, safe=False)
 
 
 def _rename_if_present(table: pa.Table, mapping: dict[str, str]) -> pa.Table:
@@ -627,17 +627,8 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
     if not required.issubset(set(table.column_names)):
         return table
     if _EXPR_TYPE is not None:
-        try:
-            expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-            return table.filter(expr)
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            pass
+        expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+        return safe_filter(table, expr)
     mask = and_kleene(
         is_valid_mask(table.column("src_cpg_node_id")),
         is_valid_mask(table.column("dst_cpg_node_id")),
@@ -649,16 +640,7 @@ def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     if "cpg_node_id" not in table.column_names:
         return table
     if _EXPR_TYPE is not None:
-        try:
-            return table.filter(is_valid_expr("cpg_node_id"))
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            pass
+        return safe_filter(table, is_valid_expr("cpg_node_id"))
     mask = is_valid_mask(table.column("cpg_node_id"))
     return safe_filter(table, mask)
 

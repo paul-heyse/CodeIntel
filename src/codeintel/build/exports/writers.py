@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import SupportsInt, TypedDict, cast
 
 import msgspec
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from codeintel.build.tabular.arrow_ops import json_writer_available, write_json_streaming
@@ -293,10 +295,13 @@ def write_parquet_reader(
             rows_written += batch.num_rows
             wrote_batches = True
             table = pa.Table.from_batches([cast("pa.RecordBatch", batch)], schema=reader.schema)
+            table = _maybe_dictionary_encode_table(table, dictionary_columns)
             writer.write_table(table)
     if not wrote_batches:
+        empty_table = pa.Table.from_batches([], schema=reader.schema)
+        empty_table = _maybe_dictionary_encode_table(empty_table, dictionary_columns)
         pq.write_table(
-            pa.Table.from_batches([], schema=reader.schema),
+            empty_table,
             str(output_path),
             **writer_kwargs,
         )
@@ -329,6 +334,45 @@ def _parquet_writer_kwargs(
     if dictionary_encode:
         return {"use_dictionary": True}
     return {}
+
+
+def _maybe_dictionary_encode_table(
+    table: pa.Table,
+    dictionary_columns: Sequence[str] | None,
+) -> pa.Table:
+    if not dictionary_columns:
+        return table
+    encode = getattr(pc, "dictionary_encode", None)
+    if not callable(encode):
+        return table
+    encode_set = set(dictionary_columns)
+    arrays: list[pa.Array | pa.ChunkedArray] = []
+    fields: list[pa.Field] = []
+    for name in table.schema.names:
+        column = table.column(name)
+        field = table.schema.field(name)
+        encoded: pa.Array | pa.ChunkedArray | None = None
+        if name in encode_set and (
+            pa.types.is_string(column.type) or pa.types.is_large_string(column.type)
+        ):
+            with contextlib.suppress(
+                pa.ArrowInvalid,
+                pa.ArrowNotImplementedError,
+                pa.ArrowTypeError,
+                ValueError,
+            ):
+                candidate = encode(column)
+                if isinstance(candidate, (pa.Array, pa.ChunkedArray)):
+                    encoded = candidate
+        if encoded is None:
+            arrays.append(column)
+            fields.append(field)
+        else:
+            arrays.append(encoded)
+            fields.append(pa.field(name, encoded.type))
+    if not arrays:
+        return table
+    return pa.Table.from_arrays(arrays, schema=pa.schema(fields))
 
 
 def _iter_json_rows_from_batch(

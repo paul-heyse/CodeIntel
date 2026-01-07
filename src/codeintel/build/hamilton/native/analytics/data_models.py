@@ -238,27 +238,21 @@ _DATA_MODELS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         target_name=DATA_MODELS_TARGET_NAME,
         tables=(
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=DATA_MODELS_TABLE_KEY,
-                    base_node="data_models__base",
+                context=TableTargetTableContext.from_contract(
                     contract=DATA_MODELS_CONTRACT,
                     node_name="data_models__table",
                     input_type=pa.Table,
                 ),
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=DATA_MODEL_FIELDS_TABLE_KEY,
-                    base_node="data_model_fields__base",
+                context=TableTargetTableContext.from_contract(
                     contract=DATA_MODEL_FIELDS_CONTRACT,
                     node_name="data_model_fields__table",
                     input_type=pa.Table,
                 ),
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
-                    base_node="data_model_relationships__base",
+                context=TableTargetTableContext.from_contract(
                     contract=DATA_MODEL_RELATIONSHIPS_CONTRACT,
                     node_name="data_model_relationships__table",
                     input_type=pa.Table,
@@ -324,11 +318,7 @@ def data_model_usage__base(
 
 
 _DATA_MODEL_USAGE_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=DATA_MODEL_USAGE_TARGET_NAME,
-        table_key=DATA_MODEL_USAGE_TABLE_KEY,
-        base_node="data_model_usage__base",
+    context=TableTargetContext.from_contract(
         contract=DATA_MODEL_USAGE_CONTRACT,
         input_type=pa.Table,
     )

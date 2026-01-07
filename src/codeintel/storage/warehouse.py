@@ -177,7 +177,10 @@ class Warehouse:
         """Return the underlying storage gateway."""
         return self.context.gateway
 
-    def _resolve_snapshot(self, snapshot: RepoCommitScope | None) -> RepoCommitScope | None:
+    def _resolve_scope(self, snapshot: RepoCommitScope | None) -> RepoCommitScope | None:
+        return snapshot or self.context.snapshot
+
+    def _resolve_snapshot_ref(self, snapshot: SnapshotRef | None) -> SnapshotRef | None:
         return snapshot or self.context.snapshot
 
     def _require_snapshot(self, snapshot: SnapshotRef | None) -> SnapshotRef:
@@ -186,7 +189,7 @@ class Warehouse:
         return self.context.require_snapshot()
 
     def _resolve_options(self, options: MaterializeOptions) -> MaterializeOptions:
-        resolved_snapshot = self._resolve_snapshot(options.snapshot)
+        resolved_snapshot = self._resolve_snapshot_ref(options.snapshot)
         if resolved_snapshot is None:
             return options
         if resolved_snapshot is options.snapshot:
@@ -219,7 +222,7 @@ class Warehouse:
             Relation for the requested table, optionally filtered by snapshot.
         """
         relation = self.gateway.relation_from_table_key(table_key)
-        resolved_snapshot = self._resolve_snapshot(snapshot)
+        resolved_snapshot = self._resolve_scope(snapshot)
         if resolved_snapshot is None:
             return relation
         if not _relation_has_repo_commit_columns(relation):
@@ -247,7 +250,7 @@ class Warehouse:
         except (DuckDBError, FileNotFoundError, RuntimeError, ValueError):
             return False
 
-        resolved_snapshot = self._resolve_snapshot(snapshot)
+        resolved_snapshot = self._resolve_scope(snapshot)
         if resolved_snapshot is None:
             return True
 
@@ -269,7 +272,7 @@ class Warehouse:
             Row count for the requested object.
         """
         relation = self.gateway.relation_from_table_key(table_key)
-        resolved_snapshot = self._resolve_snapshot(snapshot)
+        resolved_snapshot = self._resolve_scope(snapshot)
         if resolved_snapshot is not None and _relation_has_repo_commit_columns(relation):
             predicate = _snapshot_filter_expression(
                 repo=resolved_snapshot.repo,

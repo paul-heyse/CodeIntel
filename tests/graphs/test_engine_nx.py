@@ -1,4 +1,4 @@
-"""NetworkX engine behavior mirrors direct nx_views loaders."""
+"""Graph engine behavior mirrors direct graph view loaders."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from codeintel.build.graphs.engine import GraphKind, NxGraphEngine
-from codeintel.build.graphs.engine import views as nx_views
+from codeintel.build.graphs.engine import GraphKind, RxGraphEngine
+from codeintel.build.graphs.engine import views as graph_views
 from codeintel.build.graphs.engine.cache import GraphCache
 from codeintel.core.datasets.arrow_store import write_dataset
 from tests._helpers.assertions import (
@@ -42,7 +42,7 @@ ISOLATED_NODE: Final[int] = 3
 
 
 def _assert_graph_match(name: str, expected: nx.Graph, actual: nx.Graph) -> None:
-    expect_graph_equal(actual, expected, message=f"{name} differs between engine and nx_views")
+    expect_graph_equal(actual, expected, message=f"{name} differs between engine and views")
 
 
 def _write_dataset_rows(
@@ -93,17 +93,17 @@ def _row_mapping(
     return dict(zip(columns, values, strict=True))
 
 
-def test_engine_matches_nx_views_for_core_graphs(
+def test_engine_matches_views_for_core_graphs(
     graph_target_harness: GraphTargetHarness,
 ) -> None:
-    """NxGraphEngine should produce the same graphs as direct nx_views loaders."""
+    """RxGraphEngine should produce the same graphs as direct views loaders."""
     records = graph_target_harness.run_targets()
     assert_target_ok(records["call_graph"])
     assert_target_ok(records["import_graph"])
 
     snapshot = graph_target_harness.harness.ctx.snapshot
     dataset_root = graph_target_harness.harness.ctx.build_paths.dataset_root_dir
-    engine = NxGraphEngine(
+    engine = RxGraphEngine(
         dataset_root_dir=dataset_root,
         snapshot=snapshot,
     )
@@ -111,12 +111,12 @@ def test_engine_matches_nx_views_for_core_graphs(
     comparisons: list[tuple[str, Callable[[], nx.Graph], Callable[[], nx.Graph]]] = [
         (
             "call_graph",
-            lambda: nx_views.load_call_graph(dataset_root, snapshot.repo, snapshot.commit),
+            lambda: graph_views.load_call_graph(dataset_root, snapshot.repo, snapshot.commit),
             engine.call_graph,
         ),
         (
             "import_graph",
-            lambda: nx_views.load_import_graph(dataset_root, snapshot.repo, snapshot.commit),
+            lambda: graph_views.load_import_graph(dataset_root, snapshot.repo, snapshot.commit),
             engine.import_graph,
         ),
     ]
@@ -132,19 +132,19 @@ def test_engine_matches_nx_views_for_core_graphs(
 
 
 def test_engine_matches_harness_graph_targets(graph_target_harness: GraphTargetHarness) -> None:
-    """NxGraphEngine should match nx_views after harness graph target runs."""
+    """RxGraphEngine should match views after harness graph target runs."""
     records = graph_target_harness.run_targets()
     assert_target_ok(records["call_graph"])
     assert_target_ok(records["import_graph"])
 
     snapshot = graph_target_harness.harness.ctx.snapshot
     dataset_root = graph_target_harness.harness.ctx.build_paths.dataset_root_dir
-    engine = NxGraphEngine(
+    engine = RxGraphEngine(
         dataset_root_dir=dataset_root,
         snapshot=snapshot,
     )
-    expected_call = nx_views.load_call_graph(dataset_root, snapshot.repo, snapshot.commit)
-    expected_import = nx_views.load_import_graph(dataset_root, snapshot.repo, snapshot.commit)
+    expected_call = graph_views.load_call_graph(dataset_root, snapshot.repo, snapshot.commit)
+    expected_import = graph_views.load_import_graph(dataset_root, snapshot.repo, snapshot.commit)
     _assert_graph_match("call_graph", expected_call, engine.call_graph())
     _assert_graph_match("import_graph", expected_import, engine.import_graph())
 
@@ -238,24 +238,24 @@ def test_cache_invalidate_with_missing_key_is_noop() -> None:
 
 def test_numeric_normalizers() -> None:
     """_as_int and _normalize_decimal handle varied inputs."""
-    expect_equal(nx_views.as_int(5), 5)
-    expect_equal(nx_views.as_int(Decimal("7")), 7)
-    expect_equal(nx_views.as_int(b"9"), 9)
-    expect_equal(nx_views.as_int(bytearray(b"11")), 11)
-    expect_is_none(nx_views.as_int("bad"))
-    expect_is_none(nx_views.as_int(b"bad"))
-    expect_is_none(nx_views.as_int(None))
+    expect_equal(graph_views.as_int(5), 5)
+    expect_equal(graph_views.as_int(Decimal("7")), 7)
+    expect_equal(graph_views.as_int(b"9"), 9)
+    expect_equal(graph_views.as_int(bytearray(b"11")), 11)
+    expect_is_none(graph_views.as_int("bad"))
+    expect_is_none(graph_views.as_int(b"bad"))
+    expect_is_none(graph_views.as_int(None))
 
-    expect_equal(nx_views.normalize_decimal(Decimal("10")), 10)
-    expect_equal(nx_views.normalize_decimal(b"12"), 12)
-    expect_equal(nx_views.normalize_decimal("14"), 14)
-    expect_true(nx_views.normalize_decimal(None) is None)
-    expect_true(nx_views.normalize_decimal(object()) is None)
+    expect_equal(graph_views.normalize_decimal(Decimal("10")), 10)
+    expect_equal(graph_views.normalize_decimal(b"12"), 12)
+    expect_equal(graph_views.normalize_decimal("14"), 14)
+    expect_true(graph_views.normalize_decimal(None) is None)
+    expect_true(graph_views.normalize_decimal(object()) is None)
 
 
 def test_module_attrs_from_row_coerces_values() -> None:
     """_module_attrs_from_row only sets attrs that coerce to int."""
-    name, attrs = nx_views.module_attrs_from_row("mod", "1", Decimal("2"), b"3")
+    name, attrs = graph_views.module_attrs_from_row("mod", "1", Decimal("2"), b"3")
     expect_equal(name, "mod")
     expect_equal(attrs["scc_id"], 1)
     expect_equal(attrs["component_size"], 2)
@@ -321,7 +321,7 @@ def test_load_call_graph_weights_and_isolated_nodes(test_ctx: TestContext) -> No
     _write_dataset_rows(dataset_root, "graph.call_graph_edges", commit, edges)
     _write_dataset_rows(dataset_root, "graph.call_graph_nodes", commit, nodes)
 
-    graph = nx_views.load_call_graph(dataset_root, repo, commit)
+    graph = graph_views.load_call_graph(dataset_root, repo, commit)
 
     expect_true(graph.has_edge(1, 2))
     expect_equal(graph[1][2]["weight"], 2)
@@ -346,7 +346,7 @@ def test_load_import_graph_with_missing_import_modules(test_ctx: TestContext) ->
         rows,
     )
 
-    graph = nx_views.load_import_graph(dataset_root, repo, commit)
+    graph = graph_views.load_import_graph(dataset_root, repo, commit)
 
     expect_equal(graph["a"]["b"]["weight"], 2)
     expect_true("a" in graph.nodes)
@@ -355,9 +355,9 @@ def test_load_import_graph_with_missing_import_modules(test_ctx: TestContext) ->
 
 def test_parse_reference_modules_and_config_bipartite(test_ctx: TestContext) -> None:
     """_parse_reference_modules filters and load_config_module_bipartite keeps raw when filter drops all."""
-    expect_equal(nx_views.parse_reference_modules(["a", "b"], {"a"}), ["a"])
-    expect_equal(nx_views.parse_reference_modules('["a","b"]', set()), ["a", "b"])
-    expect_equal(nx_views.parse_reference_modules("bad json", {"a"}), [])
+    expect_equal(graph_views.parse_reference_modules(["a", "b"], {"a"}), ["a"])
+    expect_equal(graph_views.parse_reference_modules('["a","b"]', set()), ["a", "b"])
+    expect_equal(graph_views.parse_reference_modules("bad json", {"a"}), [])
 
     repo = test_ctx.repo
     commit = test_ctx.commit
@@ -388,7 +388,7 @@ def test_parse_reference_modules_and_config_bipartite(test_ctx: TestContext) -> 
     _write_dataset_rows(dataset_root, "core.modules", commit, modules)
     _write_dataset_rows(dataset_root, "analytics.config_values", commit, configs)
 
-    graph = nx_views.load_config_module_bipartite(dataset_root, repo, commit)
+    graph = graph_views.load_config_module_bipartite(dataset_root, repo, commit)
 
     expect_true(("c", "k1") in graph.nodes)
     expect_true(("m", "missing.mod") in graph.nodes)
@@ -418,7 +418,7 @@ def test_load_symbol_module_graph_weights(test_ctx: TestContext) -> None:
     _write_dataset_rows(dataset_root, "core.modules", commit, modules)
     _write_dataset_rows(dataset_root, "graph.symbol_use_edges", commit, edges)
 
-    graph = nx_views.load_symbol_module_graph(dataset_root, repo, commit)
+    graph = graph_views.load_symbol_module_graph(dataset_root, repo, commit)
 
     expect_true(graph.has_edge("m_b", "m_a"))
     expect_equal(graph["m_b"]["m_a"]["weight"], 2)
@@ -441,9 +441,9 @@ def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
         rows,
     )
 
-    graph = nx_views.load_symbol_function_graph(dataset_root, commit)
+    graph = graph_views.load_symbol_function_graph(dataset_root, commit)
     expect_true(graph.has_edge(10, 20))
 
     missing_root = dataset_root / "missing"
-    empty_graph = nx_views.load_symbol_function_graph(missing_root, commit)
+    empty_graph = graph_views.load_symbol_function_graph(missing_root, commit)
     expect_equal(empty_graph.number_of_nodes(), 0)

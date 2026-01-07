@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import ensure_table_columns, tabular_to_table
 from codeintel.build.hamilton.diagnostics import diagnostics_dir
@@ -106,6 +105,7 @@ from codeintel.build.tabular.arrow_ops import (
     align_table_to_contract,
     dedupe_table_for_table,
 )
+from codeintel.build.tabular.compute_helpers import scalar_from_compute
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     invert_mask,
@@ -500,10 +500,10 @@ def _ensure_contract_columns(table_key: str, table: pa.Table) -> pa.Table:
 
 
 def _count_mask(mask: pa.Array | pa.ChunkedArray) -> int:
-    result = pc.call_function("sum", [mask])
-    if isinstance(result, pa.Scalar):
-        return int(result.as_py() or 0)
-    return int(result or 0)
+    total = scalar_from_compute("sum", [mask])
+    if isinstance(total, (int, float)):
+        return int(total)
+    return 0
 
 
 __all__ = [

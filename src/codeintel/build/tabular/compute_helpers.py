@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, cast
 import pyarrow as pa
 import pyarrow.compute as pc
 
-
 if TYPE_CHECKING:
     from pyarrow.compute import Expression as ComputeExpression
 else:
@@ -91,4 +90,110 @@ def scalar_from_compute(
     return result
 
 
-__all__ = ["array_from_compute", "call_compute", "safe_filter", "scalar_from_compute"]
+def cast_options(
+    target_type: pa.DataType,
+    *,
+    safe: bool,
+) -> pc.CastOptions:
+    """Return Arrow cast options with explicit safety configuration.
+
+    Returns
+    -------
+    pyarrow.compute.CastOptions
+        Cast options configured for safe or unsafe conversions.
+    """
+    if safe:
+        return pc.CastOptions(
+            target_type=target_type,
+            allow_int_overflow=False,
+            allow_time_truncate=False,
+            allow_time_overflow=False,
+            allow_decimal_truncate=False,
+            allow_float_truncate=False,
+            allow_invalid_utf8=False,
+        )
+    return pc.CastOptions(
+        target_type=target_type,
+        allow_int_overflow=True,
+        allow_time_truncate=True,
+        allow_time_overflow=True,
+        allow_decimal_truncate=True,
+        allow_float_truncate=True,
+        allow_invalid_utf8=True,
+    )
+
+
+def cast_array(
+    values: pa.Array | pa.ChunkedArray,
+    target_type: pa.DataType,
+    *,
+    safe: bool = False,
+) -> pa.Array | pa.ChunkedArray:
+    """Cast an Arrow array with explicit cast options.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Casted array.
+    """
+    options = cast_options(target_type, safe=safe)
+    return pc.cast(values, options=options)
+
+
+def sort_options(
+    sort_keys: Sequence[tuple[str, str]],
+    *,
+    null_placement: str = "at_end",
+) -> pc.SortOptions:
+    """Return Arrow sort options for compute kernels.
+
+    Returns
+    -------
+    pyarrow.compute.SortOptions
+        Sort options configured with null placement.
+    """
+    try:
+        return pc.SortOptions(sort_keys=sort_keys, null_placement=null_placement)
+    except TypeError:
+        return pc.SortOptions(sort_keys=sort_keys)
+
+
+def take_options(*, boundscheck: bool = True) -> pc.TakeOptions:
+    """Return Arrow take options for compute kernels.
+
+    Returns
+    -------
+    pyarrow.compute.TakeOptions
+        Take options configured with bounds checking.
+    """
+    return pc.TakeOptions(boundscheck=boundscheck)
+
+
+def take_array(
+    values: pa.Array | pa.ChunkedArray,
+    indices: pa.Array | pa.ChunkedArray,
+    *,
+    boundscheck: bool = True,
+) -> pa.Array | pa.ChunkedArray:
+    """Take values at indices using configured bounds checking.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Result array after applying the take operation.
+    """
+    options = take_options(boundscheck=boundscheck)
+    return pc.call_function("take", [values, indices], options=options)
+
+
+__all__ = [
+    "array_from_compute",
+    "call_compute",
+    "cast_array",
+    "cast_options",
+    "safe_filter",
+    "scalar_from_compute",
+    "sort_options",
+    "take_array",
+    "take_options",
+]

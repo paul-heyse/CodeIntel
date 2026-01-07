@@ -63,15 +63,10 @@ def subsystem_profile_cache__base(
 
 _MODULE = sys.modules[__name__]
 _SUBSYSTEM_CACHES_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=SUBSYSTEM_CACHES_TARGET_NAME,
-        table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
-        base_node="subsystem_profile_cache__base",
+    context=TableTargetContext.from_contract(
         contract=SUBSYSTEM_PROFILE_CACHE_CONTRACT,
         input_type=pa.Table,
         node_name="subsystem_profile_cache__table",
-        table_materializations_node="subsystem_caches__table_materializations",
     )
 )
 attach_table_target_template(_MODULE, spec=_SUBSYSTEM_CACHES_TABLE_TARGET_SPEC)

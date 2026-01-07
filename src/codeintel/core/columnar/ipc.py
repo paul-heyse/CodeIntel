@@ -8,6 +8,8 @@ from typing import BinaryIO
 
 import pyarrow as pa
 
+from codeintel.core.columnar import ipc_ops as _ipc_ops
+
 
 def schema_from_ipc_payload(payload: str) -> pa.Schema | None:
     """Decode a base64 Arrow IPC schema payload.
@@ -79,7 +81,12 @@ def _serialize_schema_ipc(schema: pa.Schema) -> bytes:
     raise TypeError(msg)
 
 
-def write_ipc_stream(reader: pa.RecordBatchReader, writer: BinaryIO) -> None:
+def write_ipc_stream(
+    reader: pa.RecordBatchReader,
+    writer: BinaryIO,
+    *,
+    options: pa.ipc.IpcWriteOptions | None = None,
+) -> None:
     """Write an Arrow IPC stream to a binary writer.
 
     Parameters
@@ -88,14 +95,11 @@ def write_ipc_stream(reader: pa.RecordBatchReader, writer: BinaryIO) -> None:
         RecordBatchReader providing stream batches.
     writer
         Binary writer (e.g., sys.stdout.buffer).
+    options
+        Optional IPC write options to apply.
     """
     sink = pa.output_stream(writer)
-    stream_writer = pa.ipc.new_stream(sink, reader.schema)
-    try:
-        for batch in reader:
-            stream_writer.write_batch(batch)
-    finally:
-        stream_writer.close()
+    _ipc_ops.write_ipc_stream(reader, sink=sink, options=options)
 
 
 __all__ = ["schema_from_ipc_payload", "schema_to_ipc_payload", "write_ipc_stream"]

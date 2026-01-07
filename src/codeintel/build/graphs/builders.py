@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-import networkx as nx
-
+from codeintel.build.graphs.rx import RxGraphStore, rx_to_networkx
 from codeintel.core.data_models.ids import as_int, normalize_decimal_id
 
 if TYPE_CHECKING:
     from collections.abc import Hashable
+
+    import networkx as nx
 
 
 def _coerce_edge_weight(value: object | None) -> int | None:
@@ -51,7 +52,7 @@ class EdgeWeightPolicy:
 
 
 def add_weighted_edge(
-    graph: nx.Graph,
+    store: RxGraphStore,
     source: Hashable,
     target: Hashable,
     *,
@@ -59,15 +60,18 @@ def add_weighted_edge(
 ) -> None:
     """Add or increment a weighted edge in the provided graph."""
     resolved = policy or EdgeWeightPolicy()
-    if graph.has_edge(source, target):
-        attrs = graph[source][target]
-        attrs["weight"] = resolved.next_weight(attrs.get("weight"))
+    src_idx = store.ensure_node(source)
+    dst_idx = store.ensure_node(target)
+    if store.graph.has_edge(src_idx, dst_idx):
+        current = store.graph.get_edge_data(src_idx, dst_idx)
+        next_weight = resolved.next_weight(current)
+        store.graph.update_edge(src_idx, dst_idx, float(next_weight))
         return
-    graph.add_edge(source, target, weight=resolved.default)
+    store.graph.add_edge(src_idx, dst_idx, float(resolved.default))
 
 
 def add_call_graph_edges(
-    graph: nx.DiGraph,
+    store: RxGraphStore,
     rows: Iterable[Mapping[str, object]],
     *,
     policy: EdgeWeightPolicy | None = None,
@@ -78,23 +82,23 @@ def add_call_graph_edges(
         callee = normalize_decimal_id(row.get("callee_goid_h128"))
         if caller is None or callee is None:
             continue
-        add_weighted_edge(graph, caller, callee, policy=policy)
+        add_weighted_edge(store, caller, callee, policy=policy)
 
 
 def add_call_graph_nodes(
-    graph: nx.DiGraph,
+    store: RxGraphStore,
     rows: Iterable[Mapping[str, object]],
 ) -> None:
     """Append call graph nodes from row mappings."""
     for row in rows:
         node_id = normalize_decimal_id(row.get("goid_h128"))
-        if node_id is None or node_id in graph:
+        if node_id is None:
             continue
         attrs: dict[str, object] = {}
         kind = row.get("kind")
         if kind is not None:
             attrs["kind"] = str(kind)
-        graph.add_node(node_id, **attrs)
+        store.set_node_attrs(node_id, attrs)
 
 
 def build_call_graph_from_rows(
@@ -110,15 +114,15 @@ def build_call_graph_from_rows(
     nx.DiGraph
         Directed call graph populated from the provided rows.
     """
-    graph = nx.DiGraph()
-    add_call_graph_edges(graph, call_graph_edges, policy=policy)
+    store = RxGraphStore.directed()
+    add_call_graph_edges(store, call_graph_edges, policy=policy)
     if call_graph_nodes is not None:
-        add_call_graph_nodes(graph, call_graph_nodes)
-    return graph
+        add_call_graph_nodes(store, call_graph_nodes)
+    return cast("nx.DiGraph", rx_to_networkx(store.graph))
 
 
 def add_import_edges(
-    graph: nx.DiGraph,
+    store: RxGraphStore,
     rows: Iterable[Mapping[str, object]],
     *,
     coerce_int: Callable[[object], int | None] = as_int,
@@ -142,12 +146,12 @@ def add_import_edges(
         layer = coerce_int(row.get("module_layer"))
         if layer is not None:
             fallback_layer_by_module[source] = layer
-        add_weighted_edge(graph, source, target, policy=policy)
+        add_weighted_edge(store, source, target, policy=policy)
     return fallback_layer_by_module
 
 
 def add_import_module_rows(
-    graph: nx.DiGraph,
+    store: RxGraphStore,
     rows: Iterable[Mapping[str, object]] | None,
     *,
     fallback_layer_by_module: Mapping[str, int],
@@ -173,12 +177,11 @@ def add_import_module_rows(
                 attrs["layer"] = layer
             if "layer" not in attrs and module_name in fallback_layer_by_module:
                 attrs["layer"] = fallback_layer_by_module[module_name]
-            graph.add_node(module_name, **attrs)
+            store.set_node_attrs(module_name, attrs)
         return
     if fallback_layer_by_module:
-        graph.add_nodes_from(
-            [(module, {"layer": layer}) for module, layer in fallback_layer_by_module.items()]
-        )
+        for module, layer in fallback_layer_by_module.items():
+            store.set_node_attrs(module, {"layer": layer})
 
 
 def build_import_graph_from_rows(
@@ -195,20 +198,20 @@ def build_import_graph_from_rows(
     nx.DiGraph
         Directed import graph populated from the provided rows.
     """
-    graph = nx.DiGraph()
+    store = RxGraphStore.directed()
     fallback_layer_by_module = add_import_edges(
-        graph,
+        store,
         import_graph_edges,
         coerce_int=coerce_int,
         policy=policy,
     )
     add_import_module_rows(
-        graph,
+        store,
         import_modules,
         fallback_layer_by_module=fallback_layer_by_module,
         coerce_int=coerce_int,
     )
-    return graph
+    return cast("nx.DiGraph", rx_to_networkx(store.graph))
 
 
 def _map_path_to_module(value: object, module_by_path: Mapping[str, str]) -> str | None:
@@ -230,7 +233,7 @@ def build_symbol_module_graph(
     nx.Graph
         Undirected symbol-module graph populated from the provided rows.
     """
-    graph = nx.Graph()
+    store = RxGraphStore.undirected()
     for record in symbol_use_edges:
         def_module = _map_path_to_module(record.get("def_path"), module_by_path)
         use_module = _map_path_to_module(record.get("use_path"), module_by_path)
@@ -238,8 +241,8 @@ def build_symbol_module_graph(
             continue
         if def_module == use_module:
             continue
-        add_weighted_edge(graph, use_module, def_module, policy=policy)
-    return graph
+        add_weighted_edge(store, use_module, def_module, policy=policy)
+    return rx_to_networkx(store.graph)
 
 
 def build_symbol_function_graph(
@@ -254,7 +257,7 @@ def build_symbol_function_graph(
     nx.Graph
         Undirected symbol-function graph populated from the provided rows.
     """
-    graph = nx.Graph()
+    store = RxGraphStore.undirected()
     for record in symbol_use_edges:
         def_goid = normalize_decimal_id(record.get("def_goid_h128"))
         use_goid = normalize_decimal_id(record.get("use_goid_h128"))
@@ -262,8 +265,8 @@ def build_symbol_function_graph(
             continue
         if def_goid == use_goid:
             continue
-        add_weighted_edge(graph, use_goid, def_goid, policy=policy)
-    return graph
+        add_weighted_edge(store, use_goid, def_goid, policy=policy)
+    return rx_to_networkx(store.graph)
 
 
 def build_symbol_module_edges(

@@ -6,7 +6,7 @@ import inspect
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import ModuleType
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
@@ -38,6 +38,10 @@ from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.hamilton import tags as ht
+
+if TYPE_CHECKING:
+    from codeintel.build.hamilton.native.patterns.specs import OutputRole
+    from codeintel.core.validation.profiles import ValidationProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +88,111 @@ class TableTargetContext:
     anchor_node_name: str | None = None
     attach_anchor: bool = True
 
+    @classmethod
+    def from_contract(
+        cls,
+        *,
+        contract: TableContractSpec,
+        input_type: object | None = None,
+        save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None,
+        node_name: str | None = None,
+        extra_tags: Mapping[TagKey, TagValue] | None = None,
+    ) -> TableTargetContext:
+        """Build a target context from a contract spec.
+
+        Returns
+        -------
+        TableTargetContext
+            Context derived from the contract input name.
+        """
+        return cls(
+            domain=contract.domain,
+            target_name=contract.target,
+            table_key=contract.table_key,
+            base_node=contract.input_name,
+            contract=contract,
+            input_type=input_type,
+            save_spec=save_spec,
+            node_name=node_name,
+            extra_tags=extra_tags,
+        )
+
+    @staticmethod
+    def build_dataset_table_spec(
+        *,
+        context: TableTargetContext,
+        save_options: DatasetSaveSpecOptions | None = None,
+    ) -> TableTargetSpec:
+        """Build a dataset-backed TableTargetSpec for a single table.
+
+        Returns
+        -------
+        TableTargetSpec
+            Standardized target spec configured for a single table output.
+        """
+        resolved_context = context
+        if context.save_spec is None:
+            if save_options is None:
+                save_spec = DatasetSaveSpec(table_key=context.table_key)
+            else:
+                save_spec = DatasetSaveSpec(
+                    table_key=context.table_key,
+                    partition_columns=save_options.partition_columns,
+                    validation_profile=save_options.validation_profile,
+                    collect_group=save_options.collect_group,
+                    output_role=save_options.output_role,
+                    output_name=save_options.output_name,
+                )
+            resolved_context = replace(context, save_spec=save_spec)
+        return build_single_table_target_spec(context=resolved_context)
+
+    @staticmethod
+    def build_relation_table_spec(
+        *,
+        context: TableTargetContext,
+        save_options: RelationTableSaveSpecOptions | None = None,
+    ) -> TableTargetSpec:
+        """Build a relation-backed TableTargetSpec for a single table.
+
+        Returns
+        -------
+        TableTargetSpec
+            Standardized target spec configured for a single table output.
+        """
+        resolved_context = context
+        if context.save_spec is None:
+            if save_options is None:
+                save_spec = RelationTableSaveSpec(table_key=context.table_key)
+            else:
+                save_spec = RelationTableSaveSpec(
+                    table_key=context.table_key,
+                    validation_profile=save_options.validation_profile,
+                    output_role=save_options.output_role,
+                    output_name=save_options.output_name,
+                )
+            resolved_context = replace(context, save_spec=save_spec)
+        return build_single_table_target_spec(context=resolved_context)
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetSaveSpecOptions:
+    """Options for dataset save specs."""
+
+    partition_columns: tuple[str, ...] = ()
+    validation_profile: ValidationProfile | None = None
+    collect_group: str | None = None
+    output_role: OutputRole | None = None
+    output_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RelationTableSaveSpecOptions:
+    """Options for relation table save specs."""
+
+    validation_profile: ValidationProfile | None = None
+    output_role: OutputRole | None = None
+    output_name: str | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class TableTargetTableContext:
@@ -96,6 +205,33 @@ class TableTargetTableContext:
     node_name: str | None = None
     input_type: object | None = None
     extra_tags: Mapping[TagKey, TagValue] | None = None
+
+    @classmethod
+    def from_contract(
+        cls,
+        *,
+        contract: TableContractSpec,
+        node_name: str | None = None,
+        save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None,
+        input_type: object | None = None,
+        extra_tags: Mapping[TagKey, TagValue] | None = None,
+    ) -> TableTargetTableContext:
+        """Build a table context from a contract spec.
+
+        Returns
+        -------
+        TableTargetTableContext
+            Context derived from the contract input name.
+        """
+        return cls(
+            table_key=contract.table_key,
+            base_node=contract.input_name,
+            contract=contract,
+            save_spec=save_spec,
+            node_name=node_name,
+            input_type=input_type,
+            extra_tags=extra_tags,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +277,70 @@ class MultiTableTargetContext:
             node_name=context.node_name,
             input_type=resolved_input_type,
             extra_tags=context.extra_tags,
+        )
+
+    @staticmethod
+    def build_dataset_table_spec(
+        *,
+        context: TableTargetTableContext,
+        save_options: DatasetSaveSpecOptions | None = None,
+        default_input_type: object | None = None,
+    ) -> TableTargetTableSpec:
+        """Build a dataset table spec for a multi-table target.
+
+        Returns
+        -------
+        TableTargetTableSpec
+            Table specification derived from the provided context.
+        """
+        resolved_context = context
+        if context.save_spec is None:
+            if save_options is None:
+                save_spec = DatasetSaveSpec(table_key=context.table_key)
+            else:
+                save_spec = DatasetSaveSpec(
+                    table_key=context.table_key,
+                    partition_columns=save_options.partition_columns,
+                    validation_profile=save_options.validation_profile,
+                    collect_group=save_options.collect_group,
+                    output_role=save_options.output_role,
+                    output_name=save_options.output_name,
+                )
+            resolved_context = replace(context, save_spec=save_spec)
+        return MultiTableTargetContext.build_table_spec(
+            context=resolved_context,
+            default_input_type=default_input_type,
+        )
+
+    @staticmethod
+    def build_relation_table_spec(
+        *,
+        context: TableTargetTableContext,
+        save_options: RelationTableSaveSpecOptions | None = None,
+        default_input_type: object | None = None,
+    ) -> TableTargetTableSpec:
+        """Build a relation table spec for a multi-table target.
+
+        Returns
+        -------
+        TableTargetTableSpec
+            Table specification derived from the provided context.
+        """
+        resolved_context = context
+        if context.save_spec is None:
+            if save_options is None:
+                save_spec = RelationTableSaveSpec(table_key=context.table_key)
+            else:
+                save_spec = RelationTableSaveSpec(
+                    table_key=context.table_key,
+                    validation_profile=save_options.validation_profile,
+                    output_role=save_options.output_role,
+                    output_name=save_options.output_name,
+                )
+            resolved_context = replace(context, save_spec=save_spec)
+        return MultiTableTargetContext.build_table_spec(
+            context=resolved_context,
+            default_input_type=default_input_type,
         )
 
 
@@ -510,7 +710,9 @@ def _validate_table_spec(table_spec: TableTargetTableSpec) -> None:
 
 
 __all__ = [
+    "DatasetSaveSpecOptions",
     "MultiTableTargetContext",
+    "RelationTableSaveSpecOptions",
     "TableTargetContext",
     "TableTargetSpec",
     "TableTargetTableContext",

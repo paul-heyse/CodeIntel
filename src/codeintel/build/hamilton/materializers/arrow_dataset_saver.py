@@ -69,6 +69,7 @@ from codeintel.core.datasets.manifests import (
     write_dataset_manifest,
 )
 from codeintel.core.datasets.paths import dataset_snapshot_dir
+from codeintel.core.datasets.scanner_ops import ScannerParams, build_scanner
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.hashing.fingerprint import fingerprint
@@ -800,7 +801,8 @@ def _observe_sink_dataset(
     if observation is None:
         return
     try:
-        scanner = dataset.scanner(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        params = ScannerParams(batch_size=DEFAULT_ARROW_BATCH_SIZE, unify_schemas=True)
+        scanner = build_scanner(dataset, params=params)
         observe_batches(scanner.to_reader(), accumulator=observation)
     except (TypeError, ValueError, pa.ArrowInvalid, OSError):
         LOG.warning("Schema observation scan failed for %s", table_key)

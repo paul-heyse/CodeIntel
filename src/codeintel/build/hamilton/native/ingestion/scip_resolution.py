@@ -9,14 +9,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pyarrow as pa
-import pyarrow.compute as pc
 from google.protobuf.struct_pb2 import NullValue, Struct
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
-    RelationTableSaveSpec,
     TableTargetTableContext,
     attach_table_target_template,
     build_multi_table_target_spec,
@@ -30,6 +28,8 @@ from codeintel.build.tabular.arrow_ops import (
     dedupe_table_for_table,
     iter_rows,
 )
+from codeintel.build.tabular.compute_columns import constant_array
+from codeintel.build.tabular.compute_helpers import cast_array
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     bit_wise_and,
@@ -88,7 +88,7 @@ def _cast_int32(table: pa.Table, columns: Sequence[str]) -> pa.Table:
     for name in table.column_names:
         column = table[name]
         if name in columns:
-            arrays.append(pc.cast(column, pa.int32(), safe=False))
+            arrays.append(cast_array(column, pa.int32(), safe=False))
         else:
             arrays.append(column)
     return pa.Table.from_arrays(arrays, names=list(table.column_names))
@@ -195,7 +195,7 @@ def _symbol_goid_xref_table(
             "end_col": "def_end_col",
         },
     )
-    created = pa.array([created_at] * joined.num_rows)
+    created = constant_array(created_at, joined.num_rows)
     return joined.append_column("created_at", created)
 
 
@@ -268,7 +268,7 @@ def _occurrence_span_xref_table(
     base = base.append_column("is_read", is_read)
     if "created_at" in base.column_names:
         base = base.drop_columns(["created_at"])
-    created = pa.array([created_at] * base.num_rows)
+    created = constant_array(created_at, base.num_rows)
     base = base.append_column("created_at", created)
     return base.select(
         [
@@ -556,41 +556,33 @@ _SCIP_RESOLUTION_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         domain="ingestion",
         target_name=SCIP_RESOLUTION_TARGET_NAME,
         tables=(
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_relation_table_spec(
                 context=TableTargetTableContext(
                     table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
                     base_node="scip_resolution__symbol_goid_xref__base",
                     node_name="scip_resolution__symbol_goid_xref",
                     input_type=InferableTabularInput,
                 ),
-                save_spec_factory=RelationTableSaveSpec,
-                default_input_type=InferableTabularInput,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_relation_table_spec(
                 context=TableTargetTableContext(
                     table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
                     base_node="scip_resolution__occurrence_span_xref__base",
                     node_name="scip_resolution__occurrence_span_xref",
                     input_type=InferableTabularInput,
                 ),
-                save_spec_factory=RelationTableSaveSpec,
-                default_input_type=InferableTabularInput,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_relation_table_spec(
                 context=TableTargetTableContext(
                     table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
                     base_node="scip_resolution__occurrence_syntax_xref__base",
                     node_name="scip_resolution__occurrence_syntax_xref",
                     input_type=InferableTabularInput,
                 ),
-                save_spec_factory=RelationTableSaveSpec,
-                default_input_type=InferableTabularInput,
             ),
         ),
         table_materializations_node="scip_resolution__table_materializations",
         anchor_node_name="t__scip_resolution",
-        save_spec_factory=RelationTableSaveSpec,
-        default_input_type=InferableTabularInput,
     )
 )
 attach_table_target_template(_MODULE, spec=_SCIP_RESOLUTION_TABLE_TARGET_SPEC)

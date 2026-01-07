@@ -38,10 +38,8 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
 )
 from codeintel.build.graphs.builders import (
     EdgeWeightPolicy,
-    add_call_graph_edges,
-    add_call_graph_nodes,
-    add_import_edges,
-    add_import_module_rows,
+    build_call_graph_from_rows,
+    build_import_graph_from_rows,
     build_symbol_function_graph,
     build_symbol_module_edges,
     build_symbol_module_graph,
@@ -292,28 +290,15 @@ def _call_graph_from_rows(
     edges: list[dict[str, object]],
     nodes: list[dict[str, object]],
 ) -> nx.DiGraph:
-    graph = nx.DiGraph()
-    add_call_graph_edges(graph, edges, policy=_EDGE_WEIGHT_POLICY)
-    add_call_graph_nodes(graph, nodes)
-    return graph
+    return build_call_graph_from_rows(edges, nodes, policy=_EDGE_WEIGHT_POLICY)
 
 
 def _import_graph_from_rows(
     edges: list[dict[str, object]],
     modules: list[dict[str, object]],
 ) -> tuple[nx.DiGraph, ComponentMeta | None]:
-    graph = nx.DiGraph()
-    fallback_layer_by_module = add_import_edges(
-        graph,
-        edges,
-        policy=_EDGE_WEIGHT_POLICY,
-    )
+    graph = build_import_graph_from_rows(edges, modules, policy=_EDGE_WEIGHT_POLICY)
     component_meta = _component_meta_from_import_rows(modules)
-    add_import_module_rows(
-        graph,
-        modules,
-        fallback_layer_by_module=fallback_layer_by_module,
-    )
     return graph, component_meta
 
 
@@ -742,9 +727,7 @@ _GRAPH_METRICS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         target_name=GRAPH_METRICS_TARGET_NAME,
         tables=(
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
-                    base_node="graph_metrics_functions__base",
+                context=TableTargetTableContext.from_contract(
                     contract=GRAPH_METRICS_FUNCTIONS_CONTRACT,
                     node_name="graph_metrics_functions__table",
                 ),
@@ -752,9 +735,7 @@ _GRAPH_METRICS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
                 default_input_type=pa.Table,
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
-                    base_node="graph_metrics_modules__base",
+                context=TableTargetTableContext.from_contract(
                     contract=GRAPH_METRICS_MODULES_CONTRACT,
                     node_name="graph_metrics_modules__table",
                 ),
@@ -780,18 +761,14 @@ _GRAPH_METRICS_EXT_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         target_name=GRAPH_METRICS_EXT_TARGET_NAME,
         tables=(
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
-                    base_node="graph_metrics_functions_ext__base",
+                context=TableTargetTableContext.from_contract(
                     contract=GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT,
                     node_name="graph_metrics_functions_ext__table",
                 ),
                 default_input_type=pa.Table,
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
-                    base_node="graph_metrics_modules_ext__base",
+                context=TableTargetTableContext.from_contract(
                     contract=GRAPH_METRICS_MODULES_EXT_CONTRACT,
                     node_name="graph_metrics_modules_ext__table",
                 ),
@@ -815,18 +792,14 @@ _SYMBOL_GRAPH_METRICS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
         tables=(
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY,
-                    base_node="symbol_graph_metrics_functions__base",
+                context=TableTargetTableContext.from_contract(
                     contract=SYMBOL_GRAPH_FUNCTIONS_CONTRACT,
                     node_name="symbol_graph_metrics_functions__table",
                 ),
                 default_input_type=pa.Table,
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SYMBOL_GRAPH_MODULES_TABLE_KEY,
-                    base_node="symbol_graph_metrics_modules__base",
+                context=TableTargetTableContext.from_contract(
                     contract=SYMBOL_GRAPH_MODULES_CONTRACT,
                     node_name="symbol_graph_metrics_modules__table",
                 ),
@@ -845,11 +818,7 @@ symbol_graph_metrics__table_materializations = _MODULE.symbol_graph_metrics__tab
 t__symbol_graph_metrics = _MODULE.t__symbol_graph_metrics
 
 _GRAPH_STATS_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=GRAPH_STATS_TARGET_NAME,
-        table_key=GRAPH_STATS_TABLE_KEY,
-        base_node="graph_stats__base",
+    context=TableTargetContext.from_contract(
         contract=GRAPH_STATS_CONTRACT,
         input_type=pa.Table,
     )

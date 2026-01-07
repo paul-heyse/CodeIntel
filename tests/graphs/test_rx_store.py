@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from codeintel.build.graphs.rx import RxGraphStore
+from codeintel.build.graphs.rx import RxGraphStore, decode_node_payload
 from tests._helpers.assertions import expect_equal, expect_true
 
 
@@ -34,3 +34,17 @@ def test_rx_graph_store_add_weighted_edge_accumulates() -> None:
     weight = store.graph.get_edge_data(src_idx, dst_idx)
     expect_true(store.graph.num_edges() == 1, message="Expected a single aggregated edge")
     expect_equal(weight, 3.5, label="edge_weight_sum")
+
+
+def test_rx_graph_store_set_node_attrs_updates_payload() -> None:
+    """Node attribute updates should be reflected in payloads."""
+    store = RxGraphStore.directed()
+    store.set_node_attrs("alpha", {"kind": "function"})
+    node_idx = store.get_index("alpha")
+    expect_true(node_idx is not None, message="Expected node to be created")
+    if node_idx is None:
+        return
+    payload = store.graph.get_node_data(node_idx)
+    node_id, attrs = decode_node_payload(payload)
+    expect_equal(node_id, "alpha", label="payload_id")
+    expect_equal(attrs.get("kind"), "function", label="payload_attrs")

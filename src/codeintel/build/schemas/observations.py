@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.build.tabular.compute_helpers import scalar_from_compute
 from codeintel.core.columnar.ipc import schema_from_ipc_payload, schema_to_ipc_payload
 from codeintel.core.columnar.schema_metadata import merge_field_metadata, merge_metadata
 from codeintel.core.hamilton import tags as hamilton_tags
@@ -1035,20 +1036,9 @@ def _array_length(values: pa.Array | pa.ChunkedArray) -> int:
 
 
 def _min_max(values: pa.Array | pa.ChunkedArray) -> tuple[object | None, object | None]:
-    min_value = _compute_scalar("min", values)
-    max_value = _compute_scalar("max", values)
+    min_value = scalar_from_compute("min", [values])
+    max_value = scalar_from_compute("max", [values])
     return min_value, max_value
-
-
-def _compute_scalar(name: str, values: pa.Array | pa.ChunkedArray) -> object | None:
-    func = getattr(pc, name, None)
-    if not callable(func):
-        return None
-    try:
-        result = func(values)
-    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
-        return None
-    return _scalar_value(result)
 
 
 def _scalar_value(result: object) -> object | None:

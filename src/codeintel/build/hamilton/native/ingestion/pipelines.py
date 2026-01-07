@@ -6,12 +6,12 @@ from collections.abc import Callable, Sequence
 from typing import ParamSpec, Protocol, TypeVar, cast
 
 import pyarrow as pa
-import pyarrow.compute as pc
 from hamilton.function_modifiers import mutate as h_mutate
 from hamilton.function_modifiers import pipe_input, resolve_from_config, step, value
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -62,8 +62,8 @@ def _required_columns_mask(
         index = batch.schema.get_field_index(name)
         if index < 0:
             continue
-        col_mask = pc.call_function("is_valid", [batch.column(index)])
-        mask = col_mask if mask is None else pc.call_function("and_kleene", [mask, col_mask])
+        col_mask = is_valid_mask(batch.column(index))
+        mask = col_mask if mask is None else and_kleene(mask, col_mask)
     return mask
 
 

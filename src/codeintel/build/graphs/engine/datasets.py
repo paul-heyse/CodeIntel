@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.build.tabular.compute_masks import equal_expr
 from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
@@ -187,9 +188,9 @@ def _snapshot_filter_expression(
     names = set(dataset.schema.names)
     expression: ds.Expression | None = None
     if repo is not None and "repo" in names:
-        expression = ds.field("repo") == repo
+        expression = equal_expr("repo", repo)
     if commit is not None and "commit" in names:
-        commit_expr = ds.field("commit") == commit
+        commit_expr = equal_expr("commit", commit)
         expression = commit_expr if expression is None else expression & commit_expr
     return expression
 

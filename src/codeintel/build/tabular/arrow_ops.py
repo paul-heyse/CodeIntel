@@ -18,12 +18,12 @@ from typing import Literal, cast
 import polars as pl
 import pyarrow as pa
 import pyarrow.compute as pc
-import pyarrow.dataset as ds
 import pyarrow.json as paj
 
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular import array_ops as _array_ops
-from codeintel.build.tabular.compute_helpers import scalar_from_compute
+from codeintel.build.tabular.compute_helpers import cast_array, scalar_from_compute
+from codeintel.build.tabular.compute_masks import equal_expr
 from codeintel.build.tabular.conversion import (
     lazyframe_to_reader,
     reader_to_table,
@@ -536,7 +536,7 @@ def _cast_string_view_column(
     if target_type == column.type:
         return column
     try:
-        return pc.cast(column, target_type, safe=False)
+        return cast_array(column, target_type, safe=False)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
         return column
 
@@ -548,7 +548,7 @@ def _cast_binary_view_column(
     if target_type == column.type:
         return column
     try:
-        return pc.cast(column, target_type, safe=False)
+        return cast_array(column, target_type, safe=False)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
         return column
 
@@ -613,9 +613,10 @@ def normalize_table_for_join(table: pa.Table) -> pa.Table:
     Returns
     -------
     pyarrow.Table
-        Table with view types normalized for join compatibility.
+        Table with view types normalized, dictionaries unified, and chunks combined.
     """
-    return _normalize_table_binary_views(_normalize_table_string_views(table))
+    normalized = _normalize_table_binary_views(_normalize_table_string_views(table))
+    return _normalize_table_for_compute(normalized)
 
 
 def normalize_table_for_compute(table: pa.Table) -> pa.Table:
@@ -626,8 +627,7 @@ def normalize_table_for_compute(table: pa.Table) -> pa.Table:
     pa.Table
         Table with normalized view types, unified dictionaries, and combined chunks.
     """
-    normalized = normalize_table_for_join(table)
-    return _normalize_table_for_compute(normalized)
+    return normalize_table_for_join(table)
 
 
 def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> None:
@@ -889,11 +889,11 @@ def scan_parquet_dataset(
         return None
 
     names = set(dataset.schema.names)
-    expression: ds.Expression | None = None
+    expression: pc.Expression | None = None
     if resolved.repo is not None and "repo" in names:
-        expression = ds.field("repo") == resolved.repo
+        expression = equal_expr("repo", resolved.repo)
     if resolved.commit is not None and "commit" in names:
-        commit_expr = ds.field("commit") == resolved.commit
+        commit_expr = equal_expr("commit", resolved.commit)
         expression = commit_expr if expression is None else expression & commit_expr
 
     scan_options = DatasetScanOptions(

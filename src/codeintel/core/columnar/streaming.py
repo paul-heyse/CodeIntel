@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import inspect
-from collections.abc import Callable, Iterable, Sequence
+import os
+import threading
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -14,7 +17,16 @@ import pyarrow.parquet as pq
 
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_ops import unify_schemas
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.constants import (
+    DEFAULT_ARROW_BATCH_READAHEAD,
+    DEFAULT_ARROW_BATCH_SIZE,
+    DEFAULT_ARROW_CPU_COUNT,
+    DEFAULT_ARROW_FRAGMENT_READAHEAD,
+    DEFAULT_ARROW_IO_THREAD_COUNT,
+    DEFAULT_ARROW_IO_THREAD_MULTIPLIER,
+    DEFAULT_ARROW_MIN_IO_THREADS,
+    DEFAULT_ARROW_USE_THREADS,
+)
 from codeintel.core.manifests import ArrowDatasetManifest
 
 if TYPE_CHECKING:
@@ -36,10 +48,10 @@ class DatasetScanOptions:
     """Options for Arrow dataset scanning."""
 
     batch_size: int
-    batch_readahead: int | None = None
-    fragment_readahead: int | None = None
+    batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
+    fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
     filter_expression: ds.Expression | None = None
-    use_threads: bool | None = None
+    use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
     memory_pool: pa.MemoryPool | None = None
     schema: pa.Schema | None = None
     columns: Sequence[str] | None = None
@@ -59,6 +71,46 @@ class QueryPlanSpec:
 
 _METADATA_FILENAME = "_metadata"
 _COMMON_METADATA_FILENAME = "_common_metadata"
+_ARROW_THREADING_CONFIGURED = threading.Event()
+
+
+def _resolve_arrow_cpu_count(default_count: int | None) -> int:
+    if default_count is not None and default_count > 0:
+        return default_count
+    detected = os.cpu_count() or 1
+    return max(1, detected)
+
+
+def _resolve_arrow_io_thread_count(
+    default_count: int | None,
+    *,
+    cpu_count: int,
+) -> int:
+    if default_count is not None and default_count > 0:
+        return default_count
+    scaled = cpu_count * DEFAULT_ARROW_IO_THREAD_MULTIPLIER
+    return max(DEFAULT_ARROW_MIN_IO_THREADS, scaled)
+
+
+def configure_arrow_threading(
+    *,
+    cpu_count: int | None = DEFAULT_ARROW_CPU_COUNT,
+    io_thread_count: int | None = DEFAULT_ARROW_IO_THREAD_COUNT,
+) -> None:
+    """Apply Arrow threading defaults for compute and dataset scans."""
+    if _ARROW_THREADING_CONFIGURED.is_set():
+        return
+    _ARROW_THREADING_CONFIGURED.set()
+    resolved_cpu = _resolve_arrow_cpu_count(cpu_count)
+    resolved_io = _resolve_arrow_io_thread_count(io_thread_count, cpu_count=resolved_cpu)
+    set_cpu = getattr(pa, "set_cpu_count", None)
+    if callable(set_cpu):
+        with contextlib.suppress(TypeError, ValueError, pa.ArrowInvalid):
+            set_cpu(resolved_cpu)
+    set_io = getattr(pa, "set_io_thread_count", None)
+    if callable(set_io):
+        with contextlib.suppress(TypeError, ValueError, pa.ArrowInvalid):
+            set_io(resolved_io)
 
 
 def resolve_partitioning(
@@ -113,6 +165,7 @@ def dataset_for_manifest(
     metadata_path = _dataset_metadata_path(dataset_dir)
     common_metadata_path = _common_metadata_path(dataset_dir)
     schema = _schema_from_common_metadata(dataset_dir)
+    parquet_format = _parquet_format_for_manifest(manifest.extras, schema=schema)
     partitioning = resolve_partitioning(manifest=manifest, schema=schema)
     metadata_source = metadata_path or common_metadata_path
     if metadata_source is not None:
@@ -121,13 +174,16 @@ def dataset_for_manifest(
             dataset_dir=dataset_dir,
             partitioning=partitioning,
             schema=schema,
+            parquet_format=parquet_format,
         )
         if dataset is not None:
             return dataset
     if manifest.files:
         paths = [str(dataset_dir / path) for path in manifest.files]
-        return ds.dataset(paths, format="parquet", partitioning=partitioning, schema=schema)
-    return ds.dataset(str(dataset_dir), format="parquet", partitioning=partitioning, schema=schema)
+        return ds.dataset(paths, format=parquet_format, partitioning=partitioning, schema=schema)
+    return ds.dataset(
+        str(dataset_dir), format=parquet_format, partitioning=partitioning, schema=schema
+    )
 
 
 def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanner:
@@ -145,6 +201,7 @@ def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanne
     pyarrow.dataset.Scanner
         Scanner configured for the dataset.
     """
+    configure_arrow_threading()
     schema = _resolve_scan_schema(dataset, options)
     scan_kwargs = _build_scan_kwargs(options, schema)
     filter_expression = options.filter_expression
@@ -222,9 +279,7 @@ def empty_reader_from_schema(schema: pa.Schema) -> pa.RecordBatchReader:
 def scan_dataset_reader(
     dataset_dir: Path,
     *,
-    columns: Sequence[str] | None = None,
-    batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
-    fragment_readahead: int | None = None,
+    options: DatasetScanOptions | None = None,
 ) -> pa.RecordBatchReader | None:
     """Return a streaming reader for a dataset directory.
 
@@ -232,12 +287,8 @@ def scan_dataset_reader(
     ----------
     dataset_dir
         Directory containing the dataset.
-    columns
-        Optional column projection list.
-    batch_size
-        Target batch size for the reader.
-    fragment_readahead
-        Optional fragment readahead hint.
+    options
+        Optional DatasetScanOptions to configure scanning.
 
     Returns
     -------
@@ -246,14 +297,10 @@ def scan_dataset_reader(
     """
     if not dataset_dir.is_dir():
         return None
-    scan_kwargs: dict[str, object] = {"batch_size": batch_size}
-    if columns is not None:
-        scan_kwargs["columns"] = list(columns)
-    if fragment_readahead is not None:
-        scan_kwargs["fragment_readahead"] = fragment_readahead
     try:
         dataset = ds.dataset(str(dataset_dir), format="parquet")
-        scanner = dataset.scanner(**scan_kwargs)
+        resolved = options or DatasetScanOptions(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        scanner = build_scanner(dataset, options=resolved)
         return scanner.to_reader()
     except (OSError, ValueError, pa.ArrowInvalid):
         return None
@@ -288,6 +335,7 @@ def scan_dataset_lazyframe(
         return None
     if not dataset_dir.is_dir():
         return None
+    configure_arrow_threading()
     try:
         if row_index_name:
             return _scan_parquet_with_row_index(
@@ -432,7 +480,7 @@ def _fragments_for_filter(
         fragments = _safe_get_fragments(get_fragments_fn, None)
     if fragments is None:
         return None
-    return _apply_row_group_pruning(fragments, filter_expression)
+    return apply_row_group_pruning(fragments, filter_expression)
 
 
 def _dataset_metadata_path(dataset_dir: Path) -> Path | None:
@@ -456,22 +504,74 @@ def _schema_from_common_metadata(dataset_dir: Path) -> pa.Schema | None:
     return parquet_file.schema_arrow
 
 
+def _parquet_format_for_manifest(
+    extras: Mapping[str, object] | None,
+    *,
+    schema: pa.Schema | None,
+) -> ds.ParquetFileFormat:
+    parquet_format = ds.ParquetFileFormat()
+    dictionary_columns = _dictionary_columns_from_manifest(extras)
+    if dictionary_columns:
+        if schema is not None:
+            dictionary_columns = tuple(
+                name for name in dictionary_columns if name in schema.names
+            )
+            if not dictionary_columns:
+                return parquet_format
+        read_options = getattr(parquet_format, "read_options", None)
+        if read_options is not None:
+            with contextlib.suppress(AttributeError, TypeError, ValueError):
+                read_options.dictionary_columns = set(dictionary_columns)
+    return parquet_format
+
+
 def _dataset_from_metadata(
     metadata_path: Path,
     *,
     dataset_dir: Path,
     partitioning: ds.Partitioning | str | None,
     schema: pa.Schema | None,
+    parquet_format: ds.FileFormat | None,
 ) -> ds.Dataset | None:
     try:
         return ds.parquet_dataset(
             str(metadata_path),
+            format=parquet_format,
             partitioning=partitioning,
             partition_base_dir=str(dataset_dir),
             schema=schema,
         )
     except (OSError, ValueError, pa.ArrowInvalid):
         return None
+
+
+def _dictionary_columns_from_manifest(
+    extras: Mapping[str, object] | None,
+) -> tuple[str, ...] | None:
+    if not extras:
+        return None
+    write_settings = _coerce_mapping(extras.get("write_settings"))
+    inferred_settings = _coerce_mapping(extras.get("inferred_settings"))
+    columns = _read_str_list(write_settings.get("dictionary_encode_columns"))
+    if not columns:
+        columns = _read_str_list(inferred_settings.get("dictionary_encode_columns"))
+    if columns:
+        return tuple(columns)
+    return None
+
+
+def _coerce_mapping(value: object | None) -> dict[str, object]:
+    if isinstance(value, Mapping):
+        return {str(key): val for key, val in value.items()}
+    return {}
+
+
+def _read_str_list(value: object) -> list[str] | None:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, tuple):
+        return [str(item) for item in value]
+    return None
 
 
 def _safe_get_fragments(
@@ -494,10 +594,17 @@ def _safe_get_fragments(
         return None
 
 
-def _apply_row_group_pruning(
+def apply_row_group_pruning(
     fragments: tuple[ds.Fragment, ...],
     filter_expression: ds.Expression,
 ) -> tuple[ds.Fragment, ...]:
+    """Apply row-group pruning for fragments using the filter expression.
+
+    Returns
+    -------
+    tuple[pyarrow.dataset.Fragment, ...]
+        Fragments filtered by row-group metadata when supported.
+    """
     pruned: list[ds.Fragment] = []
     for fragment in fragments:
         subset = getattr(fragment, "subset", None)
@@ -553,7 +660,9 @@ def _scan_parquet_with_row_index(
 __all__ = [
     "DatasetScanOptions",
     "QueryPlanSpec",
+    "apply_row_group_pruning",
     "build_scanner",
+    "configure_arrow_threading",
     "dataset_for_manifest",
     "empty_reader_from_schema",
     "resolve_partitioning",

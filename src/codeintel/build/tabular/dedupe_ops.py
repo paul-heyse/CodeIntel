@@ -7,10 +7,9 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.compute_helpers import array_from_compute, call_compute
+from codeintel.build.tabular.compute_helpers import array_from_compute, call_compute, sort_options
 from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_reader
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_rows
@@ -49,14 +48,8 @@ def _row_index_name(table: pa.Table, *, base: str) -> str:
 
 def _sort_table_for_preference(table: pa.Table, prefer_columns: Sequence[str]) -> pa.Table:
     sort_keys = [(name, "descending") for name in prefer_columns]
-    options = pc.SortOptions(sort_keys=sort_keys)
-    try:
-        options = pc.SortOptions(sort_keys=sort_keys, null_placement="at_end")
-        indices = call_compute("sort_indices", [table], options=options)
-    except (TypeError, pa.ArrowNotImplementedError):
-        indices = None
-    if indices is None:
-        indices = call_compute("sort_indices", [table], options=options)
+    options = sort_options(sort_keys, null_placement="at_end")
+    indices = call_compute("sort_indices", [table], options=options)
     if indices is None:
         return table
     return table.take(indices)

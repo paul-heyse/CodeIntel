@@ -34,7 +34,7 @@ from codeintel.build.hamilton.native.graphs.import_graph import (
 )
 from codeintel.build.hamilton.native.graphs.pdg import PDG_EDGES_TABLE_KEY
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
+    DatasetSaveSpecOptions,
     MultiTableTargetContext,
     TableTargetContext,
     TableTargetTableContext,
@@ -56,19 +56,12 @@ PDG_TARGET_NAME = "pdg"
 CALL_GRAPH_TABLE_KEYS = (CALL_GRAPH_NODES_TABLE_KEY, CALL_GRAPH_EDGES_TABLE_KEY)
 IMPORT_GRAPH_TABLE_KEYS = (IMPORT_MODULES_TABLE_KEY, IMPORT_GRAPH_EDGES_TABLE_KEY)
 
-
-def _partitioned_save_spec(table_key: str) -> DatasetSaveSpec:
-    return DatasetSaveSpec(
-        table_key=table_key,
-        partition_columns=("repo", "commit"),
-    )
-
-
-def _strict_save_spec(table_key: str) -> DatasetSaveSpec:
-    return DatasetSaveSpec(
-        table_key=table_key,
-        validation_profile="strict",
-    )
+_PARTITIONED_DATASET_SAVE_OPTIONS = DatasetSaveSpecOptions(
+    partition_columns=("repo", "commit"),
+)
+_STRICT_DATASET_SAVE_OPTIONS = DatasetSaveSpecOptions(
+    validation_profile="strict",
+)
 
 
 _MODULE = sys.modules[__name__]
@@ -84,16 +77,13 @@ _CALL_GRAPH_TABLE_TARGET_SPEC = build_multi_table_target_spec(
                     node_name="call_graph__nodes_table",
                 ),
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=CALL_GRAPH_EDGES_TABLE_KEY,
                     base_node="call_graph_edges",
-                    save_spec=DatasetSaveSpec(
-                        table_key=CALL_GRAPH_EDGES_TABLE_KEY,
-                        partition_columns=("repo", "commit"),
-                    ),
                     node_name="call_graph__edges_table",
                 ),
+                save_options=_PARTITIONED_DATASET_SAVE_OPTIONS,
             ),
         ),
         table_materializations_node="call_graph__table_materializations",
@@ -111,26 +101,25 @@ _IMPORT_GRAPH_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         domain="graphs",
         target_name=IMPORT_GRAPH_TARGET_NAME,
         tables=(
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=IMPORT_MODULES_TABLE_KEY,
                     base_node="import_modules",
                     node_name="import_graph__modules_table",
                 ),
-                save_spec_factory=_partitioned_save_spec,
+                save_options=_PARTITIONED_DATASET_SAVE_OPTIONS,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
                     base_node="import_graph_edges",
                     node_name="import_graph__edges_table",
                 ),
-                save_spec_factory=_partitioned_save_spec,
+                save_options=_PARTITIONED_DATASET_SAVE_OPTIONS,
             ),
         ),
         table_materializations_node="import_graph__table_materializations",
         anchor_node_name="t__import_graph",
-        save_spec_factory=_partitioned_save_spec,
     )
 )
 attach_table_target_template(_MODULE, spec=_IMPORT_GRAPH_TABLE_TARGET_SPEC)
@@ -144,26 +133,25 @@ _CFG_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         domain="graphs",
         target_name=CFG_TARGET_NAME,
         tables=(
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=CFG_BLOCKS_TABLE_KEY,
                     base_node="cfg_blocks",
                     node_name="cfg__blocks_table",
                 ),
-                save_spec_factory=_strict_save_spec,
+                save_options=_STRICT_DATASET_SAVE_OPTIONS,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=CFG_EDGES_TABLE_KEY,
                     base_node="cfg_edges",
                     node_name="cfg__edges_table",
                 ),
-                save_spec_factory=_strict_save_spec,
+                save_options=_STRICT_DATASET_SAVE_OPTIONS,
             ),
         ),
         table_materializations_node="cfg__table_materializations",
         anchor_node_name="t__cfg",
-        save_spec_factory=_strict_save_spec,
     )
 )
 attach_table_target_template(_MODULE, spec=_CFG_TABLE_TARGET_SPEC)
@@ -172,20 +160,17 @@ cfg__edges_table = _MODULE.cfg__edges_table
 cfg__table_materializations = _MODULE.cfg__table_materializations
 t__cfg = _MODULE.t__cfg
 
-_DFG_TABLE_TARGET_SPEC = build_single_table_target_spec(
+_DFG_TABLE_TARGET_SPEC = TableTargetContext.build_dataset_table_spec(
     context=TableTargetContext(
         domain="graphs",
         target_name=DFG_TARGET_NAME,
         table_key=DFG_EDGES_TABLE_KEY,
         base_node="dfg_edges",
-        save_spec=DatasetSaveSpec(
-            table_key=DFG_EDGES_TABLE_KEY,
-            validation_profile="strict",
-        ),
         node_name="dfg__edges_table",
         table_materializations_node="dfg__table_materializations",
         anchor_node_name="t__dfg",
-    )
+    ),
+    save_options=_STRICT_DATASET_SAVE_OPTIONS,
 )
 attach_table_target_template(_MODULE, spec=_DFG_TABLE_TARGET_SPEC)
 dfg__edges_table = _MODULE.dfg__edges_table
@@ -229,42 +214,41 @@ _CALL_WIRING_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         domain="graphs",
         target_name=CALL_WIRING_TARGET_NAME,
         tables=(
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=CPG_CALL_TARGETS_TABLE_KEY,
                     base_node="cpg_call_targets",
                     node_name="call_wiring__call_targets_table",
                 ),
-                save_spec_factory=_partitioned_save_spec,
+                save_options=_PARTITIONED_DATASET_SAVE_OPTIONS,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=CPG_CALL_EDGES_TABLE_KEY,
                     base_node="cpg_edges_calls",
                     node_name="call_wiring__edges_calls_table",
                 ),
-                save_spec_factory=_partitioned_save_spec,
+                save_options=_PARTITIONED_DATASET_SAVE_OPTIONS,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=CPG_ARG_TO_PARAM_EDGES_TABLE_KEY,
                     base_node="cpg_edges_arg_to_param",
                     node_name="call_wiring__edges_arg_to_param_table",
                 ),
-                save_spec_factory=_partitioned_save_spec,
+                save_options=_PARTITIONED_DATASET_SAVE_OPTIONS,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=CPG_RET_TO_CALL_EDGES_TABLE_KEY,
                     base_node="cpg_edges_ret_to_call",
                     node_name="call_wiring__edges_ret_to_call_table",
                 ),
-                save_spec_factory=_partitioned_save_spec,
+                save_options=_PARTITIONED_DATASET_SAVE_OPTIONS,
             ),
         ),
         table_materializations_node="call_wiring__table_materializations",
         anchor_node_name="t__call_wiring",
-        save_spec_factory=_partitioned_save_spec,
     )
 )
 attach_table_target_template(_MODULE, spec=_CALL_WIRING_TABLE_TARGET_SPEC)
@@ -280,26 +264,25 @@ _CPG_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         domain="graphs",
         target_name=CPG_TARGET_NAME,
         tables=(
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=CPG_NODES_TABLE_KEY,
                     base_node="cpg_nodes",
                     node_name="cpg__nodes_table",
                 ),
-                save_spec_factory=_partitioned_save_spec,
+                save_options=_PARTITIONED_DATASET_SAVE_OPTIONS,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_dataset_table_spec(
                 context=TableTargetTableContext(
                     table_key=CPG_EDGES_TABLE_KEY,
                     base_node="cpg_edges",
                     node_name="cpg__edges_table",
                 ),
-                save_spec_factory=_partitioned_save_spec,
+                save_options=_PARTITIONED_DATASET_SAVE_OPTIONS,
             ),
         ),
         table_materializations_node="cpg__table_materializations",
         anchor_node_name="t__cpg",
-        save_spec_factory=_partitioned_save_spec,
     )
 )
 attach_table_target_template(_MODULE, spec=_CPG_TABLE_TARGET_SPEC)

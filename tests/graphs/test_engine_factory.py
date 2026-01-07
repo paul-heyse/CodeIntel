@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 def test_build_graph_engine_uses_backend_flags(graph_gateway: StorageGateway) -> None:
-    """Graph engine factory honors backend GPU preference."""
+    """Graph engine factory ignores GPU backend preferences for rustworkx."""
     env: dict[str, str] = {}
     engine = build_graph_engine(
         snapshot=("demo/repo", "deadbeef"),
@@ -25,14 +25,14 @@ def test_build_graph_engine_uses_backend_flags(graph_gateway: StorageGateway) ->
             env=env,
         ),
     )
-    expect_true(engine.use_gpu, message="Engine did not inherit GPU preference")
+    expect_true(not engine.use_gpu, message="Engine should ignore GPU preferences")
     graph: nx.DiGraph = engine.call_graph()
     expect_true(
         isinstance(graph, nx.DiGraph), message="Engine did not return a DiGraph for call_graph"
     )
     expect_true(
-        env.get("NX_CUGRAPH_AUTOCONFIG") == "True",
-        message="GPU backend env flag was not set by factory",
+        "NX_CUGRAPH_AUTOCONFIG" not in env,
+        message="GPU backend env flag should not be set by factory",
     )
 
 
@@ -47,14 +47,14 @@ def test_build_graph_engine_cpu_backend_leaves_env_clean(graph_gateway: StorageG
             env=env,
         ),
     )
-    expect_true(not engine.use_gpu, message="Engine should not request GPU when use_gpu is False")
+    expect_true(not engine.use_gpu, message="Engine should not request GPU")
     expect_true(
         "NX_CUGRAPH_AUTOCONFIG" not in env, message="CPU backend should not set GPU env flags"
     )
 
 
 def test_build_graph_engine_rustworkx_disables_gpu(graph_gateway: StorageGateway) -> None:
-    """Rustworkx selection should skip GPU enablement."""
+    """Rustworkx engine should ignore GPU backend preferences."""
     env: dict[str, str] = {}
     engine = build_graph_engine(
         snapshot=("demo/repo", "deadbeef"),

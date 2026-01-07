@@ -56,11 +56,7 @@ def function_types__base(
 
 _MODULE = sys.modules[__name__]
 _FUNCTION_TYPES_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=FUNCTION_TYPES_TARGET_NAME,
-        table_key=FUNCTION_TYPES_TABLE_KEY,
-        base_node="function_types__base",
+    context=TableTargetContext.from_contract(
         contract=FUNCTION_TYPES_CONTRACT,
         input_type=pa.Table,
     )

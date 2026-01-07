@@ -13,6 +13,7 @@ from codeintel.build.tabular.arrow_ops import (
     build_join_options,
     iter_rows,
 )
+from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
@@ -91,8 +92,9 @@ def _profile_cache_columns() -> tuple[str, ...]:
 def _ensure_columns(frame: pa.Table, columns: tuple[str, ...]) -> pa.Table:
     existing = set(frame.column_names)
     missing = [name for name in columns if name not in existing]
-    for name in missing:
-        frame = frame.append_column(name, pa.array([None] * frame.num_rows))
+    if missing:
+        constants = dict.fromkeys(missing)
+        frame = append_constant_columns(frame, constants)
     return frame.select(list(columns))
 
 

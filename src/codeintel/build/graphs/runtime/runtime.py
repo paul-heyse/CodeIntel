@@ -10,7 +10,6 @@ For pipeline run and step tracking persistence, see `codeintel.storage.tracking`
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from collections.abc import Mapping
@@ -19,11 +18,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Self, TypeVar, cast
 
 import networkx as nx
-from networkx.readwrite import json_graph
+import rustworkx as rx
 
 from codeintel.build.graphs.engine import GraphKind
 from codeintel.build.graphs.engine.datasets import resolve_dataset_root
 from codeintel.build.graphs.engine.factory import EngineBuildOptions, build_graph_engine
+from codeintel.build.graphs.rx.convert import networkx_to_rx, rx_to_networkx
+from codeintel.build.graphs.rx.serialization import dumps_node_link_json, loads_node_link_json
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 from codeintel.core.options import ValidationOutcome
 
@@ -37,7 +38,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-GRAPH_CACHE_VERSION = "v2"
+GRAPH_CACHE_VERSION = "v3"
 GraphCacheValue = nx.Graph | nx.DiGraph
 GraphT = TypeVar("GraphT", nx.Graph, nx.DiGraph)
 
@@ -269,16 +270,20 @@ class GraphRuntimeOptions:
     @property
     def resolved_backend(self) -> GraphBackendConfig:
         """Return a concrete backend configuration derived from graph_backend."""
-        return self.backend or GraphBackendConfig()
+        backend = self.backend or GraphBackendConfig()
+        if backend.engine == "rustworkx" and backend.backend == "cpu" and not backend.use_gpu:
+            return backend
+        return GraphBackendConfig(
+            use_gpu=False,
+            backend="cpu",
+            strict=backend.strict,
+            engine="rustworkx",
+        )
 
     @property
     def use_gpu(self) -> bool:
         """Compute whether GPU execution is preferred."""
-        if self.backend is None:
-            return False
-        if self.backend.engine == "rustworkx":
-            return False
-        return bool(self.backend.use_gpu)
+        return False
 
     @property
     def resolved_eager(self) -> bool:
@@ -408,9 +413,7 @@ class GraphRuntime:
     @property
     def use_gpu(self) -> bool:
         """Flag indicating whether the backend prefers GPU execution."""
-        if self.backend.engine == "rustworkx":
-            return False
-        return self.backend.use_gpu
+        return False
 
     def ensure_call_graph(self) -> nx.DiGraph:
         """Return a cached call graph, loading it from the engine when needed.
@@ -571,10 +574,10 @@ class GraphRuntime:
                 or (use_gpu_str == "true") != self.use_gpu
             ):
                 return None
-            with graph_path.open("r", encoding="utf-8") as fh:
-                payload = json.load(fh)
-            return json_graph.node_link_graph(payload)
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            payload = graph_path.read_text(encoding="utf-8")
+            rx_graph = loads_node_link_json(payload)
+            return rx_to_networkx(rx_graph)
+        except (OSError, TypeError, ValueError, rx.JSONDeserializationError):
             return None
 
     def _write_cached_graph(self, kind: GraphKind, graph: nx.Graph) -> None:
@@ -587,9 +590,9 @@ class GraphRuntime:
         meta_path = base.with_suffix(".meta")
         graph_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            serialized = json_graph.node_link_data(graph)
-            with graph_path.open("w", encoding="utf-8") as fh:
-                json.dump(serialized, fh)
+            rx_graph = networkx_to_rx(graph).graph
+            payload = dumps_node_link_json(rx_graph)
+            graph_path.write_text(payload, encoding="utf-8")
             use_gpu_str = "true" if self.use_gpu else "false"
             meta_path.write_text(
                 "\n".join(
@@ -604,7 +607,7 @@ class GraphRuntime:
                 ),
                 encoding="utf-8",
             )
-        except (OSError, TypeError, ValueError):
+        except (OSError, TypeError, ValueError, rx.JSONSerializationError):
             return
 
     def _log_graph_stats(self, name: str, graph: nx.Graph, *, cache_hit: bool) -> None:
@@ -684,8 +687,7 @@ def build_graph_runtime(
         resolved_backend.use_gpu if resolved_backend.engine != "rustworkx" else False
     )
     log.info(
-        "graph_runtime.built snapshot=%s@%s backend=%s use_gpu=%s engine=%s "
-        "features=%s",
+        "graph_runtime.built snapshot=%s@%s backend=%s use_gpu=%s engine=%s features=%s",
         options.snapshot.repo if options.snapshot else None,
         options.snapshot.commit if options.snapshot else None,
         resolved_backend.backend,

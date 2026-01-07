@@ -6,13 +6,11 @@ import sys
 from collections.abc import Mapping, Sequence
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
-    RelationTableSaveSpec,
     TableTargetTableContext,
     attach_table_target_template,
     build_multi_table_target_spec,
@@ -26,6 +24,8 @@ from codeintel.build.tabular.arrow_ops import (
     build_join_options,
     dedupe_table_for_table,
 )
+from codeintel.build.tabular.compute_columns import constant_array
+from codeintel.build.tabular.compute_helpers import cast_array
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     invert_mask,
@@ -111,7 +111,7 @@ def _coerce_occurrence_ints(table: pa.Table) -> pa.Table:
     for name in table.column_names:
         column = table[name]
         if name in _OCCURRENCE_INT_COLUMNS:
-            arrays.append(pc.cast(column, pa.int64(), safe=False))
+            arrays.append(cast_array(column, pa.int64(), safe=False))
         else:
             arrays.append(column)
     return pa.Table.from_arrays(arrays, names=list(table.column_names))
@@ -267,13 +267,13 @@ def _resolve_occurrence_joins(
     return matched_bytes, fallback_join, line_join
 
 
-def _null_mask(table: pa.Table, start_col: str, end_col: str) -> pa.BooleanArray:
+def _null_mask(table: pa.Table, start_col: str, end_col: str) -> pa.Array | pa.ChunkedArray:
     if start_col not in table.column_names or end_col not in table.column_names:
-        return pa.array([False] * table.num_rows)
+        return constant_array(value=False, length=table.num_rows)
     return and_kleene(is_valid_mask(table[start_col]), is_valid_mask(table[end_col]))
 
 
-def _filter_table(table: pa.Table, mask: pa.BooleanArray) -> pa.Table:
+def _filter_table(table: pa.Table, mask: pa.Array | pa.ChunkedArray) -> pa.Table:
     if table.num_rows == 0:
         return table
     return table.filter(mask)
@@ -336,7 +336,7 @@ def _cast_to_int64(
     column: pa.Array | pa.ChunkedArray,
 ) -> pa.Array | pa.ChunkedArray:
     try:
-        return pc.cast(column, pa.int64(), safe=False)
+        return cast_array(column, pa.int64(), safe=False)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
         return column
 
@@ -489,51 +489,41 @@ _SYNTAX_ENRICH_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         domain="ingestion",
         target_name=SYNTAX_ENRICH_TARGET_NAME,
         tables=(
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_relation_table_spec(
                 context=TableTargetTableContext(
                     table_key=SYNTAX_DEFS_RESOLVED_TABLE_KEY,
                     base_node="syntax_enrich__defs_resolved__base",
                     node_name="syntax_enrich__defs_resolved",
                     input_type=InferableTabularInput,
                 ),
-                save_spec_factory=RelationTableSaveSpec,
-                default_input_type=InferableTabularInput,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_relation_table_spec(
                 context=TableTargetTableContext(
                     table_key=SYNTAX_REFS_RESOLVED_TABLE_KEY,
                     base_node="syntax_enrich__refs_resolved__base",
                     node_name="syntax_enrich__refs_resolved",
                     input_type=InferableTabularInput,
                 ),
-                save_spec_factory=RelationTableSaveSpec,
-                default_input_type=InferableTabularInput,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_relation_table_spec(
                 context=TableTargetTableContext(
                     table_key=SYNTAX_CALLS_RESOLVED_TABLE_KEY,
                     base_node="syntax_enrich__calls_resolved__base",
                     node_name="syntax_enrich__calls_resolved",
                     input_type=InferableTabularInput,
                 ),
-                save_spec_factory=RelationTableSaveSpec,
-                default_input_type=InferableTabularInput,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_relation_table_spec(
                 context=TableTargetTableContext(
                     table_key=SYNTAX_IMPORTS_RESOLVED_TABLE_KEY,
                     base_node="syntax_enrich__imports_resolved__base",
                     node_name="syntax_enrich__imports_resolved",
                     input_type=InferableTabularInput,
                 ),
-                save_spec_factory=RelationTableSaveSpec,
-                default_input_type=InferableTabularInput,
             ),
         ),
         table_materializations_node="syntax_enrich__table_materializations",
         anchor_node_name="t__syntax_enrich",
-        save_spec_factory=RelationTableSaveSpec,
-        default_input_type=InferableTabularInput,
     )
 )
 attach_table_target_template(_MODULE, spec=_SYNTAX_ENRICH_TABLE_TARGET_SPEC)

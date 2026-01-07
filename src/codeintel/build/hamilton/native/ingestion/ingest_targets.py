@@ -49,14 +49,12 @@ from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOption
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
     MultiTableTargetContext,
-    RelationTableSaveSpec,
     TableTargetContext,
     TableTargetTableContext,
     ToolFinalizeContext,
     ToolRunContext,
     attach_table_target_template,
     build_multi_table_target_spec,
-    build_single_table_target_spec,
     finalize_target_from_materializations,
     run_tool_step,
 )
@@ -658,41 +656,33 @@ _MODULES_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         domain="ingestion",
         target_name=MODULES_TARGET_NAME,
         tables=(
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_relation_table_spec(
                 context=TableTargetTableContext(
                     table_key=MODULES_TABLE_KEY,
                     base_node="modules__module_rows__base",
                     node_name="modules__module_rows",
                     input_type=InferableTabularInput,
                 ),
-                save_spec_factory=RelationTableSaveSpec,
-                default_input_type=InferableTabularInput,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_relation_table_spec(
                 context=TableTargetTableContext(
                     table_key=FILE_STATE_TABLE_KEY,
                     base_node="modules__file_state_rows__base",
                     node_name="modules__file_state_rows",
                     input_type=InferableTabularInput,
                 ),
-                save_spec_factory=RelationTableSaveSpec,
-                default_input_type=InferableTabularInput,
             ),
-            MultiTableTargetContext.build_table_spec(
+            MultiTableTargetContext.build_relation_table_spec(
                 context=TableTargetTableContext(
                     table_key=REPO_MAP_TABLE_KEY,
                     base_node="modules__repo_map_rows__base",
                     node_name="modules__repo_map_rows",
                     input_type=InferableTabularInput,
                 ),
-                save_spec_factory=RelationTableSaveSpec,
-                default_input_type=InferableTabularInput,
             ),
         ),
         table_materializations_node="modules__table_materializations",
         attach_anchor=False,
-        save_spec_factory=RelationTableSaveSpec,
-        default_input_type=InferableTabularInput,
     )
 )
 attach_table_target_template(_MODULE, spec=_MODULES_TABLE_TARGET_SPEC)
@@ -1035,13 +1025,12 @@ def config_ingest__rows__base(
     return config_ingest__raw_rows
 
 
-_CONFIG_INGEST_TABLE_TARGET_SPEC = build_single_table_target_spec(
+_CONFIG_INGEST_TABLE_TARGET_SPEC = TableTargetContext.build_relation_table_spec(
     context=TableTargetContext(
         domain="ingestion",
         target_name=CONFIG_INGEST_TARGET_NAME,
         table_key=CONFIG_VALUES_TABLE_KEY,
         base_node="config_ingest__rows__base",
-        save_spec=RelationTableSaveSpec(table_key=CONFIG_VALUES_TABLE_KEY),
         node_name="config_ingest__rows",
         input_type=InferableTabularInput,
         table_materializations_node="config_ingest__table_materializations",
@@ -1264,13 +1253,12 @@ def tests__rows__base(
     return tests__raw_rows
 
 
-_TESTS_INGEST_TABLE_TARGET_SPEC = build_single_table_target_spec(
+_TESTS_INGEST_TABLE_TARGET_SPEC = TableTargetContext.build_relation_table_spec(
     context=TableTargetContext(
         domain="ingestion",
         target_name=TESTS_INGEST_TARGET_NAME,
         table_key=TEST_CATALOG_TABLE_KEY,
         base_node="tests__rows__base",
-        save_spec=RelationTableSaveSpec(table_key=TEST_CATALOG_TABLE_KEY),
         node_name="tests__rows",
         input_type=InferableTabularInput,
         table_materializations_node="tests_ingest__table_materializations",
@@ -1489,13 +1477,12 @@ def typing__diagnostic_rows__base(
     return frame
 
 
-_TYPING_TABLE_TARGET_SPEC = build_single_table_target_spec(
+_TYPING_TABLE_TARGET_SPEC = TableTargetContext.build_relation_table_spec(
     context=TableTargetContext(
         domain="ingestion",
         target_name=TYPING_TARGET_NAME,
         table_key=STATIC_DIAGNOSTICS_TABLE_KEY,
         base_node="typing__diagnostic_rows__base",
-        save_spec=RelationTableSaveSpec(table_key=STATIC_DIAGNOSTICS_TABLE_KEY),
         node_name="typing__diagnostic_rows",
         input_type=InferableTabularInput,
         table_materializations_node="typing__table_materializations",

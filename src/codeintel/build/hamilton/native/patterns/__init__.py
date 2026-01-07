@@ -30,7 +30,9 @@ from codeintel.build.hamilton.native.patterns.specs import (
     ToolTargetSpec,
 )
 from codeintel.build.hamilton.native.patterns.table_target import (
+    DatasetSaveSpecOptions,
     MultiTableTargetContext,
+    RelationTableSaveSpecOptions,
     TableTargetContext,
     TableTargetSpec,
     TableTargetTableContext,
@@ -55,10 +57,12 @@ __all__ = [
     "ArtifactSaveSpec",
     "DataAccessSpec",
     "DatasetSaveSpec",
+    "DatasetSaveSpecOptions",
     "IngestStep",
     "MultiTableTargetContext",
     "OutputRole",
     "RelationTableSaveSpec",
+    "RelationTableSaveSpecOptions",
     "SaverContext",
     "TableOutputSpec",
     "TableTargetContext",

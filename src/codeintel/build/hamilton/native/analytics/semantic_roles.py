@@ -298,18 +298,14 @@ _SEMANTIC_ROLES_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         target_name=SEMANTIC_ROLES_TARGET_NAME,
         tables=(
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY,
-                    base_node="semantic_roles_functions__base",
+                context=TableTargetTableContext.from_contract(
                     contract=SEMANTIC_ROLES_FUNCTIONS_CONTRACT,
                     node_name="semantic_roles_functions__table",
                     input_type=pa.Table,
                 ),
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY,
-                    base_node="semantic_roles_modules__base",
+                context=TableTargetTableContext.from_contract(
                     contract=SEMANTIC_ROLES_MODULES_CONTRACT,
                     node_name="semantic_roles_modules__table",
                     input_type=pa.Table,

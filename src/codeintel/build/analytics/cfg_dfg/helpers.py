@@ -13,6 +13,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import equal_expr, is_in_expr, is_valid_expr
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -117,10 +118,7 @@ def prefilter_table(
             expr = _combine_expr(expr, is_valid_expr(name))
     if expr is None or _EXPR_TYPE is None:
         return table
-    try:
-        return table.filter(expr)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return table
+    return safe_filter(table, expr)
 
 
 def load_function_metadata(

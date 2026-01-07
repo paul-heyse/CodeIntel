@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from anyio import to_thread
 
 from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.context import IngestionContext, resolve_repo_root
 from codeintel.ingestion.engine import ToolStatus
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
@@ -412,9 +413,10 @@ class FakeToolService(ToolService):
 
     async def run_pyright(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         paths: Sequence[Path] | None = None,
+        context: IngestionContext | None = None,
     ) -> Mapping[str, int]:
         """Run pyright and return configured error counts.
 
@@ -422,6 +424,8 @@ class FakeToolService(ToolService):
         ----------
         repo_root
             Repository root (logged but not used).
+        context
+            Optional ingestion context providing repo_root.
         paths
             Optional paths to scope diagnostics.
 
@@ -431,11 +435,12 @@ class FakeToolService(ToolService):
             Configured pyright errors.
         """
         path_args = [str(path) for path in paths] if paths is not None else []
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
         self.calls.record(
             ToolRunCall(
                 tool="pyright",
                 args=path_args,
-                cwd=repo_root,
+                cwd=resolved_root,
                 timeout_ms=None,
                 env=None,
             )
@@ -446,9 +451,10 @@ class FakeToolService(ToolService):
 
     async def run_pyrefly(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         paths: Sequence[Path] | None = None,
+        context: IngestionContext | None = None,
     ) -> Mapping[str, int]:
         """Run pyrefly and return configured error counts.
 
@@ -456,6 +462,8 @@ class FakeToolService(ToolService):
         ----------
         repo_root
             Repository root (logged but not used).
+        context
+            Optional ingestion context providing repo_root.
         paths
             Optional paths to scope diagnostics.
 
@@ -465,11 +473,12 @@ class FakeToolService(ToolService):
             Configured pyrefly errors.
         """
         path_args = [str(path) for path in paths] if paths is not None else []
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
         self.calls.record(
             ToolRunCall(
                 tool="pyrefly",
                 args=path_args,
-                cwd=repo_root,
+                cwd=resolved_root,
                 timeout_ms=None,
                 env=None,
             )
@@ -480,9 +489,10 @@ class FakeToolService(ToolService):
 
     async def run_ruff(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         paths: Sequence[Path] | None = None,
+        context: IngestionContext | None = None,
     ) -> Mapping[str, int]:
         """Run ruff and return configured error counts.
 
@@ -490,6 +500,8 @@ class FakeToolService(ToolService):
         ----------
         repo_root
             Repository root (logged but not used).
+        context
+            Optional ingestion context providing repo_root.
         paths
             Optional paths to scope diagnostics.
 
@@ -499,11 +511,12 @@ class FakeToolService(ToolService):
             Configured ruff errors.
         """
         path_args = [str(path) for path in paths] if paths is not None else []
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
         self.calls.record(
             ToolRunCall(
                 tool="ruff",
                 args=path_args,
-                cwd=repo_root,
+                cwd=resolved_root,
                 timeout_ms=None,
                 env=None,
             )
@@ -547,9 +560,10 @@ class FakeToolService(ToolService):
 
     async def run_pytest_report(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         json_report_path: Path,
+        context: IngestionContext | None = None,
     ) -> PytestReportResult:
         """Run pytest and return configured success.
 
@@ -559,17 +573,20 @@ class FakeToolService(ToolService):
             Repository root (logged but not used).
         json_report_path
             JSON report path (logged but not used).
+        context
+            Optional ingestion context providing repo_root.
 
         Returns
         -------
         PytestReportResult
             Configured pytest report outcome.
         """
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
         self.calls.record(
             ToolRunCall(
                 tool="pytest_report",
                 args=[str(json_report_path)],
-                cwd=repo_root,
+                cwd=resolved_root,
                 timeout_ms=None,
                 env=None,
             )

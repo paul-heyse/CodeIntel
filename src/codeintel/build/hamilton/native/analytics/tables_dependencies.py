@@ -205,18 +205,14 @@ _EXTERNAL_DEPS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         target_name=EXTERNAL_DEPS_TARGET_NAME,
         tables=(
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
-                    base_node="external_dependency_calls__base",
+                context=TableTargetTableContext.from_contract(
                     contract=EXTERNAL_DEPENDENCY_CALLS_CONTRACT,
                     node_name="external_dependency_calls__table",
                     input_type=pa.Table,
                 ),
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
-                    base_node="external_dependencies__base",
+                context=TableTargetTableContext.from_contract(
                     contract=EXTERNAL_DEPENDENCIES_CONTRACT,
                     node_name="external_dependencies__table",
                     input_type=pa.Table,

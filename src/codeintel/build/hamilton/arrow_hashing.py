@@ -11,6 +11,7 @@ from hamilton.caching import fingerprinting
 from pyarrow import ipc
 
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.exports.arrow_ipc import build_ipc_write_options
 
 
 class _HashSink(RawIOBase):
@@ -32,8 +33,14 @@ class _HashSink(RawIOBase):
 def _hash_table(table: pa.Table) -> str:
     hasher = hashlib.sha256()
     sink = _HashSink(hasher)
+    options = build_ipc_write_options(
+        compression=None,
+        use_threads=True,
+        unify_dictionaries=True,
+        metadata_version="V5",
+    )
     with pa.output_stream(sink) as output:
-        writer = ipc.new_stream(output, table.schema)
+        writer = ipc.new_stream(output, table.schema, options=options)
         for batch in table.to_batches(max_chunksize=DEFAULT_ARROW_BATCH_SIZE):
             writer.write_batch(batch)
         writer.close()

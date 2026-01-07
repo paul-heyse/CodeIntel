@@ -35,10 +35,8 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_materializations,
 )
 from codeintel.build.hamilton.native.patterns import (
-    RelationTableSaveSpec,
     TableTargetContext,
     attach_table_target_template,
-    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -432,13 +430,12 @@ def serving_artifacts__materializations_views(
 
 
 _MODULE = sys.modules[__name__]
-_SERVING_ARTIFACTS_TABLE_TARGET_SPEC = build_single_table_target_spec(
+_SERVING_ARTIFACTS_TABLE_TARGET_SPEC = TableTargetContext.build_relation_table_spec(
     context=TableTargetContext(
         domain="export",
         target_name=SERVING_ARTIFACTS_TARGET_NAME,
         table_key=SCHEMA_INFERENCE_ERRORS_TABLE_KEY,
         base_node="serving_artifacts__schema_inference_errors_rows__base",
-        save_spec=RelationTableSaveSpec(table_key=SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
         node_name="serving_artifacts__schema_inference_errors_rows",
         input_type=pl.LazyFrame,
         table_materializations_node="serving_artifacts__table_materializations",

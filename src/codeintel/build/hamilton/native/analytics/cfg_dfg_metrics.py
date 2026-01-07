@@ -523,39 +523,27 @@ _CFG_DFG_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
         default_input_type=pa.Table,
     ),
     table_contexts=(
-        TableTargetTableContext(
-            table_key=CFG_FUNCTION_METRICS_TABLE_KEY,
-            base_node="cfg_function_metrics__base",
+        TableTargetTableContext.from_contract(
             contract=CFG_FUNCTION_METRICS_CONTRACT,
             node_name="cfg_function_metrics__table",
         ),
-        TableTargetTableContext(
-            table_key=CFG_BLOCK_METRICS_TABLE_KEY,
-            base_node="cfg_block_metrics__base",
+        TableTargetTableContext.from_contract(
             contract=CFG_BLOCK_METRICS_CONTRACT,
             node_name="cfg_block_metrics__table",
         ),
-        TableTargetTableContext(
-            table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-            base_node="cfg_function_metrics_ext__base",
+        TableTargetTableContext.from_contract(
             contract=CFG_FUNCTION_METRICS_EXT_CONTRACT,
             node_name="cfg_function_metrics_ext__table",
         ),
-        TableTargetTableContext(
-            table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
-            base_node="dfg_function_metrics__base",
+        TableTargetTableContext.from_contract(
             contract=DFG_FUNCTION_METRICS_CONTRACT,
             node_name="dfg_function_metrics__table",
         ),
-        TableTargetTableContext(
-            table_key=DFG_BLOCK_METRICS_TABLE_KEY,
-            base_node="dfg_block_metrics__base",
+        TableTargetTableContext.from_contract(
             contract=DFG_BLOCK_METRICS_CONTRACT,
             node_name="dfg_block_metrics__table",
         ),
-        TableTargetTableContext(
-            table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-            base_node="dfg_function_metrics_ext__base",
+        TableTargetTableContext.from_contract(
             contract=DFG_FUNCTION_METRICS_EXT_CONTRACT,
             node_name="dfg_function_metrics_ext__table",
         ),

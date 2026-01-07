@@ -85,9 +85,7 @@ def sorted_nested_mapping[K: Hashable, V: Hashable, T](
     dict[K, dict[V, T]]
         Nested mapping sorted by the stable key function at each level.
     """
-    return {
-        key: sorted_mapping(value) for key, value in sorted_mapping(mapping).items()
-    }
+    return {key: sorted_mapping(value) for key, value in sorted_mapping(mapping).items()}
 
 
 def normalize_float(value: float, *, nan_policy: NanPolicy = "keep") -> float:
@@ -126,8 +124,7 @@ def normalize_mapping[K: Hashable](
         Mapping with normalized float values and stable key ordering.
     """
     return {
-        key: normalize_float(mapping[key], nan_policy=nan_policy)
-        for key in sorted_keys(mapping)
+        key: normalize_float(mapping[key], nan_policy=nan_policy) for key in sorted_keys(mapping)
     }
 
 

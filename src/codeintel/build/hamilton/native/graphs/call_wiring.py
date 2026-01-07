@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import pyarrow as pa
-import pyarrow.compute as pc
 from intervaltree import IntervalTree
 
 from codeintel.build.graphs.assembly import (
@@ -37,6 +36,8 @@ from codeintel.build.tabular.arrow_ops import (
     dedupe_table_for_table,
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
+from codeintel.build.tabular.compute_helpers import cast_array
+from codeintel.build.tabular.compute_masks import equal_mask
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.intervals.span_resolver import MatchKind, SpanResolver
@@ -592,7 +593,7 @@ def _cast_table_column(
     if pa.types.is_null(column.type):
         casted = pa.nulls(table.num_rows, type=target_type)
     else:
-        casted = pc.cast(column, target_type, safe=False)
+        casted = cast_array(column, target_type, safe=False)
     return table.set_column(index, column_name, casted)
 
 
@@ -1193,7 +1194,7 @@ def _entry_blocks(cfg_blocks: pa.Table) -> pa.Table:
     if cfg_blocks.num_rows == 0 or not required.issubset(set(cfg_blocks.column_names)):
         return _empty_table(["function_goid_h128", "entry_block_id"])
     try:
-        kind_mask = pc.call_function("equal", [cfg_blocks.column("kind"), pc.scalar("entry")])
+        kind_mask = equal_mask(cfg_blocks.column("kind"), pa.scalar("entry"))
         filtered = cfg_blocks.filter(kind_mask)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _empty_table(["function_goid_h128", "entry_block_id"])
@@ -1209,7 +1210,7 @@ def _exit_blocks(cfg_blocks: pa.Table) -> pa.Table:
     if cfg_blocks.num_rows == 0 or not required.issubset(set(cfg_blocks.column_names)):
         return _empty_table(["function_goid_h128", "exit_block_id"])
     try:
-        kind_mask = pc.call_function("equal", [cfg_blocks.column("kind"), pc.scalar("exit")])
+        kind_mask = equal_mask(cfg_blocks.column("kind"), pa.scalar("exit"))
         filtered = cfg_blocks.filter(kind_mask)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _empty_table(["function_goid_h128", "exit_block_id"])

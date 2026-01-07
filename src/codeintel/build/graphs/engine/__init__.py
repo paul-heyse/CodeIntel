@@ -1,13 +1,13 @@
 """Graph engine abstractions for analytics consumers.
 
 This package provides the backend-agnostic interface for building and
-caching analytics graphs, along with the NetworkX-backed implementation and
-compatibility shims for rustworkx migration.
+caching analytics graphs, along with rustworkx-backed implementations and
+NetworkX compatibility outputs during migration.
 
 Key Components
 --------------
 - protocol: GraphEngine protocol and GraphKind enumeration
-- nx_engine: NetworkX-backed GraphEngine implementation
+- nx_engine: GraphEngine implementation (rustworkx-backed loaders, NetworkX outputs)
 - cache: Graph caching utilities
 - views: SQL-to-NetworkX loaders
 

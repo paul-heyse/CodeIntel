@@ -108,11 +108,7 @@ def subsystem_graph_metrics__base(
 
 _MODULE = sys.modules[__name__]
 _SUBSYSTEM_GRAPH_METRICS_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext(
-        domain="analytics",
-        target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-        table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
-        base_node="subsystem_graph_metrics__base",
+    context=TableTargetContext.from_contract(
         contract=SUBSYSTEM_GRAPH_METRICS_CONTRACT,
         input_type=pa.Table,
     )

@@ -169,18 +169,14 @@ _SUBSYSTEMS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
         target_name=SUBSYSTEMS_TARGET_NAME,
         tables=(
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SUBSYSTEMS_TABLE_KEY,
-                    base_node="subsystems__base",
+                context=TableTargetTableContext.from_contract(
                     contract=SUBSYSTEMS_CONTRACT,
                     node_name="subsystems__table",
                     input_type=pa.Table,
                 ),
             ),
             MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SUBSYSTEM_MODULES_TABLE_KEY,
-                    base_node="subsystem_modules__base",
+                context=TableTargetTableContext.from_contract(
                     contract=SUBSYSTEM_MODULES_CONTRACT,
                     node_name="subsystem_modules__table",
                     input_type=pa.Table,

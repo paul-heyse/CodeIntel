@@ -32,6 +32,7 @@ from codeintel.build.hamilton.materializers.path_templates import (
     default_formatter,
     format_path_template,
 )
+from codeintel.core.columnar.ipc import write_ipc_stream
 from codeintel.core.duckdb_types import DuckDBRelation
 from codeintel.core.execution.materialization import (
     failed_artifact_result,
@@ -312,16 +313,8 @@ def _coerce_bytes(data: object) -> bytes:
 
 def _write_arrow_reader(output_path: Path, reader: pa.RecordBatchReader) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with (
-        output_path.open("wb") as sink,
-        pa.ipc.new_stream(
-            sink,
-            reader.schema,
-            options=default_ipc_write_options(),
-        ) as writer,
-    ):
-        for batch in reader:
-            writer.write_batch(batch)
+    with output_path.open("wb") as sink:
+        write_ipc_stream(reader, sink, options=default_ipc_write_options())
     return output_path.stat().st_size
 
 

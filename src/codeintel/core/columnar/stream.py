@@ -395,6 +395,14 @@ def coerce_arrow_reader(
     reader = _import_c_stream(value)
     if reader is not None:
         return reader
+    table_from_c = _table_from_c_array(value)
+    if table_from_c is not None:
+        batches = (
+            table_from_c.to_batches(max_chunksize=batch_size)
+            if batch_size
+            else table_from_c.to_batches()
+        )
+        return pa.RecordBatchReader.from_batches(table_from_c.schema, batches)
     table = _table_from_interchange(value)
     if table is None:
         return None
@@ -420,6 +428,9 @@ def coerce_arrow_table(value: object) -> pa.Table | None:
     reader = _import_c_stream(value)
     if reader is not None:
         return reader.read_all()
+    table = _table_from_c_array(value)
+    if table is not None:
+        return table
     return _table_from_interchange(value)
 
 
@@ -427,7 +438,16 @@ def _import_c_stream(value: object) -> pa.RecordBatchReader | None:
     stream_fn = getattr(value, "__arrow_c_stream__", None)
     if not callable(stream_fn):
         return None
-    capsule = stream_fn()
+    from_stream = getattr(pa.RecordBatchReader, "from_stream", None)
+    if callable(from_stream):
+        try:
+            return from_stream(value)
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            pass
+    try:
+        capsule = stream_fn()
+    except (TypeError, ValueError):
+        return None
     importer = getattr(pa.RecordBatchReader, "_import_from_c", None)
     if callable(importer):
         try:
@@ -435,6 +455,23 @@ def _import_c_stream(value: object) -> pa.RecordBatchReader | None:
         except (TypeError, ValueError, pa.ArrowInvalid):
             return None
     return None
+
+
+def _table_from_c_array(value: object) -> pa.Table | None:
+    array_fn = getattr(value, "__arrow_c_array__", None)
+    schema_fn = getattr(value, "__arrow_c_schema__", None)
+    if not callable(array_fn) or not callable(schema_fn):
+        return None
+    schema_importer = getattr(pa.Schema, "_import_from_c", None)
+    batch_importer = getattr(pa.RecordBatch, "_import_from_c", None)
+    if not callable(schema_importer) or not callable(batch_importer):
+        return None
+    try:
+        schema = schema_importer(schema_fn())
+        batch = batch_importer(array_fn(), schema)
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return None
+    return pa.Table.from_batches([batch], schema=schema)
 
 
 def _table_from_interchange(value: object) -> pa.Table | None:

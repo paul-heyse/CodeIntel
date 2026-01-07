@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from codeintel.build.graphs.rx.convert import RxGraph as RxRawGraph
+from codeintel.build.graphs.rx.convert import networkx_to_rx, rx_to_networkx
 from codeintel.build.graphs.rx.errors import RxGraphError, run_rx
 from codeintel.build.graphs.rx.normalize import (
     NanPolicy,
@@ -12,6 +14,12 @@ from codeintel.build.graphs.rx.normalize import (
     sorted_mapping,
     sorted_nested_mapping,
     stable_key,
+)
+from codeintel.build.graphs.rx.payloads import (
+    decode_node_id,
+    decode_node_payload,
+    encode_node_id,
+    encode_node_payload,
 )
 from codeintel.build.graphs.rx.serialization import (
     RxGraph,
@@ -27,13 +35,20 @@ __all__ = [
     "RxGraph",
     "RxGraphError",
     "RxGraphStore",
+    "RxRawGraph",
+    "decode_node_id",
+    "decode_node_payload",
     "dumps_node_link_json",
     "edge_weight_from_payload",
+    "encode_node_id",
+    "encode_node_payload",
     "loads_node_link_json",
+    "networkx_to_rx",
     "normalize_float",
     "normalize_mapping",
     "read_node_link_json",
     "run_rx",
+    "rx_to_networkx",
     "sorted_keys",
     "sorted_mapping",
     "sorted_nested_mapping",
