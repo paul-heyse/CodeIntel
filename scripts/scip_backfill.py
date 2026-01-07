@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.storage.queries.safe import safe_count_with_scope
+
 from codeintel.build.config import load_build_config
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.executor import HamiltonBuildExecutor
@@ -20,7 +22,6 @@ from codeintel.core.execution import new_run_context
 from codeintel.core.runtime.loader import load_execution_context
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.factory import open_gateway
-from codeintel.storage.queries.safe import safe_count_with_scope
 
 if TYPE_CHECKING:
     from codeintel.cli.resolution.types import ResolvedRuntime

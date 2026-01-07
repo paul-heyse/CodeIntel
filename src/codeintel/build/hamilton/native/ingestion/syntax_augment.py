@@ -622,7 +622,7 @@ def _group_payloads_by_syntax_node(
     payloads: pa.StructArray,
 ) -> pa.Table:
     ids = ensure_array(syntax_node_ids)
-    if ids.num_rows == 0:
+    if len(ids) == 0:
         empty_nodes = pa.array([], type=pa.string())
         empty_payloads = pa.array([], type=pa.list_(payloads.type))
         return pa.table({"syntax_node_id": empty_nodes, "ts_nodes": empty_payloads})

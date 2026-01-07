@@ -1196,6 +1196,42 @@ def _call_site_from_access(access: _AttributeAccess | _AugAssignAccess) -> _Call
     )
 
 
+def _dedupe_block_table(
+    table: pa.Table,
+    *,
+    output_column: str,
+) -> pa.Table:
+    if table.num_rows == 0:
+        return _empty_table(["function_goid_h128", output_column])
+    try:
+        grouped = table.group_by(["function_goid_h128"]).aggregate([("block_id", "min")])
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return _dedupe_block_rows(table, output_column=output_column)
+    block_column = "block_id_min"
+    if block_column not in grouped.column_names:
+        return _dedupe_block_rows(table, output_column=output_column)
+    return grouped.rename_columns(["function_goid_h128", output_column])
+
+
+def _dedupe_block_rows(table: pa.Table, *, output_column: str) -> pa.Table:
+    seen: set[object] = set()
+    rows: list[dict[str, object]] = []
+    for row in _table_rows(table):
+        key = row.get("function_goid_h128")
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            {
+                "function_goid_h128": key,
+                output_column: row.get("block_id"),
+            }
+        )
+    if not rows:
+        return _empty_table(["function_goid_h128", output_column])
+    return pa.Table.from_pylist(rows)
+
+
 def _entry_blocks(cfg_blocks: pa.Table) -> pa.Table:
     required = {"kind", "function_goid_h128", "block_id"}
     if cfg_blocks.num_rows == 0 or not required.issubset(set(cfg_blocks.column_names)):
@@ -1208,8 +1244,7 @@ def _entry_blocks(cfg_blocks: pa.Table) -> pa.Table:
     if filtered.num_rows == 0:
         return _empty_table(["function_goid_h128", "entry_block_id"])
     table = filtered.select(["function_goid_h128", "block_id"])
-    table = table.drop_duplicates(["function_goid_h128"])
-    return table.rename_columns(["function_goid_h128", "entry_block_id"])
+    return _dedupe_block_table(table, output_column="entry_block_id")
 
 
 def _exit_blocks(cfg_blocks: pa.Table) -> pa.Table:
@@ -1224,8 +1259,7 @@ def _exit_blocks(cfg_blocks: pa.Table) -> pa.Table:
     if filtered.num_rows == 0:
         return _empty_table(["function_goid_h128", "exit_block_id"])
     table = filtered.select(["function_goid_h128", "block_id"])
-    table = table.drop_duplicates(["function_goid_h128"])
-    return table.rename_columns(["function_goid_h128", "exit_block_id"])
+    return _dedupe_block_table(table, output_column="exit_block_id")
 
 
 def _call_target_record(context: _CallTargetRecordContext) -> dict[str, object]:

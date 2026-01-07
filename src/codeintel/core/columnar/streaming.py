@@ -233,11 +233,17 @@ def resolve_partitioning(
     """
     if not manifest.partition_columns:
         return None
+    columns = [str(column) for column in manifest.partition_columns]
     if schema is None:
-        return "hive"
-    if any(column not in schema.names for column in manifest.partition_columns):
-        return "hive"
-    fields = [schema.field(column) for column in manifest.partition_columns]
+        return ds.partitioning(field_names=columns)
+    if any(column not in schema.names for column in columns):
+        return ds.partitioning(field_names=columns)
+    fields: list[pa.Field] = []
+    for name in columns:
+        field = schema.field(name)
+        if pa.types.is_dictionary(field.type):
+            field = pa.field(name, field.type.value_type, field.nullable)
+        fields.append(field)
     return ds.partitioning(schema=pa.schema(fields))
 
 

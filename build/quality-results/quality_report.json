@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2026-01-07T14:01:16.043008+00:00",
+  "generated_at": "2026-01-07T15:59:52.931539+00:00",
   "overall_status": "passed",
-  "duration_seconds": 61.167282,
+  "duration_seconds": 59.875489,
   "results": [
     {
       "name": "pylist_guardrail",
@@ -15,9 +15,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T14:00:14.874866+00:00",
-      "ended_at": "2026-01-07T14:00:22.740250+00:00",
-      "duration_seconds": 7.865384,
+      "started_at": "2026-01-07T15:58:53.055473+00:00",
+      "ended_at": "2026-01-07T15:59:00.983013+00:00",
+      "duration_seconds": 7.92754,
       "stdout": [
         "Guardrail: no to_pylist usage found in build code."
       ],
@@ -34,9 +34,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T14:00:22.740314+00:00",
-      "ended_at": "2026-01-07T14:00:36.854720+00:00",
-      "duration_seconds": 14.114406,
+      "started_at": "2026-01-07T15:59:00.983072+00:00",
+      "ended_at": "2026-01-07T15:59:15.170064+00:00",
+      "duration_seconds": 14.186992,
       "stdout": [],
       "stderr": [
         "<frozen runpy>:128: RuntimeWarning: 'tools.guardrails' found in sys.modules after import of package 'tools', but prior to execution of 'tools.guardrails'; this may result in unpredictable behaviour",
@@ -76,9 +76,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T14:00:36.854795+00:00",
-      "ended_at": "2026-01-07T14:00:44.743037+00:00",
-      "duration_seconds": 7.888242,
+      "started_at": "2026-01-07T15:59:15.170139+00:00",
+      "ended_at": "2026-01-07T15:59:22.797008+00:00",
+      "duration_seconds": 7.626869,
       "stdout": [],
       "stderr": []
     },
@@ -93,11 +93,11 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T14:00:44.743087+00:00",
-      "ended_at": "2026-01-07T14:00:44.852646+00:00",
-      "duration_seconds": 0.109559,
+      "started_at": "2026-01-07T15:59:22.797066+00:00",
+      "ended_at": "2026-01-07T15:59:22.862954+00:00",
+      "duration_seconds": 0.065888,
       "stdout": [
-        "Found 2 errors (2 fixed, 0 remaining)."
+        "All checks passed!"
       ],
       "stderr": []
     },
@@ -112,9 +112,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T14:00:44.852692+00:00",
-      "ended_at": "2026-01-07T14:00:51.501992+00:00",
-      "duration_seconds": 6.6493,
+      "started_at": "2026-01-07T15:59:22.863002+00:00",
+      "ended_at": "2026-01-07T15:59:28.733657+00:00",
+      "duration_seconds": 5.870655,
       "stdout": [],
       "stderr": []
     },
@@ -129,9 +129,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T14:00:51.502045+00:00",
-      "ended_at": "2026-01-07T14:01:13.611275+00:00",
-      "duration_seconds": 22.10923,
+      "started_at": "2026-01-07T15:59:28.733706+00:00",
+      "ended_at": "2026-01-07T15:59:50.533567+00:00",
+      "duration_seconds": 21.799861,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -147,9 +147,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T14:01:13.611441+00:00",
-      "ended_at": "2026-01-07T14:01:16.042148+00:00",
-      "duration_seconds": 2.430707,
+      "started_at": "2026-01-07T15:59:50.533649+00:00",
+      "ended_at": "2026-01-07T15:59:52.930962+00:00",
+      "duration_seconds": 2.397313,
       "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/Users/paulheyse/CodeIntel/CodeIntel/pyrefly.toml`",

@@ -187,6 +187,14 @@ def set_execution_active(*, active: bool) -> None:
     _STATE.execution_active = active
 
 
+def _ensure_schema_service_for_module_imports(*, env: BuildEnv) -> None:
+    try:
+        get_schema_service()
+    except RuntimeError:
+        provider = _override_schema_provider(env=env)
+        set_schema_service(SchemaService(table_provider=provider))
+
+
 def _resolve_runtime_config(
     *,
     env: BuildEnv,
@@ -222,6 +230,7 @@ def compose_runtime(
     with _composition_guard():
         resolved_options = options or BuildDriverOptions()
         resolved_config = _resolve_runtime_config(env=env, config=config)
+        _ensure_schema_service_for_module_imports(env=env)
         resolved_modules = _resolve_modules_for_runtime(
             env=env,
             resolved_config=resolved_config,

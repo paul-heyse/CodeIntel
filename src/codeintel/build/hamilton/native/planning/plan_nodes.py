@@ -47,12 +47,12 @@ class PlanGraphInputs:
     plan_cache_probe: Mapping[str, PlanCacheStatus]
     preflight_block_map: Mapping[str, tuple[str, ...]]
 
-_CACHE_IGNORE_TAGS: dict[TagKey, TagValue] = {
-    cast("TagKey", CACHE_BEHAVIOR_TAG): "ignore",
+_CACHE_DISABLE_TAGS: dict[TagKey, TagValue] = {
+    cast("TagKey", CACHE_BEHAVIOR_TAG): "disable",
 }
 
 
-@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def plan_context(
     catalog: DagCatalog,
     env: BuildEnv,
@@ -75,7 +75,7 @@ def plan_context(
     )
 
 
-@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def plan_target_closure(
     catalog: DagCatalog,
     plan_request: PlanRequest | None = None,
@@ -93,7 +93,7 @@ def plan_target_closure(
     return catalog.closure(resolved_request.requested_targets)
 
 
-@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def plan_target_subgraph_nodes(
     catalog: DagCatalog,
     plan_target_closure: tuple[str, ...],
@@ -116,7 +116,7 @@ def plan_target_subgraph_nodes(
     return subgraphs
 
 
-@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def plan_node_versions(
     cache_key_resolver: CacheKeyResolver | None,
     plan_context: PlanContext,
@@ -145,7 +145,7 @@ def plan_node_versions(
     return cache_key_resolver.resolve_node_versions(nodes=nodes, input_values=input_values)
 
 
-@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def plan_cache_probe(
     cache_index: CacheIndex | None,
     plan_node_versions: Mapping[str, str],
@@ -174,7 +174,7 @@ def plan_cache_probe(
     return statuses
 
 
-@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def plan_graph_inputs(
     plan_target_closure: tuple[str, ...],
     plan_target_subgraph_nodes: Mapping[str, tuple[str, ...]],
@@ -196,7 +196,7 @@ def plan_graph_inputs(
     )
 
 
-@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def plan(
     plan_context: PlanContext,
     plan_graph_inputs: PlanGraphInputs,

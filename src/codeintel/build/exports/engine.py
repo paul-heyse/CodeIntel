@@ -20,6 +20,8 @@ from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal, cast
 
+import pyarrow.parquet as pq
+
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import (
     ExportAuditRecord,
@@ -965,8 +967,20 @@ def _export_dataset_from_snapshot(
         opts=context.opts,
         manifest=manifest,
     )
-    if decision.should_skip:
-        return decision.skip_path
+    should_skip = decision.should_skip
+    skip_path = decision.skip_path
+    if should_skip and skip_path is not None and context.opts.validate_exports:
+        missing = _missing_export_columns(target)
+        if missing:
+            log.info(
+                "Re-exporting %s; cached export missing columns: %s",
+                target.dataset_name,
+                ", ".join(missing),
+            )
+            should_skip = False
+            skip_path = None
+    if should_skip:
+        return skip_path
 
     try:
         result = _perform_export_write_from_snapshot(
@@ -1043,6 +1057,20 @@ def _build_export_decision_from_snapshot(
         should_skip=should_skip,
         skip_path=skip_path,
     )
+
+
+def _missing_export_columns(target: ExportTarget) -> tuple[str, ...]:
+    if target.dataset is None or target.dataset.schema is None:
+        return ()
+    if target.output_path.suffix.lower() != ".parquet":
+        return ()
+    expected = {column.name for column in target.dataset.schema.columns}
+    try:
+        schema = pq.read_schema(target.output_path)
+    except (OSError, ValueError, TypeError):
+        return tuple(sorted(expected))
+    missing = sorted(expected - set(schema.names))
+    return tuple(missing)
 
 
 def _perform_export_write_from_snapshot(

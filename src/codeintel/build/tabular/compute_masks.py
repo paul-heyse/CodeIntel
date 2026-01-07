@@ -214,7 +214,7 @@ def equal_expr(field: str | ComputeExpression, value: object) -> ComputeExpressi
     pyarrow.compute.Expression
         Equality expression for the given field and value.
     """
-    return pc.call_function("equal", [_field_expr(field), _scalar_expr(value)])
+    return _field_expr(field) == _scalar_expr(value)
 
 
 def not_equal_expr(field: str | ComputeExpression, value: object) -> ComputeExpression:
@@ -225,7 +225,7 @@ def not_equal_expr(field: str | ComputeExpression, value: object) -> ComputeExpr
     pyarrow.compute.Expression
         Inequality expression for the given field and value.
     """
-    return pc.call_function("not_equal", [_field_expr(field), _scalar_expr(value)])
+    return _field_expr(field) != _scalar_expr(value)
 
 
 def is_valid_expr(field: str | ComputeExpression) -> ComputeExpression:
@@ -236,7 +236,7 @@ def is_valid_expr(field: str | ComputeExpression) -> ComputeExpression:
     pyarrow.compute.Expression
         Validity expression for the given field.
     """
-    return pc.call_function("is_valid", [_field_expr(field)])
+    return _field_expr(field).is_valid()
 
 
 def is_in_expr(
@@ -252,8 +252,7 @@ def is_in_expr(
         Membership expression for the given field.
     """
     resolved = value_set_array(value_set)
-    options = pc.SetLookupOptions(value_set=resolved)
-    return pc.call_function("is_in", [_field_expr(field)], options=options)
+    return _field_expr(field).isin(resolved)
 
 
 def non_empty_string_expr(field: str | ComputeExpression) -> ComputeExpression:
@@ -265,10 +264,8 @@ def non_empty_string_expr(field: str | ComputeExpression) -> ComputeExpression:
         Expression for non-empty string entries.
     """
     field_expr = _field_expr(field)
-    lengths = pc.call_function("utf8_length", [field_expr])
-    non_empty = pc.call_function("greater", [lengths, pc.scalar(0)])
-    is_valid = pc.call_function("is_valid", [field_expr])
-    return pc.call_function("and_kleene", [is_valid, non_empty])
+    non_empty = field_expr != _scalar_expr("")
+    return field_expr.is_valid() & non_empty
 
 
 def language_is_python_or_null(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:

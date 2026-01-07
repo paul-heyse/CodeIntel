@@ -111,8 +111,8 @@ _HAMILTON_TYPE_HINTS = (
     ModuleRecord,
 )
 
-_CACHE_IGNORE_TAGS: dict[TagKey, TagValue] = {
-    cast("TagKey", CACHE_BEHAVIOR_TAG): "ignore",
+_CACHE_DISABLE_TAGS: dict[TagKey, TagValue] = {
+    cast("TagKey", CACHE_BEHAVIOR_TAG): "disable",
 }
 
 MODULES_TARGET_NAME = "modules"
@@ -702,7 +702,7 @@ modules__repo_map_rows = _MODULE.modules__repo_map_rows
 modules__table_materializations = _MODULE.modules__table_materializations
 
 
-@tag_helper(domain="ingestion", target=MODULES_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain="ingestion", target=MODULES_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def modules__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -1051,7 +1051,7 @@ config_ingest__rows = _MODULE.config_ingest__rows
 config_ingest__table_materializations = _MODULE.config_ingest__table_materializations
 
 
-@tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def config_ingest__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -1278,7 +1278,7 @@ tests__rows = _MODULE.tests__rows
 tests_ingest__table_materializations = _MODULE.tests_ingest__table_materializations
 
 
-@tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def tests_ingest__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -1501,7 +1501,7 @@ typing__diagnostic_rows = _MODULE.typing__diagnostic_rows
 typing__table_materializations = _MODULE.typing__table_materializations
 
 
-@tag_helper(domain="ingestion", target=TYPING_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
+@tag_helper(domain="ingestion", target=TYPING_TARGET_NAME, extra_tags=_CACHE_DISABLE_TAGS)
 def typing__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,

@@ -400,19 +400,19 @@ def cfg_dfg_metrics_analysis(
         cfg_dfg_metrics_inputs.cfg_blocks,
         columns=None,
         scope=scope,
-        require_scope_columns=True,
+        require_scope_columns=False,
     )
     cfg_edges = tabular_to_scoped_table(
         cfg_dfg_metrics_inputs.cfg_edges,
         columns=None,
         scope=scope,
-        require_scope_columns=True,
+        require_scope_columns=False,
     )
     dfg_edges = tabular_to_scoped_table(
         cfg_dfg_metrics_inputs.dfg_edges,
         columns=None,
         scope=scope,
-        require_scope_columns=True,
+        require_scope_columns=False,
     )
     metadata = _function_metadata(
         goids,
