@@ -409,8 +409,6 @@ dependencies = [
     { name = "mkdocs-section-index" },
     { name = "mkdocstrings", extra = ["python"] },
     { name = "msgspec" },
-    { name = "networkx" },
-    { name = "networkx-stubs" },
     { name = "numpy" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-distro" },
@@ -488,7 +486,6 @@ dependencies = [
     { name = "tree-sitter-python" },
     { name = "typer" },
     { name = "types-jsonschema" },
-    { name = "types-networkx" },
     { name = "types-pyyaml" },
     { name = "uuid6" },
     { name = "vulture" },
@@ -536,8 +533,6 @@ requires-dist = [
     { name = "mkdocs-section-index", specifier = ">=0.3.10" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.0" },
     { name = "msgspec" },
-    { name = "networkx", specifier = ">=3.6" },
-    { name = "networkx-stubs", specifier = ">=0.0.1" },
     { name = "numpy" },
     { name = "opentelemetry-api", specifier = ">=1.39.1" },
     { name = "opentelemetry-distro", specifier = ">=0.59b0" },
@@ -615,7 +610,6 @@ requires-dist = [
     { name = "tree-sitter-python", specifier = ">=0.25.0" },
     { name = "typer" },
     { name = "types-jsonschema", specifier = ">=4.25.1.20251009" },
-    { name = "types-networkx", specifier = ">=3.6.1.20251220" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20250915" },
     { name = "uuid6" },
     { name = "vulture" },
@@ -2134,27 +2128,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/47/6d/b57c64e5038a8cf071bce391bb11551657a74558877ac961e7fa905ece27/narwhals-2.15.0.tar.gz", hash = "sha256:a9585975b99d95084268445a1fdd881311fa26ef1caa18020d959d5b2ff9a965", size = 603479, upload-time = "2026-01-06T08:10:13.27Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/2e/cf2ffeb386ac3763526151163ad7da9f1b586aac96d2b4f7de1eaebf0c61/narwhals-2.15.0-py3-none-any.whl", hash = "sha256:cbfe21ca19d260d9fd67f995ec75c44592d1f106933b03ddd375df7ac841f9d6", size = 432856, upload-time = "2026-01-06T08:10:11.511Z" },
-]
-
-[[package]]
-name = "networkx"
-version = "3.6.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6a/51/63fe664f3908c97be9d2e4f1158eb633317598cfa6e1fc14af5383f17512/networkx-3.6.1.tar.gz", hash = "sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509", size = 2517025, upload-time = "2025-12-08T17:02:39.908Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9e/c9/b2622292ea83fbb4ec318f5b9ab867d0a28ab43c5717bb85b0a5f6b3b0a4/networkx-3.6.1-py3-none-any.whl", hash = "sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762", size = 2068504, upload-time = "2025-12-08T17:02:38.159Z" },
-]
-
-[[package]]
-name = "networkx-stubs"
-version = "0.0.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "networkx" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a9/d6/66a8bcc3724e0909e865672f5f2d3d89a46e900e43bf0296d51b90b604a0/networkx-stubs-0.0.1.tar.gz", hash = "sha256:1751cbc87898328f89d79476ec6363174c05f9e48592f0953cc1077188717a21", size = 37466, upload-time = "2023-02-24T16:11:31.541Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/d4/ba87f68af1ab26392dc64ef7ba7ee261bb2ab1df9a9cca1695b4454b8a16/networkx_stubs-0.0.1-py3-none-any.whl", hash = "sha256:ce58dff9b9dcbfdf895d0fce20fa8a73f2e82e581004596b7552086b5bb91366", size = 105780, upload-time = "2023-02-24T16:11:29.893Z" },
 ]
 
 [[package]]
@@ -4409,18 +4382,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ef/da/5b901088da5f710690b422137e8ae74197fb1ca471e4aa84dd3ef0d6e295/types_jsonschema-4.25.1.20251009.tar.gz", hash = "sha256:75d0f5c5dd18dc23b664437a0c1a625743e8d2e665ceaf3aecb29841f3a5f97f", size = 15661, upload-time = "2025-10-09T02:54:36.963Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/6a/e5146754c0dfc272f176db9c245bc43cc19030262d891a5a85d472797e60/types_jsonschema-4.25.1.20251009-py3-none-any.whl", hash = "sha256:f30b329037b78e7a60146b1146feb0b6fb0b71628637584409bada83968dad3e", size = 15925, upload-time = "2025-10-09T02:54:35.847Z" },
-]
-
-[[package]]
-name = "types-networkx"
-version = "3.6.1.20251220"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/07/e3/dcc20d645dc0631b0df263959b8dde49dc47ad3c0537d8958bfefe692380/types_networkx-3.6.1.20251220.tar.gz", hash = "sha256:caf95e0d7777b969e50ceeb2c430d9d4dfe6b7bdee43c42dc9879a2d4408a790", size = 73500, upload-time = "2025-12-20T03:07:47.933Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/65/e7/fe40cfe7ba384d1f46fee835eb7727a4ee2fd80021a69add9553197b69a1/types_networkx-3.6.1.20251220-py3-none-any.whl", hash = "sha256:417ccbe7841f335a4c2b8e7515c3bc97a00fb5f686f399a763ef64392b209eac", size = 162715, upload-time = "2025-12-20T03:07:46.882Z" },
 ]
 
 [[package]]

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import networkx as nx
 import pytest
 
 from codeintel.build.analytics.compute.graphs.structural import structural_metrics
 from codeintel.build.graphs.engine import GraphKind
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, build_graph_runtime
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.config.primitives import GraphFeatureFlags
 from tests._helpers import TestScenario
 from tests._helpers.assertions import expect_true
@@ -29,14 +29,28 @@ if TYPE_CHECKING:
     from tests._helpers.context import TestContext
 
 
+def _directed_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+    store = RxGraphStore.directed()
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
+    return store
+
+
+def _undirected_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+    store = RxGraphStore.undirected()
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
+    return store
+
+
 def _make_counting_engine(
     gateway: StorageGateway, snapshot: SnapshotRef
 ) -> CountingGraphEngineAdapter:
     runtime = GraphStubEngine(
         gateway=gateway,
         snapshot=snapshot,
-        call_graph=nx.DiGraph([(1, 2)]),
-        import_graph=nx.DiGraph([("a", "b")]),
+        call_graph=_directed_store([(1, 2)]),
+        import_graph=_directed_store([("a", "b")]),
     )
     return CountingGraphEngineAdapter(runtime, gateway=gateway, snapshot=snapshot)
 
@@ -105,14 +119,27 @@ def test_eager_hydration_off_defers_graph_loads(
 
 def test_community_detection_cap_skips_when_exceeded() -> None:
     """Community detection should be skipped when graph exceeds the configured cap."""
-    graph = nx.complete_graph(5)
+    graph = _undirected_store(
+        [
+            (1, 2),
+            (1, 3),
+            (1, 4),
+            (1, 5),
+            (2, 3),
+            (2, 4),
+            (2, 5),
+            (3, 4),
+            (3, 5),
+            (4, 5),
+        ]
+    )
     metrics = structural_metrics(graph, community_limit=3)
     expect_true(
         metrics.community_id == {},
         message="Community ids should be empty when exceeding the cap",
     )
 
-    small_graph = nx.path_graph(3)
+    small_graph = _undirected_store([(1, 2), (2, 3)])
     small_metrics = structural_metrics(small_graph, community_limit=10)
     expect_true(
         bool(small_metrics.community_id),

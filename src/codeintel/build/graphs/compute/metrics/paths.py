@@ -46,8 +46,11 @@ def count_simple_paths(
 
     Examples
     --------
-    >>> g = nx.DiGraph()
-    >>> g.add_edges_from([(1, 2), (2, 3), (1, 3)])
+    >>> from codeintel.build.graphs.rx.store import RxGraphStore
+    >>> g = RxGraphStore.directed()
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
+    >>> g.add_weighted_edge(2, 3, weight=1.0)
+    >>> g.add_weighted_edge(1, 3, weight=1.0)
     >>> count_simple_paths(g, [1], [3], max_paths=10, cutoff=5)
     2
     """
@@ -100,8 +103,10 @@ def compute_avg_shortest_path_from_source(
 
     Examples
     --------
-    >>> g = nx.DiGraph()
-    >>> g.add_edges_from([(1, 2), (2, 3)])
+    >>> from codeintel.build.graphs.rx.store import RxGraphStore
+    >>> g = RxGraphStore.directed()
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
+    >>> g.add_weighted_edge(2, 3, weight=1.0)
     >>> round(compute_avg_shortest_path_from_source(g, 1), 2)
     1.0
     """
@@ -143,8 +148,11 @@ def compute_reachable_nodes(
 
     Examples
     --------
-    >>> g = nx.DiGraph()
-    >>> g.add_edges_from([(1, 2), (2, 3), (4, 5)])
+    >>> from codeintel.build.graphs.rx.store import RxGraphStore
+    >>> g = RxGraphStore.directed()
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
+    >>> g.add_weighted_edge(2, 3, weight=1.0)
+    >>> g.add_weighted_edge(4, 5, weight=1.0)
     >>> sorted(compute_reachable_nodes(g, 1))
     [1, 2, 3]
     """

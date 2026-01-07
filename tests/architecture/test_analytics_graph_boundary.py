@@ -1,4 +1,4 @@
-"""Ensure analytics modules depend on graph engines rather than NetworkX views."""
+"""Ensure analytics modules depend on graph engines rather than raw view loaders."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 
-def test_analytics_modules_do_not_import_nx_views() -> None:
-    """Guard against direct analytics -> graphs.nx_views coupling."""
+def test_analytics_modules_do_not_import_graph_views() -> None:
+    """Guard against direct analytics -> graphs.engine.views coupling."""
     root = Path("src/codeintel/build/analytics")
     violations: list[str] = []
     for path in root.rglob("*.py"):
@@ -16,4 +16,4 @@ def test_analytics_modules_do_not_import_nx_views() -> None:
         if "codeintel.build.graphs.engine.views" in text:
             violations.append(str(path))
     if violations:
-        pytest.fail(f"Replace nx_views with GraphEngine in analytics modules: {violations}")
+        pytest.fail(f"Replace graph views with GraphEngine in analytics modules: {violations}")

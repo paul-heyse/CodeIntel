@@ -15,8 +15,6 @@ from __future__ import annotations
 
 from typing import cast
 
-import networkx as nx
-
 from codeintel.build.analytics.subsystems.affinity import (
     add_graph_weight,
     best_neighbor_label,
@@ -27,6 +25,8 @@ from codeintel.build.analytics.subsystems.affinity import (
     reassign_small_clusters,
     seed_labels_from_tags,
 )
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.store import RxGraphStore
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -41,6 +41,21 @@ CUSTOM_WEIGHT = 2.5
 MIN_CLUSTER_SIZE = 3
 CLUSTER_SIZE_TWO = 2
 CLUSTER_SIZE_THREE = 3
+
+
+def _undirected_store() -> RxGraphStore:
+    return RxGraphStore.undirected()
+
+
+def _edge_weight(store: RxGraphStore, left: str, right: str) -> float | None:
+    src_idx = store.get_index(left)
+    dst_idx = store.get_index(right)
+    if src_idx is None or dst_idx is None:
+        return None
+    if not store.graph.has_edge(src_idx, dst_idx):
+        return None
+    payload = store.graph.get_edge_data(src_idx, dst_idx)
+    return edge_weight_from_payload(payload)
 
 
 def test_parse_tags_none() -> None:
@@ -94,59 +109,62 @@ def test_parse_tags_mixed_list() -> None:
 
 def test_add_graph_weight_new_edge() -> None:
     """add_graph_weight creates new edge with weight."""
-    graph = nx.Graph()
-    graph.add_nodes_from(["A", "B"])
+    graph = _undirected_store()
+    graph.ensure_node("A")
+    graph.ensure_node("B")
 
     add_graph_weight(graph, "A", "B", CUSTOM_WEIGHT)
 
-    expect_true(graph.has_edge("A", "B"))
-    expect_equal(graph["A"]["B"]["weight"], CUSTOM_WEIGHT)
+    expect_true(_edge_weight(graph, "A", "B") is not None)
+    expect_equal(_edge_weight(graph, "A", "B"), CUSTOM_WEIGHT)
 
 
 def test_add_graph_weight_accumulates() -> None:
     """add_graph_weight accumulates weight on existing edge."""
-    graph = nx.Graph()
-    graph.add_edge("A", "B", weight=DEFAULT_WEIGHT)
+    graph = _undirected_store()
+    graph.add_weighted_edge("A", "B", weight=DEFAULT_WEIGHT)
 
     add_graph_weight(graph, "A", "B", CUSTOM_WEIGHT)
 
     expected = DEFAULT_WEIGHT + CUSTOM_WEIGHT
-    expect_equal(graph["A"]["B"]["weight"], expected)
+    expect_equal(_edge_weight(graph, "A", "B"), expected)
 
 
 def test_add_graph_weight_ignores_self_loop() -> None:
     """add_graph_weight ignores self-loops."""
-    graph = nx.Graph()
-    graph.add_node("A")
+    graph = _undirected_store()
+    graph.ensure_node("A")
 
     add_graph_weight(graph, "A", "A", CUSTOM_WEIGHT)
 
-    expect_false(graph.has_edge("A", "A"))
+    expect_false(_edge_weight(graph, "A", "A") is not None)
 
 
 def test_add_graph_weight_ignores_zero_weight() -> None:
     """add_graph_weight ignores zero weight."""
-    graph = nx.Graph()
-    graph.add_nodes_from(["A", "B"])
+    graph = _undirected_store()
+    graph.ensure_node("A")
+    graph.ensure_node("B")
 
     add_graph_weight(graph, "A", "B", 0.0)
 
-    expect_false(graph.has_edge("A", "B"))
+    expect_false(_edge_weight(graph, "A", "B") is not None)
 
 
 def test_add_graph_weight_ignores_negative_weight() -> None:
     """add_graph_weight ignores negative weight."""
-    graph = nx.Graph()
-    graph.add_nodes_from(["A", "B"])
+    graph = _undirected_store()
+    graph.ensure_node("A")
+    graph.ensure_node("B")
 
     add_graph_weight(graph, "A", "B", -1.0)
 
-    expect_false(graph.has_edge("A", "B"))
+    expect_false(_edge_weight(graph, "A", "B") is not None)
 
 
 def test_graph_to_adjacency_empty() -> None:
     """graph_to_adjacency returns empty dict for empty graph."""
-    graph = nx.Graph()
+    graph = _undirected_store()
 
     result = graph_to_adjacency(graph)
 
@@ -155,8 +173,8 @@ def test_graph_to_adjacency_empty() -> None:
 
 def test_graph_to_adjacency_single_edge() -> None:
     """graph_to_adjacency creates symmetric entries for undirected edge."""
-    graph = nx.Graph()
-    graph.add_edge("A", "B", weight=CUSTOM_WEIGHT)
+    graph = _undirected_store()
+    graph.add_weighted_edge("A", "B", weight=CUSTOM_WEIGHT)
 
     result = graph_to_adjacency(graph)
 
@@ -166,10 +184,10 @@ def test_graph_to_adjacency_single_edge() -> None:
 
 def test_graph_to_adjacency_multiple_edges() -> None:
     """graph_to_adjacency handles multiple edges."""
-    graph = nx.Graph()
-    graph.add_edge("A", "B", weight=1.0)
-    graph.add_edge("B", "C", weight=2.0)
-    graph.add_edge("A", "C", weight=3.0)
+    graph = _undirected_store()
+    graph.add_weighted_edge("A", "B", weight=1.0)
+    graph.add_weighted_edge("B", "C", weight=2.0)
+    graph.add_weighted_edge("A", "C", weight=3.0)
 
     result = graph_to_adjacency(graph)
 
@@ -181,8 +199,8 @@ def test_graph_to_adjacency_multiple_edges() -> None:
 
 def test_graph_to_adjacency_default_weight() -> None:
     """graph_to_adjacency uses default weight of 1.0 if not specified."""
-    graph = nx.Graph()
-    graph.add_edge("A", "B")
+    graph = _undirected_store()
+    graph.add_weighted_edge("A", "B", weight=DEFAULT_WEIGHT)
 
     result = graph_to_adjacency(graph)
 
@@ -234,8 +252,8 @@ def test_seed_labels_from_tags_none_first_tag_skipped() -> None:
 
 def test_label_propagation_nx_preserves_seeds() -> None:
     """label_propagation_nx preserves seed labels."""
-    graph = nx.Graph()
-    graph.add_edge("A", "B", weight=1.0)
+    graph = _undirected_store()
+    graph.add_weighted_edge("A", "B", weight=1.0)
     seed_labels = {"A": "cluster1"}
 
     result = label_propagation_nx(graph, seed_labels)
@@ -245,9 +263,9 @@ def test_label_propagation_nx_preserves_seeds() -> None:
 
 def test_label_propagation_nx_propagates_to_neighbors() -> None:
     """label_propagation_nx propagates labels to neighbors."""
-    graph = nx.Graph()
-    graph.add_edge("A", "B", weight=1.0)
-    graph.add_edge("A", "C", weight=1.0)
+    graph = _undirected_store()
+    graph.add_weighted_edge("A", "B", weight=1.0)
+    graph.add_weighted_edge("A", "C", weight=1.0)
     seed_labels = {"A": "group"}
 
     result = label_propagation_nx(graph, seed_labels)
@@ -257,9 +275,9 @@ def test_label_propagation_nx_propagates_to_neighbors() -> None:
 
 def test_label_propagation_nx_selects_heaviest_neighbor() -> None:
     """label_propagation_nx selects label from heaviest weighted neighbor."""
-    graph = nx.Graph()
-    graph.add_edge("A", "B", weight=1.0)
-    graph.add_edge("A", "C", weight=5.0)
+    graph = _undirected_store()
+    graph.add_weighted_edge("A", "B", weight=1.0)
+    graph.add_weighted_edge("A", "C", weight=5.0)
     seed_labels = {"B": "light", "C": "heavy"}
 
     result = label_propagation_nx(graph, seed_labels)
@@ -269,8 +287,8 @@ def test_label_propagation_nx_selects_heaviest_neighbor() -> None:
 
 def test_label_propagation_nx_isolated_nodes_keep_fallback() -> None:
     """label_propagation_nx assigns fallback label to isolated nodes."""
-    graph = nx.Graph()
-    graph.add_node("isolated")
+    graph = _undirected_store()
+    graph.ensure_node("isolated")
 
     result = label_propagation_nx(graph, {})
 

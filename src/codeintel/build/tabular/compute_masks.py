@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.build.tabular import array_ops as _array_ops
+from codeintel.build.tabular.compute_helpers import safe_filter
 
 ensure_array = _array_ops.ensure_array
 index_in = _array_ops.index_in
@@ -308,12 +310,39 @@ def node_type_is_function(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.C
     return or_kleene(is_function, is_async)
 
 
+@dataclass(frozen=True, slots=True)
+class FilterExprContext:
+    """Context for snapshot-aligned table filtering."""
+
+    repo: str | None = None
+    commit: str | None = None
+
+    def apply(self, table: pa.Table) -> pa.Table:
+        """Apply repo/commit filters when available.
+
+        Returns
+        -------
+        pyarrow.Table
+            Filtered table when snapshot columns are present.
+        """
+        mask: pa.Array | pa.ChunkedArray | None = None
+        if self.repo is not None and "repo" in table.column_names:
+            mask = equal_mask(table["repo"], pa.scalar(self.repo))
+        if self.commit is not None and "commit" in table.column_names:
+            commit_mask = equal_mask(table["commit"], pa.scalar(self.commit))
+            mask = commit_mask if mask is None else and_kleene(mask, commit_mask)
+        if mask is None:
+            return table
+        return safe_filter(table, mask)
+
+
 __all__ = [
     "and_kleene",
     "bit_wise_and",
     "ensure_array",
     "equal_expr",
     "equal_mask",
+    "FilterExprContext",
     "index_in_values",
     "invert_mask",
     "is_in_expr",

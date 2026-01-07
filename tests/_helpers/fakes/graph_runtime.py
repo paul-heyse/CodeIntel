@@ -1,7 +1,7 @@
 """Unified graph runtime/engine test double.
 
 Loads graphs from seeded DuckDB tables when a gateway/snapshot is provided,
-otherwise serves configured NetworkX graphs with defensive copies. All public
+otherwise serves configured rustworkx graph stores with defensive copies. All public
 methods record call names for assertions.
 """
 
@@ -11,12 +11,12 @@ from dataclasses import dataclass, field
 from importlib import import_module
 from typing import TYPE_CHECKING, Final, TypedDict, TypeVar, Unpack, cast
 
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
-from codeintel.build.graphs.rx.store import RxGraphStore
 from duckdb import Error as DuckDBError
 
 from codeintel.build.graphs.engine.protocol import GraphEngine, GraphKind
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.store import RxGraphStore
 from tests._helpers.fixtures.graphs import (
     DEFAULT_SPOKES,
     GraphFixtureFactory,

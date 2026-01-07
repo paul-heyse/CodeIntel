@@ -86,16 +86,19 @@ def test_runtime_params_from_dict_use_gpu() -> None:
     expect_equal(params.backend.backend, "auto")
 
 
-def test_runtime_params_from_dict_nx_flags() -> None:
-    """Verify from_dict maps NetworkX flags to backend flags."""
+def test_runtime_params_from_dict_backend_flags() -> None:
+    """Verify from_dict maps backend flags from nested config."""
     data = {
-        "nx_backend": "nx-cugraph",
-        "nx_gpu_mode": "strict",
+        "backend": {
+            "use_gpu": True,
+            "backend": "cpu",
+            "strict": True,
+        }
     }
 
     params = RuntimeParams.from_dict(data)
 
-    expect_equal(params.backend.backend, "nx-cugraph")
+    expect_equal(params.backend.backend, "cpu")
     expect_true(params.backend.use_gpu)
     expect_true(params.backend.strict)
 

@@ -1,7 +1,7 @@
 """Pure computation for graph statistics.
 
 This module provides functions to compute summary statistics
-for networkx graphs.
+for rustworkx graph stores.
 """
 
 from __future__ import annotations
@@ -85,7 +85,10 @@ def get_in_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
 
     Examples
     --------
-    >>> g = nx.DiGraph([(1, 2), (1, 3), (2, 3)])
+    >>> g = RxGraphStore.directed()
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
+    >>> g.add_weighted_edge(1, 3, weight=1.0)
+    >>> g.add_weighted_edge(2, 3, weight=1.0)
     >>> get_in_degrees(g)
     [(1, 0), (2, 1), (3, 2)]
     """
@@ -112,7 +115,10 @@ def get_out_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
 
     Examples
     --------
-    >>> g = nx.DiGraph([(1, 2), (1, 3), (2, 3)])
+    >>> g = RxGraphStore.directed()
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
+    >>> g.add_weighted_edge(1, 3, weight=1.0)
+    >>> g.add_weighted_edge(2, 3, weight=1.0)
     >>> get_out_degrees(g)
     [(1, 2), (2, 1), (3, 0)]
     """
@@ -139,7 +145,10 @@ def get_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
 
     Examples
     --------
-    >>> g = nx.Graph([(1, 2), (1, 3), (2, 3)])
+    >>> g = RxGraphStore.undirected()
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
+    >>> g.add_weighted_edge(1, 3, weight=1.0)
+    >>> g.add_weighted_edge(2, 3, weight=1.0)
     >>> get_degrees(g)
     [(1, 2), (2, 2), (3, 2)]
     """
@@ -233,7 +242,11 @@ def compute_diameter_estimate(graph: GraphInput) -> float | None:
 
     Examples
     --------
-    >>> g = nx.path_graph(5)
+    >>> g = RxGraphStore.undirected()
+    >>> g.add_weighted_edge(0, 1, weight=1.0)
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
+    >>> g.add_weighted_edge(2, 3, weight=1.0)
+    >>> g.add_weighted_edge(3, 4, weight=1.0)
     >>> compute_diameter_estimate(g)
     4.0
     """
@@ -274,7 +287,10 @@ def compute_avg_shortest_path_length(graph: GraphInput) -> float | None:
 
     Examples
     --------
-    >>> g = nx.path_graph(4)
+    >>> g = RxGraphStore.undirected()
+    >>> g.add_weighted_edge(0, 1, weight=1.0)
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
+    >>> g.add_weighted_edge(2, 3, weight=1.0)
     >>> round(compute_avg_shortest_path_length(g), 2)
     1.33
     """
@@ -322,8 +338,10 @@ def compute_condensation_layer_count(graph: GraphInput) -> int | None:
 
     Examples
     --------
-    >>> g = nx.DiGraph()
-    >>> g.add_edges_from([(1, 2), (2, 3), (3, 4)])
+    >>> g = RxGraphStore.directed()
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
+    >>> g.add_weighted_edge(2, 3, weight=1.0)
+    >>> g.add_weighted_edge(3, 4, weight=1.0)
     >>> compute_condensation_layer_count(g)
     4
     """
@@ -388,9 +406,9 @@ def compute_graph_statistics(graph: GraphInput) -> GraphStatistics:
 
     Examples
     --------
-    >>> import networkx as nx
-    >>> g = nx.DiGraph()
-    >>> g.add_edges_from([("a", "b"), ("b", "c")])
+    >>> g = RxGraphStore.directed()
+    >>> g.add_weighted_edge("a", "b", weight=1.0)
+    >>> g.add_weighted_edge("b", "c", weight=1.0)
     >>> stats = compute_graph_statistics(g)
     >>> stats.node_count
     3

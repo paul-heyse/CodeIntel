@@ -1,7 +1,7 @@
 """Graph runtime options and helpers.
 
 This module provides a hybrid service layer between Hamilton DAG outputs
-and NetworkX graph computations backed by Parquet datasets.
+and rustworkx graph computations backed by Parquet datasets.
 
 Note
 ----

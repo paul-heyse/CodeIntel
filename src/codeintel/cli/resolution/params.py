@@ -24,7 +24,7 @@ class BackendFlags:
     use_gpu
         Whether to attempt GPU acceleration.
     backend
-        Backend selection: "auto", "cpu", or "nx-cugraph".
+        Backend selection: "auto" or "cpu".
     strict
         Whether to enforce strict backend compatibility.
 
@@ -258,21 +258,6 @@ def _normalize_flag(value: object | None) -> str | None:
     return normalized or None
 
 
-def _backend_from_nx_flags(
-    nx_backend: object | None,
-    nx_gpu_mode: object | None,
-) -> BackendFlags:
-    backend = _normalize_flag(nx_backend) or "auto"
-    gpu_mode = _normalize_flag(nx_gpu_mode) or "disabled"
-    if gpu_mode not in {"disabled", "enabled", "strict"}:
-        gpu_mode = "disabled"
-    return BackendFlags(
-        use_gpu=gpu_mode in {"enabled", "strict"},
-        backend=backend,
-        strict=gpu_mode == "strict",
-    )
-
-
 def _parse_backend_flags(data: dict[str, Any]) -> BackendFlags:
     backend_raw = data.get("backend")
     if isinstance(backend_raw, dict):
@@ -289,11 +274,6 @@ def _parse_backend_flags(data: dict[str, Any]) -> BackendFlags:
             backend=backend_value,
             strict=_get_bool(data, "strict", default=False),
         )
-
-    nx_backend = data.get("nx_backend")
-    nx_gpu_mode = data.get("nx_gpu_mode")
-    if nx_backend is not None or nx_gpu_mode is not None:
-        return _backend_from_nx_flags(nx_backend, nx_gpu_mode)
 
     if "use_gpu" in data or "strict" in data:
         return BackendFlags(

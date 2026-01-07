@@ -15,6 +15,9 @@ from codeintel.build.graphs.compute.metrics.bipartite import (
     compute_bipartite_degrees,
     compute_weighted_projection,
 )
+from codeintel.build.graphs.rx.algos import to_undirected_store
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.store import RxGraphStore
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
@@ -42,6 +45,26 @@ EXPECTED_DEGREE_TWO: Final[int] = 2
 EXPECTED_DEGREE_THREE: Final[int] = 3
 TOLERANCE: Final[float] = 0.01
 WEIGHT_VALUE: Final[float] = 2.5
+
+
+def _add_edges(store: RxGraphStore, edges: list[tuple[object, object]]) -> None:
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
+
+
+def _edge_weight(store: RxGraphStore, src: object, dst: object) -> float | None:
+    src_idx = store.get_index(src)
+    dst_idx = store.get_index(dst)
+    if src_idx is None or dst_idx is None:
+        return None
+    if not store.graph.has_edge(src_idx, dst_idx):
+        return None
+    payload = store.graph.get_edge_data(src_idx, dst_idx)
+    return edge_weight_from_payload(payload)
+
+
+def _has_edge(store: RxGraphStore, src: object, dst: object) -> bool:
+    return _edge_weight(store, src, dst) is not None
 
 
 def test_bipartite_degrees_empty_graph() -> None:
@@ -94,7 +117,7 @@ def test_bipartite_degrees_unweighted() -> None:
     """Unweighted degree computation."""
     graph = shared_neighbors_graph(shared=1, primary=("p1", "p2"), unique_first=1, unique_second=1)
     primary = {"p1", "p2"}
-    secondary = set(graph.nodes()) - primary
+    secondary = set(graph.node_ids()) - primary
 
     result = compute_bipartite_degrees(graph, primary, secondary)
 
@@ -111,8 +134,8 @@ def test_bipartite_degrees_unweighted() -> None:
 
 def test_bipartite_degrees_weighted() -> None:
     """Weighted degree computation."""
-    graph = weighted_star_graph(2, weight=WEIGHT_VALUE).to_undirected(as_view=False)
-    graph.add_edge("hub", "b", weight=1.0)
+    graph = to_undirected_store(weighted_star_graph(2, weight=WEIGHT_VALUE))
+    graph.add_weighted_edge("hub", "b", weight=1.0)
     primary = {"hub"}
     secondary = {"spoke1", "spoke2", "b"}
 
@@ -125,7 +148,7 @@ def test_bipartite_degrees_weighted() -> None:
 
 def test_bipartite_degrees_degree_centrality() -> None:
     """Degree centrality for bipartite graph."""
-    graph = bipartite_graph(2, 3).to_undirected(as_view=False)
+    graph = to_undirected_store(bipartite_graph(2, 3))
     primary = {"L0", "L1"}
     secondary = {"R0", "R1", "R2"}
 
@@ -160,8 +183,8 @@ def test_bipartite_degrees_returns_dataclass() -> None:
 def test_bipartite_degrees_no_weight_attribute() -> None:
     """Weight parameter with no weight attribute uses 1.0."""
     graph = empty_graph()
-    graph.add_edge(1, "a")
-    graph.add_edge(1, "b")
+    graph.add_weighted_edge(1, "a", weight=1.0)
+    graph.add_weighted_edge(1, "b", weight=1.0)
     primary = {1}
     secondary = {"a", "b"}
 
@@ -187,7 +210,7 @@ def test_weighted_projection_nodes_not_in_graph() -> None:
 def test_weighted_projection_all_nodes() -> None:
     """All nodes in graph returns None (not a valid bipartite partition)."""
     graph = bipartite_graph()
-    all_nodes = set(graph.nodes())
+    all_nodes = set(graph.node_ids())
     result = compute_weighted_projection(graph, all_nodes)
     expect_true(result is None)
 
@@ -201,7 +224,7 @@ def test_weighted_projection_simple_bipartite() -> None:
 
     projection = require_projection_graph(result)
 
-    expect_true(projection.has_edge("p1", "p2"))
+    expect_true(_has_edge(projection, "p1", "p2"))
 
 
 def test_weighted_projection_no_shared_neighbors() -> None:
@@ -212,21 +235,21 @@ def test_weighted_projection_no_shared_neighbors() -> None:
     result = compute_weighted_projection(graph, primary)
 
     projection = require_projection_graph(result)
-    expect_equal(projection.number_of_nodes(), EXPECTED_NODE_COUNT_TWO)
-    expect_equal(projection.number_of_edges(), 0)
+    expect_equal(projection.graph.num_nodes(), EXPECTED_NODE_COUNT_TWO)
+    expect_equal(projection.graph.num_edges(), 0)
 
 
 def test_weighted_projection_complete_bipartite() -> None:
     """Complete bipartite projects to complete graph."""
-    graph = bipartite_graph(3, 2).to_undirected(as_view=False)
+    graph = to_undirected_store(bipartite_graph(3, 2))
     primary = {"L0", "L1", "L2"}
 
     result = compute_weighted_projection(graph, primary)
 
     projection = require_projection_graph(result)
-    expect_equal(projection.number_of_nodes(), EXPECTED_NODE_COUNT_THREE)
+    expect_equal(projection.graph.num_nodes(), EXPECTED_NODE_COUNT_THREE)
 
-    expect_equal(projection.number_of_edges(), EXPECTED_EDGE_COUNT_THREE)
+    expect_equal(projection.graph.num_edges(), EXPECTED_EDGE_COUNT_THREE)
 
 
 def test_weighted_projection_weights() -> None:
@@ -237,19 +260,16 @@ def test_weighted_projection_weights() -> None:
     result = compute_weighted_projection(graph, primary)
 
     projection = require_projection_graph(result)
-    expect_true(projection.has_edge("p1", "p2"))
-
-    edge_data = projection.get_edge_data("p1", "p2")
-    expect_true(edge_data is not None)
-    if edge_data is not None:
-        expect_true("weight" in edge_data)
+    expect_true(_has_edge(projection, "p1", "p2"))
+    expect_true(_edge_weight(projection, "p1", "p2") is not None)
 
 
 def test_weighted_projection_partial_overlap() -> None:
     """Partial overlap creates weighted edges."""
     graph = empty_graph()
 
-    graph.add_edges_from(
+    _add_edges(
+        graph,
         [
             (1, "a"),
             (1, "b"),
@@ -260,30 +280,31 @@ def test_weighted_projection_partial_overlap() -> None:
             (3, "c"),
             (3, "d"),
             (3, "e"),
-        ]
+        ],
     )
     primary = {1, 2, 3}
 
     result = compute_weighted_projection(graph, primary)
 
     projection = require_projection_graph(result)
-    expect_equal(projection.number_of_nodes(), EXPECTED_NODE_COUNT_THREE)
+    expect_equal(projection.graph.num_nodes(), EXPECTED_NODE_COUNT_THREE)
 
-    expect_true(projection.has_edge(1, 2))
-    expect_true(projection.has_edge(2, 3))
-    expect_true(projection.has_edge(1, 3))
+    expect_true(_has_edge(projection, 1, 2))
+    expect_true(_has_edge(projection, 2, 3))
+    expect_true(_has_edge(projection, 1, 3))
 
 
 def test_weighted_projection_secondary_partition() -> None:
     """Project onto secondary partition."""
     graph = empty_graph()
-    graph.add_edges_from(
+    _add_edges(
+        graph,
         [
             (1, "a"),
             (1, "b"),
             (2, "b"),
             (2, "c"),
-        ]
+        ],
     )
     secondary = {"a", "b", "c"}
 
@@ -291,21 +312,21 @@ def test_weighted_projection_secondary_partition() -> None:
 
     projection = require_projection_graph(result)
 
-    expect_true(projection.has_edge("a", "b"))
-    expect_true(projection.has_edge("b", "c"))
+    expect_true(_has_edge(projection, "a", "b"))
+    expect_true(_has_edge(projection, "b", "c"))
 
 
 def test_weighted_projection_single_node() -> None:
     """Single node partition."""
     graph = empty_graph()
-    graph.add_edges_from([(1, "a"), (1, "b")])
+    _add_edges(graph, [(1, "a"), (1, "b")])
     primary = {1}
 
     result = compute_weighted_projection(graph, primary)
 
     projection = require_projection_graph(result)
-    expect_equal(projection.number_of_nodes(), 1)
-    expect_equal(projection.number_of_edges(), 0)
+    expect_equal(projection.graph.num_nodes(), 1)
+    expect_equal(projection.graph.num_edges(), 0)
 
 
 def test_bipartite_degree_metrics_frozen() -> None:
@@ -328,16 +349,14 @@ def test_projection_matches_shared_neighbors_count() -> None:
 
     projection = require_projection_graph(result)
 
-    edge_data = projection.get_edge_data("p1", "p2")
-    expect_true(edge_data is not None)
+    expect_true(_edge_weight(projection, "p1", "p2") is not None)
 
 
 def test_degree_centrality_sums_correctly() -> None:
     """Degree centrality values are in expected range.
 
-    Note: degree_centrality can exceed 1.0 for bipartite graphs when
-    using NetworkX's bipartite.degree_centrality, as it normalizes
-    differently from regular degree centrality.
+    Note: degree_centrality can exceed 1.0 for bipartite graphs because
+    the normalization differs from regular degree centrality.
     """
     graph = bipartite_graph()
     primary = {"L0", "L1", "L2"}
@@ -363,7 +382,7 @@ def test_degree_centrality_sums_correctly() -> None:
 )
 def test_complete_bipartite_degrees(primary_size: int, secondary_size: int) -> None:
     """Complete bipartite graphs have predictable degrees."""
-    graph = bipartite_graph(primary_size, secondary_size).to_undirected(as_view=False)
+    graph = to_undirected_store(bipartite_graph(primary_size, secondary_size))
     primary = {f"L{i}" for i in range(primary_size)}
     secondary = {f"R{i}" for i in range(secondary_size)}
 
@@ -388,13 +407,13 @@ def test_complete_bipartite_projection_edges(
     primary_size: int, secondary_size: int, expected_projection_edges: int
 ) -> None:
     """Complete bipartite projects to complete graph on primary."""
-    graph = bipartite_graph(primary_size, secondary_size).to_undirected(as_view=False)
+    graph = to_undirected_store(bipartite_graph(primary_size, secondary_size))
     primary = {f"L{i}" for i in range(primary_size)}
 
     result = compute_weighted_projection(graph, primary)
 
     projection = require_projection_graph(result)
-    expect_equal(projection.number_of_edges(), expected_projection_edges)
+    expect_equal(projection.graph.num_edges(), expected_projection_edges)
 
 
 @pytest.mark.parametrize(
@@ -406,14 +425,14 @@ def test_projection_with_varying_shared_neighbors(shared_count: int) -> None:
     graph = empty_graph()
 
     for i in range(shared_count):
-        graph.add_edge(1, f"s{i}")
-        graph.add_edge(2, f"s{i}")
+        graph.add_weighted_edge(1, f"s{i}", weight=1.0)
+        graph.add_weighted_edge(2, f"s{i}", weight=1.0)
 
-    graph.add_edge(1, "unique1")
-    graph.add_edge(2, "unique2")
+    graph.add_weighted_edge(1, "unique1", weight=1.0)
+    graph.add_weighted_edge(2, "unique2", weight=1.0)
 
     primary = {1, 2}
     result = compute_weighted_projection(graph, primary)
 
     projection = require_projection_graph(result)
-    expect_true(projection.has_edge(1, 2))
+    expect_true(_has_edge(projection, 1, 2))

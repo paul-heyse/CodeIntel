@@ -24,12 +24,12 @@ live in ``codeintel.core.compute.centrality`` and are composed into bundles here
 Example
 -------
 ```python
-import networkx as nx
 from codeintel.build.graphs.compute.metrics import components, structural
 from codeintel.core.compute.centrality import compute_pagerank
+from codeintel.build.graphs.rx.store import RxGraphStore
 
-graph = nx.DiGraph()
-
+graph = RxGraphStore.directed()
+graph.add_weighted_edge(1, 2, weight=1.0)
 
 pagerank = compute_pagerank(graph)
 sccs = components.find_strongly_connected(graph)

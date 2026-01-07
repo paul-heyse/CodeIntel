@@ -9,29 +9,24 @@ from codeintel.config.primitives import GraphBackendConfig
 from tests._helpers.assertions import expect_true
 
 
-def test_enable_nx_cugraph_backend_missing_module() -> None:
-    """Helper should raise RuntimeError when nx_cugraph is absent."""
-
-    def _missing_enabler() -> None:
-        message = "nx_cugraph is not installed"
-        raise RuntimeError(message)
-
-    cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=True)
-    with pytest.raises(RuntimeError, match="nx_cugraph is not installed"):
-        maybe_enable_nx_gpu(cfg, enabler=_missing_enabler)
+def test_enable_gpu_strict_raises() -> None:
+    """Helper should raise RuntimeError when GPU is requested with strict mode."""
+    cfg = GraphBackendConfig(use_gpu=True, backend="auto", strict=True)
+    with pytest.raises(RuntimeError, match="CPU-only"):
+        maybe_enable_nx_gpu(cfg)
 
 
-def test_enable_nx_cugraph_backend_invokes_setter() -> None:
-    """Helper should call set_default_backend when present."""
+def test_enable_gpu_invokes_enabler() -> None:
+    """Helper should call enabler when GPU is requested."""
     called = {"set": False}
 
     def _enabler() -> None:
         called["set"] = True
 
-    cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=True)
+    cfg = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
     result = maybe_enable_nx_gpu(cfg, enabler=_enabler)
-    expect_true(called["set"], message="Expected set_default_backend to be invoked")
-    expect_true(result.gpu_enabled and result.effective_backend == "nx-cugraph")
+    expect_true(called["set"], message="Expected enabler to be invoked")
+    expect_true(result.effective_backend == "cpu" and not result.gpu_enabled)
 
 
 def test_maybe_enable_nx_gpu_falls_back_when_missing() -> None:
@@ -41,7 +36,7 @@ def test_maybe_enable_nx_gpu_falls_back_when_missing() -> None:
         message = "missing"
         raise RuntimeError(message)
 
-    cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=False)
+    cfg = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
     result = maybe_enable_nx_gpu(cfg, enabler=_failing_enabler)
     expect_true(
         result.effective_backend == "cpu" and not result.gpu_enabled,
@@ -59,6 +54,6 @@ def test_maybe_enable_nx_gpu_raises_when_strict() -> None:
         message = "missing"
         raise RuntimeError(message)
 
-    cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=True)
-    with pytest.raises(RuntimeError):
+    cfg = GraphBackendConfig(use_gpu=True, backend="auto", strict=True)
+    with pytest.raises(RuntimeError, match="GPU backend is unavailable"):
         maybe_enable_nx_gpu(cfg, enabler=_failing_enabler)

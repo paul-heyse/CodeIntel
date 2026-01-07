@@ -1,7 +1,7 @@
 """Pure compute functions for graph analytics.
 
 This package provides stateless, pure functions for computing graph metrics.
-All functions operate on NetworkX graphs and have no database or file I/O.
+All functions operate on rustworkx graph stores and have no database or file I/O.
 
 Submodules
 ----------

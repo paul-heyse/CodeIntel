@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import cast
 
 import pyarrow as pa
@@ -290,12 +291,53 @@ def normalize_binary_view_table(table: pa.Table) -> pa.Table:
         return table
 
 
+def normalize_record_batch(batch: pa.RecordBatch) -> pa.RecordBatch:
+    """Return a record batch with view types normalized to canonical forms.
+
+    Returns
+    -------
+    pyarrow.RecordBatch
+        Normalized record batch.
+    """
+    arrays: list[pa.Array] = []
+    fields: list[pa.Field] = []
+    changed = False
+    for idx, field in enumerate(batch.schema):
+        array = batch.column(idx)
+        normalized = normalize_string_view_array(array)
+        normalized = normalize_binary_view_array(normalized)
+        if normalized.type != array.type:
+            changed = True
+        arrays.append(normalized)
+        fields.append(field.with_type(normalized.type))
+    if not changed:
+        return batch
+    schema = pa.schema(fields, metadata=batch.schema.metadata)
+    return pa.RecordBatch.from_arrays(arrays, schema=schema)
+
+
+def normalize_reader(reader: pa.RecordBatchReader) -> Iterator[pa.RecordBatch]:
+    """Yield normalized record batches from a reader.
+
+    Yields
+    ------
+    pyarrow.RecordBatch
+        Normalized record batches.
+    """
+    for batch in reader:
+        if batch.num_rows == 0:
+            continue
+        yield normalize_record_batch(batch)
+
+
 __all__ = [
     "binary_view_cast_type",
     "is_binary_view_type",
     "normalize_binary_view_array",
     "normalize_binary_view_schema",
     "normalize_binary_view_table",
+    "normalize_reader",
+    "normalize_record_batch",
     "normalize_string_view_array",
     "normalize_string_view_schema",
     "normalize_string_view_table",

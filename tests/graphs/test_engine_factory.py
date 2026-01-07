@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import networkx as nx
-
 from codeintel.build.graphs.engine.factory import EngineBuildOptions, build_graph_engine
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.config.models import GraphBackendConfig
 from tests._helpers.assertions import expect_true
 
@@ -26,9 +25,10 @@ def test_build_graph_engine_uses_backend_flags(graph_gateway: StorageGateway) ->
         ),
     )
     expect_true(not engine.use_gpu, message="Engine should ignore GPU preferences")
-    graph: nx.DiGraph = engine.call_graph()
+    graph = engine.call_graph()
     expect_true(
-        isinstance(graph, nx.DiGraph), message="Engine did not return a DiGraph for call_graph"
+        isinstance(graph, RxGraphStore),
+        message="Engine did not return a rustworkx store for call_graph",
     )
     expect_true(
         "NX_CUGRAPH_AUTOCONFIG" not in env,
@@ -62,7 +62,7 @@ def test_build_graph_engine_rustworkx_disables_gpu(graph_gateway: StorageGateway
         options=EngineBuildOptions(
             graph_backend=GraphBackendConfig(
                 use_gpu=True,
-                backend="nx-cugraph",
+                backend="auto",
                 strict=False,
                 engine="rustworkx",
             ),
@@ -76,6 +76,6 @@ def test_build_graph_engine_rustworkx_disables_gpu(graph_gateway: StorageGateway
     )
     graph = engine.call_graph()
     expect_true(
-        isinstance(graph, nx.DiGraph),
-        message="Rustworkx compatibility shim should return a DiGraph",
+        isinstance(graph, RxGraphStore),
+        message="Rustworkx engine should return a rustworkx store",
     )

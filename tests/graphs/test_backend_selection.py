@@ -1,4 +1,4 @@
-"""Tests for GPU backend selection and fallback handling."""
+"""Tests for backend selection and fallback handling."""
 
 from __future__ import annotations
 
@@ -20,14 +20,15 @@ if TYPE_CHECKING:
 
 
 def test_maybe_enable_nx_gpu_success() -> None:
-    """GPU enablement should return enabled status when enabler succeeds."""
-    cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=True)
+    """GPU enablement returns CPU-only status even when enabler succeeds."""
+    cfg = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
     status = maybe_enable_nx_gpu(cfg, enabler=lambda: None)
-    expect_true(status.gpu_enabled, message="GPU backend should be enabled")
+    expect_true(not status.gpu_enabled, message="GPU backend should remain disabled")
+    expect_true(status.effective_backend == "cpu", message="Expected CPU fallback")
     expect_true(
-        status.effective_backend == "nx-cugraph", message="Unexpected backend effective value"
+        status.fallback_reason is not None,
+        message="Fallback reason should be populated on CPU-only backend",
     )
-    expect_true(status.fallback_reason is None, message="Fallback reason should be None on success")
 
 
 def test_maybe_enable_nx_gpu_fallback() -> None:
@@ -58,7 +59,7 @@ def test_maybe_enable_nx_gpu_strict_raises() -> None:
 
 def test_build_graph_runtime_captures_backend_info(graph_executor_env: GraphTestEnv) -> None:
     """Runtime should expose backend metadata recorded during engine construction."""
-    cfg = GraphBackendConfig(use_gpu=True, backend="nx-cugraph", strict=False)
+    cfg = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
     engine_with_metadata: Any = graph_engine_with_cache(
         graph_executor_env.gateway,
         graph_executor_env.snapshot,
@@ -67,9 +68,9 @@ def test_build_graph_runtime_captures_backend_info(graph_executor_env: GraphTest
     engine_with_metadata.backend_info = BackendEnablement(
         requested_backend=cfg.backend,
         requested_gpu=True,
-        effective_backend="nx-cugraph",
-        gpu_enabled=True,
-        fallback_reason=None,
+        effective_backend="cpu",
+        gpu_enabled=False,
+        fallback_reason="cpu-only",
     )
 
     runtime = build_graph_runtime(
@@ -83,10 +84,10 @@ def test_build_graph_runtime_captures_backend_info(graph_executor_env: GraphTest
     info = runtime.backend_info
     expect_true(info is not None, message="backend_info should be set on runtime")
     expect_true(
-        info is not None and info.gpu_enabled,
-        message="GPU should be marked enabled in backend_info",
+        info is not None and not info.gpu_enabled,
+        message="GPU should be marked disabled in backend_info",
     )
     expect_true(
-        info is not None and info.effective_backend == "nx-cugraph",
+        info is not None and info.effective_backend == "cpu",
         message="Unexpected backend recorded on runtime",
     )

@@ -1,7 +1,7 @@
 """Pure centrality metric computation functions.
 
 This module provides stateless functions for computing centrality metrics
-on NetworkX graphs without any database or file I/O.
+on rustworkx graph stores without any database or file I/O.
 
 These functions are the canonical implementations used by both the graphs
 and analytics packages.
@@ -120,7 +120,11 @@ def compute_pagerank(
 
     Examples
     --------
-    >>> g = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
+    >>> from codeintel.build.graphs.rx.store import RxGraphStore
+    >>> g = RxGraphStore.directed()
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
+    >>> g.add_weighted_edge(2, 3, weight=1.0)
+    >>> g.add_weighted_edge(3, 1, weight=1.0)
     >>> pr = compute_pagerank(g)
     >>> len(pr)
     3

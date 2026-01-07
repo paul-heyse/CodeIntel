@@ -120,7 +120,7 @@ def build_graph_context(
     caps
         Optional container for sampling caps and community detection limit.
     use_gpu
-        Whether to prefer GPU-backed NetworkX execution when available.
+        Whether to prefer GPU execution (ignored; rustworkx is CPU-only).
 
     Returns
     -------

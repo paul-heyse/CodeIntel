@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import networkx as nx
 import pytest
 
 from codeintel.build.graphs.compute.metrics.community import (
@@ -17,6 +16,8 @@ from codeintel.build.graphs.compute.metrics.community import (
     detect_communities_label_propagation,
     detect_communities_louvain,
 )
+from codeintel.build.graphs.rx.algos import to_undirected_store
+from codeintel.build.graphs.rx.store import RxGraphStore
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -45,6 +46,13 @@ MODULARITY_MIN: Final[float] = -0.5
 MODULARITY_MAX: Final[float] = 1.0
 DEFAULT_RESOLUTION: Final[float] = 1.0
 RANDOM_SEED: Final[int] = 42
+
+
+def _directed_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+    store = RxGraphStore.directed()
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
+    return store
 
 
 def test_greedy_empty_graph_returns_empty() -> None:
@@ -89,7 +97,7 @@ def test_greedy_disconnected_components_separate_communities() -> None:
 
 def test_greedy_directed_graph_converted() -> None:
     """Directed graph is converted to undirected for community detection."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
+    graph = _directed_store([(1, 2), (2, 3), (3, 1)])
     result = detect_communities_greedy(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_THREE)
@@ -100,8 +108,8 @@ def test_greedy_directed_graph_converted() -> None:
 def test_greedy_weighted_edges() -> None:
     """Weighted edges are respected when weight parameter provided."""
     graph = bridged_cliques_graph(2, 2)
-    graph.add_edge("a0", "b0", weight=10.0)
-    graph.add_edge("a1", "b1", weight=0.1)
+    graph.add_weighted_edge("a0", "b0", weight=10.0)
+    graph.add_weighted_edge("a1", "b1", weight=0.1)
     result = detect_communities_greedy(graph, weight="weight")
 
     expect_length(result, EXPECTED_NODE_COUNT_FOUR)
@@ -147,7 +155,7 @@ def test_louvain_complete_graph() -> None:
 
 def test_louvain_disconnected_separate_communities() -> None:
     """Disconnected components get separate communities."""
-    graph = disconnected_graph().to_undirected()
+    graph = to_undirected_store(disconnected_graph())
     result = detect_communities_louvain(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_SIX)
@@ -175,7 +183,7 @@ def test_louvain_seed_reproducibility() -> None:
 
 def test_louvain_different_seeds_may_differ() -> None:
     """Different seeds may produce different results."""
-    graph = nx.barbell_graph(10, 2)
+    graph = barbell_graph_small(10, 2)
 
     result1 = detect_communities_louvain(graph, seed=1)
     result2 = detect_communities_louvain(graph, seed=999)
@@ -251,7 +259,7 @@ def test_label_propagation_directed_graph_converted() -> None:
 
 def test_label_propagation_chain_graph() -> None:
     """Chain graph may split or stay together."""
-    graph = chain_graph(5).to_undirected()
+    graph = to_undirected_store(chain_graph(5))
     result = detect_communities_label_propagation(graph)
 
     expect_length(result, EXPECTED_NODE_COUNT_FIVE)
@@ -276,7 +284,7 @@ def test_modularity_empty_communities_returns_zero() -> None:
 def test_modularity_single_community() -> None:
     """Single community has defined modularity."""
     graph = complete_graph(5)
-    communities = dict.fromkeys(graph.nodes(), 0)
+    communities = dict.fromkeys(graph.node_ids(), 0)
     result = compute_modularity(graph, communities)
 
     expect_true(MODULARITY_MIN <= result <= MODULARITY_MAX)
@@ -285,7 +293,9 @@ def test_modularity_single_community() -> None:
 def test_modularity_optimal_partition() -> None:
     """Well-separated communities have high modularity."""
     graph = bridged_cliques_graph(3, 3)
-    communities = {node: 0 if str(node).startswith("a") else 1 for node in graph.nodes()}
+    communities = {
+        node: 0 if str(node).startswith("a") else 1 for node in graph.node_ids()
+    }
     result = compute_modularity(graph, communities)
 
     expect_true(result > 0)
@@ -303,7 +313,7 @@ def test_modularity_poor_partition() -> None:
 
 def test_modularity_directed_graph_converted() -> None:
     """Directed graph is converted to undirected."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
+    graph = _directed_store([(1, 2), (2, 3), (3, 1)])
     communities = {1: 0, 2: 0, 3: 0}
     result = compute_modularity(graph, communities)
 
@@ -325,8 +335,8 @@ def test_modularity_resolution_parameter() -> None:
 def test_modularity_weighted_graph() -> None:
     """Weighted edges are considered in modularity."""
     graph = empty_graph()
-    graph.add_edge(1, 2, weight=10.0)
-    graph.add_edge(2, 3, weight=0.1)
+    graph.add_weighted_edge(1, 2, weight=10.0)
+    graph.add_weighted_edge(2, 3, weight=0.1)
     communities = {1: 0, 2: 0, 3: 1}
 
     result_weighted = compute_modularity(graph, communities, weight="weight")
@@ -353,9 +363,9 @@ def test_all_algorithms_same_graph() -> None:
     louvain_result = detect_communities_louvain(graph, seed=RANDOM_SEED)
     label_prop_result = detect_communities_label_propagation(graph)
 
-    expect_equal(len(greedy_result), graph.number_of_nodes())
-    expect_equal(len(louvain_result), graph.number_of_nodes())
-    expect_equal(len(label_prop_result), graph.number_of_nodes())
+    expect_equal(len(greedy_result), graph.graph.num_nodes())
+    expect_equal(len(louvain_result), graph.graph.num_nodes())
+    expect_equal(len(label_prop_result), graph.graph.num_nodes())
 
 
 def test_modularity_comparison_across_algorithms() -> None:

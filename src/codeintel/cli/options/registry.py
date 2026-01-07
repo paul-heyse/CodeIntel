@@ -763,17 +763,6 @@ DOCS_DOCUMENT_OUTPUT_DIR = OptionSpec(
     names=("--document-output-dir",),
     help="Document output directory for emitted artifacts (default: build/document_output).",
 )
-DOCS_NX_BACKEND = OptionSpec(
-    arg_name="nx_backend",
-    names=("--nx-backend",),
-    help="NetworkX backend selection: auto, cpu, or nx-cugraph.",
-    show_choices=True,
-)
-DOCS_NX_GPU_MODE = OptionSpec(
-    arg_name="nx_gpu_mode",
-    names=("--nx-gpu-mode",),
-    help="GPU backend preference: disabled, enabled, or strict.",
-)
 DOCS_VALIDATION_MODE = OptionSpec(
     arg_name="validation_mode",
     names=("--validation-mode",),
@@ -1204,8 +1193,6 @@ __all__ = [
     "DOCS_DB_PATH",
     "DOCS_DOCUMENT_OUTPUT_DIR",
     "DOCS_DRY_RUN",
-    "DOCS_NX_BACKEND",
-    "DOCS_NX_GPU_MODE",
     "DOCS_PREREQ_MODE",
     "DOCS_REPO",
     "DOCS_REPO_ROOT",

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+
 import pytest
 
 from codeintel.build.analytics.compute.graphs.conversions import (

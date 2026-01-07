@@ -55,6 +55,42 @@ def iter_rows(
         }
 
 
+def iter_tuples(
+    source: pa.RecordBatchReader | pa.RecordBatch,
+    *,
+    columns: Sequence[str] | None = None,
+) -> Iterator[tuple[object, ...]]:
+    """Yield row tuples from Arrow record batches.
+
+    Yields
+    ------
+    tuple[object, ...]
+        Row tuples in column order.
+
+    Raises
+    ------
+    ValueError
+        If requested columns are missing from a batch.
+    """
+    if isinstance(source, pa.RecordBatchReader):
+        for batch in source:
+            yield from iter_tuples(batch, columns=columns)
+        return
+    batch = source
+    if batch.num_rows == 0:
+        return
+    column_names = list(batch.schema.names) if columns is None else list(columns)
+    if not column_names:
+        return
+    data_by_name = batch.to_pydict()
+    missing = [name for name in column_names if name not in data_by_name]
+    if missing:
+        msg = f"Missing columns in Arrow batch: {', '.join(missing)}"
+        raise ValueError(msg)
+    column_values = [data_by_name[name] for name in column_names]
+    yield from zip(*column_values, strict=True)
+
+
 def iter_batches(
     table_or_reader: pa.Table | pa.RecordBatchReader,
     *,
@@ -87,4 +123,5 @@ __all__ = [
     "iter_array_values",
     "iter_batches",
     "iter_rows",
+    "iter_tuples",
 ]

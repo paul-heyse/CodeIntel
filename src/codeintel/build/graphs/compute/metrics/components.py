@@ -369,7 +369,7 @@ def topological_layers(graph: GraphInput) -> dict[Any, int]:
 
     Notes
     -----
-    If the graph contains cycles, NetworkX will raise `nx.NetworkXUnfeasible`.
+    If the graph contains cycles, rustworkx raises ``DAGHasCycle``.
     """
     store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:

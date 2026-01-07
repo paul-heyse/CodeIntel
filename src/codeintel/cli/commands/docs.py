@@ -6,7 +6,6 @@ Note: Docs commands require runtime/gateway access via handler pattern.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -21,8 +20,6 @@ from codeintel.cli.options.registry import (
     DOCS_DB_PATH,
     DOCS_DOCUMENT_OUTPUT_DIR,
     DOCS_DRY_RUN,
-    DOCS_NX_BACKEND,
-    DOCS_NX_GPU_MODE,
     DOCS_PREREQ_MODE,
     DOCS_REPO,
     DOCS_REPO_ROOT,
@@ -41,14 +38,6 @@ docs_app = App(
 )
 
 _CYCLOPTS_PATH_TYPE = Path
-
-
-class NxBackend(StrEnum):
-    """NetworkX backend selection."""
-
-    AUTO = "auto"
-    CPU = "cpu"
-    NX_CUGRAPH = "nx-cugraph"
 
 
 _DOCS_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
@@ -88,15 +77,6 @@ class DocsExportCommand:
         Path | None,
         option_param(DOCS_DOCUMENT_OUTPUT_DIR, command_path=DOCS_EXPORT_PATH),
     ] = None
-
-    nx_backend: Annotated[
-        NxBackend,
-        option_param(DOCS_NX_BACKEND, command_path=DOCS_EXPORT_PATH),
-    ] = NxBackend.AUTO
-    nx_gpu_mode: Annotated[
-        str,
-        option_param(DOCS_NX_GPU_MODE, command_path=DOCS_EXPORT_PATH),
-    ] = "disabled"
 
     validation_mode: Annotated[
         str,

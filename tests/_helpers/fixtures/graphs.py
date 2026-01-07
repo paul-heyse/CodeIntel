@@ -294,7 +294,10 @@ def chain_graph(length: int = DEFAULT_CHAIN_LENGTH) -> RxGraphStore:
     Example
     -------
     >>> g = chain_graph(4)
-    >>> list(g.edges())
+    >>> edges = sorted(
+    ...     [(g.index_to_id[src], g.index_to_id[dst]) for src, dst in g.graph.edge_list()]
+    ... )
+    >>> edges
     [('A', 'B'), ('B', 'C'), ('C', 'D')]
     """
     spec = GraphFixtureSpec(kind="chain", directed=True, nodes=length)
@@ -334,11 +337,17 @@ def star_graph(spokes: int = DEFAULT_SPOKES, *, inward: bool = False) -> RxGraph
     Example
     -------
     >>> g = star_graph(3)
-    >>> list(g.edges())
+    >>> edges = sorted(
+    ...     [(g.index_to_id[src], g.index_to_id[dst]) for src, dst in g.graph.edge_list()]
+    ... )
+    >>> edges
     [('hub', 'spoke1'), ('hub', 'spoke2'), ('hub', 'spoke3')]
 
     >>> g = star_graph(3, inward=True)
-    >>> list(g.edges())
+    >>> edges = sorted(
+    ...     [(g.index_to_id[src], g.index_to_id[dst]) for src, dst in g.graph.edge_list()]
+    ... )
+    >>> edges
     [('spoke1', 'hub'), ('spoke2', 'hub'), ('spoke3', 'hub')]
     """
     spec = GraphFixtureSpec(kind="star", directed=True, spokes=spokes)
@@ -394,9 +403,9 @@ def diamond_graph() -> RxGraphStore:
     Example
     -------
     >>> g = diamond_graph()
-    >>> g.number_of_nodes()
+    >>> g.graph.num_nodes()
     4
-    >>> g.number_of_edges()
+    >>> g.graph.num_edges()
     4
     """
     g = RxGraphStore.directed()
@@ -422,7 +431,8 @@ def cyclic_graph(size: int = DEFAULT_CYCLE_SIZE) -> RxGraphStore:
     Example
     -------
     >>> g = cyclic_graph(3)
-    >>> list(g.edges())
+    >>> edges = [(g.index_to_id[src], g.index_to_id[dst]) for src, dst in g.graph.edge_list()]
+    >>> edges
     [('A', 'B'), ('B', 'C'), ('C', 'A')]
     """
     g = RxGraphStore.directed()
@@ -603,10 +613,11 @@ def disconnected_graph() -> RxGraphStore:
 
     Example
     -------
+    >>> from codeintel.build.graphs.compute.metrics.components import find_weakly_connected
     >>> g = disconnected_graph()
-    >>> g.number_of_nodes()
+    >>> g.graph.num_nodes()
     6
-    >>> len(list(nx.weakly_connected_components(g)))
+    >>> len(find_weakly_connected(g))
     2
     """
     g = RxGraphStore.directed()
@@ -633,7 +644,7 @@ def complete_digraph(n: int = DEFAULT_COMPLETE_SIZE) -> RxGraphStore:
     Example
     -------
     >>> g = complete_digraph(3)
-    >>> g.number_of_edges()
+    >>> g.graph.num_edges()
     6
     """
     graph = RxGraphStore.directed()
@@ -740,7 +751,7 @@ def bipartite_graph(left: int = 3, right: int = 3) -> RxGraphStore:
     Example
     -------
     >>> g = bipartite_graph(2, 3)
-    >>> g.number_of_edges()
+    >>> g.graph.num_edges()
     6
     """
     g = RxGraphStore.directed()
@@ -930,7 +941,7 @@ def tree_graph(depth: int = 3, branching: int = 2) -> RxGraphStore:
     Example
     -------
     >>> g = tree_graph(2, 2)
-    >>> g.number_of_nodes()
+    >>> g.graph.num_nodes()
     7
     """
     g = RxGraphStore.directed()
@@ -976,7 +987,7 @@ def hub_and_spoke_graph(hubs: int = 2, spokes_per_hub: int = 3) -> RxGraphStore:
     Example
     -------
     >>> g = hub_and_spoke_graph(2, 3)
-    >>> g.number_of_nodes()
+    >>> g.graph.num_nodes()
     8
     """
     g = RxGraphStore.directed()
@@ -1009,7 +1020,7 @@ def layered_graph(layers: tuple[int, ...] = (2, 3, 2)) -> RxGraphStore:
     Example
     -------
     >>> g = layered_graph((2, 3, 2))
-    >>> g.number_of_nodes()
+    >>> g.graph.num_nodes()
     7
     """
     g = RxGraphStore.directed()

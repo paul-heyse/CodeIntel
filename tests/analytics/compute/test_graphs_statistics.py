@@ -1,12 +1,10 @@
 """Test graph statistics computation.
 
 Test the pure computation functions for computing summary statistics
-on directed graphs and the type-safe NetworkX wrappers.
+on directed graphs and the rustworkx store wrappers.
 """
 
 from __future__ import annotations
-
-from codeintel.build.graphs.rx.store import RxGraphStore
 
 from codeintel.build.graphs.compute.metrics.statistics import (
     GraphStatistics,
@@ -18,6 +16,7 @@ from codeintel.build.graphs.compute.metrics.statistics import (
     get_out_degree_values,
     get_out_degrees,
 )
+from codeintel.build.graphs.rx.store import RxGraphStore
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import expect_equal, expect_false, expect_true
 
@@ -155,18 +154,16 @@ def _make_multiple_components() -> RxGraphStore:
     return graph
 
 
-def _make_strongly_connected() -> nx.DiGraph:
+def _make_strongly_connected() -> RxGraphStore:
     """
     Create a strongly connected graph.
 
     Returns
     -------
-    nx.DiGraph
-        A strongly connected directed graph.
+    RxGraphStore
+        A strongly connected directed graph store.
     """
-    graph = nx.DiGraph()
-
-    graph.add_edges_from(
+    return _directed_store(
         [
             ("A", "B"),
             ("B", "C"),
@@ -174,39 +171,34 @@ def _make_strongly_connected() -> nx.DiGraph:
             ("D", "A"),
         ]
     )
-    return graph
 
 
-def _make_complete_graph() -> nx.DiGraph:
+def _make_complete_graph() -> RxGraphStore:
     """
     Create a complete directed graph (every node connects to every other).
 
     Returns
     -------
-    nx.DiGraph
-        A complete directed graph with 4 nodes.
+    RxGraphStore
+        A complete directed graph store with 4 nodes.
     """
-    graph = nx.DiGraph()
     nodes = ["A", "B", "C", "D"]
-    for source in nodes:
-        for target in nodes:
-            if source != target:
-                graph.add_edge(source, target)
-    return graph
+    edges = [
+        (source, target) for source in nodes for target in nodes if source != target
+    ]
+    return _directed_store(edges)
 
 
-def _make_undirected_test() -> nx.Graph:
+def _make_undirected_test() -> RxGraphStore:
     """
     Create an undirected graph for degree tests.
 
     Returns
     -------
-    nx.Graph
-        An undirected test graph.
+    RxGraphStore
+        An undirected test graph store.
     """
-    graph = nx.Graph()
-    graph.add_edges_from([("A", "B"), ("B", "C"), ("A", "C"), ("C", "D")])
-    return graph
+    return _undirected_store([("A", "B"), ("B", "C"), ("A", "C"), ("C", "D")])
 
 
 def test_statistics_create_all_fields() -> None:
@@ -331,15 +323,14 @@ def test_stats_realistic_call_graph() -> None:
 
 def test_in_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
-    graph = nx.DiGraph()
+    graph = RxGraphStore.directed()
     result = get_in_degrees(graph)
     expect_equal(result, [])
 
 
 def test_in_degrees_simple_chain() -> None:
     """In-degrees for simple chain."""
-    graph = nx.DiGraph()
-    graph.add_edges_from([(1, 2), (2, 3)])
+    graph = _directed_store([(1, 2), (2, 3)])
     result = get_in_degrees(graph)
     result_dict = dict(result)
     expect_equal(result_dict[1], 0)
@@ -349,9 +340,7 @@ def test_in_degrees_simple_chain() -> None:
 
 def test_in_degrees_star_graph() -> None:
     """In-degrees for star graph (hub points to spokes)."""
-    graph = nx.DiGraph()
-    for i in range(1, 5):
-        graph.add_edge(0, i)
+    graph = _directed_store([(0, i) for i in range(1, 5)])
     result = get_in_degrees(graph)
     result_dict = dict(result)
 
@@ -362,15 +351,14 @@ def test_in_degrees_star_graph() -> None:
 
 def test_out_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
-    graph = nx.DiGraph()
+    graph = RxGraphStore.directed()
     result = get_out_degrees(graph)
     expect_equal(result, [])
 
 
 def test_out_degrees_simple_chain() -> None:
     """Out-degrees for simple chain."""
-    graph = nx.DiGraph()
-    graph.add_edges_from([(1, 2), (2, 3)])
+    graph = _directed_store([(1, 2), (2, 3)])
     result = get_out_degrees(graph)
     result_dict = dict(result)
     expect_equal(result_dict[1], 1)
@@ -380,9 +368,7 @@ def test_out_degrees_simple_chain() -> None:
 
 def test_out_degrees_star_graph() -> None:
     """Out-degrees for star graph."""
-    graph = nx.DiGraph()
-    for i in range(1, 5):
-        graph.add_edge(0, i)
+    graph = _directed_store([(0, i) for i in range(1, 5)])
     result = get_out_degrees(graph)
     result_dict = dict(result)
 
@@ -393,15 +379,14 @@ def test_out_degrees_star_graph() -> None:
 
 def test_degrees_empty_graph() -> None:
     """Empty graph returns empty list."""
-    graph = nx.Graph()
+    graph = RxGraphStore.undirected()
     result = get_degrees(graph)
     expect_equal(result, [])
 
 
 def test_degrees_simple_path() -> None:
     """Degrees for simple path."""
-    graph = nx.Graph()
-    graph.add_edges_from([(1, 2), (2, 3)])
+    graph = _undirected_store([(1, 2), (2, 3)])
     result = get_degrees(graph)
     result_dict = dict(result)
     expect_equal(result_dict[1], 1)
@@ -411,8 +396,7 @@ def test_degrees_simple_path() -> None:
 
 def test_degrees_triangle() -> None:
     """Degrees for triangle graph."""
-    graph = nx.Graph()
-    graph.add_edges_from([(1, 2), (2, 3), (3, 1)])
+    graph = _undirected_store([(1, 2), (2, 3), (3, 1)])
     result = get_degrees(graph)
     result_dict = dict(result)
 
@@ -422,15 +406,14 @@ def test_degrees_triangle() -> None:
 
 def test_in_degree_values_empty_graph() -> None:
     """Empty graph returns empty list."""
-    graph = nx.DiGraph()
+    graph = RxGraphStore.directed()
     result = get_in_degree_values(graph)
     expect_equal(result, [])
 
 
 def test_in_degree_values_only() -> None:
     """Returns only values, not tuples."""
-    graph = nx.DiGraph()
-    graph.add_edges_from([(1, 2), (2, 3), (1, 3)])
+    graph = _directed_store([(1, 2), (2, 3), (1, 3)])
     result = get_in_degree_values(graph)
 
     expect_equal(sorted(result), [0, 1, 2])
@@ -438,15 +421,14 @@ def test_in_degree_values_only() -> None:
 
 def test_out_degree_values_empty_graph() -> None:
     """Empty graph returns empty list."""
-    graph = nx.DiGraph()
+    graph = RxGraphStore.directed()
     result = get_out_degree_values(graph)
     expect_equal(result, [])
 
 
 def test_out_degree_values_only() -> None:
     """Returns only values, not tuples."""
-    graph = nx.DiGraph()
-    graph.add_edges_from([(1, 2), (1, 3), (2, 3)])
+    graph = _directed_store([(1, 2), (1, 3), (2, 3)])
     result = get_out_degree_values(graph)
 
     expect_equal(sorted(result), [0, 1, 2])
@@ -454,7 +436,7 @@ def test_out_degree_values_only() -> None:
 
 def test_degree_values_empty_graph() -> None:
     """Empty graph returns empty list."""
-    graph = nx.Graph()
+    graph = RxGraphStore.undirected()
     result = get_degree_values(graph)
     expect_equal(result, [])
 
@@ -489,9 +471,7 @@ def test_degree_functions_match_statistics() -> None:
 def test_various_graph_sizes() -> None:
     """Statistics work for various graph sizes."""
     for num_nodes in [5, 10, 20]:
-        graph = nx.DiGraph()
-        for i in range(num_nodes - 1):
-            graph.add_edge(i, i + 1)
+        graph = _directed_store([(i, i + 1) for i in range(num_nodes - 1)])
         stats = compute_graph_statistics(graph)
         expect_equal(stats.node_count, num_nodes)
         expect_equal(stats.edge_count, num_nodes - 1)

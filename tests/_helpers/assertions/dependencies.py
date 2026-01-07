@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 from codeintel.build.graphs.compute.metrics.components import find_cycles
 from codeintel.build.graphs.rx.algos import GraphInput, graph_edge_count
 from codeintel.build.graphs.rx.store import RxGraphStore
-
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 
 if TYPE_CHECKING:

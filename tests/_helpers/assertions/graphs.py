@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.components import (
     find_connected,
@@ -11,8 +13,15 @@ from codeintel.build.graphs.compute.metrics.components import (
     find_strongly_connected,
     find_weakly_connected,
 )
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_edge_count, graph_node_count
-
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    ensure_directed_store,
+    ensure_store,
+    graph_edge_count,
+    graph_node_count,
+)
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, stable_key
+from codeintel.build.graphs.rx.store import RxGraphStore
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_not_none,
@@ -331,82 +340,83 @@ def assert_graph_metrics_module_row(
 
 
 def expect_graph_equal(
-    actual: nx.Graph | nx.DiGraph,
-    expected: nx.Graph | nx.DiGraph,
+    actual: GraphInput,
+    expected: GraphInput,
     *,
     message: str | None = None,
 ) -> None:
     """Assert that two graphs have identical nodes and edges (including attributes)."""
-
-    def node_payload(
-        graph: nx.Graph | nx.DiGraph,
-    ) -> set[tuple[object, tuple[tuple[str, object], ...]]]:
-        return {(node, tuple(sorted(data.items()))) for node, data in graph.nodes(data=True)}
-
-    def edge_payload(
-        graph: nx.Graph | nx.DiGraph,
-    ) -> set[tuple[object, object, tuple[tuple[str, object], ...]]]:
-        return {
-            (src, dst, tuple(sorted(data.items()))) for src, dst, data in graph.edges(data=True)
-        }
-
+    actual_store = ensure_store(actual)
+    expected_store = ensure_store(expected)
     node_label = message or "graph_nodes"
     edge_label = message or "graph_edges"
-    expect_equal(node_payload(actual), node_payload(expected), label=node_label)
-    expect_equal(edge_payload(actual), edge_payload(expected), label=edge_label)
+    expect_equal(
+        _node_payload(actual_store, include_attrs=True),
+        _node_payload(expected_store, include_attrs=True),
+        label=node_label,
+    )
+    expect_equal(
+        _edge_payload(actual_store, include_attrs=True),
+        _edge_payload(expected_store, include_attrs=True),
+        label=edge_label,
+    )
 
 
 def expect_same_nodes_edges(
-    actual: nx.Graph | nx.DiGraph,
-    expected: nx.Graph | nx.DiGraph,
+    actual: GraphInput,
+    expected: GraphInput,
     *,
     node_attrs: bool = True,
     edge_attrs: bool = True,
     message: str | None = None,
 ) -> None:
     """Assert graphs share the same nodes/edges, optionally ignoring attributes."""
-
-    def nodes(
-        graph: nx.Graph | nx.DiGraph,
-    ) -> set[object] | set[tuple[object, tuple[tuple[str, object], ...]]]:
-        if not node_attrs:
-            return set(graph.nodes)
-        return {(node, tuple(sorted(data.items()))) for node, data in graph.nodes(data=True)}
-
-    def edges(
-        graph: nx.Graph | nx.DiGraph,
-    ) -> set[tuple[object, object]] | set[tuple[object, object, tuple[tuple[str, object], ...]]]:
-        if not edge_attrs:
-            return set(graph.edges)
-        return {
-            (src, dst, tuple(sorted(data.items()))) for src, dst, data in graph.edges(data=True)
-        }
-
+    actual_store = ensure_store(actual)
+    expected_store = ensure_store(expected)
     label = message or "graph"
-    expect_equal(nodes(actual), nodes(expected), label=f"{label}_nodes")
-    expect_equal(edges(actual), edges(expected), label=f"{label}_edges")
+    expect_equal(
+        _node_payload(actual_store, include_attrs=node_attrs),
+        _node_payload(expected_store, include_attrs=node_attrs),
+        label=f"{label}_nodes",
+    )
+    expect_equal(
+        _edge_payload(actual_store, include_attrs=edge_attrs),
+        _edge_payload(expected_store, include_attrs=edge_attrs),
+        label=f"{label}_edges",
+    )
 
 
-def expect_graph_is_dag(graph: nx.DiGraph, *, message: str | None = None) -> None:
+def expect_graph_is_dag(graph: GraphInput, *, message: str | None = None) -> None:
     """Assert that a directed graph is a DAG."""
-    expect_true(nx.is_directed_acyclic_graph(graph), message=message or "Expected DAG")
-
-
-def expect_has_cycle(graph: nx.DiGraph, *, message: str | None = None) -> None:
-    """Assert that a directed graph contains at least one cycle."""
+    store = ensure_directed_store(graph)
+    directed = cast("rx.PyDiGraph", store.graph)
     expect_true(
-        not nx.is_directed_acyclic_graph(graph),
+        rx.is_directed_acyclic_graph(directed),
+        message=message or "Expected DAG",
+    )
+
+
+def expect_has_cycle(graph: GraphInput, *, message: str | None = None) -> None:
+    """Assert that a directed graph contains at least one cycle."""
+    store = ensure_directed_store(graph)
+    directed = cast("rx.PyDiGraph", store.graph)
+    expect_true(
+        not rx.is_directed_acyclic_graph(directed),
         message=message or "Expected graph to contain a cycle",
     )
 
 
-def require_projection_graph(graph: nx.Graph | None, *, message: str | None = None) -> nx.Graph:
+def require_projection_graph(
+    graph: GraphInput | None,
+    *,
+    message: str | None = None,
+) -> RxGraphStore:
     """Ensure a projection graph exists and return it.
 
     Returns
     -------
-    nx.Graph
-        The provided graph when present.
+    RxGraphStore
+        The provided graph store when present.
 
     Raises
     ------
@@ -416,7 +426,50 @@ def require_projection_graph(graph: nx.Graph | None, *, message: str | None = No
     expect_is_not_none(graph, message=message or "Expected projection graph")
     if graph is None:
         raise AssertionError(message or "Expected projection graph")
-    return graph
+    return ensure_store(graph)
+
+
+def _node_payload(
+    store: RxGraphStore,
+    *,
+    include_attrs: bool,
+) -> set[object] | set[tuple[object, tuple[tuple[str, object], ...]]]:
+    if not include_attrs:
+        return set(store.node_ids())
+    return {
+        (node_id, tuple(sorted(store.node_attrs.get(node_id, {}).items())))
+        for node_id in store.node_ids()
+    }
+
+
+def _edge_payload(
+    store: RxGraphStore,
+    *,
+    include_attrs: bool,
+) -> set[tuple[object, object]] | set[tuple[object, object, float]]:
+    if include_attrs:
+        detailed: set[tuple[object, object, float]] = set()
+        for src_idx, dst_idx in store.graph.edge_list():
+            src_id = store.index_to_id[src_idx]
+            dst_id = store.index_to_id[dst_idx]
+            left, right = _edge_key(store, src_id, dst_id)
+            payload = store.graph.get_edge_data(src_idx, dst_idx)
+            detailed.add((left, right, edge_weight_from_payload(payload)))
+        return detailed
+    simple: set[tuple[object, object]] = set()
+    for src_idx, dst_idx in store.graph.edge_list():
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        left, right = _edge_key(store, src_id, dst_id)
+        simple.add((left, right))
+    return simple
+
+
+def _edge_key(store: RxGraphStore, left: object, right: object) -> tuple[object, object]:
+    if store.is_directed:
+        return (left, right)
+    ordered = sorted((left, right), key=stable_key)
+    return (ordered[0], ordered[1])
 
 
 __all__ = [

@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.graphs.engine import views as nx_views
+from codeintel.build.graphs.engine import views as graph_views
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.datasets.arrow_store import write_dataset
 from tests._helpers.assertions import (
     expect_equal,
@@ -28,6 +30,21 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from tests._helpers.context import TestContext
+
+
+def _edge_weight(store: RxGraphStore, src: object, dst: object) -> float | None:
+    src_idx = store.get_index(src)
+    dst_idx = store.get_index(dst)
+    if src_idx is None or dst_idx is None:
+        return None
+    if not store.graph.has_edge(src_idx, dst_idx):
+        return None
+    payload = store.graph.get_edge_data(src_idx, dst_idx)
+    return edge_weight_from_payload(payload)
+
+
+def _has_node(store: RxGraphStore, node_id: object) -> bool:
+    return store.get_index(node_id) is not None
 
 
 def _write_snapshot_table(
@@ -122,8 +139,8 @@ def test_load_symbol_module_graph_smoke(core_ctx: TestContext) -> None:
         [_row_mapping(ModuleRow.__columns__, row.to_tuple()) for row in modules],
     )
 
-    graph = nx_views.load_symbol_module_graph(dataset_root, core_ctx.repo, core_ctx.commit)
-    expect_true(graph.has_edge(MOD_B_FQN, MOD_A_FQN))
+    graph = graph_views.load_symbol_module_graph(dataset_root, core_ctx.repo, core_ctx.commit)
+    expect_true(_edge_weight(graph, MOD_B_FQN, MOD_A_FQN) is not None)
 
 
 def test_load_symbol_function_graph_smoke(test_ctx: TestContext) -> None:
@@ -143,9 +160,9 @@ def test_load_symbol_function_graph_smoke(test_ctx: TestContext) -> None:
         rows,
     )
 
-    graph = nx_views.load_symbol_function_graph(dataset_root, test_ctx.commit)
+    graph = graph_views.load_symbol_function_graph(dataset_root, test_ctx.commit)
 
-    expect_true(graph.has_edge(10, 20))
-    expect_equal(graph[10][20]["weight"], 2)
-    expect_false(graph.has_node(30))
-    expect_false(graph.has_node(40))
+    expect_true(_edge_weight(graph, 10, 20) is not None)
+    expect_equal(_edge_weight(graph, 10, 20), 2.0)
+    expect_false(_has_node(graph, 30))
+    expect_false(_has_node(graph, 40))

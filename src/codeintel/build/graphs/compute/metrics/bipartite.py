@@ -69,8 +69,10 @@ def compute_bipartite_degrees(
 
     Examples
     --------
-    >>> g = nx.Graph()
-    >>> g.add_edges_from([(1, "a"), (1, "b"), (2, "b")])
+    >>> g = RxGraphStore.undirected()
+    >>> g.add_weighted_edge(1, "a", weight=1.0)
+    >>> g.add_weighted_edge(1, "b", weight=1.0)
+    >>> g.add_weighted_edge(2, "b", weight=1.0)
     >>> result = compute_bipartite_degrees(g, {1, 2}, {"a", "b"})
     >>> result.degree[1]
     2
@@ -148,12 +150,14 @@ def compute_weighted_projection(
 
     Examples
     --------
-    >>> g = nx.Graph()
-    >>> g.add_edges_from([(1, "a"), (1, "b"), (2, "b")])
+    >>> g = RxGraphStore.undirected()
+    >>> g.add_weighted_edge(1, "a", weight=1.0)
+    >>> g.add_weighted_edge(1, "b", weight=1.0)
+    >>> g.add_weighted_edge(2, "b", weight=1.0)
     >>> proj = compute_weighted_projection(g, {1, 2})
     >>> proj is not None
     True
-    >>> proj.number_of_nodes()
+    >>> proj.graph.num_nodes()
     2
     """
     store = ensure_store(bipartite_graph)

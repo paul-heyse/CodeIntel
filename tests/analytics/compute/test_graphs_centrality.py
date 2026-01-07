@@ -1,17 +1,16 @@
 """Test graph centrality metric computation.
 
 Test the pure computation functions for computing PageRank and
-betweenness centrality on directed graphs using real NetworkX graphs.
+betweenness centrality on directed graphs using rustworkx stores.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypedDict
 
-from codeintel.build.graphs.rx.store import RxGraphStore
-
 from codeintel.build.analytics.compute.graphs import centrality as centrality_module
 from codeintel.build.graphs.runtime.context import GraphContext
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.compute.centrality import (
     CentralityMetrics,
     compute_betweenness,

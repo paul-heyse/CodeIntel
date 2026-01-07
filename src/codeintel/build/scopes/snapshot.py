@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pyarrow as pa
+import pyarrow.dataset as ds
 
 from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
+from codeintel.build.tabular.compute_masks import and_kleene, equal_expr, equal_mask
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.columnar.streaming import DatasetScanOptions
+from codeintel.core.config.settings import ArrowScanSettings
+from codeintel.core.runtime.loader import load_runtime_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,4 +93,69 @@ class SnapshotScope:
         return filtered
 
 
-__all__ = ["SnapshotScope"]
+@dataclass(frozen=True, slots=True)
+class SnapshotScanContext:
+    """Context for snapshot-aligned dataset scanning."""
+
+    repo: str
+    commit: str
+    settings: ArrowScanSettings
+
+    @classmethod
+    def from_snapshot(
+        cls,
+        snapshot: SnapshotRef,
+        *,
+        settings: ArrowScanSettings | None = None,
+    ) -> SnapshotScanContext:
+        """Construct a scan context from a snapshot reference.
+
+        Returns
+        -------
+        SnapshotScanContext
+            Scan context aligned to the snapshot.
+        """
+        resolved_settings = settings or load_runtime_settings().build.arrow_scan
+        return cls(repo=snapshot.repo, commit=snapshot.commit, settings=resolved_settings)
+
+    def filter_expr(self, schema: pa.Schema) -> ds.Expression | None:
+        """Return a dataset filter expression for the snapshot.
+
+        Returns
+        -------
+        pyarrow.dataset.Expression | None
+            Filter expression for repo/commit, or None if columns are missing.
+        """
+        if "repo" not in schema.names or "commit" not in schema.names:
+            return None
+        return equal_expr("repo", self.repo) & equal_expr("commit", self.commit)
+
+    def scan_options(
+        self,
+        *,
+        columns: Sequence[str] | None,
+        batch_size: int | None = None,
+    ) -> DatasetScanOptions:
+        """Build dataset scan options using the stored settings.
+
+        Returns
+        -------
+        DatasetScanOptions
+            Scan options aligned to the snapshot.
+        """
+        return DatasetScanOptions(
+            batch_size=batch_size or self.settings.batch_size,
+            columns=columns,
+            filter_expression=None,
+            cache_metadata=self.settings.cache_metadata,
+            use_threads=self.settings.use_threads,
+            batch_readahead=self.settings.batch_readahead,
+            fragment_readahead=self.settings.fragment_readahead,
+            parquet_pre_buffer=self.settings.parquet_pre_buffer,
+            parquet_use_buffered_stream=self.settings.parquet_use_buffered_stream,
+            parquet_buffer_size=self.settings.parquet_buffer_size,
+            unify_schemas=True,
+        )
+
+
+__all__ = ["SnapshotScanContext", "SnapshotScope"]

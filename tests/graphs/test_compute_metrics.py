@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import networkx as nx
 import pytest
 
 from codeintel.build.graphs.compute.metrics.components import (
@@ -35,6 +34,8 @@ from codeintel.build.graphs.compute.metrics.structural import (
 from codeintel.build.graphs.compute.metrics.structural import (
     compute_clustering_coefficient as compute_structural_clustering,
 )
+from codeintel.build.graphs.rx.algos import to_undirected_store
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.compute.centrality import (
     CentralityMetrics,
     centrality_to_rows,
@@ -64,7 +65,6 @@ from tests._helpers.fixtures.graphs import (
     empty_graph,
     fan_in_fan_out_graph,
     star_graph,
-    two_cycle_graph,
     two_sccs_graph,
 )
 from tests.graphs.constants import CYCLE_SIZE_SWEEP
@@ -87,6 +87,28 @@ PAGERANK_POINT_FIVE: Final[float] = 0.5
 BETWEENNESS_POINT_THREE: Final[float] = 0.3
 TRIANGLES_PER_NODE_K4: Final[int] = 3
 CORE_NUMBER_K4: Final[int] = 3
+
+
+def _add_edges(store: RxGraphStore, edges: list[tuple[object, object]]) -> None:
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
+
+
+def _directed_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+    store = RxGraphStore.directed()
+    _add_edges(store, edges)
+    return store
+
+
+def _undirected_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+    store = RxGraphStore.undirected()
+    _add_edges(store, edges)
+    return store
+
+
+def _ensure_nodes(store: RxGraphStore, nodes: list[str]) -> None:
+    for node in nodes:
+        store.ensure_node(node)
 
 
 def test_pagerank_empty_graph_returns_empty() -> None:
@@ -120,7 +142,7 @@ def test_pagerank_star_graph_center_has_highest() -> None:
 
 def test_pagerank_custom_alpha() -> None:
     """Custom damping factor works."""
-    graph = nx.DiGraph([(1, 2), (2, 3)])
+    graph = _directed_store([(1, 2), (2, 3)])
     result_default = compute_pagerank(graph)
     result_low_alpha = compute_pagerank(graph, alpha=0.5)
 
@@ -132,14 +154,14 @@ def test_pagerank_chain_graph_probability_distribution() -> None:
     graph = chain_graph()
     result = compute_pagerank(graph)
 
-    expect_true(len(result) == graph.number_of_nodes())
+    expect_true(len(result) == graph.graph.num_nodes())
     expect_true(abs(sum(result.values()) - 1.0) < PAGERANK_TOLERANCE)
 
 
 def test_pagerank_single_node_graph() -> None:
     """Single node graph assigns all rank to that node."""
     graph = empty_digraph()
-    graph.add_node("solo")
+    graph.ensure_node("solo")
 
     result = compute_pagerank(graph)
 
@@ -166,7 +188,7 @@ def test_betweenness_empty_graph_returns_empty() -> None:
 
 def test_betweenness_path_graph_middle_node_highest() -> None:
     """Middle node in path has highest betweenness."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 4), (4, 5)])
+    graph = _directed_store([(1, 2), (2, 3), (3, 4), (4, 5)])
     result = compute_betweenness(graph, normalized=True)
 
     expect_true(result[3] >= result[1])
@@ -174,10 +196,10 @@ def test_betweenness_path_graph_middle_node_highest() -> None:
 
 def test_betweenness_sampling_parameter() -> None:
     """Sampling parameter k works."""
-    graph = nx.DiGraph([(i, i + 1) for i in range(10)])
+    graph = _directed_store([(i, i + 1) for i in range(10)])
     result = compute_betweenness(graph, k=3)
 
-    expect_true(len(result) == graph.number_of_nodes())
+    expect_true(len(result) == graph.graph.num_nodes())
 
 
 def test_betweenness_diamond_prioritizes_inner_nodes() -> None:
@@ -216,7 +238,7 @@ def test_closeness_complete_graph_uniform() -> None:
 
 def test_closeness_wf_improved_parameter() -> None:
     """Wasserman-Faust improvement parameter works."""
-    graph = nx.path_graph(5)
+    graph = _undirected_store([(i, i + 1) for i in range(4)])
     result_improved = compute_closeness(graph, wf_improved=True)
     result_basic = compute_closeness(graph, wf_improved=False)
 
@@ -280,7 +302,7 @@ def test_all_centralities_empty_graph_returns_empty() -> None:
 def test_all_centralities_single_node_returns_zero_degrees() -> None:
     """Single node graph returns zero degrees."""
     graph = empty_digraph()
-    graph.add_node("solo")
+    graph.ensure_node("solo")
     result = compute_all_centralities(graph)
 
     expect_true(len(result) == EXPECTED_SINGLE_COMPONENT)
@@ -292,7 +314,7 @@ def test_all_centralities_single_node_returns_zero_degrees() -> None:
 
 def test_all_centralities_returns_dataclass() -> None:
     """Returns CentralityMetrics dataclass for each node."""
-    graph = nx.DiGraph([(1, 2), (2, 3)])
+    graph = _directed_store([(1, 2), (2, 3)])
     result = compute_all_centralities(graph)
 
     expect_true(len(result) == EXPECTED_CYCLE_NODES)
@@ -308,7 +330,7 @@ def test_all_centralities_returns_dataclass() -> None:
 
 def test_all_centralities_degree_calculation() -> None:
     """Degree calculation is sum of in and out degree."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 2)])
+    graph = _directed_store([(1, 2), (2, 3), (3, 2)])
     result = compute_all_centralities(graph)
 
     for metrics in result.values():
@@ -363,7 +385,7 @@ def test_scc_simple_cycle_is_one_scc(cycle_size: int) -> None:
 
 def test_scc_disconnected_nodes_are_separate() -> None:
     """Disconnected nodes are separate SCCs."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 1), (4, 5)])
+    graph = _directed_store([(1, 2), (2, 3), (3, 1), (4, 5)])
     result = find_strongly_connected(graph)
 
     expect_true(len(result.components) >= EXPECTED_MIN_COMPONENTS)
@@ -374,13 +396,13 @@ def test_scc_dag_nodes_are_singletons() -> None:
     graph = chain_graph()
     result = find_strongly_connected(graph)
 
-    expect_true(len(result.components) == graph.number_of_nodes())
+    expect_true(len(result.components) == graph.graph.num_nodes())
     expect_true(all(comp.size == 1 for comp in result.components))
 
 
 def test_scc_node_to_component_mapping() -> None:
     """Node to component mapping is correct."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
+    graph = _directed_store([(1, 2), (2, 3), (3, 1)])
     result = find_strongly_connected(graph)
 
     comp_id = result.node_to_component[1]
@@ -390,11 +412,11 @@ def test_scc_node_to_component_mapping() -> None:
 
 def test_scc_condensation_graph_computed() -> None:
     """Condensation graph computed when requested."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 1), (1, 4)])
+    graph = _directed_store([(1, 2), (2, 3), (3, 1), (1, 4)])
     result = find_strongly_connected(graph, compute_condensation=True)
 
     expect_true(result.condensation is not None)
-    expect_true(isinstance(result.condensation, nx.DiGraph))
+    expect_true(isinstance(result.condensation, RxGraphStore))
 
 
 def test_scc_two_components_sizes() -> None:
@@ -420,7 +442,7 @@ def test_scc_complex_component_mix() -> None:
 def test_scc_single_node_component() -> None:
     """Single node graph returns one SCC."""
     graph = empty_digraph()
-    graph.add_node("solo")
+    graph.ensure_node("solo")
     result = find_strongly_connected(graph)
 
     expect_true(len(result.components) == EXPECTED_SINGLE_COMPONENT)
@@ -436,7 +458,7 @@ def test_wcc_empty_graph_returns_empty() -> None:
 
 def test_wcc_connected_graph_is_one_wcc() -> None:
     """Connected graph is one WCC."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (4, 3)])
+    graph = _directed_store([(1, 2), (2, 3), (4, 3)])
     result = find_weakly_connected(graph)
 
     expect_true(len(result) == EXPECTED_SINGLE_COMPONENT)
@@ -444,7 +466,7 @@ def test_wcc_connected_graph_is_one_wcc() -> None:
 
 def test_wcc_component_info_structure() -> None:
     """ComponentInfo has correct structure."""
-    graph = nx.DiGraph([(1, 2)])
+    graph = _directed_store([(1, 2)])
     result = find_weakly_connected(graph)
 
     expect_true(len(result) == EXPECTED_SINGLE_COMPONENT)
@@ -465,7 +487,7 @@ def test_connected_empty_graph_returns_empty() -> None:
 
 def test_connected_graph_is_one_component() -> None:
     """Connected graph is one component."""
-    graph = nx.Graph([(1, 2), (2, 3)])
+    graph = _undirected_store([(1, 2), (2, 3)])
     result = find_connected(graph)
 
     expect_true(len(result) == EXPECTED_SINGLE_COMPONENT)
@@ -488,7 +510,7 @@ def test_bridges_path_graph_all_edges_are_bridges() -> None:
 
 def test_bridges_cycle_has_no_bridges() -> None:
     """Cycle has no bridges."""
-    graph = nx.cycle_graph(4)
+    graph = _undirected_store([(1, 2), (2, 3), (3, 4), (4, 1)])
     result = find_bridges(graph)
 
     expect_true(len(result) == 0)
@@ -503,7 +525,7 @@ def test_articulation_empty_graph_returns_empty() -> None:
 
 def test_articulation_path_graph_middle_nodes() -> None:
     """Path graph - middle nodes are articulation points."""
-    graph = nx.path_graph(5)
+    graph = _undirected_store([(1, 2), (2, 3), (3, 4), (4, 5)])
     result = find_articulation_points(graph)
 
     expect_true(len(result) == EXPECTED_CYCLE_NODES)
@@ -564,10 +586,7 @@ def test_cycles_simple_cycle_detected(cycle_size: int) -> None:
 
 def test_cycles_limit_parameter_respected() -> None:
     """Limit parameter is respected."""
-    graph = nx.relabel_nodes(
-        two_cycle_graph(),
-        mapping={"A": 1, "B": 2, "C": 3, "D": 4},
-    )
+    graph = _directed_store([(1, 2), (2, 1), (3, 4), (4, 3)])
     result = find_cycles(graph, limit=1)
 
     expect_true(len(result) <= 1)
@@ -575,7 +594,7 @@ def test_cycles_limit_parameter_respected() -> None:
 
 def test_cycles_dag_has_no_cycles() -> None:
     """DAG has no cycles."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (1, 3)])
+    graph = _directed_store([(1, 2), (2, 3), (1, 3)])
     result = find_cycles(graph)
 
     expect_true(len(result) == 0)
@@ -590,7 +609,7 @@ def test_topological_layers_empty_graph_returns_empty() -> None:
 
 def test_topological_layers_chain_graph() -> None:
     """Chain graph has incremental layers."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 4)])
+    graph = _directed_store([(1, 2), (2, 3), (3, 4)])
     result = topological_layers(graph)
 
     expect_true(result[1] == 0)
@@ -601,7 +620,7 @@ def test_topological_layers_chain_graph() -> None:
 
 def test_topological_layers_root_nodes_layer_zero() -> None:
     """Root nodes have layer 0."""
-    graph = nx.DiGraph([(1, 3), (2, 3)])
+    graph = _directed_store([(1, 3), (2, 3)])
     result = topological_layers(graph)
 
     expect_true(result[1] == 0)
@@ -620,11 +639,11 @@ def test_condensation_layers_no_condensation_returns_empty() -> None:
 
 def test_condensation_layers_with_condensation() -> None:
     """With condensation computes layers."""
-    graph = nx.DiGraph([(1, 2), (2, 3), (3, 1), (1, 4)])
+    graph = _directed_store([(1, 2), (2, 3), (3, 1), (1, 4)])
     scc_result = find_strongly_connected(graph, compute_condensation=True)
     result = condensation_layers(graph, scc_result)
 
-    expect_true(len(result) == graph.number_of_nodes())
+    expect_true(len(result) == graph.graph.num_nodes())
 
 
 def test_condensation_layers_respects_component_order() -> None:
@@ -656,7 +675,7 @@ def test_structural_triangles_complete_graph_counts() -> None:
 
 def test_structural_core_number_chain_graph() -> None:
     """Chain graph yields core number of 1 for all nodes."""
-    graph = chain_graph().to_undirected()
+    graph = to_undirected_store(chain_graph())
     result = compute_core_number(graph)
 
     expect_true(all(core == EXPECTED_SINGLE_COMPONENT for core in result.values()))
@@ -665,7 +684,7 @@ def test_structural_core_number_chain_graph() -> None:
 def test_structural_constraint_single_node_zero() -> None:
     """Constraint for isolated node is zero."""
     graph = empty_graph()
-    graph.add_node("solo")
+    graph.ensure_node("solo")
     result = compute_constraint(graph)
 
     expect_true(result["solo"] == INSTABILITY_ZERO)
@@ -673,7 +692,7 @@ def test_structural_constraint_single_node_zero() -> None:
 
 def test_structural_effective_size_star_hub_larger_than_spokes() -> None:
     """Effective size favors hub in a star graph."""
-    graph = star_graph(4).to_undirected()
+    graph = to_undirected_store(star_graph(4))
     result = compute_effective_size(graph)
 
     expect_true(result["hub"] > result["spoke1"])
@@ -731,86 +750,86 @@ GOLDEN_MIN_NODES: Final[int] = 13
 GOLDEN_EXPECTED_SCC: Final[int] = 1
 
 
-def _build_realistic_call_graph() -> nx.DiGraph:
+def _build_realistic_call_graph() -> RxGraphStore:
     """Build a realistic call graph simulating production patterns.
 
     Returns
     -------
-    nx.DiGraph
-        A directed graph with hub functions, layered architecture, and SCCs.
+    RxGraphStore
+        A directed graph store with hub functions, layered architecture, and SCCs.
     """
     g = empty_digraph()
 
     core_funcs = ["format_string", "parse_json", "validate_input", "hash_value"]
-    g.add_nodes_from(core_funcs)
+    _ensure_nodes(g, core_funcs)
 
     services = ["authenticate", "query", "execute", "get_cached", "set_cached"]
-    g.add_nodes_from(services)
-    for s in services:
-        g.add_edge(s, "validate_input")
-        g.add_edge(s, "format_string")
+    _ensure_nodes(g, services)
+    _add_edges(
+        g,
+        [(service, "validate_input") for service in services]
+        + [(service, "format_string") for service in services],
+    )
 
     handlers = ["create_user", "get_user", "update_user", "delete_user", "create_order"]
-    g.add_nodes_from(handlers)
-    for h in handlers:
-        g.add_edge(h, "authenticate")
-        g.add_edge(h, "query")
-        g.add_edge(h, "get_cached")
+    _ensure_nodes(g, handlers)
+    _add_edges(
+        g,
+        [(handler, "authenticate") for handler in handlers]
+        + [(handler, "query") for handler in handlers]
+        + [(handler, "get_cached") for handler in handlers],
+    )
 
     api = ["handle_request", "register_routes"]
-    g.add_nodes_from(api)
-    for a in api:
-        for h in handlers:
-            g.add_edge(a, h)
+    _ensure_nodes(g, api)
+    _add_edges(g, [(endpoint, handler) for endpoint in api for handler in handlers])
 
-    g.add_node("log_info")
-    for node in services + handlers:
-        g.add_edge(node, "log_info")
+    g.ensure_node("log_info")
+    _add_edges(g, [(node, "log_info") for node in services + handlers])
 
-    g.add_edge("authenticate", "get_cached")
-    g.add_edge("get_cached", "authenticate")
+    _add_edges(g, [("authenticate", "get_cached"), ("get_cached", "authenticate")])
 
     return g
 
 
-def _build_realistic_import_graph() -> nx.DiGraph:
+def _build_realistic_import_graph() -> RxGraphStore:
     """Build a realistic import graph with layered architecture.
 
     Returns
     -------
-    nx.DiGraph
-        A directed graph representing module imports.
+    RxGraphStore
+        A directed graph store representing module imports.
     """
     g = empty_digraph()
 
     core = ["core.utils", "core.types", "core.errors", "core.config"]
-    g.add_nodes_from(core)
+    _ensure_nodes(g, core)
 
     services = ["services.auth", "services.cache", "services.database"]
-    g.add_nodes_from(services)
-    for s in services:
-        g.add_edge(s, "core.utils")
-        g.add_edge(s, "core.errors")
+    _ensure_nodes(g, services)
+    _add_edges(
+        g,
+        [(service, "core.utils") for service in services]
+        + [(service, "core.errors") for service in services],
+    )
 
     handlers = ["handlers.user", "handlers.product", "handlers.order"]
-    g.add_nodes_from(handlers)
-    for h in handlers:
-        g.add_edge(h, "services.auth")
-        g.add_edge(h, "services.database")
-        g.add_edge(h, "core.errors")
+    _ensure_nodes(g, handlers)
+    _add_edges(
+        g,
+        [(handler, "services.auth") for handler in handlers]
+        + [(handler, "services.database") for handler in handlers]
+        + [(handler, "core.errors") for handler in handlers],
+    )
 
     api = ["api.routes", "api.middleware"]
-    g.add_nodes_from(api)
-    for a in api:
-        for h in handlers:
-            g.add_edge(a, h)
+    _ensure_nodes(g, api)
+    _add_edges(g, [(endpoint, handler) for endpoint in api for handler in handlers])
 
-    g.add_node("utils.logging")
-    for node in services + handlers + api:
-        g.add_edge(node, "utils.logging")
+    g.ensure_node("utils.logging")
+    _add_edges(g, [(node, "utils.logging") for node in services + handlers + api])
 
-    g.add_edge("services.auth", "services.cache")
-    g.add_edge("services.cache", "services.auth")
+    _add_edges(g, [("services.auth", "services.cache"), ("services.cache", "services.auth")])
 
     return g
 

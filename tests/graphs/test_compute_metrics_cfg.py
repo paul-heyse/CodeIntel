@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Final
 
-import networkx as nx
 import pytest
 
 from codeintel.build.graphs.compute.metrics.cfg import (
@@ -20,6 +19,7 @@ from codeintel.build.graphs.compute.metrics.cfg import (
     compute_dominator_tree,
     find_natural_loop_headers,
 )
+from codeintel.build.graphs.rx.store import RxGraphStore
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
@@ -55,6 +55,17 @@ EXPECTED_PATH_LENGTH_TWO: Final[int] = 2
 EXPECTED_PATH_LENGTH_THREE: Final[int] = 3
 
 
+def _add_edges(store: RxGraphStore, edges: list[tuple[object, object]]) -> None:
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
+
+
+def _directed_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+    store = RxGraphStore.directed()
+    _add_edges(store, edges)
+    return store
+
+
 def test_dominator_tree_empty_graph_returns_empty() -> None:
     """Empty graph returns empty dict."""
     graph = empty_digraph()
@@ -72,10 +83,10 @@ def test_dominator_tree_entry_not_in_graph_returns_empty() -> None:
 def test_dominator_tree_single_node() -> None:
     """Single node graph with no edges returns empty dict.
 
-    NetworkX immediate_dominators returns empty dict for isolated node.
+    Immediate dominators return empty dict for isolated node.
     """
     graph = empty_digraph()
-    graph.add_node("A")
+    graph.ensure_node("A")
     result = compute_dominator_tree(graph, entry="A")
     expect_equal(result, {})
 
@@ -134,7 +145,7 @@ def test_dominance_frontier_empty_graph_returns_empty() -> None:
 
 def test_dominance_frontier_entry_not_in_graph_returns_empty() -> None:
     """Entry node not in graph returns empty dict."""
-    graph = nx.DiGraph([("A", "B")])
+    graph = _directed_store([("A", "B")])
     result = compute_dominance_frontier(graph, entry="X")
     expect_equal(result, {})
 
@@ -262,7 +273,7 @@ def test_loop_headers_simple_cycle() -> None:
 def test_loop_headers_self_loop() -> None:
     """Self-loop node is a loop header."""
     graph = self_loop_graph("B")
-    graph.add_edge("A", "B")
+    graph.add_weighted_edge("A", "B", weight=1.0)
     expect_has_cycle(graph)
     result = find_natural_loop_headers(graph, entry="A")
 
@@ -298,7 +309,7 @@ def test_longest_path_empty_graph_returns_zero() -> None:
 def test_longest_path_single_node_returns_zero() -> None:
     """Single node (no edges) returns 0."""
     graph = empty_digraph()
-    graph.add_node("A")
+    graph.ensure_node("A")
     result = compute_cfg_longest_path(graph)
     expect_equal(result, 0)
 
@@ -393,7 +404,8 @@ def test_all_dominance_complex_cfg() -> None:
     """Complex CFG with multiple features."""
     graph = empty_digraph()
 
-    graph.add_edges_from(
+    _add_edges(
+        graph,
         [
             ("entry", "if"),
             ("if", "then"),

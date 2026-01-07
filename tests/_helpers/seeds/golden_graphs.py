@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Final
 
 from codeintel.build.graphs.compute.metrics.components import find_strongly_connected
 from codeintel.build.graphs.rx.store import RxGraphStore
-
 from tests._helpers.fixtures.graphs import GOLDEN_CALL, GOLDEN_IMPORT, GraphFixtureFactory
 from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,

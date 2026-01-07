@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Final
 from codeintel.build.graphs.engine import GraphKind, RxGraphEngine
 from codeintel.build.graphs.engine import views as graph_views
 from codeintel.build.graphs.engine.cache import GraphCache
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.datasets.arrow_store import write_dataset
 from tests._helpers.assertions import (
     assert_target_ok,
@@ -33,16 +35,29 @@ from tests._helpers.harnesses.graph_harness import GraphTargetHarness
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    import networkx as nx
-
     from tests._helpers.builders.row_protocol import InsertableRow
     from tests._helpers.context import TestContext
 
 ISOLATED_NODE: Final[int] = 3
 
 
-def _assert_graph_match(name: str, expected: nx.Graph, actual: nx.Graph) -> None:
+def _assert_graph_match(name: str, expected: RxGraphStore, actual: RxGraphStore) -> None:
     expect_graph_equal(actual, expected, message=f"{name} differs between engine and views")
+
+
+def _edge_weight(store: RxGraphStore, src: object, dst: object) -> float | None:
+    src_idx = store.get_index(src)
+    dst_idx = store.get_index(dst)
+    if src_idx is None or dst_idx is None:
+        return None
+    if not store.graph.has_edge(src_idx, dst_idx):
+        return None
+    payload = store.graph.get_edge_data(src_idx, dst_idx)
+    return edge_weight_from_payload(payload)
+
+
+def _has_node(store: RxGraphStore, node_id: object) -> bool:
+    return store.get_index(node_id) is not None
 
 
 def _write_dataset_rows(
@@ -108,7 +123,9 @@ def test_engine_matches_views_for_core_graphs(
         snapshot=snapshot,
     )
 
-    comparisons: list[tuple[str, Callable[[], nx.Graph], Callable[[], nx.Graph]]] = [
+    comparisons: list[
+        tuple[str, Callable[[], RxGraphStore], Callable[[], RxGraphStore]]
+    ] = [
         (
             "call_graph",
             lambda: graph_views.load_call_graph(dataset_root, snapshot.repo, snapshot.commit),
@@ -175,7 +192,7 @@ def test_cache_get_returns_cached_graph() -> None:
     cache.seed(GraphKind.CALL_GRAPH, original_graph)
     call_count = 0
 
-    def loader() -> nx.DiGraph:
+    def loader() -> RxGraphStore:
         nonlocal call_count
         call_count += 1
         return empty_digraph()
@@ -192,7 +209,7 @@ def test_cache_get_calls_loader_when_not_cached() -> None:
     expected_graph = chain_graph(2)
     call_count = 0
 
-    def loader() -> nx.DiGraph:
+    def loader() -> RxGraphStore:
         nonlocal call_count
         call_count += 1
         return expected_graph
@@ -323,9 +340,9 @@ def test_load_call_graph_weights_and_isolated_nodes(test_ctx: TestContext) -> No
 
     graph = graph_views.load_call_graph(dataset_root, repo, commit)
 
-    expect_true(graph.has_edge(1, 2))
-    expect_equal(graph[1][2]["weight"], 2)
-    expect_true(ISOLATED_NODE in graph.nodes)
+    expect_true(_edge_weight(graph, 1, 2) is not None)
+    expect_equal(_edge_weight(graph, 1, 2), 2.0)
+    expect_true(_has_node(graph, ISOLATED_NODE))
 
 
 def test_load_import_graph_with_missing_import_modules(test_ctx: TestContext) -> None:
@@ -348,9 +365,9 @@ def test_load_import_graph_with_missing_import_modules(test_ctx: TestContext) ->
 
     graph = graph_views.load_import_graph(dataset_root, repo, commit)
 
-    expect_equal(graph["a"]["b"]["weight"], 2)
-    expect_true("a" in graph.nodes)
-    expect_equal(graph.nodes["a"]["layer"], 1)
+    expect_equal(_edge_weight(graph, "a", "b"), 2.0)
+    expect_true(_has_node(graph, "a"))
+    expect_equal(graph.get_node_attrs("a")["layer"], 1)
 
 
 def test_parse_reference_modules_and_config_bipartite(test_ctx: TestContext) -> None:
@@ -390,9 +407,9 @@ def test_parse_reference_modules_and_config_bipartite(test_ctx: TestContext) -> 
 
     graph = graph_views.load_config_module_bipartite(dataset_root, repo, commit)
 
-    expect_true(("c", "k1") in graph.nodes)
-    expect_true(("m", "missing.mod") in graph.nodes)
-    expect_true(graph.has_edge(("c", "k2"), ("m", "allowed")))
+    expect_true(_has_node(graph, ("c", "k1")))
+    expect_true(_has_node(graph, ("m", "missing.mod")))
+    expect_true(_edge_weight(graph, ("c", "k2"), ("m", "allowed")) is not None)
 
 
 def test_load_symbol_module_graph_weights(test_ctx: TestContext) -> None:
@@ -420,8 +437,8 @@ def test_load_symbol_module_graph_weights(test_ctx: TestContext) -> None:
 
     graph = graph_views.load_symbol_module_graph(dataset_root, repo, commit)
 
-    expect_true(graph.has_edge("m_b", "m_a"))
-    expect_equal(graph["m_b"]["m_a"]["weight"], 2)
+    expect_true(_edge_weight(graph, "m_b", "m_a") is not None)
+    expect_equal(_edge_weight(graph, "m_b", "m_a"), 2.0)
 
 
 def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
@@ -442,8 +459,8 @@ def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
     )
 
     graph = graph_views.load_symbol_function_graph(dataset_root, commit)
-    expect_true(graph.has_edge(10, 20))
+    expect_true(_edge_weight(graph, 10, 20) is not None)
 
     missing_root = dataset_root / "missing"
     empty_graph = graph_views.load_symbol_function_graph(missing_root, commit)
-    expect_equal(empty_graph.number_of_nodes(), 0)
+    expect_equal(empty_graph.graph.num_nodes(), 0)

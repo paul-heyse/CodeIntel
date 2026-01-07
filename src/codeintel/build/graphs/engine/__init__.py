@@ -6,16 +6,16 @@ caching analytics graphs, along with rustworkx-backed implementations.
 Key Components
 --------------
 - protocol: GraphEngine protocol and GraphKind enumeration
-- nx_engine: GraphEngine implementation (rustworkx-backed loaders, store outputs)
+- nx_engine: GraphEngine implementation (legacy name; rustworkx-backed loaders)
 - cache: Graph caching utilities
 - views: SQL-to-rustworkx loaders
 
 Example
 -------
 ```python
-from codeintel.build.graphs.engine import GraphEngine, GraphKind, NxGraphEngine
+from codeintel.build.graphs.engine import GraphEngine, GraphKind, RxGraphEngine
 
-engine = NxGraphEngine(gateway, snapshot)
+engine = RxGraphEngine(gateway, snapshot)
 call_graph = engine.call_graph()
 import_graph = engine.import_graph()
 ```

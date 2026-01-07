@@ -10,8 +10,8 @@ from tests._helpers.fixtures.snapshots import METRICS_VARIANT, SnapshotVariant
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.config.primitives import SnapshotRef
     from codeintel.build.graphs.rx.store import RxGraphStore
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 
