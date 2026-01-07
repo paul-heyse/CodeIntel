@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/services/runtime.py
-# hypothesis_version: 6.148.7
-
-['RuntimeService', 'db_path', 'project_root']

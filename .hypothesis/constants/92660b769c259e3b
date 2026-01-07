@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/operations/build_operations.py
-# hypothesis_version: 6.148.7
-
-['BUILD_HISTORY_SPEC', 'BUILD_STATUS_SPEC', 'build.history', 'build.status']

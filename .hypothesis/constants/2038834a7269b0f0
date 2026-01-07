@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/metrics/statistics.py
-# hypothesis_version: 6.148.5
-
-[0.0, 'DegreeViewT', 'GraphStatistics', 'Hashable', 'NodeT', 'get_degree_values', 'get_degrees', 'get_in_degree_values', 'get_in_degrees', 'get_out_degrees']

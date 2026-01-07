@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/history.py
-# hypothesis_version: 6.148.7
-
-[500, '.tool_cache', 'Query Error', 'Storage Error', 'Validation Error', 'bucket_label', 'build', 'build/db', 'commit', 'commit_ts', 'commits', 'coverage_ratio', 'created_at_row', 'db_dir', 'entity_kind', 'entity_stable_id', 'function', 'function_goid_h128', 'language', 'loc', 'max_entities', 'module', 'output_db', 'python', 'qualname', 'rel_path', 'repo', 'repo_root', 'risk_level', 'risk_score', 'selection_strategy', 'static_error_count', 'typedness_bucket']

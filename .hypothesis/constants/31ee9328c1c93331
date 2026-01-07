@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/core/results.py
-# hypothesis_version: 6.148.7
-
-['CliResult', 'SerializableResult', 'TextRenderer', '_', '__dict__', 'auto_serialize', 'data', 'ensure_serializable', 'error', 'json', 'metadata', 'name', 'result_type', 'success', 'to_dict', 'value', 'warnings']

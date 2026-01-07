@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/metrics.py
-# hypothesis_version: 6.148.7
-
-['/', '\\', 'annotated_params', 'annotation', 'commit', 'complexity_bucket', 'created_at', 'decorator_count', 'end_line', 'fully_typed', 'function_goid_h128', 'goid_h128', 'has_docstring', 'has_varargs', 'has_varkw', 'is_async', 'is_generator', 'keyword_only_params', 'kind', 'language', 'loc', 'logical_loc', 'max_nesting_depth', 'metrics_rows', 'missing AST', 'param_count', 'param_typed_ratio', 'param_types', 'parse_failed', 'partial_typed', 'positional_params', 'qualname', 'raise_count', 'records', 'rel_path', 'repo', 'return_count', 'return_type', 'return_type_source', 'span_not_found', 'start_line', 'stmt_count', 'total_params', 'type_comment', 'typedness_bucket', 'typedness_source', 'types_rows', 'unannotated_params', 'unknown', 'untyped', 'urn', 'validation_total', 'yield_count']

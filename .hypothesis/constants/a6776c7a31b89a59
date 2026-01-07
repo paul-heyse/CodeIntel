@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/datasets.py
-# hypothesis_version: 6.148.7
-
-['--against-ref', '--baseline', '--baseline-path', '--docs-view', '--max-description', '--output', '--read-only', '--sampling', '--schema-dir', 'datasets', 'datasets.diff', 'datasets.lint', 'datasets.list', 'datasets.snapshot', 'datasets_ext_app', 'diff', 'disabled', 'emit', 'error', 'exclude', 'include', 'lenient', 'lint', 'list', 'only', 'overwrite', 'skip', 'snapshot', 'strict']

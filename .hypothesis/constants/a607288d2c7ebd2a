@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/runtime/planning.py
-# hypothesis_version: 6.148.6
-
-['GraphPlanContext', 'fatal', 'graphs', 'plan', 'skip_on_error', 'soft_fail']

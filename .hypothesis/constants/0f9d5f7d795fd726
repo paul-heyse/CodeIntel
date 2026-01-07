@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/pipeline/spec/__init__.py
-# hypothesis_version: 6.148.6
-
-['PIPELINE_SPECS', 'PipelineSpec', 'PipelineStage', 'StageModule', 'get_pipeline_spec', 'list_pipeline_specs']

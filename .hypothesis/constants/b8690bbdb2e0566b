@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/config_loader.py
-# hypothesis_version: 6.148.7
-
-[0.5, 2.0, '.codeintel', '.codeintel.json', '.codeintel.yaml', '.yaml', '.yml', '1', 'CODEINTEL_COLOR', 'CODEINTEL_LOG_LEVEL', 'CODEINTEL_PROGRESS', 'CODEINTEL_TELEMETRY', 'DEFAULT_CONFIG_PATHS', 'ResolvedConfig', 'WARNING', 'backoff_factor', 'cli-flags', 'color', 'config.json', 'config.yaml', 'defaults', 'environment', 'initial_delay', 'load_config', 'log_level', 'max_attempts', 'on', 'output_format', 'progress', 'progress_threshold', 'project_root', 'retry', 'sources', 'telemetry_enabled', 'text', 'true', 'utf-8', 'yes']

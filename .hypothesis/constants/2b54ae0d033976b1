@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/goid_builder.py
-# hypothesis_version: 6.148.3
-
-['/', '\\', 'core.goid_crosswalk', 'core.goids', 'decorator_start_line', 'end_lineno', 'lineno', 'node_type', 'parent_qualname', 'path', 'qualname']

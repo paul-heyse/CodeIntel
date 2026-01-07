@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/export/validate_exports.py
-# hypothesis_version: 6.148.7
-
-['$id', '*.json', '.jsonl', '; ', 'DEFAULT_SCHEMA_ROOT', 'Export file missing', 'Schema missing', 'config', 'errors', 'export', 'export.file_missing', 'r', 'schemas', 'utf-8', 'validate_files']

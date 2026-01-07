@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/views/ibis_views.py
-# hypothesis_version: 6.148.7
-
-[0.0, 200, 'analytics.subsystems', 'callee_commit', 'callee_goid_h128', 'callee_qualname', 'callee_rel_path', 'callee_repo', 'callee_risk_level', 'callee_risk_score', 'callee_urn', 'caller_commit', 'caller_goid_h128', 'caller_qualname', 'caller_rel_path', 'caller_repo', 'caller_risk_level', 'caller_risk_score', 'caller_urn', 'commit', 'core.goid_crosswalk', 'core.goids', 'core.modules', 'crosswalk_file_path', 'crosswalk_lang', 'crosswalk_language', 'crosswalk_qualname', 'crosswalk_urn', 'docs.v_file_summary', 'dst_module', 'float64', 'function_goid_h128', 'goid_language', 'goid_qualname', 'goid_rel_path', 'high', 'hotspot_normalized', 'it.NumericValue', 'large', 'loc', 'low', 'medium', 'module', 'param_typed_ratio', 'rel_path', 'repo', 'return_type', 'small', 'src_module', 'subsystem_name', 'typedness_bucket', 'typedness_source']

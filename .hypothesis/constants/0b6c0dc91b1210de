@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/constants.py
-# hypothesis_version: 6.148.7
-
-[0.1, 100, 200, 500, 1000, 5000, 'EIGEN_MAX_ITER', 'MAX_CFG_EIGEN_SAMPLE', 'MAX_COMMUNITY_NODES', 'RICH_CLUB_PERCENTILE']

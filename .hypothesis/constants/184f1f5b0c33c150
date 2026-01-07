@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/__init__.py
-# hypothesis_version: 6.148.5
-
-['app', 'codeintel', 'dataset', 'dataset_app', 'datasets', 'datasets_ext_app', 'deps', 'docs', 'docs_app', 'graph', 'graphs_app', 'history', 'history_app', 'ide', 'ide_app', 'ingest', 'ingest_app', 'list-steps', 'main', 'op', 'op_app', 'pipeline', 'pipeline_app', 'pipeline_deps', 'pipeline_list_steps', 'pipeline_run', 'run', 'serve', 'serve_app', 'storage', 'storage_app', 'subsystem', 'subsystem_app']

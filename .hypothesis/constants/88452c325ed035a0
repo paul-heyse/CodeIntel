@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/operations/op_operations.py
-# hypothesis_version: 6.148.7
-
-['OP_LIST_SPEC', '^[\\w.]+$', 'op.list', 'op_id']

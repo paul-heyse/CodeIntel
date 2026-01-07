@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/introspection/discovery.py
-# hypothesis_version: 6.148.7
-
-['OperationInfo', 'get_operation_info', 'list_all_operations', 'search_operations']

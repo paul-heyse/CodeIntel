@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/execution/context.py
-# hypothesis_version: 6.148.6
-
-['BaseContext', 'ConfigProvider', 'PluginScratch', 'ResourceRegistry', 'T', 'T | None']

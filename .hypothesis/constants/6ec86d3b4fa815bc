@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/graphs/projections.py
-# hypothesis_version: 6.148.6
-
-['bipartite_degrees', 'community_ids', 'empty partition', 'nodes not in graph', 'partition too large', 'projection', 'projection failure', 'projection_metrics', 'weight']

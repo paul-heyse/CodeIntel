@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/jobs/runner.py
-# hypothesis_version: 6.148.7
-
-['--job-id', 'Job ID to execute', 'Run a background job', 'Unknown error', '__main__']

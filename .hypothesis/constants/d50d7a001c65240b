@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/errors.py
-# hypothesis_version: 6.148.7
-
-['CLI_EXIT_SUCCESS', 'CLI_EXIT_USAGE', 'CLI_EXIT_VALIDATION', 'DocsValidationError', 'args']

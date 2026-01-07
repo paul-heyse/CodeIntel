@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/engine/views.py
-# hypothesis_version: 6.148.7
-
-[0.0, 'as_int', 'c', 'component_size', 'cycle_group', 'f', 'kind', 'layer', 'load_call_graph', 'load_import_graph', 'm', 'normalize_decimal', 'nx.DiGraph', 'nx_cugraph', 'scc_id', 't', 'utf-8', 'weight']

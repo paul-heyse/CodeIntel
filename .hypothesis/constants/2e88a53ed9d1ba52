@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/http/routes/meta.py
-# hypothesis_version: 6.148.3
-
-['/meta', 'build_meta_router']

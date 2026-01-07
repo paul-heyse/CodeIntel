@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/execution/skip.py
-# hypothesis_version: 6.148.7
-
-[0.0, 'SkipDecision', 'commit', 'failed', 'input_hash', 'input_hash unchanged', 'input_hash_unchanged', 'options_hash', 'prior_input_hash', 'repo', 'scope_id', 'should_skip_plugin', 'skip_reason', 'skipped', 'variant']

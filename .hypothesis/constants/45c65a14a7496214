@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/registry.py
-# hypothesis_version: 6.148.5
-
-['.', '1.0.0', 'FunctionalPlugin', 'PluginMetaOptions', 'PluginPlan', 'PluginRegistry', 'PluginSkip', 'T', '_', 'config_error', 'disabled', 'fatal', 'get_registry', 'missing_dependency', 'other', 'plugin', 'process', 'register_plugin', 'thread']

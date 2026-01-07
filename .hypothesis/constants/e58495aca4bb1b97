@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/backend/duckdb_service.py
-# hypothesis_version: 6.148.3
-
-[0.7, 1.0, '.', 'BackendContext', 'DuckDBQueryService', 'DuckDBRepositories', 'Function not found', 'GraphEngineProvider', 'YES', 'both', 'callee_commit', 'callee_goid_h128', 'callee_repo', 'caller_commit', 'caller_goid_h128', 'caller_repo', 'callsite_line', 'callsite_path', 'capabilities', 'commit', 'con', 'confidence', 'context', 'dict[str, bool]', 'direct', 'edge_type', 'engine_provider', 'fan_in', 'fan_out', 'function_goid_h128', 'gateway', 'goid_h128', 'hint', 'id', 'incoming', 'info', 'kind', 'language', 'lenient', 'limits', 'line_number', 'list[str]', 'name', 'not_found', 'outgoing', 'path', 'python', 'qualname', 'rel_path', 'repo', 'repositories', 'schema_columns', 'source', 'str', 'str | None', 'strict', 'target', 'urn', 'utf-8', 'validation_profile', 'weight']

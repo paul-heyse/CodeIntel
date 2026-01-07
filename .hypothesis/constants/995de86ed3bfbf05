@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/executor.py
-# hypothesis_version: 6.148.6
-
-[0.0, 1000, 'BaseExecutionReport', 'BaseExecutorContext', 'BasePluginExecutor', 'C', 'EC', 'P', 'PluginProtocol', 'R', 'ValidationResult', 'dry_run', 'failed', 'fatal', 'kind', 'skip_on_error', 'skipped', 'stage', 'succeeded', 'validate_inputs']

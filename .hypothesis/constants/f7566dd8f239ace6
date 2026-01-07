@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/cli_errors.py
-# hypothesis_version: 6.148.7
-
-['CliError', 'Expected typer.Exit', 'No such command', 'No such option', 'P', 'ValidationError', '_T', 'code', 'exit_code', 'handle_cli_error', 'token', 'translate_typer_exit', 'typer', 'unused_tokens', 'value']

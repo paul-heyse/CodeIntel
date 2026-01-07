@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/orchestrator.py
-# hypothesis_version: 6.148.7
-
-['GraphViews', 'build_graph_views', 'nx.DiGraph']

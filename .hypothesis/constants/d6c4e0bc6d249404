@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/config/datasets/schema_builder.py
-# hypothesis_version: 6.148.7
-
-['build_all_schemas', 'build_dataset_schema']

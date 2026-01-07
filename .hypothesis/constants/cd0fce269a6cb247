@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/dependencies/compute.py
-# hypothesis_version: 6.148.7
-
-['criticality', 'matched_pattern', 'modes', 'python', 'severity', 'target', 'utf-8']

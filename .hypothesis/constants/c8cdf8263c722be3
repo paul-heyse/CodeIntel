@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/metrics/core.py
-# hypothesis_version: 6.148.5
-
-[0.0, 'callgraph_builder', 'core', 'core_graph_metrics', 'core_metrics', 'function_ext_metrics', 'import_graph_builder', 'module_ext_metrics']

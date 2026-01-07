@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/docs.py
-# hypothesis_version: 6.148.5
-
-['--dataset', '--schema', '--validate', '.codeintel', 'Export complete.', 'GatewayFactory', 'auto', 'build', 'build_dir', 'cmd_docs_export', 'commit', 'datasets', 'db_path', 'docs', 'docs_app', 'document_output_dir', 'export', 'nx_backend', 'nx_gpu', 'nx_gpu_strict', 'repo', 'repo_root', 'run_docs_export', 'schemas', 'validate_exports']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/risk_factors.py
-# hypothesis_version: 6.148.7
-
-['Any', 'analytics', 'callee_goid_h128', 'caller_goid_h128', 'commit', 'compute', 'function_goid_h128', 'has_tests', 'high', 'int64', 'low', 'materialize', 'medium', 'repo', 'risk_factors', 't__risk_factors']

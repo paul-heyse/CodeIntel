@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_health.py
-# hypothesis_version: 6.148.7
-
-['--format', '?', 'Check', 'Duration', 'Health Check Results', 'Message', 'Output format', 'Status', '[dim]-[/dim]', '[green]✓[/green]', '[red]✗[/red]', '[yellow]![/yellow]', 'center', 'health', 'health_app', 'json', 'right', 'text']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/introspection/__init__.py
-# hypothesis_version: 6.148.7
-
-['CliParamSpec', 'HelpRenderer', 'IntValidator', 'OperationCliMetadata', 'OperationInfo', 'OperationRegistry', 'OperationSpec', 'ParamRole', 'StringValidator', 'ValidationError', 'ValidationResult', 'ValidationSchema', 'Validator', 'build_cli_param_spec', 'classify_param_role', 'coerce_string_param', 'get_help_renderer', 'get_operation_info', 'get_registry', 'list_all_operations', 'register_operation', 'reset_registry', 'search_operations']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/runtime/manifest.py
-# hypothesis_version: 6.148.3
-
-[0.0, "'", "''", '0', 'commit', 'compute_input_hash', 'compute_options_hash', 'con', 'count(*)', 'current_row_counts', 'dry_run', 'dry_run_record', 'failed', 'fatal', 'hash_json', 'input_hash', 'is_unchanged', 'load_prior_manifest', 'meta', 'modules', 'name', 'options', 'options_hash', 'paths', 'plugin', 'records', 'repo', 'row_counts', 'row_counts_equal', 'run_contracts', 'scope', 'skip_on_error', 'skip_record', 'skipped', 'soft_fail', 'status', 'succeeded', 'time_window', 'utf-8', 'version_hash', 'write_manifest']

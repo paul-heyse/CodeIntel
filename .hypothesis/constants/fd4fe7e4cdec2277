@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/functions/__init__.py
-# hypothesis_version: 6.148.3
-
-['ComplexityMetrics', 'FunctionSignature', 'LinesOfCode', 'ParamStats', 'TypednessFlags', 'compute_complexity', 'compute_loc', 'compute_param_stats', 'extract_signature']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/io/ibis_adapter.py
-# hypothesis_version: 6.148.7
-
-['IbisIOConfig', 'commit', 'duckdb', 'format', 'insert_values', 'ir.BooleanValue', 'load_dataset_df', 'load_dataset_ibis', 'load_ibis_table', 'method', 'operation', 'pandas', 'pd.DataFrame', 'repo', 'row_count', 'save_dataframe', 'save_ibis_expression', 'save_rows', 'saved_to', 'schema', 'source', 'table', 'table_key', 'upsert', 'upsert_dataframe']

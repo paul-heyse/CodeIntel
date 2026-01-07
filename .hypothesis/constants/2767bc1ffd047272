@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/observability/_observability.py
-# hypothesis_version: 6.148.7
-
-[100, 1000, '016x', '032x', 'ObservabilityConfig', 'Operation completed', 'Operation failed', 'Operation started', '[REDACTED]', 'auth', 'cli.duration_ms', 'cli.error_type', 'cli.operation_id', 'cli.param_count', 'cli.success', 'codeintel.cli', 'credential', 'duration_ms', 'end', 'error_type', 'exception', 'key', 'level', 'logger', 'message', 'operation_id', 'params', 'password', 'record_exception', 'result_type', 'secret', 'set_attribute', 'span', 'span_id', 'start_time', 'success', 'timestamp', 'token', 'trace_id']

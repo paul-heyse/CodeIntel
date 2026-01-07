@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/function_history.py
-# hypothesis_version: 6.148.7
-
-[0.2, 0.5, 1.0, 10.0, 365, 'age_days', 'author_count', 'churn_score', 'churning', 'commit', 'commit_count', 'created_at', 'created_at_row', 'created_in_commit', 'function_goid_h128', 'history_window_end', 'history_window_start', 'last_modified_at', 'last_modified_commit', 'legacy_hot', 'lines_added', 'lines_deleted', 'module', 'new_hot', 'qualname', 'rel_path', 'repo', 'stability_bucket', 'stable', 'unknown', 'urn']

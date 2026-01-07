@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/types.py
-# hypothesis_version: 6.148.7
-
-[100.0, 100, 'CoverageData', 'GitLogEntry', 'ScipIndexResult', 'ScipOccurrence', 'ScipParseResult', 'ScipSymbol', 'TestResult', 'ToolRunResult', 'TypeCheckResult', 'TypeDiagnostic']

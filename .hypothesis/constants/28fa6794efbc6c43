@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/execution/middleware.py
-# hypothesis_version: 6.148.7
-
-[0.0, 1.0, 'Completed', 'Failed', 'LoggingMiddleware', 'MetricsMiddleware', 'Middleware', 'MiddlewareStack', 'Operation completed', 'Operation failed', 'ProgressMiddleware', 'Starting operation', 'TimingMiddleware', 'TracingMiddleware', 'avg', 'codeintel.cli', 'count', 'duration_seconds', 'ended_at', 'error', 'error_type', 'get_middleware_stack', 'op_id', 'operation.id', 'operation_counts', 'operation_durations', 'operation_errors', 'params', 'span', 'start_time', 'started_at', 'success', 'total']

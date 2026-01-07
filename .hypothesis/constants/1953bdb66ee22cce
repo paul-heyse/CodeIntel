@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/function_contracts.py
-# hypothesis_version: 6.148.7
-
-[0.0, 0.3, 1.0, '.', 'Exception', 'assert', 'bool', 'cls', 'commit', 'confidence', 'contract_confidence', 'core.docstrings', 'created_at', 'desc', 'exception', 'falsey', 'function_goid_h128', 'ge', 'guard', 'has_', 'instance_of', 'is_', 'isinstance', 'kind', 'len', 'len_gt', 'line', 'lineno', 'may be none', 'message_snippet', 'must not be none', 'name', 'non_null', 'none', 'null', 'nullable', 'optional', 'param', 'param_nullability', 'param_types', 'params', 'pd.DataFrame', 'posonlyargs', 'postconditions', 'postconditions_json', 'preconditions', 'preconditions_json', 'qualname', 'raise', 'raises', 'raises_json', 'records', 'rel_path', 'repo', 'required', 'return', 'return_nullability', 'return_type', 'returns', 'self', 'should_', 'source', 'truthy', 'type_hint', 'unknown', 'value', '|none']

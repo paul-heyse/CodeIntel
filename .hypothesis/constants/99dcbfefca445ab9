@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/config/datasets/export.py
-# hypothesis_version: 6.148.7
-
-['1.0.0', 'by_kind', 'catalog', 'column_count', 'columns', 'constraint_count', 'constraints', 'consumers', 'dataset_count', 'datasets', 'dependency_graph', 'depends_on', 'deprecated', 'description', 'downstream', 'edge_count', 'edges', 'export_to_file', 'export_type', 'expression', 'family', 'from', 'generated_at', 'graph', 'inferred_from', 'is_leaf', 'is_root', 'kind', 'leaf_tables', 'meta', 'name', 'node_count', 'nodes', 'owner', 'producer_plugins', 'producers', 'root_tables', 'source', 'table_level', 'tags', 'to', 'topological_order', 'total_constraints', 'total_datasets', 'type', 'upstream', 'utf-8', 'version']

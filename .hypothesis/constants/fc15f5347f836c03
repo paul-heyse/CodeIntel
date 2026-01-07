@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/config/builder.py
-# hypothesis_version: 6.148.7
-
-['CFGBuilderStepConfig', 'CallGraphStepConfig', 'ConfigBuilder', 'DataModelsStepConfig', 'EntryPointToggles', 'HotspotsStepConfig', 'SubsystemsStepConfig', 'SymbolUsesStepConfig', 'behavioral_coverage', 'binaries', 'branch', 'build_dir', 'call_graph', 'cfg_builder', 'commit', 'config_data_flow', 'coverage_analytics', 'data_model_usage', 'data_models', 'db_path', 'document_output_dir', 'entrypoints', 'function_analytics', 'function_contracts', 'function_effects', 'function_history', 'goid_builder', 'graph_backend', 'graph_metrics', 'history_timeseries', 'hotspots', 'import_graph', 'log_db_path', 'profiles', 'profiles_analytics', 'repo', 'repo_root', 'semantic_roles', 'subsystems', 'symbol_uses', 'test_coverage', 'test_profile']

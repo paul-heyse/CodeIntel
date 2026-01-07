@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/risk/factors.py
-# hypothesis_version: 6.148.3
-
-[90000, '2.0.0', 'CatalogProvider', 'RiskFactorsPlugin', '[]', 'catalog', 'config_ingest', 'coverage.functions', 'coverage.test_edges', 'dataset', 'factors', 'fatal', 'functions.metrics', 'goid_risk_factors', 'hotspots.build', 'risk', 'risk_factors.build', 'scoring', 'tests_ingest', 'typing_ingest']

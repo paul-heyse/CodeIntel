@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/artifact_materializer.py
-# hypothesis_version: 6.148.7
-
-['.tmp', 'artifact', 'description', 'materialize_artifact', 'size_bytes', 'utf-8', 'wb']

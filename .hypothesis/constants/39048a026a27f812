@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/resources/tracker.py
-# hypothesis_version: 6.148.6
-
-['ChangeTracker', 'TrackerConfig', 'TrackerProvider', 'change_tracker', 'python', 'tracker']

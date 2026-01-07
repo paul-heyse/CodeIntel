@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/testing/behavioral/__init__.py
-# hypothesis_version: 6.148.5
-
-['BehaviorRowHooks', 'build_behavior_rows', 'build_test_ast_index', 'infer_behavior_tags']

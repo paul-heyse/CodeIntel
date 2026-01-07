@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/graphs/call_graph_views.py
-# hypothesis_version: 6.148.7
-
-['Any', 'call_depth_stats', 'call_graph_views', 'compute', 'function_call_counts', 'graphs', 'materialize', 'outer', 't__call_graph_views']

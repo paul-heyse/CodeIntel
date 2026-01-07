@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/history/plugins.py
-# hypothesis_version: 6.148.3
-
-[120000, 'fatal', 'history', 'history.timeseries', 'profiles.build', 'tool_runner']

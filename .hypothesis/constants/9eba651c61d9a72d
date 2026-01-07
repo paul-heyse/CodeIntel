@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/goid.py
-# hypothesis_version: 6.148.7
-
-['ClassDef', 'DECIMAL_38_MAX', 'GoidCrosswalkRow', 'GoidDescriptor', 'GoidResult', 'GoidRow', 'Module', 'big', 'build_crosswalk_row', 'build_goid_row', 'build_urn', 'class', 'compute_goid', 'compute_goid_result', 'determine_kind', 'function', 'method', 'module', 'utf-8']

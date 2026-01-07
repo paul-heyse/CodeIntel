@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/process.py
-# hypothesis_version: 6.148.7
-
-['--json', '--output', '--project-name', 'CommandExecutor', 'CommandResult', 'HEAD', 'codeintel', 'git', 'index', 'print', 'replace', 'rev-parse', 'scip', 'scip-python', 'utf-8']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/graph_stats.py
-# hypothesis_version: 6.148.7
-
-['avg_clustering', 'bipartite', 'call_graph', 'commit', 'component_layers', 'config_keys', 'config_modules', 'created_at', 'diameter_estimate', 'edge_count', 'graph_name', 'import_graph', 'node_count', 'repo', 'scc_count', 'symbol_module_graph', 'weak_component_count']

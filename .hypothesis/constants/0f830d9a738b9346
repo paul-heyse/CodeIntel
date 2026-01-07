@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/config/loader.py
-# hypothesis_version: 6.148.7
-
-[0.5, 2.0, 30.0, '.', '.codeintel', '.codeintel.json', '.codeintel.yaml', '.yaml', '.yml', 'CODEINTEL_', 'CRITICAL', 'DEBUG', 'DEFAULT_CONFIG_PATHS', 'ERROR', 'INFO', 'WARNING', 'apply_overrides', 'backoff_factor', 'cache_dir', 'cli-flags', 'codeintel-cli', 'color', 'commit', 'config.json', 'config.yaml', 'config_to_dict', 'db_path', 'defaults', 'dict_to_config', 'directories', 'disabled', 'enabled', 'endpoint', 'environment', 'initial_delay', 'json', 'load_config', 'log_level', 'max_attempts', 'max_connections', 'max_delay', 'name', 'output_format', 'plugins', 'progress', 'project', 'repo', 'retry', 'root', 'service_name', 'storage', 'telemetry', 'text', 'threshold', 'utf-8']

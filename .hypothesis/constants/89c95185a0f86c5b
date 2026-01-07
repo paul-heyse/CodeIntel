@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/callgraph.py
-# hypothesis_version: 6.148.5
-
-[0.0, 0.55, 0.6, 0.7, 0.75, 0.8, '.', 'AsyncFunctionDef', 'CallEdge', 'ResolutionContext', 'ResolutionResult', 'attr_chain', 'build_callee_map', 'build_evidence', 'callee_name', 'col_offset', 'collect_aliases', 'collect_call_sites', 'collect_edges_ast', 'collect_edges_cst', 'collect_import_edges', 'cst.CSTNode', 'dedupe_edges', 'direct', 'end_lineno', 'extract_callee_ast', 'extract_callee_cst', 'global_name', 'handle_import', 'handle_import_from', 'import_alias', 'lineno', 'local_attr', 'local_name', 'python', 'resolve_callee', 'resolve_via_scip', 'resolved_via', 'scip_candidates', 'scip_def_path', 'unresolved', 'utf8']

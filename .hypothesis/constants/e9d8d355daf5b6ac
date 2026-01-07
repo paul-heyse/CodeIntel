@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/metrics/secondary.py
-# hypothesis_version: 6.148.6
-
-['callgraph_builder', 'cfg', 'cfg_dfg_builder', 'cfg_metrics', 'cfg_metrics_plugin', 'config', 'config_graph_metrics', 'config_metrics', 'dfg', 'dfg_metrics', 'dfg_metrics_plugin', 'graph_stats', 'graph_stats_plugin', 'import_graph_builder', 'stats', 'subsystem', 'subsystem_agreement', 'subsystem_metrics', 'symbol', 'test', 'test_graph_metrics', 'test_metrics']

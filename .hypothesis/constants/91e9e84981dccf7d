@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/datasets.py
-# hypothesis_version: 6.148.7
-
-[400, 404, 'DatasetDiffResult', 'DatasetLintResult', 'DatasetsListResult', 'File Not Found', 'Linting datasets', 'Missing Parameter', 'Project Error', 'added', 'baseline_path', 'category', 'changed', 'count', 'datasets', 'datasets_count', 'description', 'has_differences', 'include_internal', 'issue_count', 'issues', 'name', 'output', 'output_path', 'passed', 'project_root', 'removed', 'table_key', 'utf-8']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/architecture_tools.py
-# hypothesis_version: 6.148.3
-
-['architecture.module', 'commit', 'get_file_hints', 'graph.plugins.plan', 'graph_plugin_plan', 'ide.hints', 'list_subsystems', 'max_runtime_ms', 'mcp', 'memory_mb_hint', 'repo', 'search_subsystems', 'subsystems.detail', 'subsystems.list', 'subsystems.search', 'subsystems.summarize', 'summarize_subsystem']

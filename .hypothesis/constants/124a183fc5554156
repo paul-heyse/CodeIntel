@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/_help.py
-# hypothesis_version: 6.148.7
-
-['(none)', 'ArgumentCollection', 'Group', '_AppCallKwargs', '_DisplayDefault', 'apply_help_patch', 'argument_collection', 'asyncio', 'build_patched_app', 'cyclopts.core', 'cyclopts.help', 'false', 'format', 'group', 'name', 'str', 'trio', 'true']

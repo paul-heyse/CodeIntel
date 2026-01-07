@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/core/results.py
-# hypothesis_version: 6.148.7
-
-['CliResult', 'TextRenderer', '__dict__', 'data', 'error', 'json', 'metadata', 'success', 'to_dict', 'warnings']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/health.py
-# hypothesis_version: 6.148.7
-
-['--format', '-v', 'Output format', 'Verbosity level', 'health', 'health.check', 'health_app']

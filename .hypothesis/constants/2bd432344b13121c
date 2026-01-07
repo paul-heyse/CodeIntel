@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/analytics/function_history.py
-# hypothesis_version: 6.148.7
-
-['analytics', 'compute', 'function_history', 'materialize', 't__function_history']

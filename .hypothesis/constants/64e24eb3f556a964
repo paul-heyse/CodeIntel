@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/history/history_timeseries.py
-# hypothesis_version: 6.148.7
-
-[500, '--format=%cI', '-s', '.tool_cache', 'both', 'bucket_label', 'build', 'commit', 'commit_ts', 'coverage_ratio', 'created_at_row', 'entity_kind', 'entity_stable_id', 'function', 'function_goid_h128', 'git', 'language', 'loc', 'module', 'qualname', 'rel_path', 'repo', 'risk_level', 'risk_score', 'show', 'static_error_count', 'typedness_bucket', 'utf-8']

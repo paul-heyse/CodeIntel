@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/result_types.py
-# hypothesis_version: 6.148.7
-
-['BuildRunResult', 'BuildStatusResult', 'ConfigShowResult', 'DatasetListResult', 'DatasetVerifyResult', 'DryRunResult', 'DryRunStep', 'GraphPluginsResult', 'OperationCallResult', 'OperationListResult', 'SubsystemListResult', 'columns', 'config', 'count', 'datasets', 'description', 'duration_seconds', 'estimated_duration', 'executed', 'failed', 'fresh_count', 'is_prereq', 'issues', 'name', 'operation_id', 'operations', 'owner_package', 'params', 'plugins', 'result', 'row_count', 'skipped', 'sources', 'stale_count', 'steps', 'subsystems', 'table_key', 'target_operation', 'targets', 'verified', 'warnings']

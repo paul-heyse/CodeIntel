@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/graphs/centrality.py
-# hypothesis_version: 6.148.5
-
-[1e-06, 0.85, 1.0, 100, 'CentralityMetrics', 'compute_betweenness', 'compute_pagerank']

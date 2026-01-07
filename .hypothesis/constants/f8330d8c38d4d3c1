@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/resources.py
-# hypothesis_version: 6.148.7
-
-[5000, 60000, 120000, 180000, 300000, 'IsolationKind', 'TargetExecution', 'TargetResources', 'none', 'process', 'thread']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/runtime/context.py
-# hypothesis_version: 6.148.7
-
-[200, 500, 'GraphContext', 'GraphContextCaps', 'GraphContextSpec', 'build_graph_context', 'load_prior_manifest', 'meta', 'name', 'records', 'utf-8', 'weight']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/profiles/modules.py
-# hypothesis_version: 6.148.7
-
-[0.0, 'BaseBackend', '[]', 'avg_file_complexity', 'avg_risk_score', 'boolean', 'class_count', 'commit', 'created_at', 'cycle_group', 'file_count', 'function_count', 'high', 'import_fan_in', 'import_fan_out', 'in_cycle', 'int64', 'language', 'low', 'max_file_complexity', 'max_risk_score', 'medium', 'module', 'owners', 'path', 'repo', 'role', 'role_confidence', 'role_sources_json', 'tags', 'total_loc', 'total_logical_loc']

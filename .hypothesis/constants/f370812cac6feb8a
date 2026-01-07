@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/unified_registry.py
-# hypothesis_version: 6.148.7
-
-['TargetRegistration', 'UnifiedRegistry', 'get_unified_registry']

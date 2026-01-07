@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/plugins.py
-# hypothesis_version: 6.148.7
-
-['PluginCatalog', 'TargetPlugin', 'all_plugins', 'get_plugin', 'register_plugin']

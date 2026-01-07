@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/gateway/accessors.py
-# hypothesis_version: 6.148.6
-
-['AnalyticsTables', 'CoreTables', 'DocsViews', 'DuckDBGateway', 'GraphTables', '[]', 'analytics.subsystems', 'analytics.typedness', 'core.goids', 'core.modules', 'core.repo_map', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'python']

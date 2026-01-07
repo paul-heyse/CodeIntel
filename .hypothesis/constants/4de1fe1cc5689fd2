@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/recipes/__init__.py
-# hypothesis_version: 6.148.3
-
-['BUILDERS_ONLY_RECIPE', 'BUILTIN_RECIPES', 'FULL_GRAPH_RECIPE', 'GraphRecipe', 'GraphRecipeOptions', 'GraphStage', 'INCREMENTAL_RECIPE', 'METRICS_ONLY_RECIPE', 'RecipeExecutor', 'StageExecutionResult', 'execute_graph_recipe', 'get_builtin_recipe', 'graph_recipe', 'graph_stage', 'list_builtin_recipes']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/serialization/converters.py
-# hypothesis_version: 6.148.7
-
-['JsonValue', '__origin__', 'deserialize_value', 'serialize_value']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/config/datasets/row_factory.py
-# hypothesis_version: 6.148.7
-
-['__annotations__', '__total__', 'bool', 'datetime', 'double', 'float', 'int', 'type[Any]']

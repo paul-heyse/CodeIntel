@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/views/__init__.py
-# hypothesis_version: 6.148.7
-
-['VIEW_BUILDERS', 'ViewBuilder', '_ibis_views', 'get_registered_views']

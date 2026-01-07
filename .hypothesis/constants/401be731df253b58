@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/runtime/errors.py
-# hypothesis_version: 6.148.6
-
-['PluginFatalError', 'PluginSkippedError', 'PluginTimeoutError']

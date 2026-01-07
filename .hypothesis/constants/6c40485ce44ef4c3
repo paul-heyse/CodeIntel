@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/pipeline/spec/model.py
-# hypothesis_version: 6.148.6
-
-['ANALYTICS_ONLY', 'FULL_PIPELINE', 'Full ingestion only', 'GRAPHS_ONLY', 'INGEST_ONLY', 'Ingestion only', 'NOOP_PIPELINE', 'PIPELINE_SPECS', 'PipelineSpec', 'PipelineStage', 'StageModule', 'analytics', 'builtin.default', 'builtin.full', 'custom', 'full', 'get_pipeline_spec', 'graphs', 'ingest', 'ingestion', 'list_pipeline_specs', 'noop']

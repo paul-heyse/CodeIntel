@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/schemas/pandera_gen.py
-# hypothesis_version: 6.148.7
-
-[2048, 'BIGINT', 'BOOLEAN', 'DECIMAL', 'DECIMAL(38,0)', 'DOUBLE', 'INTEGER', 'JSON', 'TIMESTAMP', 'TIMESTAMPTZ', 'VARCHAR', 'datetime64[ns]']

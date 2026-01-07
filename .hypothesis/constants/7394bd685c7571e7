@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/metrics/components.py
-# hypothesis_version: 6.148.3
-
-[0.0, 100, 'ComponentInfo', 'SCCResult', 'condensation_layers', 'count', 'find_bridges', 'find_connected', 'find_cycles', 'largest_size', 'mean_size', 'singleton_count', 'smallest_size', 'topological_layers']

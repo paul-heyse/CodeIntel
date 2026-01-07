@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/assets/impact.py
-# hypothesis_version: 6.148.7
-
-['ImpactResult', 'ImpactedAsset', 'compute_impact']

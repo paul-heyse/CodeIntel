@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/docs.py
-# hypothesis_version: 6.148.7
-
-[400, '1', 'DocsExportResult', 'DocsValidateResult', 'ExportMode', 'ExportValidationMode', 'MacroRequirement', 'Project Error', 'allow_partial', 'build_system', 'datasets', 'direct', 'docs_export_handler', 'dry_run', 'issues', 'macro_requirement', 'mode', 'ok', 'passed', 'project_root', 'require_normalized', 'required', 'schemas', 'skip', 'skip_prereqs', 'status', 'true', 'validation', 'yes']

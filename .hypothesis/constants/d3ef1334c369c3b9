@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/services/datasets.py
-# hypothesis_version: 6.148.3
-
-['/datasets', '/datasets/specs', '_LocalDatasetMixin', 'dataset', 'dataset_name', 'dataset_schema', 'dataset_specs', 'gateway', 'lenient', 'limit', 'list_datasets', 'meta', 'offset', 'read_dataset_rows', 'strict']

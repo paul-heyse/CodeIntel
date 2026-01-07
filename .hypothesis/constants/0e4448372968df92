@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/graphs.py
-# hypothesis_version: 6.148.7
-
-['Graph Plugins Plan', 'GraphPlanResult', 'GraphPlanStage', 'GraphPluginInfo', 'GraphPluginsResult', 'List Graph Plugins', 'PlanMode', 'count', 'dependency', 'dependency_policy', 'depends_on', 'description', 'disable', 'disabled', 'enable', 'enabled_by_default', 'graphs', 'graphs.plugins.list', 'graphs.plugins.plan', 'include_disabled', 'lenient', 'list', 'name', 'names', 'plan', 'plugins', 'provides', 'selection', 'selection_policy', 'skip', 'stage', 'stages', 'total_plugins']

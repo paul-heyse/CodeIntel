@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/resilience/_resilience.py
-# hypothesis_version: 6.148.7
-
-[0.0, 0.1, 0.5, 1.0, 2.0, 5.0, 30.0, 60.0, 503, '.', 'CircuitBreaker', 'CircuitBreakerStatus', 'CircuitOpenError', 'CircuitState', 'P', 'ResilienceConfig', 'ResilienceMiddleware', 'RetryCallback', 'RetryContext', 'RetryOptions', 'RetryPolicy', 'RetryableError', 'Service Unavailable', 'T', 'Unreachable', 'category', 'closed', 'configure_resilience', 'execute_with_retry', 'get_breaker_registry', 'half_open', 'open', 'retry_after', 'start_time', 'with_retry']

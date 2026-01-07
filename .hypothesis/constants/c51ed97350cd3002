@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/build_handlers.py
-# hypothesis_version: 6.148.7
-
-[100, 400, 404, '(dry-run mode)\n', '-', '=', '?', 'Blocked', 'Build Complete', 'BuildHistoryOptions', 'BuildRunContext', 'BuildRunOptions', 'BuildStatusOptions', 'Computed', 'Error Details:', 'Invalid Module', 'Missing', 'OutputFormat', 'Path | None', 'Project Error', 'Run Not Found', 'RunMode', 'RuntimeCliOptions', 'Stale', 'TargetModule', 'TargetScope', 'all', 'analytics', 'blocked', 'build.run.error', 'build_run_handler', 'build_status_handler', 'bundle_build_run', 'computed', 'ctx_opts', 'dry_run', 'execute', 'failed', 'force', 'fresh', 'graphs', 'ingestion', 'int', 'json', 'list[str] | None', 'missing', 'module', 'name', 'options', 'output_format', 'project_root', 'requested', 'run_mode', 'setup_logging', 'stale', 'status', 'str | None', 'succeeded', 'target_scope', 'targets', 'verbose', '⊘', '⚠', '✓', '✗']

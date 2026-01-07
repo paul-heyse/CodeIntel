@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/contracts.py
-# hypothesis_version: 6.148.3
-
-['failed', 'passed', 'soft_failed']

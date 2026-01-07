@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/history_handlers.py
-# hypothesis_version: 6.148.7
-
-[500, '.tool_cache', 'HistoryOptions', 'HistoryOptionsInput', 'Path | str | None', 'build', 'build/db', 'commits', 'db_dir', 'entity_kind', 'function', 'int | str | None', 'max_entities', 'options', 'output_db', 'repo', 'repo_root', 'risk_score', 'selection_strategy', 'setup_logging', 'str | None', 'verbose']

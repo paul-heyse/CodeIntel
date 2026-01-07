@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/typing_ingest.py
-# hypothesis_version: 6.148.3
-
-[0.0, 1.0, '**/*.py', '.', '.py', '.tool_cache', '/', 'analytics.typedness', 'build', 'cls', 'params', 'path', 'posonlyargs', 'pyrefly', 'pyright', 'python', 'rel_path', 'returns', 'ruff', 'self', 'total', 'utf8']

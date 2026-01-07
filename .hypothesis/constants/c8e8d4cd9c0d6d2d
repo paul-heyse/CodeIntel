@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/validation/conformance.py
-# hypothesis_version: 6.148.6
-
-['ConformanceIssue', 'ConformanceReport', 'run_conformance', 'utf-8']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/sql_primitives.py
-# hypothesis_version: 6.148.6
-
-[128, ' (', ' AND ', '(', ')', ') VALUES (', '*/ ', ', ', '.', '?', 'DELETE FROM', 'INSERT INTO', 'INSERT INTO ', 'PreparedStatements', 'QueryBuilder', 'SELECT * FROM', 'SELECT * FROM /*', 'SELECT COUNT(*) FROM', 'SafeColumn', 'SafeTable', 'SqlBuilderError', 'SqlParams', 'TABLE_KEY_PARTS', 'WHERE', 'build_delete_query', 'build_insert_sql', 'macro_select_sql', 'quote_identifier', 'quote_table_key', 'render_sql', 'safe_macro_call', 'validate_identifier']

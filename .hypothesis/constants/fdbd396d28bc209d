@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/plugins/ingestion/typing_plugin.py
-# hypothesis_version: 6.148.7
-
-['.', '.py', '/', '3.0.0', '; ', 'TypingIngestPlugin', 'Unknown error', 'analytics.typedness', 'builder', 'core.modules', 'ingest.typing', 'path', 'pyrefly', 'pyright', 'requires_tools', 'ruff', 'typing', 'typing_ingest']

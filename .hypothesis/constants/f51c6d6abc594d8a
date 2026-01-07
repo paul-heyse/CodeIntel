@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/__init__.py
-# hypothesis_version: 6.148.7
-
-['OutputFormatCLI', 'RuntimeCLI', 'app', 'build_app', 'command_context', 'completions_app', 'config_app', 'dataset_app', 'datasets_ext_app', 'docs_app', 'get_output_format', 'get_verbose', 'graphs_app', 'health_app', 'help_commands_app', 'history_app', 'ide_app', 'jobs_app', 'main', 'make_root_app', 'op_app', 'plugins_app', 'runtime_field', 'serve_app', 'storage_app', 'subsystem_app']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/symbol_orchestrator.py
-# hypothesis_version: 6.148.7
-
-['betweenness', 'closeness', 'community_id', 'constraint', 'core_number', 'effective_size', 'eigenvector', 'harmonic', 'weight']

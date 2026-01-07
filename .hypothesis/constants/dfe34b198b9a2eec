@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/cli_progress.py
-# hypothesis_version: 6.148.7
-
-[10.0, 100, 'ProgressConfig', 'ProgressTracker', 'Unknown task_id: %s', 'configure_progress', 'get_progress_tracker', 'iter_with_progress', 'progress_context']

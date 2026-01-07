@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/runtime_manifest.py
-# hypothesis_version: 6.148.3
-
-['AnalyticsPlanInfo', 'AnalyticsRunRecord', 'AnalyticsRunReport', 'AnalyticsScope', 'AnalyticsSkippedStep', 'AnalyticsStatus', 'attempts', 'commit', 'dep_graph', 'duration_ms', 'encode_manifest', 'ended_at', 'error', 'failed', 'generated_at', 'kind', 'labels', 'meta', 'modules', 'name', 'ordered_steps', 'partial', 'paths', 'plan', 'plan_id', 'reason', 'records', 'repo', 'run_id', 'scope', 'skipped', 'skipped_steps', 'started_at', 'status', 'succeeded', 'tags', 'time_window']

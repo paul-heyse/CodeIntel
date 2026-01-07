@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/introspection/validation.py
-# hypothesis_version: 6.148.7
-
-[100, 200, 'FloatValidator', 'IntValidator', 'PATH_VALIDATOR', 'Path does not exist', 'Path must be a file', 'PathValidator', 'StringValidator', 'TABLE_KEY_VALIDATOR', 'ValidationError', 'ValidationResult', 'ValidationSchema', 'Validator', '^[a-z][a-z0-9_\\.]*$', '^[a-z_][a-z0-9_\\.]*$', 'code', 'field', 'invalid_extension', 'invalid_type', 'max_length', 'max_value', 'message', 'min_length', 'min_value', 'not_allowed', 'not_dir', 'not_exists', 'not_file', 'operation_id', 'path', 'pattern', 'required', 'table_key', 'validate_path', 'validate_table_key', 'value']

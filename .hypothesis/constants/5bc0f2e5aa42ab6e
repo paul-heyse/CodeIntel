@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/coverage/functions.py
-# hypothesis_version: 6.148.3
-
-[60000, '2.0.0', 'coverage', 'coverage.functions', 'coverage.lines', 'coverage_ingest', 'functions', 'goids']

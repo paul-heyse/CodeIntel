@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/ops.py
-# hypothesis_version: 6.148.7
-
-[8000, '1', '127.0.0.1', '=', 'AUTO_PIPELINE_ENV', 'CODEINTEL_COMMIT', 'CODEINTEL_DB_PATH', 'CODEINTEL_REPO', 'CODEINTEL_REPO_ROOT', 'DatasetFlowResult', 'DatasetInfoResult', 'DatasetListResult', 'DatasetVerifyResult', 'OperationCallResult', 'OperationListResult', 'ServeStartResult', 'auto_pipeline', 'category', 'dataset_flow_handler', 'dataset_info_handler', 'dataset_list_handler', 'deprecated', 'deprecation_message', 'description', 'downstream_consumers', 'family', 'freshness_sla', 'host', 'http', 'http_path', 'id', 'is_view', 'name', 'nullable', 'op_call_handler', 'op_id', 'op_list_handler', 'op_list_structured', 'owner', 'owner_package', 'params', 'port', 'reload', 'retention_policy', 'serve_http_handler', 'serve_mcp_handler', 'skip_prereqs', 'summary', 'table_key', 'tags', 'tool_name', 'type']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/helpers/module_index.py
-# hypothesis_version: 6.148.7
-
-[' AND language = ?', 'load_module_map']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/common_handlers.py
-# hypothesis_version: 6.148.7
-
-['0', '1', 'BackendFlags', 'GatewayOptions', 'LOG', 'OutputFormat', 'PathSelection', 'ProjectContext', 'RepoSelection', 'RuntimeCliOptions', 'RuntimeSelection', 'auto', 'build', 'build_graph_runtime', 'build_paths_from_cli', 'cpu', 'false', 'json', 'local_db', 'n', 'no', 'nx-cugraph', 'off', 'on', 'parse_scope_args', 'resolve_flag', 'setup_logging', 'text', 'true', 'y', 'yes']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/schema/ddl.py
-# hypothesis_version: 6.148.6
-
-[' NOT NULL', ',\n', ', ', '; ', 'INDEX_DDL', 'SCHEMAS', 'TABLE_DDL', 'UNIQUE ', 'analytics', 'apply_all_schemas', 'core', 'create_schemas', 'docs', 'graph']

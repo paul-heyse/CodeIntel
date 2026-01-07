@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/build_schema.py
-# hypothesis_version: 6.148.7
-
-[400, 409, 500, '-', 'TargetModule', 'actual', 'all_targets', 'analytics', 'build', 'expected', 'expected_file', 'export', 'graphs', 'infer_native', 'ingestion', 'json', 'module', 'only_native', 'output_file', 'output_format', 'stable', 'table_count', 'targets', 'utf-8']

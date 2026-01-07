@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/compute/ast_extract.py
-# hypothesis_version: 6.148.7
-
-[0.0, '.', '.py', 'AstExtractStep', 'AstMetrics', 'AstRowInfo', 'AstVisitor', 'AsyncFunctionDef', 'ClassDef', 'FunctionDef', 'Module', 'ModuleAstResult', 'col_offset', 'core.ast_metrics', 'core.ast_nodes', 'end_col_offset', 'end_lineno', 'lineno']

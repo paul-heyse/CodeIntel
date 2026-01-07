@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/core/output.py
-# hypothesis_version: 6.148.7
-
-['OutputEnvelope', 'data', 'iter_stdin_records', 'json', 'meta', 'read_stdin_records', 'value']

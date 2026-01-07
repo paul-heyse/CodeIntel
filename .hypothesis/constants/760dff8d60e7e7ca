@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/_common.py
-# hypothesis_version: 6.148.7
-
-['--build-dir', '--commit', '--db-path', '--json', '--limit', '--nx-backend', '--nx-gpu', '--nx-gpu-strict', '--output-format', '--repo', '--repo-root', '--root', '--scope-module', '--scope-path', '--scope-time-end', '--scope-time-start', '--verbose', '-n', '-r', '-v', '0', '1', 'BackendFlags', 'BuildDirOpt', 'CommitOpt', 'DbPathOpt', 'DocumentOutputDirOpt', 'GatewayOptions', 'JsonFlagOpt', 'JsonOutputOpt', 'LOG', 'LimitOpt', 'NxBackendOpt', 'NxGpuOpt', 'NxGpuStrictOpt', 'PathSelection', 'ProjectContext', 'ProjectRootOpt', 'RepoOpt', 'RepoRootOpt', 'RepoSelection', 'RuntimeCliOptions', 'RuntimeSelection', 'ScopeModuleOpt', 'ScopePathOpt', 'VerboseOpt', 'auto', 'build', 'build_graph_runtime', 'build_paths_from_cli', 'cpu', 'false', 'json', 'local_db', 'n', 'no', 'nx-cugraph', 'off', 'on', 'parse_scope_args', 'resolve_flag', 'setup_logging', 'text', 'true', 'y', 'yes']

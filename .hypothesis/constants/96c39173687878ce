@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/ports/storage.py
-# hypothesis_version: 6.148.7
-
-['BatchResult', 'IngestStoragePort', 'MutableQueryResult', 'QueryResult', 'StoragePort', 'rel_path']

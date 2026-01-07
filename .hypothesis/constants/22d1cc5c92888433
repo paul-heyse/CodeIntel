@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/ide.py
-# hypothesis_version: 6.148.7
-
-['HEAD', 'IdeHintsResult', 'commit', 'config', 'db_path', 'hints', 'ide_hints_handler', 'meta', 'rel_path', 'repo', 'repo_root']

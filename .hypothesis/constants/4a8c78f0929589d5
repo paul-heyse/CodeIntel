@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/dfg.py
-# hypothesis_version: 6.148.3
-
-['DFGBuilder', 'DFGEdge', 'DFGEdgeRow', 'DFGResult', 'assignment', 'build_dfg', 'data-flow', 'dfg_to_rows', 'intra-block', 'param']

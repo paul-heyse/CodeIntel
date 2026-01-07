@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/dataset_tools.py
-# hypothesis_version: 6.148.3
-
-['_ModelLike', 'datasets', 'dict[str, object]', 'model_dump']

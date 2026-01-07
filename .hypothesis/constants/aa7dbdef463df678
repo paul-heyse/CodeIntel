@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/runtime/telemetry.py
-# hypothesis_version: 6.148.6
-
-[',', 'IngestPluginSpan', 'OtelIngestRunSink', '_MetricRecorder', 'codeintel.ingestion', 'get_ingest_telemetry', 'mode', 'plugin', 'plugin.name', 'plugin.stage', 'plugin.tables', 'repo', 'rows', 's', 'status', 'step', 'success']

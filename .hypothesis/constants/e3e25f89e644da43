@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/plugins.py
-# hypothesis_version: 6.148.7
-
-['--format', '--output', '--verbose', '-v', 'Manage CLI plugins', 'Output directory', 'Output format', 'Plugin directory', 'Plugin name', 'Verbosity level', 'discover', 'info', 'list', 'new', 'paths', 'plugins', 'plugins.discover', 'plugins.info', 'plugins.list', 'plugins.new', 'plugins.paths', 'plugins.test', 'plugins.validate', 'plugins_app', 'test', 'validate']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/execution/manifest.py
-# hypothesis_version: 6.148.7
-
-[0.0, 'InputHashPayload', 'ManifestQuery', 'ManifestState', 'ManifestStore', 'build_manifest_entry', 'commit', 'compute_input_hash', 'compute_options_hash', 'compute_scope_id', 'create_skip_record', 'executed_at', 'input_hash', 'is_unchanged', 'options', 'options_hash', 'paths', 'plugin_name', 'recorded_at', 'repo', 'row_counts', 'skipped', 'skipped_reason', 'version_hash']

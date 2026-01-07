@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/config/datasets/rows/core.py
-# hypothesis_version: 6.148.7
-
-['ConfigValueRow', 'DocstringRow', 'GoidCrosswalkRow', 'GoidRow', 'IngestRunLike', 'IngestRunMode', 'IngestRunRow', 'IngestRunStatus', 'commit', 'config_path', 'created_at', 'end_lineno', 'error', 'examples', 'format', 'full', 'incremental', 'ingest_run_to_tuple', 'key', 'kind', 'lineno', 'long_desc', 'module', 'ok', 'params', 'qualname', 'raises', 'raw_docstring', 'reference_count', 'reference_modules', 'reference_paths', 'rel_path', 'repo', 'returns', 'short_desc', 'skipped', 'style', 'unknown']

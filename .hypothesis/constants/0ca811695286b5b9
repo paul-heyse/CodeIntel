@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/schemas/contract_provider.py
-# hypothesis_version: 6.148.7
-
-[256, '.', 'OutputTarget', 'analytics', 'base_table', 'clear_contract_cache', 'core', 'docs', 'docs.v_', 'docs_view', 'graph', 'graphs', 'is_view', 'iter_contracts', 'qa', 'read_only', 'strict']

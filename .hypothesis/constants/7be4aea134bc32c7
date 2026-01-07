@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/registry.py
-# hypothesis_version: 6.148.5
-
-['DatasetMeta', 'build_dataset_meta', 'capabilities', 'datasets.rows', 'depends_on', 'docs', 'docs.', 'exposes', 'family', 'graph', 'graphs', 'iter_graph_nodes', 'iter_operation_nodes', 'operation', 'read_only', 'reads', 'serving']

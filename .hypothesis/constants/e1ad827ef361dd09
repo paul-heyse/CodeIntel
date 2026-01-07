@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/recipes/builtin.py
-# hypothesis_version: 6.148.3
-
-['1.0.0', 'ANALYSIS_RECIPE', 'BUILTIN_RECIPES', 'CORE_ONLY_RECIPE', 'DEFAULT_RECIPE_NAME', 'FULL_PYTHON_RECIPE', 'INCREMENTAL_RECIPE', 'MINIMAL_RECIPE', 'Parse AST and CST.', 'analysis', 'ast_extract', 'config_ingest', 'core', 'core_only', 'coverage_ingest', 'cst_extract', 'default', 'docstrings_ingest', 'enrich', 'fast', 'full', 'full_python', 'get_builtin_recipe', 'get_default_recipe', 'incremental', 'index', 'list_builtin_recipes', 'minimal', 'no-tools', 'parse', 'python', 'quick', 'repo_scan', 'scan', 'scip_ingest', 'tests_ingest', 'typing_ingest']

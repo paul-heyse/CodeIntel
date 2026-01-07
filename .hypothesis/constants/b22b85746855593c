@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/config_factory.py
-# hypothesis_version: 6.148.5
-
-['BuildOptions', 'ConfigFactory', 'ConfigMapping', 'code_profile', 'config_profile', 'get_config_fields', 'infer_config_mapping', 'paths', 'self', 'snapshot', 'tool_runner', 'tool_service', 'tools', 'tracker']

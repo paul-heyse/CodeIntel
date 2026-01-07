@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/repositories/__init__.py
-# hypothesis_version: 6.148.6
-
-['BaseRepository', 'DataModelFieldRow', 'DataModelRow', 'DataflowRepository', 'FunctionRepository', 'GraphRepository', 'ModuleRepository', 'NormalizedDataModel', 'PaginatedRows', 'RowDict', 'SubsystemRepository', 'TestRepository', 'fetch_all_dicts', 'fetch_fields', 'fetch_models', 'fetch_one_dict', 'fetch_paginated', 'fetch_relationships', 'row_exists']

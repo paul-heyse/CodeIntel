@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/config/datasets/rows/__init__.py
-# hypothesis_version: 6.148.7
-
-['CFGBlockRow', 'CFGEdgeRow', 'CallGraphEdgeRow', 'CallGraphNodeRow', 'ConfigValueRow', 'CoverageLineRow', 'DFGEdgeRow', 'DocstringRow', 'FILE_PROFILE_COLUMNS', 'FileProfileRowModel', 'FunctionContractsRow', 'FunctionEffectsRow', 'FunctionMetricsRow', 'FunctionTypesRow', 'GoidCrosswalkRow', 'GoidRow', 'GraphValidationRow', 'HotspotRow', 'ImportEdgeRow', 'ImportModuleRow', 'IngestRunLike', 'IngestRunRow', 'ProfileRowModel', 'StaticDiagnosticRow', 'SymbolUseRow', 'TEST_PROFILE_COLUMNS', 'TestCatalogRowModel', 'TestCoverageEdgeRow', 'TypednessRow', 'hotspot_row_to_tuple', 'ingest_run_to_tuple']

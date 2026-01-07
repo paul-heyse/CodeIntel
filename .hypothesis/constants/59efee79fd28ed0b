@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/ingestion/typing.py
-# hypothesis_version: 6.148.7
-
-[0.0, 300.0, 600.0, '--format', '--output-format', '--outputjson', '; ', 'Parse failed', 'build_dir', 'check', 'compute', 'ingestion', 'json', 'materialize', 'native:typing', 'parse__typing', 'pyrefly', 'pyrefly.json', 'pyright', 'pyright.json', 'repo_root', 'ruff', 'ruff.json', 'skipped', 'succeeded', 't__typing', 'tool', 'tool__typing__ruff', 'typing', 'upstream_failed']

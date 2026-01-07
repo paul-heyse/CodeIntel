@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/protocol.py
-# hypothesis_version: 6.148.7
-
-['HandlerProtocol', 'T', 'handler', 'handler_context']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/state_types.py
-# hypothesis_version: 6.148.7
-
-['BlockingReason', 'BuildState', 'TargetState', 'TargetStatus', 'blocked', 'current', 'data_missing', 'dependency_blocked', 'dependency_missing', 'dependency_stale', 'input_hash_mismatch', 'missing', 'stale', 'stored_hash']

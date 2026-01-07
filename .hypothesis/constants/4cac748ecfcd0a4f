@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/dry_run.py
-# hypothesis_version: 6.148.7
-
-['\nNotes:\n', ', ', '-', 'No steps planned.\n', '[prereq]', '[target]', 'plan_dry_run', 'prerequisites', 'render_dry_run', 'render_dry_run_to']

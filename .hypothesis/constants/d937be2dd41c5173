@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/history_plugins.py
-# hypothesis_version: 6.148.3
-
-[60000, 'core.goids', 'fatal', 'function_history', 'functions.history', 'functions.metrics', 'hotspots.build', 'tool_runner']

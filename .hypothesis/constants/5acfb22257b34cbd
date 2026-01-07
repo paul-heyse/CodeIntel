@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/core/runs.py
-# hypothesis_version: 6.148.6
-
-['a', 'core.ingest_runs', 'db_error', 'error', 'finished_at', 'full', 'incremental', 'mode', 'ok', 'parse_error', 'repo', 'rows', 's', 'skipped', 'started_at', 'status', 'step', 'timed out', 'timeout', 'tool_execution', 'tool_not_found', 'tool_timeout', 'unknown', 'utf8']

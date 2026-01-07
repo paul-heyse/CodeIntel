@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/tests_profiles/behavioral_tags.py
-# hypothesis_version: 6.148.5
-
-['BehaviorRowHooks', 'BehavioralContext', 'BehavioralLLMRequest', 'BehavioralLLMRunner', 'SpanConfig', 'SpanState', 'TestAstInfo', 'TestRecord', 'build_behavior_rows', 'build_test_ast_index', 'infer_behavior_tags', 'load_test_records']

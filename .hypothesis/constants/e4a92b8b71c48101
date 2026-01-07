@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/build/readiness.py
-# hypothesis_version: 6.148.7
-
-['=', 'ActionKind', 'ActionNeeded', 'BlockerInfo', 'DependencyStatus', 'DependencyStatusKind', 'SelfStatus', 'TargetReadiness', 'TargetReadinessView', 'blocked', 'blocked_external', 'current', 'data missing', 'data_missing', 'dependency not ready', 'input changed', 'never computed', 'never_computed', 'none', 'ready', 'run', 'run_first', 'runnable', 'satisfied', 'stale', 'total', 'up to date']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/completions/__init__.py
-# hypothesis_version: 6.148.7
-
-['BashBackend', 'CompletionModel', 'FishBackend', 'PowerShellBackend', 'Shell', 'ShellBackend', 'ZshBackend', 'bash', 'fish', 'generate_completion', 'powershell', 'zsh']

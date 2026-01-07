@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/runtime/telemetry.py
-# hypothesis_version: 6.148.5
-
-[1000000, 'GraphPluginSpan', '__run__', 'attempts', 'codeintel.graphs', 'commit', 'duration_ms', 'error', 'failed', 'failure_count', 'get_graph_telemetry', 'graph.plugin_run', 'ms', 'otel_span', 'plugin.kind', 'plugin.name', 'plugin.stage', 'plugin_count', 'plugin_name', 'repo', 'run_id', 'skip_count', 'status', 'succeeded', 'success_count']

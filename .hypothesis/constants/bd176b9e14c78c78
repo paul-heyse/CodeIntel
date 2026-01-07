@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/normalized_macros.py
-# hypothesis_version: 6.148.5
-
-[9223372036854775807, ',\n        ', '.', 'DATE', 'DEFAULT_LIMIT', 'GOID_H128', 'RenderedMacro', 'TIMESTAMP', 'TIMESTAMPTZ', 'metadata.normalized_', 'render_macro']

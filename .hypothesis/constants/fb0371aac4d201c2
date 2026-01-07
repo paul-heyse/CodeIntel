@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_app.py
-# hypothesis_version: 6.148.7
-
-['--install-completion', '--json', '--output-format', 'app', 'build', 'build_app', 'config', 'dataset', 'dataset_app', 'datasets', 'datasets_ext_app', 'docs', 'docs_app', 'graph', 'graphs_app', 'history', 'history_app', 'ide', 'json', 'op', 'op_app', 'serve', 'serve_app', 'storage', 'storage_app', 'subsystem']

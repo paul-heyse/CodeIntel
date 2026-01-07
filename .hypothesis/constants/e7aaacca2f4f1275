@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/validation/runner.py
-# hypothesis_version: 6.148.7
-
-['ALL_GRAPH_CHECKS', 'SupportsInt', 'a', 'call_edges', 'call_nodes', 'class', 'class_goids', 'core.goids', 'core.modules', 'function', 'function_goids', 'goids', 'iloc', 'log_db_snapshot', 'method', 'module', 'module_goids', 'modules', 'utf-8']

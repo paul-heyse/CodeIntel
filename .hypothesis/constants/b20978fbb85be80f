@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/storage.py
-# hypothesis_version: 6.148.7
-
-['--db-path', '--include-views', '--macros', '--output-dir', '--output-format', '--root', '--table', '--verbose', '-v', 'db_path', 'generate-macros', 'include_views', 'macro_requirement', 'output_dir', 'profile', 'storage', 'storage.profile', 'storage_app', 'tables', 'validate-macros']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/functions/effects.py
-# hypothesis_version: 6.148.3
-
-[90000, '2.0.0', 'callgraph', 'config', 'core.goids', 'dataset', 'effects', 'fatal', 'function', 'function_effects', 'function_effects_cfg', 'functions', 'functions.effects', 'functions.metrics', 'purity']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/_metadata.py
-# hypothesis_version: 6.148.7
-
-['OptionsT', 'PluginKind', 'PluginStage', 'other', 'resolve_options', 'to_plugin_metadata']

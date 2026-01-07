@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/traits/retryable.py
-# hypothesis_version: 6.148.6
-
-[1000, 'RetryableMixin', 'RetryablePlugin', 'get_retry_policy', 'is_retryable']

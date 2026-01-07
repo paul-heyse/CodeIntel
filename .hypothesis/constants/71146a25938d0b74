@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/views/ibis_registry.py
-# hypothesis_version: 6.148.7
-
-['IbisViewGateway', 'VIEW_BUILDERS', 'ViewBuilder', 'get_registered_views', 'register_view']

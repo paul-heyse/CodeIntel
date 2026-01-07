@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/completions/fish_generator.py
-# hypothesis_version: 6.148.7
-
-['# Global flags', '# Subcommands', 'FishBackend', 'codeintel']

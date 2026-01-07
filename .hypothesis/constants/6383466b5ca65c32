@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/ports/results.py
-# hypothesis_version: 6.148.7
-
-['BaseBatchResult', 'BaseQueryResult']

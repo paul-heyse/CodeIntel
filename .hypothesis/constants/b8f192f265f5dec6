@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/protocol.py
-# hypothesis_version: 6.148.6
-
-['IngestIsolationKind', 'IngestPluginMetadata', 'IngestPluginPlan', 'IngestPluginProtocol', 'IngestPluginResult', 'IngestPluginSkip', 'IngestSeverity', 'IngestStage', 'ast_extract', 'config_error', 'config_ingest', 'coverage_ingest', 'cst_extract', 'disabled', 'docstrings_ingest', 'enrich', 'execute', 'fatal', 'incremental_skip', 'index', 'is_ingest_plugin', 'metadata', 'missing_dependency', 'missing_tool', 'none', 'parse', 'process', 'repo_scan', 'scan', 'scip_ingest', 'skip_on_error', 'soft_fail', 'tests_ingest', 'thread', 'typing_ingest', 'validate']

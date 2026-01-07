@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/history.py
-# hypothesis_version: 6.148.7
-
-[500, '.tool_cache', 'Query Error', 'Storage Error', 'Validation Error', 'build', 'build/db', 'commits', 'db_dir', 'entity_kind', 'function', 'max_entities', 'output_db', 'python', 'repo', 'repo_root', 'risk_score', 'selection_strategy']

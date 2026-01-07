@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/ingest_service.py
-# hypothesis_version: 6.148.3
-
-['.', 'INGEST_MACRO_TABLES', 'ToolService', 'analytics.typedness', 'core.ast_metrics', 'core.ast_nodes', 'core.cst_nodes', 'core.docstrings', 'core.file_state', 'core.goid_crosswalk', 'core.goids', 'core.modules', 'core.repo_map', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'macro_exists']

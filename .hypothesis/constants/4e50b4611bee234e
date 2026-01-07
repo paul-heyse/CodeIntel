@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/registry/all_metadata.py
-# hypothesis_version: 6.148.7
-
-['ALL_PLUGIN_METADATA', 'get_provider_lookup']

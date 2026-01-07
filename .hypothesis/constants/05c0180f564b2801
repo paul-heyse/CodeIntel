@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/execution/options.py
-# hypothesis_version: 6.148.7
-
-['ConfigSource', 'EmptyConfigSource', 'PluginConfigBundle', 'ProfiledConfigSource', 'T', 'copy', 'model_copy', 'plugin_options']

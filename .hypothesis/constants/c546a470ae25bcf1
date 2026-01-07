@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/core/registry.py
-# hypothesis_version: 6.148.7
-
-[', ', 'DependencyPolicy', 'GraphPluginRegistry', 'GraphRegistryHooks', 'PlanningOptions', 'SelectionPolicy', 'added', 'ast_extract', 'builder', 'config_error', 'dependency_policy', 'disabled', 'error', 'get_graph_registry', 'goid', 'goid_builder', 'incremental_skip', 'lenient', 'list_graph_plugins', 'metadata', 'missing_dependency', 'missing_graph', 'plan', 'plan_graph_plugins', 'present', 'repo_scan', 'requested_required', 'reset_graph_registry', 'scip_ingest', 'selection_policy', 'skip', 'skipped', 'soft_fail', 'strict', 'stub', 'unchanged', 'use_stubs']

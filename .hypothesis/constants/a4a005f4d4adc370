@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/execution/bootstrap.py
-# hypothesis_version: 6.148.7
-
-[128, 'VERBOSITY_DEBUG', 'VERBOSITY_INFO', 'bootstrap_cli', 'is_bootstrapped', 'reset_bootstrap']

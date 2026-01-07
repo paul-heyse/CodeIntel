@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/ide.py
-# hypothesis_version: 6.148.7
-
-[404, 'IdeHintsResult', 'No hints found', 'hints', 'ide_hints_handler', 'meta', 'rel_path']

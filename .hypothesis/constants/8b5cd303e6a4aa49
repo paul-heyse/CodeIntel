@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/contracts.py
-# hypothesis_version: 6.148.7
-
-['ArtifactSpec', 'Column', 'ColumnType', 'Index', 'OutputContract', 'TableSchema']

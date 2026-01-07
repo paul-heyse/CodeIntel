@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/dependencies/classification.py
-# hypothesis_version: 6.148.5
-
-[0.5, 1.0, 2.0, 3.0, 4.0, 'LibraryPattern', 'SEVERITY_SCORES', 'admin', 'classify_modes', 'critical', 'high', 'info', 'low', 'medium', 'python', 'risk_level', 'risk_score', 'severity_score', 'unknown', 'write']

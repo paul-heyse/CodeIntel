@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/manifest.py
-# hypothesis_version: 6.148.7
-
-['BuildRunRecord', 'BuildStatus', 'OutputManifest', 'commit', 'completed_at', 'computed_targets', 'duration_ms', 'error_summary', 'failed', 'repo', 'requested_targets', 'run_id', 'running', 'skipped_targets', 'started_at', 'status', 'succeeded']

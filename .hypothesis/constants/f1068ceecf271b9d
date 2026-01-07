@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/build.py
-# hypothesis_version: 6.148.7
-
-['(dry-run mode)', '--all', '--dry-run', '--force', '--module', '-a', '-f', '-m', '-n', '=', 'Blocked', 'Build Complete', 'Computed', 'Missing', 'Stale', 'analytics', 'blocked', 'build', 'build.run.error', 'build_app', 'build_run', 'build_status', 'computed', 'failed', 'graphs', 'ingestion', 'missing', 'run', 'stale', 'status', 'succeeded', '⊘', '⚠', '✓', '✗']

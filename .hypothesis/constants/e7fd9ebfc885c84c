@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/paths/module.py
-# hypothesis_version: 6.148.7
-
-['.', '.py', '/', '/__init__', '/__init__.py', '\\', '__init__.py', 'is_package_path', 'module_to_path', 'path_to_module', 'relpath_to_module']

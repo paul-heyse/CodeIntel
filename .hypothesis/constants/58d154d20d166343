@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/build_bridge.py
-# hypothesis_version: 6.148.7
-
-['AnalyticsPlanRequest', 'AnalyticsRunContext', 'analytics', 'analytics_plugin', 'attempts', 'error', 'failed', 'partial', 'repo_root', 'result', 'row_counts', 'runtime', 'skipped', 'succeeded']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/operations/__init__.py
-# hypothesis_version: 6.148.7
-
-['build_operations', 'dataset_operations', 'docs_operations', 'graph_operations', 'history_operations', 'ide_operations', 'op_operations', 'storage_operations', 'subsystem_operations']

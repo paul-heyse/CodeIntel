@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/testing/coverage/edges.py
-# hypothesis_version: 6.148.7
-
-[0.0, '.', '.coverage', '/', '::', 'EdgeContext', 'FunctionRow', 'TestCoverageOptions', '\\', 'end_line', 'goid_h128', 'load_coverage_data', 'qualname', 'start_line', 'unknown', 'urn']

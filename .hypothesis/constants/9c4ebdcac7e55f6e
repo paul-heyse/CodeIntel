@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/config/datasets/rows/graph.py
-# hypothesis_version: 6.148.7
-
-['CFGBlockRow', 'CFGEdgeRow', 'CallGraphEdgeRow', 'CallGraphNodeRow', 'DFGEdgeRow', 'ImportEdgeRow', 'ImportModuleRow', 'SymbolUseRow', 'arity', 'callee_goid_h128', 'caller_goid_h128', 'callsite_col', 'callsite_line', 'callsite_path', 'commit', 'confidence', 'evidence_json', 'goid_h128', 'is_public', 'kind', 'language', 'rel_path', 'repo', 'resolved_via']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/runtime/logging_helpers.py
-# hypothesis_version: 6.148.3
-
-['duration_ms', 'features', 'graph_run_id', 'graph_runtime', 'metric', 'op', 'plugin_attempts', 'plugin_contracts', 'plugin_ended_at', 'plugin_severity', 'plugin_stage', 'plugin_started_at', 'plugin_status', 'plugin_timeout_ms', 'scope', 'use_gpu']

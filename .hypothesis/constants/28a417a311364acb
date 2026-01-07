@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/pandera_schemas.py
-# hypothesis_version: 6.148.7
-
-['$schema', 'BIGINT', 'BOOLEAN', 'DATASET_SCHEMAS', 'DECIMAL', 'DECIMAL(38,0)', 'DOUBLE', 'INTEGER', 'JSON', 'TIMESTAMP', 'TIMESTAMPTZ', 'VARCHAR', 'bool', 'boolean', 'callee_goid_h128', 'caller_goid_h128', 'commit', 'core.goid_crosswalk', 'core.goids', 'dataset_json_schema', 'date-time', 'datetime', 'datetime64[ns]', 'double', 'end_line', 'float', 'format', 'function_goid_h128', 'get_dataset_schema', 'goid_h128', 'int', 'integer', 'loc', 'logical_loc', 'null', 'number', 'object', 'properties', 'repo', 'required', 'start_line', 'string', 'type', 'urn', 'validate_dataset_df']

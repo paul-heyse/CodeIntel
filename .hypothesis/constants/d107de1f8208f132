@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/functions/function_effects.py
-# hypothesis_version: 6.148.7
-
-[0.0, 0.1, 0.7, 1.0, '.', 'Any', 'call', 'caller_goid_h128', 'category', 'commit', 'created_at', 'db_calls', 'details', 'effects_json', 'end_lineno', 'error', 'errors', 'function_goid_h128', 'globals', 'goid', 'io_calls', 'is_pure', 'kind', 'lineno', 'missing_ast', 'modifies_closure', 'modifies_globals', 'nonlocals', 'path', 'pd.DataFrame', 'purity_confidence', 'random_calls', 'records', 'repo', 'snippet', 'tags', 'thread_calls', 'time_calls', 'touches_db', 'transitive_effect', 'unresolved_count', 'uses_io', 'uses_randomness', 'uses_time']

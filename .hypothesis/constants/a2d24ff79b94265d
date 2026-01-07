@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/compute/centrality.py
-# hypothesis_version: 6.148.7
-
-[0.0, 1e-06, 0.85, 1.0, 100, 'CentralityMetrics', 'betweenness', 'centrality_to_rows', 'closeness', 'commit', 'compute_betweenness', 'compute_closeness', 'compute_pagerank', 'degree', 'eigenvector', 'goid_h128', 'harmonic', 'in_degree', 'int', 'out_degree', 'pagerank', 'repo']

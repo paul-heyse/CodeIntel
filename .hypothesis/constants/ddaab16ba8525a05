@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/profiles/graph_features.py
-# hypothesis_version: 6.148.7
-
-['call_is_entrypoint', 'call_is_leaf', 'call_is_public', 'callee_goid_h128', 'caller_goid_h128', 'function_goid_h128']

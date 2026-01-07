@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/adapters/libcst_parsing.py
-# hypothesis_version: 6.148.5
-
-['*', '.', 'LibCSTParsingAdapter', 'col_offset', 'lineno']

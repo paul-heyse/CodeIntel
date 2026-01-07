@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/assets/fingerprinting.py
-# hypothesis_version: 6.148.7
-
-['ArtifactVersionInput', 'FingerprintMode', 'FingerprintPolicy', 'TableVersionInput', 'artifact', 'fast', 'stable_v1', 'table', 'utf-8', '|']

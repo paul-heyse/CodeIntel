@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/http/fastapi.py
-# hypothesis_version: 6.148.3
-
-[1000, '0.1.0', ':memory:', 'Backend failure', 'Invalid request', 'User-Agent', 'X-Correlation-ID', 'X-Request-ID', '_gateway', 'backend-failure', 'commit', 'config', 'errors', 'gateway', 'headers', 'http', 'invalid-request', 'local_db', 'rb', 'repo', 'status', 'unknown']

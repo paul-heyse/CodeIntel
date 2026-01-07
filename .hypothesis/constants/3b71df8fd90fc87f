@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/entrypoints/plugins.py
-# hypothesis_version: 6.148.3
-
-[90000, 'ENTRYPOINTS_PLUGIN', 'core.goids', 'coverage.functions', 'coverage.test_edges', 'entrypoints', 'entrypoints.build', 'fatal', 'goids', 'subsystems.build']

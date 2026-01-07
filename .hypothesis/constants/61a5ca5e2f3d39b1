@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_history.py
-# hypothesis_version: 6.148.7
-
-[500, '*', '--commits', '--db-dir', '--entity-kind', '--max-entities', '--output-db', '--repo', '--selection-strategy', 'both', 'build/db', 'call_pagerank', 'function', 'history', 'history_app', 'hotspot_score', 'module', 'risk_score', 'timeseries']

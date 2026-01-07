@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/utilities/dataframe.py
-# hypothesis_version: 6.148.7
-
-['list[dict[str, Any]]', 'records', 'to_records']

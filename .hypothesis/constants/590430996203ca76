@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/contracts.py
-# hypothesis_version: 6.148.5
-
-[0.0, 'CONSTRAINT_CHECKERS', 'ColumnConstraint', 'ContractViolation', 'ForeignKeyConstraint', 'IngestContractSpec', 'actual_rows', 'error', 'foreign_key_contract', 'in_set', 'max_rows', 'max_value', 'min_rows', 'min_value', 'not_null', 'not_null_contract', 'null_count', 'orphan_count', 'positive', 'regex', 'row_count_contract', 'unique', 'warning']

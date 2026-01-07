@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/jobs.py
-# hypothesis_version: 6.148.7
-
-['CancelJob', 'Cancelling job: %s', 'CleanupJobs', 'Filter by status', 'GetJobOutput', 'GetJobStatus', 'Job ID', 'JobInfo', 'JobOutputResult', 'ListJobs', 'Maximum age in days', 'Maximum jobs to show', 'cancel', 'cancelled', 'cleanup', 'completed', 'failed', 'jobs', 'jobs.cancel', 'jobs.cleanup', 'jobs.list', 'jobs.output', 'jobs.status', 'jobs_app', 'list', 'output', 'pending', 'running', 'status']

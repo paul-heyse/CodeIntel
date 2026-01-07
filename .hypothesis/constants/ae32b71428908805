@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/schemas/__init__.py
-# hypothesis_version: 6.148.7
-
-['clear_contract_cache', 'get_row_binding', 'get_schema_provider', 'is_view', 'iter_contracts', 'iter_row_bindings', 'iter_table_schemas', 'require_table_schema']

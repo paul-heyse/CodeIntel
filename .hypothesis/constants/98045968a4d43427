@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/core/parsing.py
-# hypothesis_version: 6.148.7
-
-['0', '1', 'false', 'is_truthy_string', 'n', 'no', 'off', 'on', 'parse_bool', 'parse_bool_or_none', 'parse_cli_value', 'true', 'y', 'yes']

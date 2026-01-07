@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/entrypoints/core.py
-# hypothesis_version: 6.148.6
-
-[':', 'all_passing', 'ast_features', 'db_libs', 'error', 'failed', 'http_client_libs', 'http_server_libs', 'message_libs', 'passed', 'some_failing', 'unknown', 'untested', 'uses_concurrency_lib', 'uses_db', 'uses_filesystem', 'uses_network', 'uses_subprocess', 'utf-8']

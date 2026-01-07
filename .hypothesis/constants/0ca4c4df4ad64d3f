@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/_common.py
-# hypothesis_version: 6.148.7
-
-['*', '--build-dir', '--commit', '--db-path', '--json', '--output-format', '--repo', '--repo-root', '--root', '--verbose', '-r', '-v', 'ExistingDir', 'ExistingPath', 'JsonFlag', 'Output format.', 'OutputFmt', 'OutputFormat', 'OutputFormatCLI', 'OutputParam', 'OutputPath', 'ProjectCLI', 'ProjectRoot', 'RuntimeCLI', 'RuntimeCliError', 'RuntimeParam', 'StorageCLI', 'Verbose', 'call_if_callable', 'codeintel', 'command_context', 'get_output_format', 'get_verbose', 'make_root_app', 'output_field', 'parameter', 'return_value', 'runtime_field']

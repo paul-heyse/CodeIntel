@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/functions/goids.py
-# hypothesis_version: 6.148.7
-
-['/', 'Any', 'FunctionGoid', 'FunctionGoidLoader', 'GoidRow', '\\', 'commit', 'core.goids', 'end_line', 'function', 'goid_h128', 'kind', 'language', 'method', 'pd.DataFrame', 'qualname', 'rel_path', 'repo', 'start_line', 'urn']

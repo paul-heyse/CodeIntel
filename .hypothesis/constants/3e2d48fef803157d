@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/http/routes/functions.py
-# hypothesis_version: 6.148.5
-
-[0.7, 'File not found', 'Function not found', 'both', 'commit', 'file.summary', 'function.summary', 'functions.high_risk', 'functions.tests', 'graph.call_neighbors', 'ignore', 'in', 'out', 'repo', 'unknown']

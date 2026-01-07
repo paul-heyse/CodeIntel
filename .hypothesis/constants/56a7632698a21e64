@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/functions/signatures.py
-# hypothesis_version: 6.148.7
-
-['.', 'FunctionSignature', 'ParameterInfo', 'classmethod', 'cls', 'extract_signature', 'id', 'keyword_only', 'positional_only', 'posonlyargs', 'property', 'self', 'staticmethod', 'var_keyword', 'var_positional']

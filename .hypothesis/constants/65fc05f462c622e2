@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/__init__.py
-# hypothesis_version: 6.148.7
-
-['AstExtractPlugin', 'ColumnConstraint', 'ConfigIngestPlugin', 'ContractViolation', 'CoverageIngestPlugin', 'CstExtractPlugin', 'ForeignKeyConstraint', 'IngestContractSpec', 'ModuleIngestPlugin', 'RepoScanPlugin', 'ScipIngestPlugin', 'TestsIngestPlugin', 'TypingIngestPlugin', 'foreign_key_contract', 'not_null_contract', 'row_count_contract']

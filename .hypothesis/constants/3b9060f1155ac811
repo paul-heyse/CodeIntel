@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/infrastructure/workers.py
-# hypothesis_version: 6.148.7
-
-['AST_WORKER_CONFIG', 'CST_WORKER_CONFIG', 'DEFAULT_MAX_WORKERS', 'DEFAULT_MIN_WORKERS', 'WorkerConfig', 'create_executor', 'executor_factory', 'process', 'resolve_worker_count', 'worker_pool']

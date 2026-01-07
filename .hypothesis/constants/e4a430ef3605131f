@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/plugins/analytics/subsystem_metrics/agreement.py
-# hypothesis_version: 6.148.7
-
-['3.0.0', 'analytics.subsystems', 'metric', 'subsystem', 'subsystem_agreement']

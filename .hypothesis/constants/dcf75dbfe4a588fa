@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/runner.py
-# hypothesis_version: 6.148.7
-
-[0.0, 'NativeRunInfo', 'build_dir', 'create_run_record', 'export_dir', 'failed', 'repo_root', 'save_manifest', 'scip_dir', 'skipped', 'succeeded']

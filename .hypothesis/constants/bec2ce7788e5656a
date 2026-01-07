@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/schema_generation.py
-# hypothesis_version: 6.148.3
-
-['$id', '$schema', 'additionalProperties', 'anyOf', 'array', 'boolean', 'by_name', 'enum', 'integer', 'items', 'null', 'number', 'object', 'properties', 'required', 'row_binding', 'string', 'title', 'type', 'utf-8']

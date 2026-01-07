@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/models.py
-# hypothesis_version: 6.148.3
-
-['about:blank', 'allow', 'before', 'builds', 'config_error', 'depends_on', 'disabled', 'entrypoints_json', 'error', 'exposes', 'fan_in', 'fan_out', 'file', 'functions', 'graph', 'high', 'ignore', 'incremental_skip', 'info', 'lenient', 'low', 'medium', 'missing_dependency', 'missing_graph', 'operation', 'profile', 'reads', 'rel_path', 'strict', 'symbol_fan_in', 'symbol_fan_out', 'table', 'test_count', 'time_window', 'unchanged', 'view', 'warning']

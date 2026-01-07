@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/tracking/build_tracking.py
-# hypothesis_version: 6.148.7
-
-[100, 1000, 'BuildStatus', 'BuildTracking', 'datetime', 'datetime | None', 'str | None']

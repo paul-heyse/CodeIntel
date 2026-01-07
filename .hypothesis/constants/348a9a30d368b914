@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/subsystem.py
-# hypothesis_version: 6.148.5
-
-['--q', '--role', 'Subsystem identifier', 'coverage', 'found', 'list', 'memberships', 'meta', 'module-memberships', 'modules', 'profiles', 'show', 'subsystem', 'subsystem_app', 'subsystems']

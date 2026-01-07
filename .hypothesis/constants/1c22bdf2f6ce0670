@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/compute/metrics/dfg.py
-# hypothesis_version: 6.148.7
-
-[0.0, 100, 'DFGPathStats', 'compute_dfg_density', 'find_dfg_cycles']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/core/middleware/metrics.py
-# hypothesis_version: 6.148.5
-
-[0.0, 'CounterRecorder', 'InMemoryMetrics', 'MetricRecorder', 'MetricsMiddleware', 'codeintel.ingest', 'error', 'error_type', 'plugin', 'repo', 'skipped', 'stage', 'status', 'success']

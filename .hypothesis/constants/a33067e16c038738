@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/callgraph/__init__.py
-# hypothesis_version: 6.148.3
-
-['ResolutionResult', 'build_evidence', 'collect_aliases', 'collect_edges_ast', 'collect_edges_cst', 'collect_import_edges', 'dedupe_edges', 'default_edge_key', 'extract_callee_ast', 'extract_callee_cst', 'handle_import', 'handle_import_from', 'resolve_callee', 'resolve_via_scip']

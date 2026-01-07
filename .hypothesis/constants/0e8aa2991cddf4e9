@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/decorators.py
-# hypothesis_version: 6.148.7
-
-['.', 'Command', 'CommandConfig', 'CommandT', 'CommandType', '__module__', '__name__', '__operation_id__', '__require_serving__', '__require_storage__', 'build_dir', 'cli_command', 'codeintel.cli', 'commit', 'database_path', 'db_path', 'extract_params', 'flags', 'get_output_format', 'get_path_field', 'index_path', 'json', 'output_format', 'project', 'project_root', 'repo_root', 'verbose']

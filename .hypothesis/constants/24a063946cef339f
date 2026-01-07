@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/metadata/bootstrap.py
-# hypothesis_version: 6.148.7
-
-[', ', '.', ';', '; ', 'BIGINT', 'DATE', 'DECIMAL', 'SELECT ? AS warning', 'TIMESTAMP', 'TIMESTAMPTZ', 'VARCHAR', '_1', 'dataset_rows_only', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg_edges', 'metadata.', 'utf-8', '|']

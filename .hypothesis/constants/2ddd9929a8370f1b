@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/operations/dataset_operations.py
-# hypothesis_version: 6.148.7
-
-['DATASET_LIST_SPEC', 'dataset.describe', 'dataset.list', 'table_key']

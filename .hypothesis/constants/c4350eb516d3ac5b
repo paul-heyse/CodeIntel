@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/ports/tools.py
-# hypothesis_version: 6.148.5
-
-[0.0, 'CoverageFileData', 'CoverageResult', 'DiagnosticEntry', 'DiagnosticResult', 'IngestToolPort', 'ScipDocument', 'ScipOccurrence', 'ScipResult', 'ScipSymbol', 'TestCase', 'TestResult', 'ToolStatus', 'error']

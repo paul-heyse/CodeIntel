@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/dependencies/detection.py
-# hypothesis_version: 6.148.5
-
-['.', 'DependencyCall', 'build_alias_map', 'build_alias_maps', 'end_lineno', 'lineno', 'replace', 'utf-8']

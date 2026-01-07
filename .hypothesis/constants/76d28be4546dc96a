@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/builders.py
-# hypothesis_version: 6.148.3
-
-[4096, 30000, 300000, '.', '1.0.0', 'OutputSpec', 'OutputSpecBuilder', 'PluginSpec', 'PluginSpecBuilder', 'ResourceHints', 'ResourceHintsBuilder', 'config', 'fatal', 'other', 'prior_plugin', 'process', 'runtime', 'skip_on_error', 'soft_fail', 'thread']

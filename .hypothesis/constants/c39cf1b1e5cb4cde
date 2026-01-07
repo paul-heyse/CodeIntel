@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/validation/checks/structure.py
-# hypothesis_version: 6.148.7
-
-[0.0, 0.05, 0.25, 200, ', ', '.', 'ALL_STRUCTURE_CHECKS', 'ConfigKeyCheck', 'ImportBridgeCheck', 'ImportCycleCheck', 'ImportHubCheck', 'ImportUpwardCheck', 'SymbolGraphCheck', 'bipartite', 'bridges', 'call_graph_large_scc', 'call_graph_structure', 'check_name', 'class', 'commit', 'config_key_usage', 'context', 'detail', 'hubs', 'import_bridges', 'import_cycles', 'import_graph_bridges', 'import_hubs', 'import_upward', 'info', 'int', 'isolated_nodes', 'keys', 'kind', 'largest_cluster', 'largest_cycle', 'layer', 'module', 'path', 'repo', 'sample_cycle', 'sample_edges', 'severity', 'symbol_graph_hubs', 'warning']

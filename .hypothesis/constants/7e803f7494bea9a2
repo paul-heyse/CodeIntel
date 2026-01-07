@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/shell.py
-# hypothesis_version: 6.148.7
-
-['#!/usr/bin/env bash', '$', '-', '--', '.codeintel', '=', 'Available commands:', 'InteractiveShell', 'ShellCompleter', 'ShellSession', 'Unknown error', 'call', 'call ', 'codeintel> ', 'exit', 'export', 'get', 'help', 'history', 'list', 'quit', 'search', 'set', 'shell_history', 'start_shell', 'tab: complete', 'true', 'utf-8']

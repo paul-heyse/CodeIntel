@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/meta_tools.py
-# hypothesis_version: 6.148.7
-
-['MetaToolOptions', 'QueryService', 'edges', 'incoming_edges', 'limits', 'message', 'node', 'nodes', 'operation', 'outgoing_edges', 'path', 'query', 'register_meta_tools', 'service', 'table', 'view']

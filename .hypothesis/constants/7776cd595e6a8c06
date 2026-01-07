@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/engine/pyrefly.py
-# hypothesis_version: 6.148.7
-
-['--count-errors=0', '--output', '--output-format', '--summary', 'analytics.typedness', 'check', 'error', 'errors', 'json', 'none', 'output_path', 'path', 'pyrefly', 'pyrefly_bin', 'pyrefly_json', 'severity', 'utf-8']

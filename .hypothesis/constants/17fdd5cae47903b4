@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/operations/base.py
-# hypothesis_version: 6.148.7
-
-['.', 'Capability', 'Operation', 'OperationSpec', 'TParams_contra', 'TResult_co', '__name__', '__orig_bases__', 'capabilities', 'description', 'execute', 'filesystem:read', 'filesystem:write', 'group', 'hidden', 'jobs:read', 'jobs:write', 'name', 'network', 'operation', 'operation_id', 'require_runtime', 'require_serving', 'require_storage', 'runtime', 'serving', 'storage:read', 'storage:write', 'tags']

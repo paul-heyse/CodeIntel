@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/validation/__init__.py
-# hypothesis_version: 6.148.7
-
-['ALL_ANOMALY_CHECKS', 'ALL_DATABASE_CHECKS', 'ALL_GRAPH_CHECKS', 'ALL_STRUCTURE_CHECKS', 'CALL_SCC_MIN', 'ConfigKeyCheck', 'GraphCheckBase', 'HUB_DEGREE_RATIO', 'HUB_MIN_DEGREE_FLOOR', 'ImportBridgeCheck', 'ImportCycleCheck', 'ImportHubCheck', 'ImportUpwardCheck', 'OrphanModulesCheck', 'SAMPLE_LIMIT', 'SYMBOL_COMMUNITY_MIN', 'SymbolCommunityCheck', 'SymbolGraphCheck', 'cap_findings', 'has_error_findings', 'hub_threshold', 'log_db_snapshot', 'persist_findings', 'warn_graph_structure']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/tests_plugin.py
-# hypothesis_version: 6.148.3
-
-['2.0.0', 'TestsIngestPlugin', 'change_tracker', 'enrich', 'pytest', 'python', 'repo_scan', 'tests_ingest']

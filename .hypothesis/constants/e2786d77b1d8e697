@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/contracts/pandera_hook.py
-# hypothesis_version: 6.148.7
-
-['F', 'coerce', 'columns', 'get_pandera_schema', 'has_schema', 'strict', 'table_key', 'validate_dataframe', 'validate_dataset_ref', 'with_contract']

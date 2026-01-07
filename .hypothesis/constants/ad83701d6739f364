@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/tags.py
-# hypothesis_version: 6.148.7
-
-['NODE_TYPE_ARTIFACT', 'NODE_TYPE_COMPUTE', 'NODE_TYPE_DATASET', 'NODE_TYPE_TOOL', 'TAG_ARTIFACT', 'TAG_DOMAIN', 'TAG_NODE_TYPE', 'TAG_TABLE_KEY', 'TAG_TARGET', 'artifact', 'compute', 'dataset', 'domain', 'loader.dataframe', 'loader.query', 'materialize', 'node_type', 'table_key', 'target', 'tool']

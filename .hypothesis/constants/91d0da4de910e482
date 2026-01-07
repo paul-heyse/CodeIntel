@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/errors/storage.py
-# hypothesis_version: 6.148.7
-
-['ColumnNotFoundError', 'QueryError', 'StorageQueryError', 'TableNotFoundError']

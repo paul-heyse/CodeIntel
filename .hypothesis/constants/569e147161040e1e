@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/dataset_ops.py
-# hypothesis_version: 6.148.7
-
-['--output-format', '--root', '--verbose', '-r', '-v', 'DatasetListCommand', 'DatasetVerifyCommand', 'Output format.', 'dataset', 'dataset.describe', 'dataset.list', 'dataset.verify', 'dataset_app', 'describe', 'list', 'table_key', 'verify']

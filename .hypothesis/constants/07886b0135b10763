@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/dependencies/external.py
-# hypothesis_version: 6.148.3
-
-[90000, '3.0.0', 'CatalogProvider', 'ExternalDepsPlugin', 'config', 'config_ingest', 'core.goids', 'dataset', 'dependencies', 'deps.external', 'external', 'external_deps_cfg', 'fatal', 'goids', 'other', 'third-party']

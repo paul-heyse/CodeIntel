@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/duckdb_policy_backend.py
-# hypothesis_version: 6.148.7
-
-['$commit', '$repo', '.', ':commit', ':repo', '?', 'BIGINT', 'BOOLEAN', 'Created view: %s', 'DECIMAL', 'DO NOTHING', 'DO UPDATE', 'DOUBLE', 'DUCKDB_DIALECT', 'DuckDBPolicyBackend', 'Executing SQL: %s', 'INDEX', 'INTEGER', 'JSON', 'SCHEMA', 'TABLE', 'TIMESTAMP', 'TIMESTAMPTZ', 'VARCHAR', 'analytics', 'cfg_metrics', 'commit', 'conflict', 'dfg_metrics', 'excluded', 'main', 'repo', 'table']

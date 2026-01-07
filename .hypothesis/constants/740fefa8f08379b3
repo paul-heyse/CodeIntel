@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_common.py
-# hypothesis_version: 6.148.7
-
-['--build-dir', '--commit', '--db-path', '--json', '--output-format', '--repo', '--repo-root', '--root', '--verbose', '-r', '-v', 'BackendFlags', 'JsonFlag', 'Output format.', 'OutputFmt', 'OutputFormat', 'OutputFormatCLI', 'ProjectRoot', 'RuntimeCLI', 'RuntimeCliError', 'RuntimeCliOptions', 'RuntimeWithFormat', 'Verbose', 'build', 'codeintel', 'local_db', 'make_root_app']

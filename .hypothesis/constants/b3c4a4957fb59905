@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/execution/manifest_store.py
-# hypothesis_version: 6.148.7
-
-['BooleanValue', 'DuckDBManifestStore', 'PluginStatus', 'commit', 'core', 'duration_ms', 'ended_at', 'error', 'input_hash', 'meta_json', 'options_hash', 'plugin_name', 'repo', 'scope_id', 'started_at', 'status', 'variant']

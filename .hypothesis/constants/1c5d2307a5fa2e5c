@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/plugin.py
-# hypothesis_version: 6.148.7
-
-['1.0.0', 'MetadataPlugin', 'TOptions', 'TargetPlugin', 'TargetPluginProtocol', '_core_metadata', 'plugin_description', 'plugin_name', 'plugin_version']

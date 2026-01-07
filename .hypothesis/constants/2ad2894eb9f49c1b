@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/pipeline/contracts.py
-# hypothesis_version: 6.148.5
-
-[0.0, 1000, ' AND ', '1=1', 'ColumnRule', 'ContractViolation', 'DESCRIBE', 'DatasetContract', 'SELECT COUNT(*) FROM', 'WHERE', 'commit', 'commit = ?', 'custom_check', 'error', 'max_rows', 'min_rows', 'not_null', 'repo', 'repo = ?', 'required_column']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/plugin_catalog.py
-# hypothesis_version: 6.148.7
-
-['## Manifest excerpts', ', ', 'No description', '```', '```json', '```yaml', 'analytics', 'build_plugin_catalog', 'count', 'depends_on', 'description', 'enabled_by_default', 'example-run', 'name', 'other', 'plugins', 'provides', 'requires', 'run_id', 'stage', 'utf-8', 'version', 'version_hash', 'write_plugin_catalog']

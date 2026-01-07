@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/options/common.py
-# hypothesis_version: 6.148.7
-
-['*', '--build-dir', '--commit', '--db-path', '--dry-run', '--gpu', '--json', '--output-format', '--repo', '--repo-root', '--root', '--verbose', '-n', '-r', '-v', 'CommonOptions', 'Output format.', 'build_dir', 'commit', 'db_path', 'document_output_dir', 'dry_run', 'output_format', 'parameter', 'project_root', 'repo', 'repo_root', 'use_gpu', 'verbose']

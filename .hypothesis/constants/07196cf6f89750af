@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/helpers/db.py
-# hypothesis_version: 6.148.7
-
-['.', 'DUCKDB_ERRORS', 'duckdb', 'macro_insert_rows']

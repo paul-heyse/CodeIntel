@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/ingest_macros.py
-# hypothesis_version: 6.148.3
-
-["SET schema='main'", 'ensure_ingest_macros', 'list_ingest_macros']

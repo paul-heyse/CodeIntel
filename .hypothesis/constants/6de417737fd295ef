@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/scip_plugin.py
-# hypothesis_version: 6.148.7
-
-['3.0.0', '; ', 'ScipIngestPlugin', 'Unknown error', 'get_module_paths', 'index.json', 'index.scip', 'paths_to_modules', 'scip-python', 'scip_ingest']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/adapters/semantic_roles.py
-# hypothesis_version: 6.148.7
-
-['[]', 'commit', 'created_at', 'framework', 'function_goid_h128', 'module', 'repo', 'role', 'role_confidence', 'role_sources_json']

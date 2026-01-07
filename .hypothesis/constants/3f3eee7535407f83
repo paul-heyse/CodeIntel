@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/runtime/graph_executor.py
-# hypothesis_version: 6.148.7
-
-[0.0, 1000, 'GraphPluginExecutor', 'GraphRunReport', 'NxGraphEngine', 'dry_run', 'executed_at', 'failed', 'fatal', 'graph-run', 'input_hash', 'kind', 'options_hash', 'row_counts', 'skip_on_error', 'skipped', 'skipped_reason', 'stage', 'succeeded', 'unchanged', 'unknown', 'version_hash']

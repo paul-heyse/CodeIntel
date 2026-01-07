@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/naming.py
-# hypothesis_version: 6.148.7
-
-['-', '.', '/', '[^a-zA-Z0-9_]', '_', '__', '_{3,}', 'a', 'artifact_node', 'compute_node', 'd', 'dataframe_node', 'dataset_node', 'df', 'node_to_target', 'q', 'query_node', 't', 't__', 'target_node', 'to_node_name']

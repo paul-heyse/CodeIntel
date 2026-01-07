@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/plugins/functions/contracts.py
-# hypothesis_version: 6.148.3
-
-[90000, '3.0.0', 'AstProvider', 'CatalogProvider', 'analytics.docstrings', 'config', 'contracts', 'dataset', 'fatal', 'function', 'function_contracts', 'functions', 'functions.contracts', 'functions.metrics', 'nullability']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/completions/zsh_generator.py
-# hypothesis_version: 6.148.7
-
-['ZshBackend', '_codeintel', '_codeintel() {', 'codeintel', '}']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/contracts.py
-# hypothesis_version: 6.148.7
-
-[0.0, ' AND ', ', ', '.', 'COUNT(*) as total', 'ColumnConstraint', 'ContractCheckerFn', 'ContractValidator', 'ContractViolation', 'FROM', 'OutputContractSpec', 'PluginOutputContract', 'SELECT', 'SELECT COUNT(*) FROM', 'WHERE', 'actual_fraction', 'actual_rows', 'analytics', 'commit', 'error', 'in_set', 'max_value', 'metadata', 'min_fraction', 'min_rows', 'min_value', 'missing_columns', 'not_null', 'null_count', 'output_contracts', 'plugin_name', 'regex', 'repo', 'unknown', 'warning']

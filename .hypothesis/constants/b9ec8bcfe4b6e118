@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/execution/run_context.py
-# hypothesis_version: 6.148.7
-
-['Any', 'PluginRunContext', 'RunContextInputs', 'dict', 'model_dump', 'prepare_plugin_run', 'scope_id', 'upstream_state', 'variant']

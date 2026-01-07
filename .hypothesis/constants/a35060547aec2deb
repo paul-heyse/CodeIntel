@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/graphs.py
-# hypothesis_version: 6.148.7
-
-['--include-disabled', '--names', '--no-plan', '--plan', 'GraphPlanResult', 'GraphPlanStage', 'GraphPlugins', 'GraphPluginsList', 'GraphPluginsPlan', 'GraphTargetInfo', 'GraphTargets', 'GraphTargetsList', 'GraphTargetsPlan', 'GraphTargetsResult', 'Show execution plan.', 'graph', 'graph.plugins', 'graph.plugins.list', 'graph.plugins.plan', 'graph.targets', 'graph.targets.list', 'graph.targets.plan', 'graphs', 'graphs_app', 'plugins', 'plugins-list', 'plugins-plan', 'targets', 'targets-list', 'targets-plan']

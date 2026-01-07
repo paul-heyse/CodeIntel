@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/sql_builder.py
-# hypothesis_version: 6.148.6
-
-['.', 'PreparedStatements', 'QueryBuilder', 'SELECT * FROM', 'SafeColumn', 'SafeTable', 'SqlBuilderError', 'SqlParams', 'TABLE_KEY_PARTS', 'build_delete_query', 'build_insert_sql', 'ensure_schema', 'macro_select_sql', 'quote_identifier', 'quote_table_key', 'render_sql', 'safe_macro_call', 'validate_identifier']

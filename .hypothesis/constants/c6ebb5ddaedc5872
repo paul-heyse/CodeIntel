@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/traits.py
-# hypothesis_version: 6.148.6
-
-['CacheAware', 'CacheAwareMixin', 'CacheAwarePlugin', 'CatalogAware', 'CatalogAwarePlugin', 'ContractValidated', 'GraphAware', 'GraphAwareMixin', 'GraphAwarePlugin', 'Incremental', 'IncrementalPlugin', 'Isolated', 'IsolatedPlugin', 'ProgressReporting', 'Retryable', 'RetryableMixin', 'RetryablePlugin', 'ScopeAware', 'ScopeAwareMixin', 'ScopeAwarePlugin', 'WithCaching', 'WithCleanup', 'WithDependencyData', 'WithRowCounts', 'get_plugin_traits', 'is_cache_aware', 'is_graph_aware', 'is_incremental', 'is_isolated', 'is_retryable', 'is_scope_aware', 'modules', 'paths', 'time_window']

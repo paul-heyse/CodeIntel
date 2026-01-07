@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/schemas/hashing.py
-# hypothesis_version: 6.148.7
-
-['BIGINT', 'DECIMAL', 'TIMESTAMPTZ', 'TIMESTAMP_TZ', 'canonical_type', 'schema_hash', 'utf-8', '|']

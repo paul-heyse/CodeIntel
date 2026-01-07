@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/contracts/schemas/dependency_inference.py
-# hypothesis_version: 6.148.7
-
-['DependencyGraph', 'DependencyNode']

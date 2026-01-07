@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/metrics/core.py
-# hypothesis_version: 6.148.7
-
-['3.0.0', 'CoreMetricsPlugin', 'auto', 'core_metrics.failed', 'graph_metrics']

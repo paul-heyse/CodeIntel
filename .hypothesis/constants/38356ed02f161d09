@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/plugins/loader.py
-# hypothesis_version: 6.148.7
-
-['; ', 'LoadedPlugin', 'PluginLoadResult', 'PluginLoader', 'get_plugin_loader', 'plugin.json']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/dependencies/external.py
-# hypothesis_version: 6.148.7
-
-['3.0.0', 'ExternalDepsPlugin', 'external_deps']

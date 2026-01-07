@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/pipeline/steps/base.py
-# hypothesis_version: 6.148.6
-
-['PipelineStep', 'StepMetadata', 'StepPhase', 'analytics', 'export', 'graphs', 'ingestion', 'pipeline_analytics', 'pipeline_export', 'pipeline_graphs', 'pipeline_ingestion']

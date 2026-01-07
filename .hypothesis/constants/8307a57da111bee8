@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/core/__init__.py
-# hypothesis_version: 6.148.7
-
-['CliResult', 'OutputEnvelope', 'TextRenderer', 'iter_stdin_records', 'read_stdin_records']

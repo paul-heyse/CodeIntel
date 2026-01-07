@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/runtime/validation.py
-# hypothesis_version: 6.148.6
-
-['*', 'SeverityLevel', 'T', 'cap_findings', 'error', 'filter_by_severity', 'has_error_findings', 'info', 'warning']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/function_tools.py
-# hypothesis_version: 6.148.6
-
-['QueryBackend', 'SupportsFromDomain', '_ModelLike', 'commit', 'dataset', 'dataset_name', 'dict[str, object]', 'files', 'from_domain', 'function', 'functions', 'gateway', 'graph', 'mcp', 'model_dump', 'repo', 'scope']

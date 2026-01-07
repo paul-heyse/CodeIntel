@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/builders/callgraph.py
-# hypothesis_version: 6.148.7
-
-['3.0.0', 'CallGraphPlugin', 'call_graph_edges', 'call_graph_nodes', 'callgraph', 'evidence_json', 'python', 'utf8']

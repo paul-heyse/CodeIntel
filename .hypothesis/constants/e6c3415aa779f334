@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/subsystem_graph_metrics.py
-# hypothesis_version: 6.148.7
-
-[1.0, 'commit', 'created_at', 'import_betweenness', 'import_closeness', 'import_in_degree', 'import_layer', 'import_out_degree', 'import_pagerank', 'mapping', 'module', 'repo', 'subsystem_id', 'weight']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/graphs_handlers.py
-# hypothesis_version: 6.148.7
-
-['DependencyPolicy', 'GraphPluginsOptions', 'OutputFormat', 'ParsedOptions', 'PlanMode', 'SelectionPolicy', 'Skipped:\n', 'bundle_graph_plugins', 'cache_consumes', 'cache_populates', 'config_schema_ref', 'contract_checkers', 'count', 'dep_graph', 'dependency_policy', 'depends_on', 'description', 'disable', 'enable', 'enabled_by_default', 'fallback', 'isolation_kind', 'json', 'list', 'list[str]', 'max_memory_mb', 'max_runtime_ms', 'mode', 'name', 'names', 'no', 'options', 'options_default', 'options_model', 'ordered_plugins', 'output_format', 'parse_graph_options', 'plan', 'plan_id', 'plugin_metadata', 'plugins', 'provides', 'reason', 'requires', 'requires_isolation', 'resource_hints', 'row_count_tables', 'scope_aware', 'selection_policy', 'severity', 'skipped_plugins', 'stage', 'supported_scopes', 'validate_plan', 'version_hash', 'yes']

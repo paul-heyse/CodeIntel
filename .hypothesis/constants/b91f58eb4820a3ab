@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/services/query_service.py
-# hypothesis_version: 6.148.3
-
-[0.7, 'HttpQueryService', 'LocalQueryService', 'QueryService', 'ResponseMeta', 'ServiceCallContext', 'ServiceCallMetrics', 'ServiceObservability', 'both', 'gateway', 'local']

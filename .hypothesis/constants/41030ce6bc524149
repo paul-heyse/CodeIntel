@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/graphs/cfg.py
-# hypothesis_version: 6.148.7
-
-['build_cfg_graph', 'cfg_centralities', 'cfg_reachable_nodes', 'entry', 'exit']

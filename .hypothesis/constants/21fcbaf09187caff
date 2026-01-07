@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/validation/findings.py
-# hypothesis_version: 6.148.5
-
-[0.1, '*', 'CALL_SCC_MIN', 'HUB_DEGREE_RATIO', 'HUB_MIN_DEGREE_FLOOR', 'SAMPLE_LIMIT', 'SYMBOL_COMMUNITY_MIN', 'cap_findings', 'check_name', 'context', 'detail', 'entity_id', 'error', 'graph_name', 'graph_validation', 'has_error_findings', 'hub_threshold', 'info', 'issue', 'metadata', 'path', 'persist_findings', 'rel_path', 'severity', 'warning']

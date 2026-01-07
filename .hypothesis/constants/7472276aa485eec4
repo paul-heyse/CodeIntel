@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/errors/factory.py
-# hypothesis_version: 6.148.7
-
-[400, 404, 500, 'Cancel Failed', 'Execution Failed', 'File Not Found', 'Invalid Module', 'Invalid Plugin Name', 'Invalid Targets', 'Job Not Completed', 'Job Not Found', 'No Plugin Manifest', 'No Tables Specified', 'No hints found', 'Plugin Not Found', 'Project Error', 'Run Not Found', 'Subsystem not found', 'Unknown Operation', 'dataset', 'fail_file_not_found', 'fail_history_error', 'fail_internal', 'fail_invalid_module', 'fail_invalid_param', 'fail_invalid_policy', 'fail_invalid_targets', 'fail_invalid_value', 'fail_job_not_found', 'fail_no_tables', 'fail_not_found', 'fail_project_error', 'fail_storage_query', 'fail_with_problem', 'operation', 'storage', 'unknown']

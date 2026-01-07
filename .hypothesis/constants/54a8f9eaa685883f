@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/errors.py
-# hypothesis_version: 6.148.3
-
-[400, 404, 500, 'Backend failure', 'Invalid argument', 'Not found']

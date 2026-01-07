@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/tool_builder.py
-# hypothesis_version: 6.148.7
-
-['McpToolRegistrar', 'QueryBackend', 'SupportsFromDomain', '_ModelLike', 'commit', 'dataset', 'dataset_name', 'dict[str, object]', 'from_domain', 'gateway', 'mcp', 'model_dump', 'register_all_tools', 'repo', 'scope']

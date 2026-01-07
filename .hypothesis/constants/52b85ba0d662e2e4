@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/gateway/ephemeral.py
-# hypothesis_version: 6.148.7
-
-[':memory:', 'ephemeral_gateway']

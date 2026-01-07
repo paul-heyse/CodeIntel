@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/traits/caching.py
-# hypothesis_version: 6.148.6
-
-['CacheAwareMixin', 'CacheAwarePlugin', 'is_cache_aware']

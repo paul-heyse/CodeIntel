@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/commands/build.py
-# hypothesis_version: 6.148.7
-
-['--all', '--dry-run', '--engine', '--force', '--limit', '--module', '--run-id', '-a', '-e', '-f', '-i', '-m', '-n', 'build', 'build.history', 'build.run', 'build.status', 'build_app', 'history', 'legacy', 'run', 'status']

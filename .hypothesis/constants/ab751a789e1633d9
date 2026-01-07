@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/cfg_dfg/compute.py
-# hypothesis_version: 6.148.7
-
-['CfgMetricsResult', 'DfgMetricsResult']

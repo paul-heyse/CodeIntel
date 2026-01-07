@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/schemas/serde.py
-# hypothesis_version: 6.148.7
-
-['ColumnType', 'column_from_json_obj', 'columns', 'columns[]', 'description', 'index_from_json_obj', 'indexes', 'name', 'nullable', 'primary_key', 'primary_key[]', 'schema', 'type', 'unique']

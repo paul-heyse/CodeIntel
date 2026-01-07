@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/plugins/graphs/builders/import_graph.py
-# hypothesis_version: 6.148.7
-
-['2.0.0', '3.0.0', 'Any', 'ImportGraphPlugin', 'builder', 'core.modules', 'core.snapshots', 'edges', 'empty', 'graph.import_graph', 'graph.import_modules', 'graph_kinds', 'graphs.import_graph', 'import_graph', 'utf8']

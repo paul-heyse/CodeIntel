@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/mcp/dataset_tools.py
-# hypothesis_version: 6.148.6
-
-['QueryBackend', 'SupportsFromDomain', 'SupportsModelDump', 'commit', 'dataset', 'dataset_name', 'datasets', 'dict[str, object]', 'from_domain', 'gateway', 'mcp', 'model_dump', 'repo']

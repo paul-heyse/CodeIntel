@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/pipeline/config_resolver.py
-# hypothesis_version: 6.148.6
-
-['CODEINTEL_GIT_BIN', 'CODEINTEL_PYTEST_BIN', 'CODEINTEL_RUFF_BIN', 'CODEINTEL_SCIP_BIN', 'coverage_bin', 'coverage_file', 'git_bin', 'pyrefly_bin', 'pyright_bin', 'pytest_bin', 'pytest_report_path', 'resolve_tools_config', 'ruff_bin', 'scip_bin', 'scip_python_bin']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/gateway/rows/core.py
-# hypothesis_version: 6.148.7
-
-['CoreAstMetricsRow', 'CoreAstNodesRow', 'CoreCstNodesRow', 'CoreDocstringsRow', 'CoreFileStateRow', 'CoreGoidCrosswalkRow', 'CoreGoidsRow', 'CoreIngestRunsRow', 'CoreModulesRow', 'CoreRepoMapRow', 'CoreScipSymbolsRow', 'CoreTestResultsRow', 'CoreTestSummaryRow']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/build/operations.py
-# hypothesis_version: 6.148.7
-
-['OperationTargets', 'call_graph', 'callgraph', 'import_graph', 'importgraph']

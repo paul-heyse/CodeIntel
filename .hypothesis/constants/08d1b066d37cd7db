@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/metadata_bridge.py
-# hypothesis_version: 6.148.7
-
-['0.0.0', 'CanonicalPluginMeta', 'consumes_tables', 'description', 'domain', 'from_target', 'metadata', 'name', 'options_type', 'produces_tables', 'provides', 'requires', 'version']

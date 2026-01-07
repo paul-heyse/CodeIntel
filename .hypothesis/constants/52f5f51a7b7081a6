@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/subsystem_agreement.py
-# hypothesis_version: 6.148.7
-
-[', ', 'agrees', 'commit', 'created_at', 'import_community_id', 'module', 'repo', 'subsystem_id']

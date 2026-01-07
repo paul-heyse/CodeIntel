@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/errors/base.py
-# hypothesis_version: 6.148.7
-
-[100, 200, 'CodeIntelError', 'ErrorContext', 'Multiple Errors', 'No Errors', 'aggregate_errors', 'cause_message', 'cause_type', 'correlation_id', 'debug', 'detail', 'errors', 'exception_type', 'field', 'operation_id', 'query', 'suggestion', 'table', 'traceback', 'type', 'value']

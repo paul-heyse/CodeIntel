@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/operations/catalog/jobs.py
-# hypothesis_version: 6.148.7
-
-['CancelJob', 'Cancelling job: %s', 'CleanupJobs', 'CleanupJobsParams', 'GetJobOutput', 'GetJobParams', 'GetJobStatus', 'JobCancelResult', 'JobInfo', 'JobOutputResult', 'JobStatusResult', 'JobsCleanupResult', 'JobsListResult', 'ListJobs', 'ListJobsParams', 'cancelled', 'completed', 'failed', 'jobs.cancel', 'jobs.cleanup', 'jobs.list', 'jobs.output', 'jobs.status', 'pending', 'running']

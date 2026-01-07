@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/cst_utils.py
-# hypothesis_version: 6.148.3
-
-[200, '.', 'AsyncFunctionDef', 'end', 'name', 'start', 'value']

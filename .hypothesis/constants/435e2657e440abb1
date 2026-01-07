@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/compute/scip_ingest.py
-# hypothesis_version: 6.148.6
-
-[100, '.py', 'ScipIngestConfig', 'ScipIngestResult', 'ScipIngestStep', 'core.scip_symbols', 'failed', 'success', 'unavailable']

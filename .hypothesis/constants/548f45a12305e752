@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/config/schema.py
-# hypothesis_version: 6.148.7
-
-['$id', '$schema', 'SCHEMA_ID', 'SCHEMA_TITLE', '_', 'additionalProperties', 'array', 'boolean', 'default', 'description', 'enum', 'export_schema', 'format', 'generate_schema', 'integer', 'items', 'number', 'object', 'oneOf', 'path', 'properties', 'string', 'title', 'type', 'utf-8']

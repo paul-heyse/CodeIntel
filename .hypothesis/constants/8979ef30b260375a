@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/recipes/executor.py
-# hypothesis_version: 6.148.3
-
-[0.0, 1000, 'RecipeExecutor', 'StageExecutionResult', 'execute_graph_recipe', 'failed', 'row_counts', 'skipped', 'succeeded']

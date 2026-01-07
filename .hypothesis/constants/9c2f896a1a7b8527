@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/sql_helpers.py
-# hypothesis_version: 6.148.3
-
-[' (', '(', ')', ') VALUES (', ', ', '.', '?', 'INSERT INTO ', 'PreparedStatements', 'SELECT * FROM ', 'ensure_schema', 'macro_select_sql', 'quote_identifier', 'quote_table_key']

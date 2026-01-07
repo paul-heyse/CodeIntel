@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/providers.py
-# hypothesis_version: 6.148.5
-
-['get_support_provider', 'set_support_provider']

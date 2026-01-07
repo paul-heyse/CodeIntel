@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/ast_extract.py
-# hypothesis_version: 6.148.3
-
-['2.0.0', 'AstExtractPlugin', 'ast_extract', 'change_tracker', 'core.ast_metrics', 'core.ast_nodes', 'parse', 'process', 'repo_scan']

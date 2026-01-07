@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/docstrings_ingest.py
-# hypothesis_version: 6.148.3
-
-[', ', '.py', '?', 'DocstringContext', 'DocstringIngestOps', 'DocstringVisitor', 'ParsedDocstring', 'commit', 'core.docstrings', 'created_at', 'end_line', 'ingest_docstrings', 'kind', 'module', 'params_json', 'qualname', 'raises_json', 'raw', 'rel_path', 'repo', 'returns_json', 'start_line', 'style', 'summary']

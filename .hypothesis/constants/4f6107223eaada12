@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/__init__.py
-# hypothesis_version: 6.148.3
-
-['ColumnConstraint', 'ContractViolation', 'ForeignKeyConstraint', 'IngestContractSpec', 'IngestIsolationKind', 'IngestPluginContext', 'IngestPluginMetadata', 'IngestPluginPlan', 'IngestPluginProtocol', 'IngestPluginRegistry', 'IngestPluginResult', 'IngestPluginSkip', 'IngestResourceHints', 'IngestRuntimeScratch', 'IngestSeverity', 'IngestStage', 'foreign_key_contract', 'get_ingest_registry', 'ingest_plugin', 'list_ingest_plugins', 'not_null_contract', 'plan_ingest_plugins', 'row_count_contract']

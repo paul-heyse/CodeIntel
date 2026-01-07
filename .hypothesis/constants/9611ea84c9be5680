@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/helpers/json.py
-# hypothesis_version: 6.148.7
-
-[',', ':', 'decode_json', 'decode_json_dict', 'decode_json_list', 'encode_json_compact']

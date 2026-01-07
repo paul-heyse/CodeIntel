@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/handlers/datasets.py
-# hypothesis_version: 6.148.7
-
-['DatasetDiffResult', 'DatasetLintResult', 'DatasetListResult', 'Linting datasets', 'baseline_path', 'category', 'datasets', 'description', 'gateway', 'include_internal', 'name', 'output', 'table_key', 'utf-8']

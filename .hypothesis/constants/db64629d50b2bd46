@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/assets/emitter.py
-# hypothesis_version: 6.148.7
-
-['artifact', 'artifact_type', 'bytes', 'depends_on', 'fast', 'fingerprint', 'materialized', 'native', 'native:', 'reused', 'row_count', 'schema_hash', 'skipped', 'succeeded', 'table', 'wrapper']

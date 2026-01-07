@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/plugins/manifest.py
-# hypothesis_version: 6.148.7
-
-['*', '1.0.0', 'CLI_API_VERSION', 'Missing entry_point', 'PLUGIN_NAME_PATTERN', 'PluginCapability', 'PluginDependency', 'PluginManifest', 'SEMVER_PATTERN', 'SemanticVersion', '^[a-z][a-z0-9_-]*$', 'api_version', 'author', 'buildmetadata', 'capabilities', 'dependencies', 'description', 'entry_point', 'execute_external', 'file_read', 'file_write', 'major', 'minor', 'name', 'network_access', 'optional', 'patch', 'prerelease', 'read_config', 'read_storage', 'register_operations', 'utf-8', 'version', 'write_config', 'write_storage']

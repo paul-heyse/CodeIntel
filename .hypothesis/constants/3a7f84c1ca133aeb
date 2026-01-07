@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/plugins/analytics/data_models/build.py
-# hypothesis_version: 6.148.7
-
-['3.0.0', 'DATA_MODELS_METADATA', 'DataModelsPlugin', 'builder', 'core.ast_metrics', 'core.goids', 'core.modules', 'data_model', 'data_models']

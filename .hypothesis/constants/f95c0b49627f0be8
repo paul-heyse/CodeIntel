@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/plugins/analytics/data_models/__init__.py
-# hypothesis_version: 6.148.7
-
-['DataModelUsagePlugin', 'DataModelsPlugin']

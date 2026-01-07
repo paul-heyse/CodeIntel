@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/adapters/base.py
-# hypothesis_version: 6.148.5
-
-['AnalyticsAdapter', 'BatchAdapter', 'ComputeAdapter', 'DeleteScope', 'InputAdapter', 'OutputAdapter', 'SimpleBatchAdapter']

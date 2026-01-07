@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/main.py
-# hypothesis_version: 6.148.6
-
-[8000, '  Columns:', '  Steps:', '(view)', '--auto-pipeline', '--category', '--host', '--json', '--limit', '--port', '--reload', '--root', '--run-id', '--skip-analytics', '--skip-prereqs', '--verbose', '-c', '-h', '-n', '-p', '-r', '-v', '1', '127.0.0.1', '=', 'CODEINTEL_COMMIT', 'CODEINTEL_DB_PATH', 'CODEINTEL_REPO', 'CODEINTEL_REPO_ROOT', 'Host to bind to', 'Output as JSON', 'Port to bind to', 'Skip analytics stage', '__dict__', 'call', 'category', 'cli', 'columns', 'completed', 'dataset', 'dataset_app', 'describe', 'description', 'false', 'http', 'http_path', 'id', 'is_view', 'json', 'list', 'mcp', 'model_dump', 'name', 'nullable', 'op', 'op_app', 'owner_package', 'pipeline', 'pipeline_app', 'required', 'run-full', 'run-op', 'serve', 'serve_app', 'status', 'succeeded', 'summary', 'table_key', 'tool_name', 'true', 'type', 'verify']

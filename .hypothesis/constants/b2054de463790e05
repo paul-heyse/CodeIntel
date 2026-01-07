@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/ingestion/scip.py
-# hypothesis_version: 6.148.7
-
-[0.0, 600.0, '--output', '--project-name', 'Parse failed', 'build_dir', 'commit', 'compute', 'data', 'error', 'index', 'index.scip', 'ingestion', 'materialize', 'native:scip', 'parse__scip', 'repo', 'repo_root', 'scip', 'scip-python', 'scip_dir', 'scip_path', 'skipped', 'succeeded', 'success', 't__scip', 'tool', 'tool__scip', 'upstream_failed']

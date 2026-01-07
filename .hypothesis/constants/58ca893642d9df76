@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/recipes/model.py
-# hypothesis_version: 6.148.5
-
-['1.0', 'Recipe', 'RecipeOptions', 'RecipePluginRecord', 'RecipeScope', 'RecipeStage', 'failed', 'partial', 'skipped', 'succeeded']

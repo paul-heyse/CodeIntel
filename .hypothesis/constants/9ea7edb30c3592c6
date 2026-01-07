@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/validation/__init__.py
-# hypothesis_version: 6.148.7
-
-['CheckProtocol', 'CheckResult', 'ValidationReport', 'ValidationRunner', 'ValidationSeverity', 'cap_findings', 'has_error_findings']

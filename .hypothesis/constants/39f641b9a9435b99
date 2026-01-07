@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/nodes/node_factory.py
-# hypothesis_version: 6.148.7
-
-[1000, '.', 'Any', 'GenerationOptions', '__annotations__', 'build_target_module', 'env', 'failed', 'get_generated_module', 'graph', 'main', 'return', 'skipped', 'succeeded', 'unknown']

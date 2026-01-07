@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/cache/memory.py
-# hypothesis_version: 6.148.7
-
-['CacheEntry', 'K', 'MemoryCache', 'V']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/types.py
-# hypothesis_version: 6.148.6
-
-[0.7, 'BackendFactory', 'BaseBackendProtocol', 'DatasetQueryProtocol', 'GraphEngineProtocol', 'HasClose', 'HasModelDump', 'HasModelValidate', 'JsonPayload', 'ProfileQueryProtocol', 'PytestCallEntry', 'PytestTestEntry', 'QueryBackendProtocol', 'QueryServiceProtocol', 'RepositoryProtocol', 'ResponseMetaLike', 'RowDict', 'ScipDocument', 'ScipOccurrence', 'ScipRange', 'ServiceFactory', 'ServiceResult', 'both']

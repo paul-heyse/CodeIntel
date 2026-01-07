@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/plugins/analytics/risk/factors.py
-# hypothesis_version: 6.148.7
-
-['3.0.0', 'RiskFactorsPlugin', '[]', 'analytics.hotspots', 'analytics.typedness', 'catalog', 'core.modules', 'metric', 'risk', 'risk_factors']

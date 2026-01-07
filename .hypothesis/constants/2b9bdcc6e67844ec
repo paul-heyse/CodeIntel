@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/recipes/model.py
-# hypothesis_version: 6.148.3
-
-['1.0.0', 'AnalyticsRecipe', 'RecipePluginRecord', 'RecipeScope', 'failed', 'partial', 'skipped', 'succeeded']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/adapters/dependencies.py
-# hypothesis_version: 6.148.7
-
-['DependencyCallRow', 'callsite_count', 'category', 'commit', 'compute_dep_id', 'config_keys', 'created_at', 'criticality', 'dep_id', 'evidence_json', 'function_count', 'function_goid_h128', 'function_urn', 'language', 'library', 'modes', 'module', 'modules_json', 'qualname', 'rel_path', 'repo', 'risk_level', 'risk_score', 'service_name', 'severity', 'to_decimal', 'usage_modes', 'utf-8']

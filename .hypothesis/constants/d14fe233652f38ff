@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/config/__init__.py
-# hypothesis_version: 6.148.7
-
-['BuildLayoutOptions', 'BuildPathOverrides', 'BuildPaths', 'BuilderDependencies', 'CliPathsInput', 'CodeIntelConfig', 'ConfigBuilder', 'EntryPointToggles', 'GraphBackendConfig', 'GraphFeatureFlags', 'GraphMetricWeights', 'GraphMetricsTuning', 'GraphPluginPolicy', 'GraphRunScope', 'RepoConfig', 'ScanProfiles', 'SnapshotInit', 'SnapshotRef', 'ToolBinaries', 'ToolsConfig']

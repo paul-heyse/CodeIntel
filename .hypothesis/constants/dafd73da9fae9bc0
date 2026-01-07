@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/http/routes/profiles.py
-# hypothesis_version: 6.148.3
-
-['profiles.file', 'profiles.function', 'profiles.module']

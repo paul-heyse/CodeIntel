@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/services/transport.py
-# hypothesis_version: 6.148.7
-
-[0.0, 'HttpTransport', 'LocalTransport', 'T', 'TransportAdapter', '_HttpTransportMixin', '__self__', 'http', 'last_retry_attempts', 'local']

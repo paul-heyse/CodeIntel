@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/config/datasets/contracts.py
-# hypothesis_version: 6.148.3
-
-['COMPOSITE_SCHEMAS', 'DATASET_CONTRACTS', 'DatasetContract', 'RowBinding', 'TABLE_SCHEMAS', 'analytics', 'can_export_jsonl', 'can_export_parquet', 'can_validate', 'core', 'dataset_rows_only', 'docs', 'docs.', 'docs_view', 'get_row_bindings', 'get_table_schemas', 'graphs', 'has_row_binding', 'is_view', 'lenient', 'qa', 'read_only', 'strict']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/executor.py
-# hypothesis_version: 6.148.7
-
-[0.0, 1000, 'NativeTargetExecutor', 'failed', 'skipped', 'succeeded']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/pipeline/orchestration/prefect_metadata.py
-# hypothesis_version: 6.148.3
-
-['TaskMetadata', 'attach_task_metadata', 'get_task_metadata', 'name', 'tags']

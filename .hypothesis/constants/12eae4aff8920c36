@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/health.py
-# hypothesis_version: 6.148.7
-
-[0.0, 1000, ':memory:', 'CheckResult', 'CheckStatus', 'DuckDB available', 'DuckDB not installed', 'DuckDBModule', 'HealthChecker', 'HealthReport', 'SELECT 1', 'Telemetry disabled', 'Telemetry enabled', 'checks', 'codeintel.toml', 'codeintel.yaml', 'config_file', 'details', 'duckdb', 'duration_ms', 'engine', 'fail', 'get_health_checker', 'message', 'name', 'operation_count', 'operation_registry', 'overall_status', 'pass', 'path', 'project_discovery', 'project_root', 'python_version', 'searched', 'service_name', 'skip', 'status', 'storage_connection', 'telemetry', 'total_duration_ms', 'version', 'warn']

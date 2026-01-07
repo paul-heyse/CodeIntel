@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/core/base.py
-# hypothesis_version: 6.148.6
-
-['1.0.0', 'BaseIngestPlugin', 'Plugin %s failed', 'ResolvedConfig', 'TConfig', 'ToolsProvider', 'TrackerProvider', 'ValidationResult', 'fatal', 'none', 'parse', 'unknown']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/ports/__init__.py
-# hypothesis_version: 6.148.7
-
-['BatchResult', 'CatalogPort', 'EnginePort', 'FunctionSpanData', 'GraphData', 'ParsedFunction', 'ParsedModule', 'ParsingPort', 'QueryResult', 'StoragePort']

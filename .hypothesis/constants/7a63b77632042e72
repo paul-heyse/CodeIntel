@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/adapters/tool_runner.py
-# hypothesis_version: 6.148.5
-
-[0.0, 'ToolRunnerAdapter', 'duration', 'error', 'failed', 'longrepr', 'nodeid', 'occurrences', 'outcome', 'passed', 'pyrefly', 'pyright', 'range', 'relative_path', 'ruff', 'skipped', 'summary', 'symbol', 'symbol_roles', 'symbols', 'tests', 'unknown', 'utf-8']

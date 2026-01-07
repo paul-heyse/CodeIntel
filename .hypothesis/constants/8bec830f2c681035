@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/plugins/analytics/types/coverage.py
-# hypothesis_version: 6.148.7
-
-[512, '2.0.0', 'PluginKind', 'PluginStage', 'TypeCoveragePlugin', 'core.goids', 'function', 'max_memory_mb', 'metric', 'type_coverage']

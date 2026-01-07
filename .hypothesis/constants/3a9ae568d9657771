@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/serialization/__init__.py
-# hypothesis_version: 6.148.7
-
-['SerializableBase', 'SerializableProtocol', 'deserialize_value', 'serialize_dataclass', 'serialize_value']

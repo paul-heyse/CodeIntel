@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/types/protocol.py
-# hypothesis_version: 6.148.7
-
-['1.0.0', 'CapabilityKind', 'InputSource', 'PluginCapability', 'PluginInputSpec', 'PluginIsolation', 'PluginKind', 'PluginMetadata', 'PluginOutputSpec', 'PluginProtocol', 'PluginResourceHints', 'PluginSeverity', 'PluginStage', 'ValidationResult', 'analytics', 'artifact', 'builder', 'cfg', 'config', 'core', 'coverage', 'data_model', 'data_model_usage', 'dataset', 'dfg', 'edges', 'entrypoints', 'fatal', 'function', 'function_history', 'goid', 'graph', 'history', 'hotspots', 'metric', 'none', 'other', 'pipeline_analytics', 'pipeline_export', 'pipeline_graphs', 'pipeline_ingestion', 'prior_plugin', 'process', 'profiles', 'requires_isolation', 'risk', 'runtime', 'semantic', 'service', 'skip_on_error', 'soft_fail', 'stats', 'structure', 'subsystem', 'symbol', 'test', 'thread', 'validation']

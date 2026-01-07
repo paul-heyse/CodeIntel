@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/compute/__init__.py
-# hypothesis_version: 6.148.7
-
-['CentralityMetrics', 'centrality_to_rows', 'compute_betweenness', 'compute_closeness', 'compute_pagerank']

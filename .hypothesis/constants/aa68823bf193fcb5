@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/cyclopts_storage.py
-# hypothesis_version: 6.148.7
-
-['*', '--macros', 'storage', 'storage_app', 'validate-macros']

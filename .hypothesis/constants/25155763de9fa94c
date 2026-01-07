@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/recipes/__init__.py
-# hypothesis_version: 6.148.3
-
-['ANALYSIS_RECIPE', 'BUILTIN_RECIPES', 'CORE_ONLY_RECIPE', 'DEFAULT_RECIPE_NAME', 'ExecutorConfig', 'FULL_PYTHON_RECIPE', 'INCREMENTAL_RECIPE', 'IngestRecipe', 'MINIMAL_RECIPE', 'RecipeExecutor', 'RecipeOptions', 'RecipeSpec', 'RecipeStage', 'RecipeStageResult', 'StageSpec', 'execute_recipe', 'get_builtin_recipe', 'get_default_recipe', 'list_builtin_recipes', 'recipe', 'stage']

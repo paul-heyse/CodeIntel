@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/pipeline/execution/context.py
-# hypothesis_version: 6.148.6
-
-['PipelineContext', 'PipelineStep', 'StepMetadata', 'StepPhase', '_function_catalog', '_graph_engine', '_graph_runtime', '_log_step', '_plugin_ctx', 'analytics', 'ensure_graph_engine', 'ensure_graph_runtime', 'export', 'graphs', 'ingestion', 'lenient', 'strict']

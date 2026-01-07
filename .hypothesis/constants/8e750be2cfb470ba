@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/utilities/lazy_module.py
-# hypothesis_version: 6.148.7
-
-['LazyAttrMap', 'lazy_callable', 'make_lazy_getattr']

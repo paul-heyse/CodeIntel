@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/data_models/core.py
-# hypothesis_version: 6.148.6
-
-['.', 'Field', 'ForeignKey', 'TypedDict', 'annotation', 'base', 'basemodel', 'blank', 'column', 'dataclass', 'dataclass_field', 'declarative', 'default', 'django', 'django_field', 'django_model', 'eval', 'field', 'foreign_key', 'foreignkey', 'ge', 'generic_class', 'gt', 'le', 'lineno', 'list', 'lt', 'many', 'manytomanyfield', 'max_length', 'min_length', 'model', 'name', 'null', 'nullable', 'one', 'onetoonefield', 'orm_column', 'orm_model', 'orm_relationship', 'protocol', 'pydantic_field', 'pydantic_model', 'qualname', 'reference', 'regex', 'relationship', 'relationship_hint', 'resolved_symbol', 'sequence', 'server_default', 'set', 'sqlalchemy_column', 'target_text', 'total', 'tuple', 'type_hint', 'typeddict', 'unique', 'uselist', 'utf-8', 'via']

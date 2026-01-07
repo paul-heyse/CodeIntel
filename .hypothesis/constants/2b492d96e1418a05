@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/config/model.py
-# hypothesis_version: 6.148.7
-
-[0.5, 2.0, 30.0, 'CRITICAL', 'CliConfig', 'ConfigLoadError', 'DEBUG', 'ERROR', 'INFO', 'LogLevel', 'OutputFormat', 'PluginsConfigSection', 'ProgressConfig', 'ProjectConfigSection', 'RetryConfig', 'StorageConfigSection', 'TelemetryConfig', 'WARNING', 'codeintel-cli', 'json', 'text']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/core/execution_context.py
-# hypothesis_version: 6.148.3
-
-['ConfigProvider', 'PluginScratch', 'T', 'T | None']

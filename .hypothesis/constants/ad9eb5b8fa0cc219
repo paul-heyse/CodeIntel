@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/utilities/__init__.py
-# hypothesis_version: 6.148.7
-
-['CallTarget', 'DELETE_SQL_BY_TABLE', 'call_name', 'literal_bool', 'literal_int', 'literal_int_sequence', 'literal_str', 'literal_value', 'resolve_call_target', 'safe_unparse', 'snippet_from_lines']

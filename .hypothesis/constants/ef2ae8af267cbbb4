@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/domain_models.py
-# hypothesis_version: 6.148.6
-
-['CallGraphNeighbors', 'DatasetRows', 'DatasetSchema', 'FileHintsResult', 'FileProfileResult', 'FileSummary', 'FileSummaryResult', 'FunctionSummary', 'GraphNeighborhood', 'GraphPlan', 'HighRiskFunction', 'HighRiskFunctions', 'ImportBoundary', 'Message', 'ModuleProfileResult', 'ResponseMeta', 'applied_limit', 'applied_offset', 'code', 'context', 'dataset', 'detail', 'error', 'info', 'lenient', 'limit', 'messages', 'meta', 'offset', 'requested_limit', 'requested_offset', 'rows', 'severity', 'strict', 'truncated', 'warning']

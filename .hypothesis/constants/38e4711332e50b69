@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/engine/infrastructure/runner.py
-# hypothesis_version: 6.148.7
-
-['.tool_cache', 'build', 'coverage', 'pyrefly', 'pyright', 'pytest', 'replace', 'ruff', 'scip', 'scip-python', 'timed out']

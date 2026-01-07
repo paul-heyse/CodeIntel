@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/adapters/__init__.py
-# hypothesis_version: 6.148.7
-
-['AnalyticsAdapter', 'DeleteScope', 'EntrypointsAdapter', 'FileProfileAdapter', 'FunctionTypesAdapter', 'ModuleProfileAdapter', 'SubsystemsAdapter']

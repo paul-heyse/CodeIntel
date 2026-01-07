@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/helpers.py
-# hypothesis_version: 6.148.7
-
-[1024, '.', '.generated', '.generated.py', '.py', '/', '/test_', '_generated.py', '_pb2.py', '_pb2.pyi', '_test.py', 'build_scan_profile', 'filter_modules', 'generated', 'get_module_paths', 'paths_to_modules', 'test_', 'tests', 'tests/']

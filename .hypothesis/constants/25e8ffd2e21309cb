@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/pipeline/op_planner.py
-# hypothesis_version: 6.148.5
-
-['OpPrereqSummary', 'analytics', 'api', 'build_prereq_summary', 'core', 'docs', 'graphs', 'op_prereqs', 'qa']

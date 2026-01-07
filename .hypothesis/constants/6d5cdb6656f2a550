@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/ibis_types.py
-# hypothesis_version: 6.148.7
-
-['Any', 'TableT', 'and_predicates', 'bool_not', 'col_count', 'col_max', 'col_mean', 'col_min', 'col_nunique', 'col_sum', 'count_gt', 'filter_by', 'ge', 'gt', 'ibis_bool', 'ilike', 'isin_values', 'it.BooleanValue', 'it.Value', 'le', 'lt', 'ne', 'or_predicates', 'window_over']

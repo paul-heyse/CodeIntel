@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/dependencies/core.py
-# hypothesis_version: 6.148.7
-
-[0.0, 0.5, 1.0, 2.0, 3.0, 4.0, '.', 'admin', 'callsite_count', 'category', 'commit', 'config', 'config_keys', 'created_at', 'critical', 'criticality', 'dep_id', 'end_lineno', 'evidence_json', 'function_count', 'function_goid_h128', 'function_urn', 'high', 'info', 'language', 'library', 'libs', 'lineno', 'load_config_key_map', 'low', 'match', 'matched_pattern', 'medium', 'method', 'method_prefix', 'mode', 'modes', 'module', 'modules_json', 'patterns', 'python', 'qualname', 'read', 'rel_path', 'repo', 'risk_level', 'risk_score', 'service_name', 'severity', 'target', 'unknown', 'usage_modes', 'utf-8', 'utf8', 'write']

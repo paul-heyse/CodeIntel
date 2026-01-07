@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/hamilton/native/registry.py
-# hypothesis_version: 6.148.7
-
-['is_native_target', 'load_native_modules', 'native_target_names']

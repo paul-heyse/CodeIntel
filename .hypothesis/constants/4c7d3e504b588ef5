@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/plugins/modules_plugin.py
-# hypothesis_version: 6.148.7
-
-[1024, '.generated', '.generated.py', '/test_', '2.0.0', 'ModuleIngestPlugin', 'PluginKind', 'PluginStage', '_generated.py', '_pb2.py', '_pb2.pyi', '_test.py', 'builder', 'core.modules', 'generated', 'goid', 'ingest.modules', 'modules', 'name', 'python', 'test_', 'tests', 'tests/']

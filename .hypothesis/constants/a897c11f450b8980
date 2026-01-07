@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/ingestion/steps/__init__.py
-# hypothesis_version: 6.148.3
-
-['AstExtractStep', 'ConfigIngestStep', 'CoverageIngestStep', 'CstExtractStep', 'RepoScanStep', 'ScipIngestResult', 'ScipIngestStep', 'StepResult', 'TestsIngestStep', 'TypingIngestStep']

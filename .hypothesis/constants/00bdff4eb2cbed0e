@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/plugins/discovery.py
-# hypothesis_version: 6.148.7
-
-['.codeintel', '0.0.0', 'DEFAULT_PLUGIN_PATHS', 'DiscoveredPlugin', 'discover_plugins', 'plugin.json', 'plugins']

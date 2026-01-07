@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/build/plugins/graphs/builders/cfg_dfg.py
-# hypothesis_version: 6.148.7
-
-['3.0.0', 'CfgDfgPlugin', 'builder', 'cfg', 'core.goids', 'dfg', 'edges', 'end_lineno', 'graph.cfg', 'graph.cfg_blocks', 'graph.cfg_edges', 'graph.dfg', 'graph.dfg_edges', 'graph_kinds', 'graphs.cfg_dfg', 'lineno', 'utf8']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/registry.py
-# hypothesis_version: 6.148.6
-
-['BasePluginRegistry', 'P', 'PluginPlan', 'PluginSkip', 'RegistrablePlugin', 'codeintel.plugins', 'disabled', 'missing_dependency', 'plan']

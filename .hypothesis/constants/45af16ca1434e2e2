@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/graphs/plugins/__init__.py
-# hypothesis_version: 6.148.3
-
-['GraphPluginMetadata', 'GraphPluginPlan', 'GraphPluginProtocol', 'GraphPluginResult', 'graph_plugin']

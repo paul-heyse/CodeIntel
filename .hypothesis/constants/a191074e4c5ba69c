@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/plugins/execution/profiles.py
-# hypothesis_version: 6.148.7
-
-[120, 300, 600, '1.0.0', 'CI_PROFILE', 'ExecutionProfile', 'FAST_PROFILE', 'FULL_PROFILE', 'builtin', 'category', 'ci', 'fast', 'full', 'get_profile', 'graphs.callgraph', 'graphs.import_graph', 'include_private', 'include_references', 'include_stdlib', 'include_tests', 'include_third_party', 'ingest.modules', 'ingest.scip_python', 'list_profiles', 'register_profile', 'resolve_imports', 'timeout_seconds', 'use_libcst', 'version']

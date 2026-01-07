@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/rendering/specs.py
-# hypothesis_version: 6.148.7
-
-['Available Operations', 'BUILD_TARGETS_TABLE', 'Build Targets', 'Capabilities', 'Component', 'Count', 'Created', 'DATASETS_TABLE', 'Datasets', 'Description', 'Duration', 'HEALTH_TABLE', 'Health Status', 'Installed Plugins', 'JOBS_TABLE', 'Job ID', 'Jobs', 'Latency', 'Message', 'Module', 'Name', 'OPERATIONS_TABLE', 'Operation', 'Operation ID', 'PLUGINS_TABLE', 'Plugin', 'Rows', 'SUBSYSTEMS_TABLE', 'Status', 'Subsystem', 'Subsystems', 'Summary', 'Table', 'Tags', 'Target', 'Type', 'Version', 'capabilities', 'component', 'count', 'created_at', 'cyan', 'description', 'dim', 'duration', 'id', 'job_id', 'latency_ms', 'message', 'module', 'name', 'operation', 'right', 'row_count', 'status', 'summary', 'table_key', 'tags', 'type', 'version']

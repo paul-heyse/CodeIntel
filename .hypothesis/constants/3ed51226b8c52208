@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/operations/history_operations.py
-# hypothesis_version: 6.148.7
-
-[0.0, 'HISTORY_CLEAR_SPEC', 'HISTORY_LIST_SPEC', 'HISTORY_SHOW_SPEC', 'history.clear', 'history.list', 'history.show', 'unknown']

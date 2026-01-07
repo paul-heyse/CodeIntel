@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/gateway/connection.py
-# hypothesis_version: 6.148.6
-
-["'", "''", ':memory:', 'USE main_db', 'connect']

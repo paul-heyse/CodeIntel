@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/plugin_testing.py
-# hypothesis_version: 6.148.7
-
-['0.1.0', '1.0.0', 'Manifest is valid', 'PluginTestHarness', 'PluginTestResult', 'README.md', '__init__.py', 'api_version', 'author', 'capabilities', 'dependencies', 'description', 'entry_point', 'failed', 'main.py', 'name', 'passed', 'plugin', 'plugin.json', 'register', 'tests', 'tests_run', 'utf-8', 'version']

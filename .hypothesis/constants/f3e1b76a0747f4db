@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/serving/services/conversion.py
-# hypothesis_version: 6.148.7
-
-['D', 'D_co', 'HasFromDomain', 'HasToDomain', 'R', 'R_co', 'to_domain_result', 'to_response_result']

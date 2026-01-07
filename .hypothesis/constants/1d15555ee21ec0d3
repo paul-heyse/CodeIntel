@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/storage/repositories/modules.py
-# hypothesis_version: 6.148.7
-
-['core.modules', 'docs.v_file_summary', 'docs.v_ide_hints', 'module']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/graphs/plugin_catalog.py
-# hypothesis_version: 6.148.6
-
-['## Manifest excerpts', ', ', 'No description', '```', '```json', '```yaml', 'artifact_type', 'build_plugin_catalog', 'cache_consumes', 'cache_populates', 'config_schema_ref', 'contract_checkers', 'count', 'depends_on', 'description', 'enabled_by_default', 'example-run', 'inputs', 'isolation_kind', 'max_memory_mb', 'max_runtime_ms', 'name', 'options_default', 'options_model', 'other', 'outputs', 'plugins', 'priority', 'provides', 'required', 'requires', 'requires_gpu', 'requires_isolation', 'resource_hints', 'row_count_tables', 'run_id', 'scope_aware', 'severity', 'source', 'stage', 'supported_scopes', 'tables', 'tags', 'type_ref', 'utf-8', 'version', 'version_hash', 'write_plugin_catalog']

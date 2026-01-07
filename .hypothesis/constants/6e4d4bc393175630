@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/core/resources/registry.py
-# hypothesis_version: 6.148.6
-
-['K', 'RESOURCE_NAME', 'ResourceRegistry', 'T', 'T | None', 'get', 'invalidate']

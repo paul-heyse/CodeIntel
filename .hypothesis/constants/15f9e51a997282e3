@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/config/datasets/columns.py
-# hypothesis_version: 6.148.7
-
-['AST_METRICS_DELETE', 'AST_NODES_DELETE', 'CFG_BLOCKS_DELETE', 'CFG_EDGES_DELETE', 'CST_NODES_DELETE', 'DFG_EDGES_DELETE', 'FILE_STATE_DELETE', 'SYMBOL_USE_DELETE', 'TAGS_INDEX_DELETE', '_Column', 'serialize_row']

@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/plugins/__init__.py
-# hypothesis_version: 6.148.7
-
-['CfgDfgMetricsPlugin', 'ConfigDataFlowPlugin', 'DataModelUsagePlugin', 'DataModelsPlugin', 'EntrypointsPlugin', 'ExternalDepsPlugin', 'HotspotsPlugin', 'ProfilesPlugin', 'RiskFactorsPlugin', 'SemanticRolesPlugin', 'SubsystemsPlugin', 'TestProfilePlugin']

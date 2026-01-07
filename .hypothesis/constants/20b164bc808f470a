@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/cli/introspection/help.py
-# hypothesis_version: 6.148.7
-
-['\nUsage:\n', ', ', '.', 'Available Operations', 'Description', 'Group', 'HelpRenderer', 'Key', 'Name', 'No', 'Operation', 'Operation ID', 'Requires Gateway', 'Requires Runtime', 'Tags', 'Value', 'Yes', 'bold', 'cyan', 'get_help_renderer', 'render_help_text']

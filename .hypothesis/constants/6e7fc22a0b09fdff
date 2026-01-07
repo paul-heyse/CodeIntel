@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/data_models/plugins.py
-# hypothesis_version: 6.148.3
-
-[60000, 90000, 'DATA_MODELS_PLUGIN', 'ast_extract', 'callgraph', 'cfg', 'core.goids', 'data_model', 'data_model_usage', 'data_models.build', 'data_models.usage', 'docstrings_ingest', 'fatal', 'functions.metrics', 'goids']

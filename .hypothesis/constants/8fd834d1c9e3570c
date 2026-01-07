@@ -1,4 +1,0 @@
-# file: /home/paul/CodeIntel/src/codeintel/analytics/compute/profiles/aggregation.py
-# hypothesis_version: 6.148.5
-
-[0.0, 'FunctionMetricInput', 'ProfileAggregates', 'avg_complexity', 'avg_loc', 'avg_typedness', 'partial', 'partial_ratio', 'typed', 'typed_ratio', 'untyped', 'untyped_ratio']
