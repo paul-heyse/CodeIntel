@@ -49,12 +49,13 @@ from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOption
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
     MultiTableTargetContext,
+    RelationTableSaveSpec,
     TableTargetContext,
     TableTargetTableContext,
     ToolFinalizeContext,
     ToolRunContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
     finalize_target_from_materializations,
     run_tool_step,
 )
@@ -71,7 +72,7 @@ from codeintel.build.hamilton.transforms.registry_inject import inject_from_regi
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.tabular.arrow_ops import dedupe_table_for_table, emit_alignment_report
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import (
     ColumnarRows,
@@ -537,10 +538,20 @@ def t__modules__ingest(
             )
         )
 
-    module_table = tabular_to_arrow_table(t__modules__run.module_rows)
+    module_table = tabular_to_scoped_table(
+        t__modules__run.module_rows,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
     module_table = dedupe_table_for_table(MODULES_TABLE_KEY, module_table)
     module_rows = module_table
-    file_state_table = tabular_to_arrow_table(t__modules__run.file_state_rows)
+    file_state_table = tabular_to_scoped_table(
+        t__modules__run.file_state_rows,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
     file_state_table = dedupe_table_for_table(
         FILE_STATE_TABLE_KEY,
         file_state_table,
@@ -651,39 +662,34 @@ def modules__repo_map_rows__base(
     return frame
 
 
-_MODULES_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_MODULES_TABLE_CONTEXTS = (
+    TableTargetTableContext(
+        table_key=MODULES_TABLE_KEY,
+        base_node="modules__module_rows__base",
+        node_name="modules__module_rows",
+    ),
+    TableTargetTableContext(
+        table_key=FILE_STATE_TABLE_KEY,
+        base_node="modules__file_state_rows__base",
+        node_name="modules__file_state_rows",
+    ),
+    TableTargetTableContext(
+        table_key=REPO_MAP_TABLE_KEY,
+        base_node="modules__repo_map_rows__base",
+        node_name="modules__repo_map_rows",
+    ),
+)
+_MODULES_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="ingestion",
         target_name=MODULES_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_relation_table_spec(
-                context=TableTargetTableContext(
-                    table_key=MODULES_TABLE_KEY,
-                    base_node="modules__module_rows__base",
-                    node_name="modules__module_rows",
-                    input_type=InferableTabularInput,
-                ),
-            ),
-            MultiTableTargetContext.build_relation_table_spec(
-                context=TableTargetTableContext(
-                    table_key=FILE_STATE_TABLE_KEY,
-                    base_node="modules__file_state_rows__base",
-                    node_name="modules__file_state_rows",
-                    input_type=InferableTabularInput,
-                ),
-            ),
-            MultiTableTargetContext.build_relation_table_spec(
-                context=TableTargetTableContext(
-                    table_key=REPO_MAP_TABLE_KEY,
-                    base_node="modules__repo_map_rows__base",
-                    node_name="modules__repo_map_rows",
-                    input_type=InferableTabularInput,
-                ),
-            ),
-        ),
+        tables=(),
         table_materializations_node="modules__table_materializations",
         attach_anchor=False,
-    )
+        save_spec_factory=RelationTableSaveSpec,
+        default_input_type=InferableTabularInput,
+    ),
+    table_contexts=_MODULES_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_MODULES_TABLE_TARGET_SPEC)
 modules__module_rows = _MODULE.modules__module_rows

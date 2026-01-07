@@ -15,12 +15,11 @@ import rustworkx as rx
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
-from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.analytics.utilities.ast import RowDecoder, call_name, snippet_from_lines
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
+from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
@@ -263,15 +262,8 @@ def _filter_table_by_scope(
     repo: str,
     commit: str,
 ) -> pa.Table:
-    mask: pa.Array | pa.ChunkedArray | None = None
-    if "repo" in table.column_names:
-        mask = equal_mask(table["repo"], pa.scalar(repo))
-    if "commit" in table.column_names:
-        commit_mask = equal_mask(table["commit"], pa.scalar(commit))
-        mask = commit_mask if mask is None else and_kleene(mask, commit_mask)
-    if mask is None:
-        return table
-    return safe_filter(table, mask)
+    context = FilterExprContext(repo=repo, commit=commit)
+    return context.apply(table)
 
 
 def _config_references_from_rows(
@@ -511,7 +503,8 @@ def _rows_from_tabular(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
+    decoder = RowDecoder(columns=("reference_paths",))
     if isinstance(rows, pa.Table):
         table = _filter_table_by_scope(cast("pa.Table", rows), repo=repo, commit=commit)
-        return list(iter_rows(table))
-    return [dict(row) for row in rows]
+        return [decoder.decode(row) for row in iter_rows(table)]
+    return [decoder.decode(dict(row)) for row in rows]

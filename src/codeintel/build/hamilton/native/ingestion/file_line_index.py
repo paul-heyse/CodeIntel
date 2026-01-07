@@ -18,8 +18,9 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
@@ -105,7 +106,13 @@ def file_line_index__base(
     pa.Table
         Reader of line index rows.
     """
-    modules_table = tabular_to_arrow_table(q__core__modules)
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    modules_table = tabular_to_scoped_table(
+        q__core__modules,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     if modules_table.num_rows == 0:
         return empty_table_for_table(FILE_LINE_INDEX_TABLE_KEY)
 

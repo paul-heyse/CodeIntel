@@ -28,11 +28,11 @@ from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     TableTargetTableContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
@@ -314,9 +314,15 @@ def goids_inputs(
     _GoidsInputs
         Collected frames for GOID computation.
     """
-    modules_table = tabular_to_arrow_table(q__core__modules).select(["path", "module", "language"])
-    ast_nodes_table = tabular_to_arrow_table(q__core__ast_nodes).select(
-        [
+    modules_table = tabular_to_scoped_table(
+        q__core__modules,
+        columns=["path", "module", "language"],
+        scope=None,
+        require_scope_columns=False,
+    )
+    ast_nodes_table = tabular_to_scoped_table(
+        q__core__ast_nodes,
+        columns=[
             "path",
             "node_type",
             "name",
@@ -324,7 +330,9 @@ def goids_inputs(
             "parent_qualname",
             "lineno",
             "end_lineno",
-        ]
+        ],
+        scope=None,
+        require_scope_columns=False,
     )
     return _GoidsInputs(modules=modules_table, ast_nodes=ast_nodes_table)
 
@@ -410,37 +418,29 @@ def goid_crosswalk__base(goids_analysis: _GoidsAnalysis) -> InferableTabularInpu
 
 
 _MODULE = sys.modules[__name__]
-_GOIDS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_GOIDS_TABLE_CONTEXTS = (
+    TableTargetTableContext(
+        table_key=GOIDS_TABLE_KEY,
+        base_node="goids__base",
+        node_name="goids__table",
+    ),
+    TableTargetTableContext(
+        table_key=GOID_CROSSWALK_TABLE_KEY,
+        base_node="goid_crosswalk__base",
+        node_name="goid_crosswalk__table",
+    ),
+)
+_GOIDS_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="ingestion",
         target_name=GOIDS_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=GOIDS_TABLE_KEY,
-                    base_node="goids__base",
-                    node_name="goids__table",
-                    input_type=InferableTabularInput,
-                ),
-                save_spec_factory=_partitioned_save_spec,
-                default_input_type=InferableTabularInput,
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext(
-                    table_key=GOID_CROSSWALK_TABLE_KEY,
-                    base_node="goid_crosswalk__base",
-                    node_name="goid_crosswalk__table",
-                    input_type=InferableTabularInput,
-                ),
-                save_spec_factory=_partitioned_save_spec,
-                default_input_type=InferableTabularInput,
-            ),
-        ),
+        tables=(),
         table_materializations_node="goids__table_materializations",
         anchor_node_name="t__goids",
         save_spec_factory=_partitioned_save_spec,
         default_input_type=InferableTabularInput,
-    )
+    ),
+    table_contexts=_GOIDS_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_GOIDS_TABLE_TARGET_SPEC)
 goids__table = _MODULE.goids__table

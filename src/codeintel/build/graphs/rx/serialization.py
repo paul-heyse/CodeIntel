@@ -6,10 +6,12 @@ from pathlib import Path
 
 import rustworkx as rx
 
+from codeintel.build.graphs.rx.metadata import metadata_from_graph
+
 RxGraph = rx.PyGraph | rx.PyDiGraph
 
 
-def dumps_node_link_json(graph: RxGraph) -> str:
+def dumps_node_link_json(graph: RxGraph, *, require_metadata: bool = False) -> str:
     """Serialize a graph to a node-link JSON string.
 
     Returns
@@ -22,6 +24,9 @@ def dumps_node_link_json(graph: RxGraph) -> str:
     ValueError
         If the graph cannot be serialized to node-link JSON.
     """
+    if require_metadata and metadata_from_graph(graph) is None:
+        message = "Graph metadata missing; refusing to serialize cache payload"
+        raise ValueError(message)
     payload = rx.node_link_json(graph)
     if payload is None:
         message = "rustworkx node_link_json returned None"

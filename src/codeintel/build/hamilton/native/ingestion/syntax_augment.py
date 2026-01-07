@@ -23,6 +23,7 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.array_ops import ensure_array
 from codeintel.build.tabular.arrow_ops import (
     ArrowJoinSpec,
@@ -46,7 +47,7 @@ from codeintel.build.tabular.compute_masks import (
     is_null_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.columnar.schema_ops import concat_tables_unified
@@ -142,11 +143,36 @@ def syntax_augment__inputs(
         Collected input frames for syntax augmentation.
     """
     return _SyntaxAugmentInputs(
-        syntax_nodes=tabular_to_arrow_table(q__core__syntax_nodes),
-        syntax_edges=tabular_to_arrow_table(q__core__syntax_edges),
-        ts_nodes=tabular_to_arrow_table(q__core__ts_nodes),
-        ts_edges=tabular_to_arrow_table(q__core__ts_edges),
-        parse_manifest=tabular_to_arrow_table(q__core__parse_manifest),
+        syntax_nodes=tabular_to_scoped_table(
+            q__core__syntax_nodes,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        ),
+        syntax_edges=tabular_to_scoped_table(
+            q__core__syntax_edges,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        ),
+        ts_nodes=tabular_to_scoped_table(
+            q__core__ts_nodes,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        ),
+        ts_edges=tabular_to_scoped_table(
+            q__core__ts_edges,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        ),
+        parse_manifest=tabular_to_scoped_table(
+            q__core__parse_manifest,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        ),
     )
 
 
@@ -1034,6 +1060,7 @@ def _frame_if_enabled(table_key: str, table: pa.Table, *, emit: bool) -> pa.Tabl
 
 
 def syntax_augment__frames(
+    env: BuildEnv,
     syntax_augment__inputs: _SyntaxAugmentInputs,
     syntax_augment__options: SyntaxAugmentOptions,
 ) -> SyntaxAugmentFrames:
@@ -1044,16 +1071,47 @@ def syntax_augment__frames(
     SyntaxAugmentFrames
         Canonical syntax nodes, edges, and optional tree-sitter xref rows.
     """
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     inputs = syntax_augment__inputs
-    fallback_paths = _resolve_fallback_paths(syntax_augment__options, inputs.parse_manifest)
-    syntax_nodes, syntax_edges = _apply_fallback_paths(
+    syntax_nodes = tabular_to_scoped_table(
         inputs.syntax_nodes,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    syntax_edges = tabular_to_scoped_table(
         inputs.syntax_edges,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    ts_nodes = tabular_to_scoped_table(
         inputs.ts_nodes,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    ts_edges = tabular_to_scoped_table(
         inputs.ts_edges,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    parse_manifest = tabular_to_scoped_table(
+        inputs.parse_manifest,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    fallback_paths = _resolve_fallback_paths(syntax_augment__options, parse_manifest)
+    syntax_nodes, syntax_edges = _apply_fallback_paths(
+        syntax_nodes,
+        syntax_edges,
+        ts_nodes,
+        ts_edges,
         fallback_paths,
     )
-    xref_table = _build_xref_table(inputs.ts_nodes, syntax_nodes)
+    xref_table = _build_xref_table(ts_nodes, syntax_nodes)
     syntax_nodes_augmented = _augment_syntax_nodes(
         syntax_nodes,
         _ts_payloads_by_syntax_node(inputs.ts_nodes, xref_table),

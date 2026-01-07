@@ -3,76 +3,29 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.graphs.rx import RxGraphStore
+from codeintel.build.graphs.engine.protocol import GraphKind
+from codeintel.build.graphs.rx.policies import GraphWeightPolicy, weight_policy_for_kind
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.data_models.ids import as_int, normalize_decimal_id
 
 if TYPE_CHECKING:
     from collections.abc import Hashable
 
 
-def _coerce_edge_weight(value: object | None) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip()
-        try:
-            return int(float(text))
-        except ValueError:
-            return None
-    return None
-
-
-@dataclass(frozen=True, slots=True)
-class EdgeWeightPolicy:
-    """Edge weight increment policy."""
-
-    default: int = 1
-
-    def next_weight(self, value: object | None) -> int:
-        """Return the next weight when an edge is observed again.
-
-        Returns
-        -------
-        int
-            The incremented weight or the default when no prior weight exists.
-        """
-        parsed = _coerce_edge_weight(value)
-        if parsed is None:
-            return self.default
-        return parsed + 1
-
-
 def add_weighted_edge(
     store: RxGraphStore,
     source: Hashable,
     target: Hashable,
-    *,
-    policy: EdgeWeightPolicy | None = None,
 ) -> None:
     """Add or increment a weighted edge in the provided graph."""
-    resolved = policy or EdgeWeightPolicy()
-    src_idx = store.ensure_node(source)
-    dst_idx = store.ensure_node(target)
-    if store.graph.has_edge(src_idx, dst_idx):
-        current = store.graph.get_edge_data(src_idx, dst_idx)
-        next_weight = resolved.next_weight(current)
-        store.graph.update_edge(src_idx, dst_idx, float(next_weight))
-        return
-    store.graph.add_edge(src_idx, dst_idx, float(resolved.default))
+    store.add_edge(source, target)
 
 
 def add_call_graph_edges(
     store: RxGraphStore,
     rows: Iterable[Mapping[str, object]],
-    *,
-    policy: EdgeWeightPolicy | None = None,
 ) -> None:
     """Append call graph edges from row mappings."""
     for row in rows:
@@ -80,7 +33,7 @@ def add_call_graph_edges(
         callee = normalize_decimal_id(row.get("callee_goid_h128"))
         if caller is None or callee is None:
             continue
-        add_weighted_edge(store, caller, callee, policy=policy)
+        add_weighted_edge(store, caller, callee)
 
 
 def add_call_graph_nodes(
@@ -102,8 +55,6 @@ def add_call_graph_nodes(
 def build_call_graph_from_rows(
     call_graph_edges: Iterable[Mapping[str, object]],
     call_graph_nodes: Iterable[Mapping[str, object]] | None = None,
-    *,
-    policy: EdgeWeightPolicy | None = None,
 ) -> RxGraphStore:
     """Build a call graph from scoped call graph edge/node rows.
 
@@ -112,8 +63,9 @@ def build_call_graph_from_rows(
     RxGraphStore
         Directed call graph store populated from the provided rows.
     """
-    store = RxGraphStore.directed()
-    add_call_graph_edges(store, call_graph_edges, policy=policy)
+    policy = weight_policy_for_kind(GraphKind.CALL_GRAPH)
+    store = RxGraphStore.directed(weight_policy=policy)
+    add_call_graph_edges(store, call_graph_edges)
     if call_graph_nodes is not None:
         add_call_graph_nodes(store, call_graph_nodes)
     return store
@@ -124,7 +76,6 @@ def add_import_edges(
     rows: Iterable[Mapping[str, object]],
     *,
     coerce_int: Callable[[object], int | None] = as_int,
-    policy: EdgeWeightPolicy | None = None,
 ) -> dict[str, int]:
     """Append import graph edges and return inferred layer defaults.
 
@@ -144,7 +95,7 @@ def add_import_edges(
         layer = coerce_int(row.get("module_layer"))
         if layer is not None:
             fallback_layer_by_module[source] = layer
-        add_weighted_edge(store, source, target, policy=policy)
+        add_weighted_edge(store, source, target)
     return fallback_layer_by_module
 
 
@@ -187,7 +138,6 @@ def build_import_graph_from_rows(
     import_modules: Iterable[Mapping[str, object]] | None = None,
     *,
     coerce_int: Callable[[object], int | None] = as_int,
-    policy: EdgeWeightPolicy | None = None,
 ) -> RxGraphStore:
     """Build an import graph from scoped import edges and module rows.
 
@@ -196,12 +146,12 @@ def build_import_graph_from_rows(
     RxGraphStore
         Directed import graph store populated from the provided rows.
     """
-    store = RxGraphStore.directed()
+    policy = weight_policy_for_kind(GraphKind.IMPORT_GRAPH)
+    store = RxGraphStore.directed(weight_policy=policy)
     fallback_layer_by_module = add_import_edges(
         store,
         import_graph_edges,
         coerce_int=coerce_int,
-        policy=policy,
     )
     add_import_module_rows(
         store,
@@ -222,7 +172,7 @@ def build_symbol_module_graph(
     symbol_use_edges: Iterable[Mapping[str, object]],
     module_by_path: Mapping[str, str],
     *,
-    policy: EdgeWeightPolicy | None = None,
+    policy: GraphWeightPolicy | None = None,
 ) -> RxGraphStore:
     """Build an undirected weighted symbol-module graph from use edges.
 
@@ -231,7 +181,8 @@ def build_symbol_module_graph(
     RxGraphStore
         Undirected symbol-module graph store populated from the provided rows.
     """
-    store = RxGraphStore.undirected()
+    resolved_policy = policy or weight_policy_for_kind(GraphKind.SYMBOL_MODULE_GRAPH)
+    store = RxGraphStore.undirected(weight_policy=resolved_policy)
     for record in symbol_use_edges:
         def_module = _map_path_to_module(record.get("def_path"), module_by_path)
         use_module = _map_path_to_module(record.get("use_path"), module_by_path)
@@ -239,14 +190,14 @@ def build_symbol_module_graph(
             continue
         if def_module == use_module:
             continue
-        add_weighted_edge(store, use_module, def_module, policy=policy)
+        add_weighted_edge(store, use_module, def_module)
     return store
 
 
 def build_symbol_function_graph(
     symbol_use_edges: Iterable[Mapping[str, object]],
     *,
-    policy: EdgeWeightPolicy | None = None,
+    policy: GraphWeightPolicy | None = None,
 ) -> RxGraphStore:
     """Build an undirected weighted symbol-function graph from use edges.
 
@@ -255,7 +206,8 @@ def build_symbol_function_graph(
     RxGraphStore
         Undirected symbol-function graph store populated from the provided rows.
     """
-    store = RxGraphStore.undirected()
+    resolved_policy = policy or weight_policy_for_kind(GraphKind.SYMBOL_FUNCTION_GRAPH)
+    store = RxGraphStore.undirected(weight_policy=resolved_policy)
     for record in symbol_use_edges:
         def_goid = normalize_decimal_id(record.get("def_goid_h128"))
         use_goid = normalize_decimal_id(record.get("use_goid_h128"))
@@ -263,7 +215,7 @@ def build_symbol_function_graph(
             continue
         if def_goid == use_goid:
             continue
-        add_weighted_edge(store, use_goid, def_goid, policy=policy)
+        add_weighted_edge(store, use_goid, def_goid)
     return store
 
 
@@ -295,7 +247,6 @@ def build_symbol_module_edges(
 
 
 __all__ = [
-    "EdgeWeightPolicy",
     "add_call_graph_edges",
     "add_call_graph_nodes",
     "add_import_edges",

@@ -6,11 +6,13 @@ metrics without any database or file I/O.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 import rustworkx as rx
+from rustworkx import visit
 
 from codeintel.build.graphs.compute.metrics.centrality import centrality_directed
 from codeintel.build.graphs.compute.metrics.components import (
@@ -49,6 +51,22 @@ class DFGPathStats:
     reach_count: int
 
 
+@dataclass
+class DepthVisitor(visit.BFSVisitor):
+    """BFS visitor that records distances with a bounded max depth."""
+
+    distances: dict[int, int]
+    max_depth: int
+
+    def tree_edge(self, e: tuple[int, int, object]) -> None:
+        src_idx, dst_idx, _payload = e
+        parent_distance = self.distances.get(src_idx, 0)
+        distance = parent_distance + 1
+        if distance > self.max_depth + 1:
+            raise visit.PruneSearch
+        self.distances[dst_idx] = distance
+
+
 def compute_dfg_path_lengths(
     graph: GraphInput,
     *,
@@ -72,44 +90,32 @@ def compute_dfg_path_lengths(
     if store.graph.num_nodes() == 0:
         return {}
 
-    neighbors: dict[int, list[int]] = {}
     directed_graph = cast("rx.PyDiGraph", store.graph)
-    for node_idx in directed_graph.node_indices():
-        successor_indices = directed_graph.successor_indices(node_idx)
-        neighbors[node_idx] = sorted(
-            successor_indices,
-            key=lambda idx: stable_key(store.index_to_id[idx]),
-        )
-
     result: dict[Any, DFGPathStats] = {}
     for node_id in store.node_ids():
         node_idx = store.id_to_index[node_id]
-        distances: dict[int, int] = {}
-        queue: list[tuple[int, int]] = [(node_idx, 0)]
-        visited: set[int] = {node_idx}
-        while queue:
-            current, dist = queue.pop(0)
-            if dist > max_depth:
-                continue
-            for succ in neighbors.get(current, []):
-                if succ not in visited:
-                    visited.add(succ)
-                    distances[succ] = dist + 1
-                    queue.append((succ, dist + 1))
-
-        if distances:
-            path_lengths = list(distances.values())
+        distances: dict[int, int] = {node_idx: 0}
+        visitor = DepthVisitor(distances=distances, max_depth=max_depth)
+        with contextlib.suppress(visit.PruneSearch):
+            rx.bfs_search(directed_graph, [node_idx], visitor)
+        limit = max_depth + 1
+        bounded = [
+            distance
+            for idx, distance in distances.items()
+            if idx != node_idx and 0 < distance <= limit
+        ]
+        if bounded:
             result[node_id] = DFGPathStats(
-                max_def_use_distance=max(path_lengths),
-                avg_def_use_distance=sum(path_lengths) / len(path_lengths),
-                reach_count=len(distances),
+                max_def_use_distance=max(bounded),
+                avg_def_use_distance=sum(bounded) / len(bounded),
+                reach_count=len(bounded),
             )
-        else:
-            result[node_id] = DFGPathStats(
-                max_def_use_distance=0,
-                avg_def_use_distance=0.0,
-                reach_count=0,
-            )
+            continue
+        result[node_id] = DFGPathStats(
+            max_def_use_distance=0,
+            avg_def_use_distance=0.0,
+            reach_count=0,
+        )
     return result
 
 

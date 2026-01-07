@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from codeintel.build.graphs.rx import RxGraphStore, decode_node_payload
-from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.assertions import expect_equal, expect_false, expect_true
 
 
 def test_rx_graph_store_ensures_nodes() -> None:
@@ -48,3 +48,25 @@ def test_rx_graph_store_set_node_attrs_updates_payload() -> None:
     node_id, attrs = decode_node_payload(payload)
     expect_equal(node_id, "alpha", label="payload_id")
     expect_equal(attrs.get("kind"), "function", label="payload_attrs")
+
+
+def test_rx_graph_store_set_edge_weight_updates_payload() -> None:
+    """Setting an edge weight should update the existing payload."""
+    store = RxGraphStore.directed()
+    store.add_weighted_edge("a", "b", weight=1.0)
+    updated = store.set_edge_weight("a", "b", weight=2.0)
+    expect_true(updated, message="Expected edge weight update to succeed")
+    src_idx = store.get_index("a")
+    dst_idx = store.get_index("b")
+    expect_true(src_idx is not None and dst_idx is not None, message="Expected indices")
+    if src_idx is None or dst_idx is None:
+        return
+    weight = store.graph.get_edge_data(src_idx, dst_idx)
+    expect_equal(weight, 2.0, label="edge_weight_update")
+
+
+def test_rx_graph_store_set_edge_weight_missing_nodes_returns_false() -> None:
+    """Setting edge weight should fail for missing nodes."""
+    store = RxGraphStore.directed()
+    updated = store.set_edge_weight("missing", "node", weight=1.0)
+    expect_false(updated, message="Expected missing edge update to return False")

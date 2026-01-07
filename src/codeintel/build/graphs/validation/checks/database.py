@@ -21,7 +21,7 @@ from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.hamilton.native.graphs.cpg.bytecode import instruction_cpg_id
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import is_valid_mask
+from codeintel.build.tabular.compute_masks import FilterExprContext, is_valid_mask
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.query_results import coerce_int, coerce_str
@@ -348,7 +348,13 @@ class BytecodeLoadGlobalBindingCheck(GraphCheckBase):
 
 
 def _scan_snapshot_table(request: SnapshotScanRequest) -> pa.Table | None:
-    return scan_snapshot_table(request)
+    table = scan_snapshot_table(request)
+    if table is None:
+        return None
+    if request.repo is None and request.commit is None:
+        return table
+    context = FilterExprContext(repo=request.repo, commit=request.commit)
+    return context.apply(table)
 
 
 def _function_span_resolver(spans: Sequence[FunctionSpan]) -> SpanResolver[int]:
@@ -421,8 +427,8 @@ def _warn_missing_function_goids_impl(
             table_key="core.ast_nodes",
             snapshot_id=commit,
             columns=("path", "node_type"),
-            repo=None,
-            commit=None,
+            repo=repo,
+            commit=commit,
         )
     )
     if ast_table is None:

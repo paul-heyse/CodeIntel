@@ -25,7 +25,7 @@ from codeintel.build.graphs.rx.algos import (
     ensure_store,
     to_undirected_store,
 )
-from codeintel.build.graphs.rx.normalize import stable_key
+from codeintel.build.graphs.rx.normalize import sorted_mapping, stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
@@ -375,16 +375,15 @@ def topological_layers(graph: GraphInput) -> dict[Any, int]:
     if store.graph.num_nodes() == 0:
         return {}
     directed_graph = _directed_graph(store)
-    layers: dict[int, int] = {
-        node_idx: 0
-        for node_idx in directed_graph.node_indices()
-        if directed_graph.in_degree(node_idx) == 0
-    }
-    for node_idx in rx.topological_sort(directed_graph):
-        base = layers.get(node_idx, 0)
-        for succ in directed_graph.successor_indices(node_idx):
-            layers[succ] = max(layers.get(succ, 0), base + 1)
-    return {store.index_to_id[idx]: layer for idx, layer in layers.items()}
+    layer_map: dict[Any, int] = {}
+    for layer, generation in enumerate(rx.topological_generations(directed_graph)):
+        ordered = sorted(
+            generation,
+            key=lambda idx: stable_key(store.index_to_id[idx]),
+        )
+        for node_idx in ordered:
+            layer_map[store.index_to_id[node_idx]] = layer
+    return sorted_mapping(layer_map)
 
 
 def condensation_layers(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import (
     pipe_input,
@@ -15,8 +16,10 @@ from hamilton.function_modifiers import (
 )
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
+from codeintel.build.contracts.registry import ContractedTableContext
 from codeintel.build.contracts.types import ContractPolicy
 from codeintel.build.hamilton.transforms.tabular_steps import (
+    ContractAlignmentContext,
     align_contract_output,
     clip_numeric,
     drop_bad_rows,
@@ -26,6 +29,9 @@ from codeintel.build.hamilton.transforms.tabular_steps import (
 from codeintel.build.hamilton.transforms.with_columns_backend import select_with_columns
 from codeintel.build.schemas import column_order_for_table_key
 from codeintel.build.tabular.types import InferableTabularInput
+
+if TYPE_CHECKING:
+    from hamilton.function_modifiers.macros import Applicable
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,12 +84,36 @@ class _AlignmentPolicy:
     table_key: str
     target_name: str | None
     policy: ContractPolicy | None
+    context: ContractedTableContext | None
     namespace: str
 
 
 @dataclass(frozen=True, slots=True)
 class _AlignmentRuntimeConfig:
     enable_contract_alignment: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ContractOutputNamespaces:
+    """Namespace prefixes for alignment and canonicalization steps."""
+
+    align: str
+    canonical: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ContractOutputPolicy:
+    table_key: str
+    target_name: str | None
+    policy: ContractPolicy | None
+    context: ContractedTableContext | None
+    namespaces: ContractOutputNamespaces
+
+
+@dataclass(frozen=True, slots=True)
+class _ContractOutputRuntimeConfig:
+    enable_contract_alignment: bool
+    enable_canonicalization: bool
 
 
 def _canonicalize_output(
@@ -119,13 +149,53 @@ def _pipe_contract_alignment(
 ) -> NodeTransformLifecycle:
     if not config.enable_contract_alignment:
         return _NoOpTransform()
+    alignment_context = ContractAlignmentContext(
+        table_key=policy.table_key,
+        target_name=policy.target_name,
+        policy=policy.policy,
+        context=policy.context,
+    )
     alignment_step = step(
         align_contract_output,
-        table_key=value(policy.table_key),
-        target_name=value(policy.target_name),
-        policy=value(policy.policy),
+        alignment=value(alignment_context),
     ).named("align_contract", namespace=policy.namespace)
     return pipe_output(alignment_step, namespace=policy.namespace)
+
+
+def _step_name(prefix: str, name: str) -> str:
+    if not prefix:
+        return name
+    return f"{prefix}__{name}"
+
+
+def _pipe_contract_output(
+    config: _ContractOutputRuntimeConfig,
+    policy: _ContractOutputPolicy,
+) -> NodeTransformLifecycle:
+    steps: list[Applicable] = []
+    if config.enable_contract_alignment:
+        alignment_context = ContractAlignmentContext(
+            table_key=policy.table_key,
+            target_name=policy.target_name,
+            policy=policy.policy,
+            context=policy.context,
+        )
+        steps.append(
+            step(
+                align_contract_output,
+                alignment=value(alignment_context),
+            ).named(_step_name(policy.namespaces.align, "align_contract"))
+        )
+    if config.enable_canonicalization:
+        steps.append(
+            step(
+                _canonicalize_output,
+                table_key=value(policy.table_key),
+            ).named(_step_name(policy.namespaces.canonical, "canonicalize"))
+        )
+    if not steps:
+        return _NoOpTransform()
+    return pipe_output(*steps, namespace=None)
 
 
 def _pipe_cleaning(
@@ -245,6 +315,7 @@ def pipe_contract_alignment(
     table_key: str,
     target_name: str | None,
     policy: ContractPolicy | None,
+    context: ContractedTableContext | None = None,
     namespace: str,
 ) -> NodeTransformLifecycle:
     """Return a config-driven pipe_output decorator for contract alignment.
@@ -267,7 +338,46 @@ def pipe_contract_alignment(
                 table_key=table_key,
                 target_name=target_name,
                 policy=policy,
+                context=context,
                 namespace=namespace,
+            ),
+        )
+
+    return resolve_from_config(decorate_with=_factory)
+
+
+def pipe_contract_output(
+    *,
+    table_key: str,
+    target_name: str | None,
+    policy: ContractPolicy | None,
+    context: ContractedTableContext | None,
+    namespaces: ContractOutputNamespaces,
+) -> NodeTransformLifecycle:
+    """Return a config-driven pipe_output decorator for contract output steps.
+
+    Returns
+    -------
+    NodeTransformLifecycle
+        Config-driven transform that applies contract alignment and canonicalization.
+    """
+
+    def _factory(
+        *,
+        enable_contract_alignment: bool = True,
+        enable_canonicalization: bool = True,
+    ) -> NodeTransformLifecycle:
+        return _pipe_contract_output(
+            _ContractOutputRuntimeConfig(
+                enable_contract_alignment=enable_contract_alignment,
+                enable_canonicalization=enable_canonicalization,
+            ),
+            _ContractOutputPolicy(
+                table_key=table_key,
+                target_name=target_name,
+                policy=policy,
+                context=context,
+                namespaces=namespaces,
             ),
         )
 
@@ -336,8 +446,10 @@ def with_features(
 
 
 __all__ = [
+    "ContractOutputNamespaces",
     "pipe_canonical_output",
     "pipe_clean_df",
     "pipe_contract_alignment",
+    "pipe_contract_output",
     "with_features",
 ]

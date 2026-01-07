@@ -31,7 +31,7 @@ from codeintel.build.hamilton.native.patterns import (
     TableTargetContext,
     TableTargetTableContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -477,43 +477,34 @@ config_data_flow__table = _MODULE.config_data_flow__table
 config_data_flow__table_materializations = _MODULE.config_data_flow__table_materializations
 t__config_data_flow = _MODULE.t__config_data_flow
 
-_CONFIG_GRAPH_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_CONFIG_GRAPH_TABLE_CONTEXTS = (
+    TableTargetTableContext.from_contract(
+        contract=CONFIG_GRAPH_KEYS_CONTRACT,
+        node_name="config_graph_metrics_keys__table",
+    ),
+    TableTargetTableContext.from_contract(
+        contract=CONFIG_GRAPH_MODULES_CONTRACT,
+        node_name="config_graph_metrics_modules__table",
+    ),
+    TableTargetTableContext.from_contract(
+        contract=CONFIG_GRAPH_KEY_EDGES_CONTRACT,
+        node_name="config_projection_key_edges__table",
+    ),
+    TableTargetTableContext.from_contract(
+        contract=CONFIG_GRAPH_MODULE_EDGES_CONTRACT,
+        node_name="config_projection_module_edges__table",
+    ),
+)
+_CONFIG_GRAPH_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="analytics",
         target_name=CONFIG_GRAPH_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=CONFIG_GRAPH_KEYS_CONTRACT,
-                    node_name="config_graph_metrics_keys__table",
-                    input_type=pa.Table,
-                ),
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=CONFIG_GRAPH_MODULES_CONTRACT,
-                    node_name="config_graph_metrics_modules__table",
-                    input_type=pa.Table,
-                ),
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=CONFIG_GRAPH_KEY_EDGES_CONTRACT,
-                    node_name="config_projection_key_edges__table",
-                    input_type=pa.Table,
-                ),
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=CONFIG_GRAPH_MODULE_EDGES_CONTRACT,
-                    node_name="config_projection_module_edges__table",
-                    input_type=pa.Table,
-                ),
-            ),
-        ),
+        tables=(),
         table_materializations_node="config_graph_metrics__table_materializations",
         anchor_node_name="t__config_graph_metrics",
-    )
+        default_input_type=pa.Table,
+    ),
+    table_contexts=_CONFIG_GRAPH_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_CONFIG_GRAPH_TABLE_TARGET_SPEC)
 config_graph_metrics_keys__table = _MODULE.config_graph_metrics_keys__table

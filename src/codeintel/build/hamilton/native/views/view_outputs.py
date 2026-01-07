@@ -35,6 +35,7 @@ from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import TabularInput
 from codeintel.core.columnar.type_normalization import (
     normalize_binary_view_table,
+    normalize_reader,
     normalize_string_view_table,
 )
 from codeintel.core.constants import DUCKDB_DIALECT, SCHEMAS
@@ -437,6 +438,12 @@ def _view_signature(param_names: Sequence[str]) -> inspect.Signature:
 
 
 def _ensure_table(value: object, *, param_name: str) -> pa.Table:
+    if isinstance(value, pa.RecordBatchReader):
+        reader = cast("pa.RecordBatchReader", value)
+        batches = list(normalize_reader(reader))
+        if not batches:
+            return pa.Table.from_batches([], schema=reader.schema)
+        return pa.Table.from_batches(batches, schema=batches[0].schema)
     try:
         return tabular_to_arrow_table(value)
     except TypeError as exc:

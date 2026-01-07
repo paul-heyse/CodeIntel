@@ -7,6 +7,8 @@ from dataclasses import dataclass, field, replace
 from types import ModuleType
 from typing import Protocol, TypedDict, TypeVar, Unpack, cast
 
+import pyarrow as pa
+
 from codeintel.build.contracts.types import (
     UNSET,
     ContractDescriptor,
@@ -17,6 +19,7 @@ from codeintel.build.contracts.types import (
 )
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.core.columnar.schema_alignment import align_reader_to_contract
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import TableSchema
 
@@ -118,6 +121,39 @@ class ContractResolver:
             contract_hash=descriptor.contract_hash,
         )
         return _apply_overrides(spec, overrides)
+
+
+@dataclass(frozen=True, slots=True)
+class ContractedTableContext:
+    """Context for aligning readers to a table contract schema."""
+
+    contract: TableContractSpec
+    policy: ContractPolicy | None = None
+
+    def align(self, reader: pa.RecordBatchReader) -> pa.RecordBatchReader:
+        """Align a reader to the contract schema.
+
+        Returns
+        -------
+        pyarrow.RecordBatchReader
+            Reader aligned to the contract schema.
+
+        Raises
+        ------
+        KeyError
+            If the contract schema is missing from the registry.
+        """
+        schema_service = get_schema_service()
+        contract_schema = schema_service.get_arrow_schema(self.contract.table_key)
+        if contract_schema is None:
+            msg = f"Missing arrow schema for contract: {self.contract.table_key!r}"
+            raise KeyError(msg)
+        resolved_policy = self.policy or self.contract.policy
+        return align_reader_to_contract(
+            reader,
+            contract_schema,
+            extras_policy=resolved_policy.extras_policy,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -439,6 +475,7 @@ __all__ = [
     "ContractForTableInput",
     "ContractRegistry",
     "ContractResolver",
+    "ContractedTableContext",
     "SchemaBackedContractRegistry",
     "contract_descriptor_for_table_key",
     "contract_descriptor_for_table_schema",

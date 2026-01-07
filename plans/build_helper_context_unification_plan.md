@@ -9,6 +9,10 @@ code patterns.
 Goal: centralize dataset scan option resolution, snapshot filtering, and projection so every scan
 uses a single, consistent helper with override hooks.
 
+Status: Completed (SnapshotScanContext/FilterExprContext adopted in
+`graphs/engine/datasets.py`, `graphs/validation/checks/database.py`,
+`analytics/functions/function_effects.py`, `analytics/semantic_roles/core.py`).
+
 Targets:
 - `src/codeintel/build/scopes/snapshot.py`
 - `src/codeintel/build/tabular/scoping.py`
@@ -57,6 +61,9 @@ class SnapshotScanContext:
 
 Goal: normalize string/binary view types once per batch for all reader-driven pipelines.
 
+Status: Completed (normalize_reader applied in `graphs/engine/views.py` and
+`hamilton/native/views/view_outputs.py`).
+
 Targets:
 - `src/codeintel/core/columnar/type_normalization.py`
 - `src/codeintel/core/columnar/iter.py`
@@ -87,6 +94,11 @@ def normalize_reader(reader: pa.RecordBatchReader) -> Iterator[pa.RecordBatch]:
 
 Goal: unify `tabular_to_arrow_table(...).select(...)` and scoped filtering into a single helper.
 
+Status: Partial (adopted in `tabular/scoping.py`,
+`hamilton/native/graphs/cfg_dfg.py`, `hamilton/native/graphs/goids.py`,
+`hamilton/native/graphs/cdg.py`, `hamilton/native/ingestion/syntax_enrich.py`,
+`hamilton/native/ingestion/scip_resolution.py`; remaining: ingestion/graphs modules).
+
 Targets:
 - `src/codeintel/build/tabular/conversion.py`
 - `src/codeintel/build/tabular/scoping.py`
@@ -115,6 +127,9 @@ def tabular_to_scoped_table(
 
 Goal: reduce duplicate row-iteration logic by delegating tuple iteration to a single helper.
 
+Status: Completed (iter_tuples added in core and used in `core/query_results.py` and
+`graphs/engine/views.py`).
+
 Targets:
 - `src/codeintel/core/columnar/iter.py`
 - `src/codeintel/core/query_results.py`
@@ -138,7 +153,10 @@ def iter_tuples(
 
 ## Scope Item 5: Graph input normalization helper
 
-Goal: provide a single conversion point for `GraphInput` to NetworkX or `RxGraphStore`.
+Goal: provide a single conversion point for `GraphInput` to `RxGraphStore` (rustworkx-only).
+
+Status: Completed (`graph_to_store` adopted in `analytics/graphs/graph_metrics_ext.py`,
+`graphs/validation/checks/structure.py`, `graphs/engine/views.py`).
 
 Targets:
 - `src/codeintel/build/graphs/rx/convert.py`
@@ -149,14 +167,6 @@ Targets:
 
 Pattern:
 ```python
-def graph_to_networkx(graph: GraphInput) -> nx.Graph:
-    if isinstance(graph, RxGraphStore):
-        return rx_to_networkx(graph.graph)
-    if isinstance(graph, (rx.PyGraph, rx.PyDiGraph)):
-        return rx_to_networkx(graph)
-    return cast("nx.Graph", graph)
-
-
 def graph_to_store(graph: GraphInput) -> RxGraphStore:
     return ensure_store(graph)
 ```
@@ -164,6 +174,8 @@ def graph_to_store(graph: GraphInput) -> RxGraphStore:
 ## Scope Item 6: Graph view factory
 
 Goal: standardize dataset scan -> normalized batches -> graph store -> NetworkX conversion.
+
+Status: Pending.
 
 Targets:
 - `src/codeintel/build/graphs/engine/views.py`
@@ -198,6 +210,8 @@ class GraphViewFactory:
 
 Goal: route all graph metrics computation through a single config-driven pipeline.
 
+Status: Pending.
+
 Targets:
 - `src/codeintel/build/analytics/graphs/orchestrator.py`
 - `src/codeintel/build/analytics/graphs/graph_metrics.py`
@@ -221,6 +235,9 @@ class MetricsPipelineConfig[TSlices, TRow: Mapping[str, object]]:
 
 Goal: consolidate repeated `MultiTableTargetContext.build_*_spec` patterns into a factory.
 
+Status: Partial (factory and context-based wiring used in semantic_roles/subsystems/graph_metrics;
+remaining: ingestion/graphs/analytics modules).
+
 Targets:
 - `src/codeintel/build/hamilton/native/patterns/table_target.py`
 - `src/codeintel/build/hamilton/native/analytics/*`
@@ -237,10 +254,11 @@ def build_table_target_specs(
 ) -> list[TableTargetSpec]:
     specs: list[TableTargetSpec] = []
     for table_key in table_keys:
+        updated_context = replace(context, table_key=table_key)
         if relation:
-            spec = TableTargetContext.build_relation_table_spec(context=context, table_key=table_key)
+            spec = TableTargetContext.build_relation_table_spec(context=updated_context)
         else:
-            spec = TableTargetContext.build_dataset_table_spec(context=context, table_key=table_key)
+            spec = TableTargetContext.build_dataset_table_spec(context=updated_context)
         specs.append(spec)
     return specs
 ```
@@ -248,6 +266,9 @@ def build_table_target_specs(
 ## Scope Item 9: Contracted table context helper
 
 Goal: unify contract lookup, schema alignment, and metadata propagation.
+
+Status: Completed (ContractedTableContext wired through `tabular/arrow_ops.py` and
+`hamilton/transforms/table_contract.py`).
 
 Targets:
 - `src/codeintel/build/contracts/registry.py`
@@ -259,21 +280,29 @@ Pattern:
 ```python
 @dataclass(frozen=True, slots=True)
 class ContractedTableContext:
-    contract: TableContract
-    policy: ContractPolicy
+    contract: TableContractSpec
+    policy: ContractPolicy | None = None
 
     def align(self, reader: pa.RecordBatchReader) -> pa.RecordBatchReader:
-        aligned = align_reader_to_contract(
+        schema_service = get_schema_service()
+        contract_schema = schema_service.get_arrow_schema(self.contract.table_key)
+        if contract_schema is None:
+            msg = f"Missing arrow schema for contract: {self.contract.table_key!r}"
+            raise KeyError(msg)
+        resolved_policy = self.policy or self.contract.policy
+        return align_reader_to_contract(
             reader,
-            self.contract.schema,
-            extras_policy=self.policy.extras_policy,
+            contract_schema,
+            extras_policy=resolved_policy.extras_policy,
         )
-        return aligned
 ```
 
 ## Scope Item 10: Row decoding utility
 
 Goal: centralize per-row decoding, null handling, and json/payload parsing.
+
+Status: Partial (RowDecoder used in `analytics/semantic_roles/core.py` and
+`analytics/functions/*`; remaining: analytics graphs/entrypoints utilities).
 
 Targets:
 - `src/codeintel/build/analytics/utilities/ast.py`
@@ -289,12 +318,17 @@ class RowDecoder:
     columns: Sequence[str]
 
     def decode(self, row: Mapping[str, object]) -> dict[str, object]:
-        return {name: decode_payload(row.get(name)) for name in self.columns}
+        decoded = dict(row)
+        for name in self.columns:
+            decoded[name] = decode_payload(row.get(name))
+        return decoded
 ```
 
 ## Scope Item 11: Semantic role classification consolidation
 
 Goal: ensure semantic role scoring logic lives in one canonical classification module.
+
+Status: Pending.
 
 Targets:
 - `src/codeintel/build/analytics/semantic_roles/core.py`
@@ -302,13 +336,19 @@ Targets:
 
 Pattern:
 ```python
-def classify_function_role(context: FunctionContext) -> tuple[str, float, str | None, dict[str, object]]:
+def classify_function_role(
+    context: FunctionContext,
+) -> tuple[str, float, str | None, dict[str, object]]:
     return classification.classify_function_role(context)
 ```
 
 ## Scope Item 12: Compute mask and expression context
 
 Goal: standardize `safe_filter`, boolean mask logic, and expression building across build code.
+
+Status: Partial (FilterExprContext adopted in `graphs/validation/checks/database.py`,
+`analytics/functions/function_effects.py`, `analytics/semantic_roles/core.py`; remaining:
+analytics/graphs and graphs/validation follow-ups).
 
 Targets:
 - `src/codeintel/build/tabular/compute_masks.py`
@@ -337,6 +377,9 @@ class FilterExprContext:
 ## Scope Item 13: Dataset metadata context
 
 Goal: unify metadata reading, row-group pruning, and caching behavior for dataset scans.
+
+Status: Partial (DatasetMetadataContext added; remaining: integrate in streaming/datasets and
+analytics/hamilton utilities).
 
 Targets:
 - `src/codeintel/build/analytics/utilities/datasets.py`

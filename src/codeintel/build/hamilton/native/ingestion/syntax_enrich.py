@@ -11,9 +11,10 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
+    RelationTableSaveSpec,
     TableTargetTableContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.schemas.service import get_schema_service
@@ -33,7 +34,7 @@ from codeintel.build.tabular.compute_masks import (
     is_null_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.table_ops import ensure_table_columns
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -131,8 +132,9 @@ def _occurrence_resolution_table(
     q__core__scip_occurrence_span_xref: InferableTabularInput,
     q__core__scip_occurrence_syntax_xref: InferableTabularInput,
 ) -> pa.Table:
-    span = tabular_to_arrow_table(q__core__scip_occurrence_span_xref).select(
-        [
+    span = tabular_to_scoped_table(
+        q__core__scip_occurrence_span_xref,
+        columns=[
             "repo",
             "commit",
             "rel_path",
@@ -150,7 +152,9 @@ def _occurrence_resolution_table(
             "end_col",
             "start_byte",
             "end_byte",
-        ]
+        ],
+        scope=None,
+        require_scope_columns=False,
     )
     span = _rename_columns(
         span,
@@ -166,8 +170,9 @@ def _occurrence_resolution_table(
     )
     span = _coerce_occurrence_ints(span)
     span = _drop_occurrence_bytes(span)
-    syntax = tabular_to_arrow_table(q__core__scip_occurrence_syntax_xref).select(
-        [
+    syntax = tabular_to_scoped_table(
+        q__core__scip_occurrence_syntax_xref,
+        columns=[
             "repo",
             "commit",
             "rel_path",
@@ -183,7 +188,9 @@ def _occurrence_resolution_table(
             "syntax_node_id",
             "match_kind",
             "candidate_count",
-        ]
+        ],
+        scope=None,
+        require_scope_columns=False,
     )
     syntax = _coerce_occurrence_ints(syntax)
     join_keys = [
@@ -420,8 +427,18 @@ def syntax_enrich__defs_resolved__base(
     pa.Table
         Arrow reader for core.syntax_defs_resolved.
     """
-    facts = tabular_to_arrow_table(q__core__syntax_defs)
-    occurrences = tabular_to_arrow_table(syntax_enrich__occurrence_resolution)
+    facts = tabular_to_scoped_table(
+        q__core__syntax_defs,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
+    occurrences = tabular_to_scoped_table(
+        syntax_enrich__occurrence_resolution,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
     return _resolve_facts(
         facts,
         occurrences,
@@ -440,8 +457,18 @@ def syntax_enrich__refs_resolved__base(
     pa.Table
         Arrow reader for core.syntax_refs_resolved.
     """
-    facts = tabular_to_arrow_table(q__core__syntax_refs)
-    occurrences = tabular_to_arrow_table(syntax_enrich__occurrence_resolution)
+    facts = tabular_to_scoped_table(
+        q__core__syntax_refs,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
+    occurrences = tabular_to_scoped_table(
+        syntax_enrich__occurrence_resolution,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
     return _resolve_facts(
         facts,
         occurrences,
@@ -460,8 +487,18 @@ def syntax_enrich__calls_resolved__base(
     pa.Table
         Arrow reader for core.syntax_calls_resolved.
     """
-    facts = tabular_to_arrow_table(q__core__syntax_calls)
-    occurrences = tabular_to_arrow_table(syntax_enrich__occurrence_resolution)
+    facts = tabular_to_scoped_table(
+        q__core__syntax_calls,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
+    occurrences = tabular_to_scoped_table(
+        syntax_enrich__occurrence_resolution,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
     return _resolve_facts(
         facts,
         occurrences,
@@ -480,8 +517,18 @@ def syntax_enrich__imports_resolved__base(
     pa.Table
         Arrow reader for core.syntax_imports_resolved.
     """
-    facts = tabular_to_arrow_table(q__core__syntax_imports)
-    occurrences = tabular_to_arrow_table(syntax_enrich__occurrence_resolution)
+    facts = tabular_to_scoped_table(
+        q__core__syntax_imports,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
+    occurrences = tabular_to_scoped_table(
+        syntax_enrich__occurrence_resolution,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
     return _resolve_facts(
         facts,
         occurrences,
@@ -490,47 +537,39 @@ def syntax_enrich__imports_resolved__base(
 
 
 _MODULE = sys.modules[__name__]
-_SYNTAX_ENRICH_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_SYNTAX_ENRICH_TABLE_CONTEXTS = (
+    TableTargetTableContext(
+        table_key=SYNTAX_DEFS_RESOLVED_TABLE_KEY,
+        base_node="syntax_enrich__defs_resolved__base",
+        node_name="syntax_enrich__defs_resolved",
+    ),
+    TableTargetTableContext(
+        table_key=SYNTAX_REFS_RESOLVED_TABLE_KEY,
+        base_node="syntax_enrich__refs_resolved__base",
+        node_name="syntax_enrich__refs_resolved",
+    ),
+    TableTargetTableContext(
+        table_key=SYNTAX_CALLS_RESOLVED_TABLE_KEY,
+        base_node="syntax_enrich__calls_resolved__base",
+        node_name="syntax_enrich__calls_resolved",
+    ),
+    TableTargetTableContext(
+        table_key=SYNTAX_IMPORTS_RESOLVED_TABLE_KEY,
+        base_node="syntax_enrich__imports_resolved__base",
+        node_name="syntax_enrich__imports_resolved",
+    ),
+)
+_SYNTAX_ENRICH_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="ingestion",
         target_name=SYNTAX_ENRICH_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_relation_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SYNTAX_DEFS_RESOLVED_TABLE_KEY,
-                    base_node="syntax_enrich__defs_resolved__base",
-                    node_name="syntax_enrich__defs_resolved",
-                    input_type=InferableTabularInput,
-                ),
-            ),
-            MultiTableTargetContext.build_relation_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SYNTAX_REFS_RESOLVED_TABLE_KEY,
-                    base_node="syntax_enrich__refs_resolved__base",
-                    node_name="syntax_enrich__refs_resolved",
-                    input_type=InferableTabularInput,
-                ),
-            ),
-            MultiTableTargetContext.build_relation_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SYNTAX_CALLS_RESOLVED_TABLE_KEY,
-                    base_node="syntax_enrich__calls_resolved__base",
-                    node_name="syntax_enrich__calls_resolved",
-                    input_type=InferableTabularInput,
-                ),
-            ),
-            MultiTableTargetContext.build_relation_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SYNTAX_IMPORTS_RESOLVED_TABLE_KEY,
-                    base_node="syntax_enrich__imports_resolved__base",
-                    node_name="syntax_enrich__imports_resolved",
-                    input_type=InferableTabularInput,
-                ),
-            ),
-        ),
+        tables=(),
         table_materializations_node="syntax_enrich__table_materializations",
         anchor_node_name="t__syntax_enrich",
-    )
+        save_spec_factory=RelationTableSaveSpec,
+        default_input_type=InferableTabularInput,
+    ),
+    table_contexts=_SYNTAX_ENRICH_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_SYNTAX_ENRICH_TABLE_TARGET_SPEC)
 syntax_enrich__defs_resolved = _MODULE.syntax_enrich__defs_resolved

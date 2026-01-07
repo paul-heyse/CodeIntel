@@ -23,7 +23,7 @@ from codeintel.build.tabular.compute_masks import (
     non_empty_string_expr,
     non_empty_string_mask,
 )
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
 
@@ -314,11 +314,17 @@ def cdg_edges(
     InferableTabularInput
         Arrow reader for graph.cdg_edges.
     """
-    blocks_table = tabular_to_arrow_table(q__graph__cfg_blocks).select(
-        ["function_goid_h128", "block_id", "block_idx"]
+    blocks_table = tabular_to_scoped_table(
+        q__graph__cfg_blocks,
+        columns=["function_goid_h128", "block_id", "block_idx"],
+        scope=None,
+        require_scope_columns=False,
     )
-    edges_table = tabular_to_arrow_table(q__graph__cfg_edges).select(
-        ["function_goid_h128", "src_block_id", "dst_block_id", "edge_kind"]
+    edges_table = tabular_to_scoped_table(
+        q__graph__cfg_edges,
+        columns=["function_goid_h128", "src_block_id", "dst_block_id", "edge_kind"],
+        scope=None,
+        require_scope_columns=False,
     )
     blocks_table = _prefilter_cdg_blocks(blocks_table)
     edges_table = _prefilter_cdg_edges(edges_table)

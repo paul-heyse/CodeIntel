@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import cast
 
 import polars as pl
@@ -10,10 +11,12 @@ import polars.datatypes as pl_datatypes
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.build.contracts.registry import ContractedTableContext
 from codeintel.build.contracts.types import ContractPolicy
 from codeintel.build.tabular.arrow_ops import (
     AlignmentReporter,
     align_tabular_to_contract,
+    align_tabular_to_contract_context,
     emit_alignment_report,
 )
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
@@ -22,6 +25,17 @@ from codeintel.build.tabular.types import TabularInput
 
 Frame = TabularInput
 PolarsDataType = pl_datatypes.DataType | pl_datatypes.DataTypeClass
+
+
+@dataclass(frozen=True, slots=True)
+class ContractAlignmentContext:
+    """Inputs for aligning outputs to a contract schema."""
+
+    table_key: str
+    target_name: str | None
+    policy: ContractPolicy | None
+    reporter: AlignmentReporter | None = emit_alignment_report
+    context: ContractedTableContext | None = None
 
 
 def drop_bad_rows(df: TabularInput, required_cols: tuple[str, ...]) -> TabularInput:
@@ -157,10 +171,7 @@ def sort_columns(df: TabularInput, column_order: Sequence[str]) -> TabularInput:
 def align_contract_output(
     df: TabularInput,
     *,
-    table_key: str,
-    target_name: str | None,
-    policy: ContractPolicy | None = None,
-    reporter: AlignmentReporter | None = emit_alignment_report,
+    alignment: ContractAlignmentContext,
 ) -> TabularInput:
     """Align Arrow or Polars outputs to the contract schema when possible.
 
@@ -169,12 +180,18 @@ def align_contract_output(
     TabularInput
         Aligned tabular input or the original input for unsupported data.
     """
+    if alignment.context is not None:
+        return align_tabular_to_contract_context(
+            alignment.context,
+            df,
+            reporter=alignment.reporter,
+        )
     return align_tabular_to_contract(
-        table_key,
+        alignment.table_key,
         df,
-        target_name=target_name,
-        policy=policy,
-        reporter=reporter,
+        target_name=alignment.target_name,
+        policy=alignment.policy,
+        reporter=alignment.reporter,
     )
 
 
@@ -247,6 +264,7 @@ def _clip_table(table: pa.Table, index: int, scalar: pa.Scalar) -> pa.Table:
 
 
 __all__ = [
+    "ContractAlignmentContext",
     "Frame",
     "align_contract_output",
     "cast_schema",

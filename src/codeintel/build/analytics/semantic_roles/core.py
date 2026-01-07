@@ -13,14 +13,12 @@ from typing import TYPE_CHECKING
 import msgspec
 import pyarrow as pa
 
-from codeintel.build.analytics.utilities.ast import safe_unparse
+from codeintel.build.analytics.utilities.ast import RowDecoder, safe_unparse
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
+from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.query_results import coerce_optional_int, coerce_optional_str, coerce_str
-from codeintel.core.serialization.payload import decode_payload
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -459,6 +457,13 @@ def _contracts_from_frame(
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
+    decoder = RowDecoder(
+        columns=(
+            "preconditions_json",
+            "raises_json",
+            "param_nullability_json",
+        ),
+    )
     filtered = _filter_table_by_snapshot(
         frame,
         repo=repo,
@@ -482,10 +487,11 @@ def _contracts_from_frame(
             "param_nullability_json",
         ],
     ):
-        goid_raw = row.get("function_goid_h128")
-        preconditions = row.get("preconditions_json")
-        raises = row.get("raises_json")
-        param_nullability = row.get("param_nullability_json")
+        decoded = decoder.decode(row)
+        goid_raw = decoded.get("function_goid_h128")
+        preconditions = decoded.get("preconditions_json")
+        raises = decoded.get("raises_json")
+        param_nullability = decoded.get("param_nullability_json")
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -539,6 +545,7 @@ def _module_meta_from_frame(
 ) -> dict[str, ModuleRecord]:
     if frame is None or frame.num_rows == 0:
         return {}
+    decoder = RowDecoder(columns=("tags",))
     filtered = _filter_table_by_snapshot(
         frame,
         repo=repo,
@@ -549,9 +556,10 @@ def _module_meta_from_frame(
         return {}
     meta: dict[str, ModuleRecord] = {}
     for row in iter_rows(filtered, ["module", "path", "tags"]):
-        module = row.get("module")
-        path = row.get("path")
-        tags = row.get("tags")
+        decoded = decoder.decode(row)
+        module = decoded.get("module")
+        path = decoded.get("path")
+        tags = decoded.get("tags")
         path_value = coerce_optional_str(path, ctx="core.modules.path")
         normalized_path = normalize_path(path_value) if path_value else ""
         normalized_tags = _normalize_tags(tags)
@@ -573,10 +581,11 @@ def _filter_table_by_snapshot(
     if missing:
         msg = f"Missing snapshot columns: {missing}"
         raise ValueError(msg)
-    target = frame if columns is None else frame.select(list(columns))
-    repo_mask = equal_mask(frame["repo"], pa.scalar(repo))
-    commit_mask = equal_mask(frame["commit"], pa.scalar(commit))
-    return safe_filter(target, and_kleene(repo_mask, commit_mask))
+    context = FilterExprContext(repo=repo, commit=commit)
+    filtered = context.apply(frame)
+    if columns is None:
+        return filtered
+    return filtered.select(list(columns))
 
 
 def _classify_function(
@@ -826,13 +835,12 @@ def _decorator_names(decorators: list[ast.expr]) -> list[str]:
 
 
 def _coerce_json(value: object) -> object:
-    decoded = decode_payload(value)
-    if isinstance(decoded, str):
+    if isinstance(value, str):
         try:
-            return msgspec.json.decode(decoded)
+            return msgspec.json.decode(value)
         except msgspec.DecodeError:
-            return decoded
-    return decoded
+            return value
+    return value
 
 
 def _normalize_tags(raw: object) -> list[str]:

@@ -25,7 +25,9 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
 from codeintel.build.analytics.compute.row_builders import row_tuple_for_table
+from codeintel.build.analytics.utilities.ast import RowDecoder
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
@@ -337,12 +339,14 @@ def _module_context_from_frame(
     if frame is None or frame.num_rows == 0:
         return {}
     filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
+    decoder = RowDecoder(columns=("tags", "owners"))
     context: dict[str, ModuleContext] = {}
     for row in filtered:
+        decoded = decoder.decode(row)
         rel_path = row.get("path")
         module = row.get("module")
-        tags = row.get("tags")
-        owners = row.get("owners")
+        tags = decoded.get("tags")
+        owners = decoded.get("owners")
         normalized = normalize_path(coerce_str(rel_path, ctx="core.modules.path"))
         context[normalized] = ModuleContext(
             module=coerce_str(module, ctx="core.modules.module"),
@@ -423,15 +427,9 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = list(iter_rows(frame))
-    has_repo = "repo" in frame.column_names
-    has_commit = "commit" in frame.column_names
-    return [
-        row
-        for row in rows
-        if (repo == row.get("repo") if has_repo else True)
-        and (commit == row.get("commit") if has_commit else True)
-    ]
+    context = FilterExprContext(repo=repo, commit=commit)
+    filtered = context.apply(frame)
+    return list(iter_rows(filtered))
 
 
 def _summarize_tests(

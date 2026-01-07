@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from codeintel.build.contracts.registry import ContractedTableContext
 from codeintel.build.contracts.types import TableContractSpec
 from codeintel.build.hamilton.naming import sanitize_pipeline_component
 from codeintel.build.hamilton.transforms.decorators import (
-    pipe_canonical_output,
+    ContractOutputNamespaces,
     pipe_clean_df,
-    pipe_contract_alignment,
+    pipe_contract_output,
     with_features,
 )
 
@@ -54,16 +55,18 @@ def contract_pipeline(
                 ops_module=spec.ops_module,
             )(fn)
         align_namespace = f"align__{sanitize_pipeline_component(spec.table_key)}"
-        fn = pipe_contract_alignment(
+        alignment_context = ContractedTableContext(contract=spec, policy=spec.policy)
+        output_namespace = f"post__{sanitize_pipeline_component(spec.table_key)}"
+        namespaces = ContractOutputNamespaces(
+            align=align_namespace,
+            canonical=output_namespace,
+        )
+        return pipe_contract_output(
             table_key=spec.table_key,
             target_name=spec.target,
             policy=spec.policy,
-            namespace=align_namespace,
-        )(fn)
-        output_namespace = f"post__{sanitize_pipeline_component(spec.table_key)}"
-        return pipe_canonical_output(
-            table_key=spec.table_key,
-            namespace=output_namespace,
+            context=alignment_context,
+            namespaces=namespaces,
         )(fn)
 
     return _decorator

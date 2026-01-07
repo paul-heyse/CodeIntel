@@ -21,7 +21,10 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.json as paj
 
-from codeintel.build.contracts.registry import require_contract_for_target
+from codeintel.build.contracts.registry import (
+    ContractedTableContext,
+    require_contract_for_target,
+)
 from codeintel.build.contracts.types import ContractPolicy
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular import array_ops as _array_ops
@@ -889,6 +892,21 @@ def _merge_alignment_options(
     return resolved
 
 
+def _alignment_options_from_context(
+    context: ContractedTableContext,
+    *,
+    reporter: AlignmentReporter | None = None,
+    extras_policy: ExtrasPolicy | None = None,
+) -> AlignmentOptions:
+    resolved_policy = context.policy or context.contract.policy
+    return AlignmentOptions(
+        target_name=context.contract.target,
+        policy=resolved_policy,
+        extras_policy=extras_policy,
+        reporter=reporter,
+    )
+
+
 def _normalize_schema_for_report(schema: pa.Schema) -> pa.Schema:
     fields: list[pa.Field] = []
     changed = False
@@ -1221,6 +1239,57 @@ def align_tabular_to_contract(
     )
 
 
+def align_reader_to_contract_context(
+    context: ContractedTableContext,
+    reader: pa.RecordBatchReader,
+    *,
+    reporter: AlignmentReporter | None = None,
+) -> pa.RecordBatchReader:
+    """Align a reader using a pre-resolved contract context.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Reader aligned to the contract schema.
+    """
+    options = _alignment_options_from_context(context, reporter=reporter)
+    return align_reader_to_contract(context.contract.table_key, reader, options=options)
+
+
+def align_table_to_contract_context(
+    context: ContractedTableContext,
+    table: pa.Table,
+    *,
+    reporter: AlignmentReporter | None = None,
+) -> pa.Table:
+    """Align a table using a pre-resolved contract context.
+
+    Returns
+    -------
+    pyarrow.Table
+        Table aligned to the contract schema.
+    """
+    options = _alignment_options_from_context(context, reporter=reporter)
+    return align_table_to_contract(context.contract.table_key, table, options=options)
+
+
+def align_tabular_to_contract_context(
+    context: ContractedTableContext,
+    value: InferableTabularInput,
+    *,
+    reporter: AlignmentReporter | None = None,
+) -> InferableTabularInput:
+    """Align a tabular input using a pre-resolved contract context.
+
+    Returns
+    -------
+    InferableTabularInput
+        Aligned tabular input, preserving the input type when possible.
+    """
+    options = _alignment_options_from_context(context, reporter=reporter)
+    return align_tabular_to_contract(context.contract.table_key, value, options=options)
+
+
 def concat_tables_unified(tables: Sequence[pa.Table]) -> pa.Table:
     """Concatenate tables after unifying schemas.
 
@@ -1456,8 +1525,11 @@ __all__ = [
     "ArrowJoinSpec",
     "JoinFilterClause",
     "align_reader_to_contract",
+    "align_reader_to_contract_context",
     "align_table_to_contract",
+    "align_table_to_contract_context",
     "align_tabular_to_contract",
+    "align_tabular_to_contract_context",
     "arrow_join_frames",
     "arrow_join_lazyframes",
     "arrow_join_tables",

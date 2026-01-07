@@ -40,7 +40,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -331,11 +331,36 @@ def cfg_dfg_metrics_inputs(
         Collected frames for CFG/DFG metrics computation.
     """
     return _CfgDfgMetricsInputs(
-        cfg_blocks=tabular_to_arrow_table(q__graph__cfg_blocks),
-        cfg_edges=tabular_to_arrow_table(q__graph__cfg_edges),
-        dfg_edges=tabular_to_arrow_table(q__graph__dfg_edges),
-        goids=tabular_to_arrow_table(q__core__goids),
-        modules=tabular_to_arrow_table(q__core__modules),
+        cfg_blocks=tabular_to_scoped_table(
+            q__graph__cfg_blocks,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        ),
+        cfg_edges=tabular_to_scoped_table(
+            q__graph__cfg_edges,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        ),
+        dfg_edges=tabular_to_scoped_table(
+            q__graph__dfg_edges,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        ),
+        goids=tabular_to_scoped_table(
+            q__core__goids,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        ),
+        modules=tabular_to_scoped_table(
+            q__core__modules,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        ),
     )
 
 
@@ -357,9 +382,40 @@ def cfg_dfg_metrics_analysis(
     _CfgDfgMetricsAnalysis
         CFG/DFG metrics payloads for downstream table nodes.
     """
-    metadata = _function_metadata(
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    goids = tabular_to_scoped_table(
         cfg_dfg_metrics_inputs.goids,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    modules = tabular_to_scoped_table(
         cfg_dfg_metrics_inputs.modules,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    cfg_blocks = tabular_to_scoped_table(
+        cfg_dfg_metrics_inputs.cfg_blocks,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    cfg_edges = tabular_to_scoped_table(
+        cfg_dfg_metrics_inputs.cfg_edges,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    dfg_edges = tabular_to_scoped_table(
+        cfg_dfg_metrics_inputs.dfg_edges,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    metadata = _function_metadata(
+        goids,
+        modules,
     )
     now = datetime.now(UTC)
     cfg_ctx = _graph_context(
@@ -377,14 +433,14 @@ def cfg_dfg_metrics_analysis(
     cfg = _build_cfg_metrics(
         env,
         metadata,
-        cfg_dfg_metrics_inputs.cfg_blocks,
-        cfg_dfg_metrics_inputs.cfg_edges,
+        cfg_blocks,
+        cfg_edges,
         cfg_ctx,
     )
     dfg = _build_dfg_metrics(
         env,
         metadata,
-        cfg_dfg_metrics_inputs.dfg_edges,
+        dfg_edges,
         dfg_ctx,
     )
     return _CfgDfgMetricsAnalysis(cfg=cfg, dfg=dfg)

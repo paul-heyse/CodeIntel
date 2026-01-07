@@ -15,9 +15,10 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
+    RelationTableSaveSpec,
     TableTargetTableContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import (
@@ -38,7 +39,7 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
     not_equal_mask,
 )
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
@@ -116,25 +117,31 @@ def _empty_table_for_output_table(table_key: str) -> pa.Table:
 
 
 def _symbol_info_table(symbol_info: InferableTabularInput) -> pa.Table:
-    table = tabular_to_arrow_table(symbol_info).select(
-        [
+    table = tabular_to_scoped_table(
+        symbol_info,
+        columns=[
             "repo",
             "commit",
             "symbol",
             "enclosing_symbol",
-        ]
+        ],
+        scope=None,
+        require_scope_columns=False,
     )
     return _rename_columns(table, {"symbol": "scip_symbol"})
 
 
 def _goids_table(goids: InferableTabularInput) -> pa.Table:
-    table = tabular_to_arrow_table(goids).select(
-        [
+    table = tabular_to_scoped_table(
+        goids,
+        columns=[
             "goid_h128",
             "rel_path",
             "start_line",
             "end_line",
-        ]
+        ],
+        scope=None,
+        require_scope_columns=False,
     )
     table = _cast_int32(table, ["start_line", "end_line"])
     if table.num_rows == 0:
@@ -147,7 +154,12 @@ def _goids_table(goids: InferableTabularInput) -> pa.Table:
 
 
 def _occurrences_table(occurrences: InferableTabularInput) -> pa.Table:
-    table = tabular_to_arrow_table(occurrences)
+    table = tabular_to_scoped_table(
+        occurrences,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
     table = _rename_columns(table, {"symbol": "scip_symbol"})
     return _cast_int32(table, ["start_line", "end_line"])
 
@@ -552,7 +564,12 @@ def scip_resolution__occurrence_syntax_xref__base(
         Arrow reader for core.scip_occurrence_syntax_xref.
     """
     occurrences_table = scip_resolution__frames.occurrence_span_xref
-    nodes_table = tabular_to_arrow_table(q__core__syntax_nodes)
+    nodes_table = tabular_to_scoped_table(
+        q__core__syntax_nodes,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
     rows = _occurrence_syntax_xref_rows(occurrences_table, nodes_table)
     if not rows:
         return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
@@ -567,39 +584,34 @@ def scip_resolution__occurrence_syntax_xref__base(
 
 
 _MODULE = sys.modules[__name__]
-_SCIP_RESOLUTION_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_SCIP_RESOLUTION_TABLE_CONTEXTS = (
+    TableTargetTableContext(
+        table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
+        base_node="scip_resolution__symbol_goid_xref__base",
+        node_name="scip_resolution__symbol_goid_xref",
+    ),
+    TableTargetTableContext(
+        table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
+        base_node="scip_resolution__occurrence_span_xref__base",
+        node_name="scip_resolution__occurrence_span_xref",
+    ),
+    TableTargetTableContext(
+        table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
+        base_node="scip_resolution__occurrence_syntax_xref__base",
+        node_name="scip_resolution__occurrence_syntax_xref",
+    ),
+)
+_SCIP_RESOLUTION_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="ingestion",
         target_name=SCIP_RESOLUTION_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_relation_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
-                    base_node="scip_resolution__symbol_goid_xref__base",
-                    node_name="scip_resolution__symbol_goid_xref",
-                    input_type=InferableTabularInput,
-                ),
-            ),
-            MultiTableTargetContext.build_relation_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
-                    base_node="scip_resolution__occurrence_span_xref__base",
-                    node_name="scip_resolution__occurrence_span_xref",
-                    input_type=InferableTabularInput,
-                ),
-            ),
-            MultiTableTargetContext.build_relation_table_spec(
-                context=TableTargetTableContext(
-                    table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
-                    base_node="scip_resolution__occurrence_syntax_xref__base",
-                    node_name="scip_resolution__occurrence_syntax_xref",
-                    input_type=InferableTabularInput,
-                ),
-            ),
-        ),
+        tables=(),
         table_materializations_node="scip_resolution__table_materializations",
         anchor_node_name="t__scip_resolution",
-    )
+        save_spec_factory=RelationTableSaveSpec,
+        default_input_type=InferableTabularInput,
+    ),
+    table_contexts=_SCIP_RESOLUTION_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_SCIP_RESOLUTION_TABLE_TARGET_SPEC)
 scip_resolution__symbol_goid_xref = _MODULE.scip_resolution__symbol_goid_xref

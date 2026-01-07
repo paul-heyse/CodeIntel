@@ -21,11 +21,12 @@ from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     TableTargetTableContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -133,9 +134,25 @@ def external_dependency_calls__base(
     pa.Table
         Reader containing external dependency call rows.
     """
-    modules_frame = tabular_to_arrow_table(q__core__modules)
-    goids_frame = tabular_to_arrow_table(q__core__goids)
-    features_frame = tabular_to_arrow_table(q__analytics__function_ast_features)
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    modules_frame = tabular_to_scoped_table(
+        q__core__modules,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    goids_frame = tabular_to_scoped_table(
+        q__core__goids,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    features_frame = tabular_to_scoped_table(
+        q__analytics__function_ast_features,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     module_map = _module_map(modules_frame)
     if not module_map:
         return empty_table_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
@@ -176,8 +193,19 @@ def external_dependencies__base(
     pa.Table
         Reader containing external dependency summary rows.
     """
-    dependency_calls_frame = tabular_to_arrow_table(external_dependency_calls__base)
-    config_values_frame = tabular_to_arrow_table(q__analytics__config_values)
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    dependency_calls_frame = tabular_to_scoped_table(
+        external_dependency_calls__base,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    config_values_frame = tabular_to_scoped_table(
+        q__analytics__config_values,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     result = compute_external_dependencies_pure(
         env.snapshot,
         dependency_calls_frame=dependency_calls_frame,
@@ -193,29 +221,26 @@ def external_dependencies__base(
 
 
 _MODULE = sys.modules[__name__]
-_EXTERNAL_DEPS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_EXTERNAL_DEPS_TABLE_CONTEXTS = (
+    TableTargetTableContext.from_contract(
+        contract=EXTERNAL_DEPENDENCY_CALLS_CONTRACT,
+        node_name="external_dependency_calls__table",
+    ),
+    TableTargetTableContext.from_contract(
+        contract=EXTERNAL_DEPENDENCIES_CONTRACT,
+        node_name="external_dependencies__table",
+    ),
+)
+_EXTERNAL_DEPS_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="analytics",
         target_name=EXTERNAL_DEPS_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=EXTERNAL_DEPENDENCY_CALLS_CONTRACT,
-                    node_name="external_dependency_calls__table",
-                    input_type=pa.Table,
-                ),
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=EXTERNAL_DEPENDENCIES_CONTRACT,
-                    node_name="external_dependencies__table",
-                    input_type=pa.Table,
-                ),
-            ),
-        ),
+        tables=(),
         table_materializations_node="external_deps__table_materializations",
         anchor_node_name="t__external_deps",
-    )
+        default_input_type=pa.Table,
+    ),
+    table_contexts=_EXTERNAL_DEPS_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_EXTERNAL_DEPS_TABLE_TARGET_SPEC)
 external_dependency_calls__table = _MODULE.external_dependency_calls__table

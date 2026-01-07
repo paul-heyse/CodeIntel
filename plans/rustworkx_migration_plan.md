@@ -110,10 +110,9 @@ rustworkx-only execution model.
   - `src/codeintel/build/graphs/rx/payloads.py`
   - `src/codeintel/build/graphs/rx/convert.py`
 - Updated `RxGraphStore` to persist node attributes in payloads.
-- Replaced NetworkX builders in `src/codeintel/build/graphs/builders.py` with rustworkx stores,
-  converting to NetworkX only at the API boundary.
+- Replaced NetworkX builders in `src/codeintel/build/graphs/builders.py` with rustworkx stores.
 - Converted loaders in `src/codeintel/build/graphs/engine/views.py` to build rustworkx graphs
-  and return NetworkX graphs via conversion.
+  and return rustworkx-first graph stores throughout analytics.
 - Replaced the compatibility shim with a real `RxGraphEngine` and made the factory ignore
   GPU/backend preferences (rustworkx-only execution).
 - Switched graph cache read/write to rustworkx node-link JSON (`GRAPH_CACHE_VERSION = "v3"`).
@@ -138,14 +137,16 @@ rustworkx-only execution model.
     `src/codeintel/build/analytics/functions/function_effects.py` now use rustworkx stores.
   - `src/codeintel/build/graphs/validation/*` migrated to rustworkx-compatible checks.
   - Hamilton analytics adapters (`src/codeintel/build/hamilton/native/analytics/*`) updated.
-  - Pending: tests/fixtures + type annotations alignment and quality report cleanup.
+  - Tests/fixtures and type annotations aligned with rustworkx-first stores.
+- Dependency cleanup completed:
+  - Removed NetworkX dependencies and stubs from `pyproject.toml` and `uv.lock`.
+  - Removed `typings/networkx` directory.
 
 ### Workstreams (Run in Parallel; No Gradual Rollout)
 
 Workstream A: Engine + Graph Construction (Complete Replacement)
 - Status: Implemented (see Current Baseline).
-- Compatibility boundary remains: analytics still consume NetworkX graphs while
-  rustworkx is the internal construction engine.
+- Rustworkx stores are now the internal and external representation for analytics.
 
 Workstream B: Algorithm + Metrics Migration (Parity First)
 - Status: Implemented.
@@ -153,33 +154,23 @@ Workstream B: Algorithm + Metrics Migration (Parity First)
   and numeric tolerance policies for custom algorithms.
 
 Workstream C: Analytics + Validation + Tests (Full Cutover)
-- Status: Implemented (code migration complete; tests/fixtures + quality fixes pending).
+- Status: Implemented.
 - Analytics orchestrators and subsystem metrics consume rustworkx.
 - Validation checks migrated to rustworkx-compatible operations.
-- Remaining scope: tests/fixtures updates, type annotations cleanup, and dependency removal.
+- Tests/fixtures and type annotations migrated to rustworkx.
 
-### Next Actions (Recommended, Two Sets)
+### Remaining Scope
 
-Set 1 — Quality + Tests Alignment
-- Resolve Ruff/Pyright/Pyrefly issues introduced by analytics + validation changes, and
-  normalize type annotations for `GraphInput`/`RxGraphStore` across touched modules.
-- Update tests and fixtures (`tests/_helpers/fixtures/graphs.py`, `tests/analytics/*`,
-  `tests/graphs/*`) to use rustworkx-first stores and deterministic ordering expectations.
-- Re-run quality report and targeted pytest segments for analytics + validation areas.
-
-Set 2 — Dependency Removal + API Surface Cleanup
-- Remove NetworkX dependency/stubs from `pyproject.toml`, `uv.lock`,
-  and `typings/networkx`, then update remaining type annotations to rustworkx-first types.
-- Simplify or remove NetworkX-compatible protocols/adapters in
-  `src/codeintel/build/graphs/engine/*`, `src/codeintel/build/graphs/runtime/*`,
-  and `src/codeintel/core/resources/graphs.py` if still present for compatibility.
-- Update documentation and acceptance checks to reflect rustworkx-only usage.
+1) Guardrails failure in `tools.guardrails` due to duplicate Hamilton node name:
+   `cfg_block_metrics__table.raw` (requires resolving duplicate node definition or
+   enabling `ci.allow_module_overrides=true` for the guardrail run).
+2) Run segmented pytest for analytics + graphs to validate runtime behavior.
 
 ### Cutover Checklist (Single Switchover)
-- Delete the compatibility shim and engine flag; rustworkx only.
-- Remove `networkx` dependency and stubs from `pyproject.toml` / `uv.lock`.
-- Run quality report and segmented pytest; verify metrics tables unchanged.
-- Document rustworkx API usage and deterministic policies.
+- Rustworkx-only engine and cache format in place.
+- NetworkX dependencies removed from `pyproject.toml` / `uv.lock`.
+- Quality report passes (ruff/pyright/pyrefly); guardrails pending.
+- Run segmented pytest and verify metrics tables unchanged.
 
 ### Acceptance (Big-Bang)
 - No NetworkX imports remain under `src/` or `tests/`.

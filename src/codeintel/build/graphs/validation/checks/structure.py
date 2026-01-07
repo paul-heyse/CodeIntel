@@ -15,7 +15,7 @@ import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.components import find_strongly_connected
 from codeintel.build.graphs.engine.datasets import dataset_snapshot_exists
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store, ensure_store
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store, graph_to_store
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.graphs.validation.base import GraphCheckBase
@@ -336,7 +336,7 @@ def _call_graph_findings_impl(
         Findings for call graph anomalies.
     """
     findings: list[dict[str, object]] = []
-    store = ensure_store(call_graph)
+    store = graph_to_store(call_graph)
     kinds = {node: store.get_node_attrs(node).get("kind") for node in store.node_ids()}
     isolated: list[Hashable] = []
     for node_id in store.node_ids():
@@ -547,7 +547,7 @@ def _import_upward_findings_impl(
         Findings for upward import anomalies.
     """
     upward_edges: list[tuple[Hashable, Hashable]] = []
-    store = ensure_store(import_graph)
+    store = graph_to_store(import_graph)
     for src_idx, dst_idx in store.graph.edge_list():
         src_id = store.index_to_id[src_idx]
         dst_id = store.index_to_id[dst_idx]
@@ -592,7 +592,7 @@ def _import_bridge_findings_impl(
         Findings for import bridge anomalies.
     """
     betweenness: dict[str, float] = {}
-    store = ensure_store(import_graph)
+    store = graph_to_store(import_graph)
     node_count = store.graph.num_nodes()
     if node_count > 0:
         sample_size = min(200, node_count)
@@ -641,7 +641,7 @@ def _symbol_graph_findings_impl(
     list[dict[str, object]]
         Findings for symbol graph anomalies.
     """
-    store = ensure_store(symbol_graph)
+    store = graph_to_store(symbol_graph)
     if store.graph.num_nodes() == 0:
         return []
     degree_map = {
@@ -686,7 +686,7 @@ def _config_key_findings_impl(
     list[dict[str, object]]
         Findings for config key usage anomalies.
     """
-    store = ensure_store(cfg_bipartite)
+    store = graph_to_store(cfg_bipartite)
     if store.graph.num_nodes() == 0:
         return []
     keys = [node for node in store.node_ids() if store.get_node_attrs(node).get("bipartite") == 0]

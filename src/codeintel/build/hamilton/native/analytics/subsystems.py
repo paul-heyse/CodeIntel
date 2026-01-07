@@ -19,10 +19,11 @@ from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     TableTargetTableContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.scopes.snapshot import SnapshotScope
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
@@ -109,15 +110,34 @@ def subsystem_rows(
     SubsystemRows
         Subsystem summary and membership rows.
     """
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     return build_subsystem_rows(
         env.snapshot,
         SubsystemBuildInputs(
-            modules_frame=tabular_to_arrow_table(subsystem_core_frames.modules),
-            import_graph_edges_frame=tabular_to_arrow_table(
-                subsystem_core_frames.import_graph_edges
+            modules_frame=tabular_to_scoped_table(
+                subsystem_core_frames.modules,
+                columns=None,
+                scope=scope,
+                require_scope_columns=True,
             ),
-            symbol_use_edges_frame=tabular_to_arrow_table(subsystem_core_frames.symbol_use_edges),
-            config_values_frame=tabular_to_arrow_table(subsystem_analytics_frames.config_values),
+            import_graph_edges_frame=tabular_to_scoped_table(
+                subsystem_core_frames.import_graph_edges,
+                columns=None,
+                scope=scope,
+                require_scope_columns=True,
+            ),
+            symbol_use_edges_frame=tabular_to_scoped_table(
+                subsystem_core_frames.symbol_use_edges,
+                columns=None,
+                scope=scope,
+                require_scope_columns=True,
+            ),
+            config_values_frame=tabular_to_scoped_table(
+                subsystem_analytics_frames.config_values,
+                columns=None,
+                scope=scope,
+                require_scope_columns=True,
+            ),
         ),
     )
 
@@ -157,29 +177,27 @@ def subsystem_modules__base(subsystem_rows: SubsystemRows) -> pa.Table:
 
 
 _MODULE = sys.modules[__name__]
-_SUBSYSTEMS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_SUBSYSTEMS_TABLE_CONTEXTS = (
+    TableTargetTableContext.from_contract(
+        contract=SUBSYSTEMS_CONTRACT,
+        node_name="subsystems__table",
+        input_type=pa.Table,
+    ),
+    TableTargetTableContext.from_contract(
+        contract=SUBSYSTEM_MODULES_CONTRACT,
+        node_name="subsystem_modules__table",
+        input_type=pa.Table,
+    ),
+)
+_SUBSYSTEMS_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="analytics",
         target_name=SUBSYSTEMS_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=SUBSYSTEMS_CONTRACT,
-                    node_name="subsystems__table",
-                    input_type=pa.Table,
-                ),
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=SUBSYSTEM_MODULES_CONTRACT,
-                    node_name="subsystem_modules__table",
-                    input_type=pa.Table,
-                ),
-            ),
-        ),
+        tables=(),
         table_materializations_node="subsystems__table_materializations",
         anchor_node_name="t__subsystems",
-    )
+    ),
+    table_contexts=_SUBSYSTEMS_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_SUBSYSTEMS_TABLE_TARGET_SPEC)
 subsystems__table = _MODULE.subsystems__table

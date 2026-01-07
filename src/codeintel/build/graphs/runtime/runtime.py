@@ -23,6 +23,13 @@ from codeintel.build.graphs.engine import GraphKind
 from codeintel.build.graphs.engine.datasets import resolve_dataset_root
 from codeintel.build.graphs.engine.factory import EngineBuildOptions, build_graph_engine
 from codeintel.build.graphs.rx.convert import store_from_rx
+from codeintel.build.graphs.rx.metadata import (
+    GraphMetadata,
+    apply_graph_metadata,
+    metadata_from_graph,
+)
+from codeintel.build.graphs.rx.payloads import NODE_PAYLOAD_VERSION
+from codeintel.build.graphs.rx.policies import weight_policy_for_name
 from codeintel.build.graphs.rx.serialization import dumps_node_link_json, loads_node_link_json
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
@@ -33,12 +40,14 @@ if TYPE_CHECKING:
 
     from codeintel.build.graphs.engine import GraphEngine
     from codeintel.build.graphs.engine.backend import BackendEnablement
+    from codeintel.build.graphs.rx.policies import GraphWeightPolicy
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.config.primitives import SnapshotRef
 
 log = logging.getLogger(__name__)
 
-GRAPH_CACHE_VERSION = "v3"
+GRAPH_CACHE_VERSION = "v4"
+CACHE_HEADER_FIELDS = 6
 GraphCacheValue = RxGraphStore
 GraphT = TypeVar("GraphT", bound=RxGraphStore)
 
@@ -55,6 +64,37 @@ def _graph_counts(store: RxGraphStore) -> tuple[int | None, int | None]:
         return store.graph.num_nodes(), store.graph.num_edges()
     except (RuntimeError, TypeError, ValueError):
         return None, None
+
+
+def _graph_kind_name(kind: GraphKind) -> str:
+    raw = getattr(kind, "name", None)
+    if isinstance(raw, str):
+        return raw
+    return str(kind)
+
+
+def _graph_metadata_for_cache(
+    kind: GraphKind,
+    graph: RxGraphStore,
+    *,
+    engine: str,
+) -> GraphMetadata:
+    return GraphMetadata(
+        cache_version=GRAPH_CACHE_VERSION,
+        engine=engine,
+        graph_kind=_graph_kind_name(kind),
+        weight_policy=graph.weight_policy.name,
+        node_payload_version=NODE_PAYLOAD_VERSION,
+    )
+
+
+def _parse_cache_header(
+    lines: list[str],
+) -> tuple[str, str, str, str, str, str] | None:
+    if len(lines) < CACHE_HEADER_FIELDS:
+        return None
+    version, engine, repo, commit, backend, use_gpu_str = lines[:CACHE_HEADER_FIELDS]
+    return (version, engine, repo, commit, backend, use_gpu_str)
 
 
 @dataclass(frozen=True)
@@ -525,6 +565,43 @@ class GraphRuntime:
         )
         return self.options.graph_cache_dir / base
 
+    def _cache_header_matches(
+        self,
+        header: tuple[str, str, str, str, str, str],
+    ) -> bool:
+        version, engine, repo, commit, backend, use_gpu_str = header
+        snapshot = self.options.snapshot
+        if snapshot is None:
+            return False
+        return all(
+            (
+                version == GRAPH_CACHE_VERSION,
+                engine == self.backend.engine,
+                repo == snapshot.repo,
+                commit == snapshot.commit,
+                backend == self.backend.backend,
+                (use_gpu_str == "true") == self.use_gpu,
+            )
+        )
+
+    def _policy_from_cache_metadata(
+        self,
+        kind: GraphKind,
+        rx_graph: rx.PyGraph | rx.PyDiGraph,
+    ) -> GraphWeightPolicy | None:
+        metadata = metadata_from_graph(rx_graph)
+        if metadata is None:
+            return None
+        if metadata.cache_version != GRAPH_CACHE_VERSION:
+            return None
+        if metadata.engine != self.backend.engine:
+            return None
+        if metadata.graph_kind != _graph_kind_name(kind):
+            return None
+        if metadata.node_payload_version != NODE_PAYLOAD_VERSION:
+            return None
+        return weight_policy_for_name(metadata.weight_policy)
+
     def _read_cached_graph(self, kind: GraphKind) -> RxGraphStore | None:
         base = self._cache_base(kind)
         graph_path = base.with_suffix(".json")
@@ -533,23 +610,15 @@ class GraphRuntime:
             return None
         try:
             lines = meta_path.read_text(encoding="utf-8").splitlines()
-            expected_fields = 6
-            if len(lines) < expected_fields:
-                return None
-            version, engine, repo, commit, backend, use_gpu_str = lines[:6]
-            if version != GRAPH_CACHE_VERSION or engine != self.backend.engine:
-                return None
-            if (
-                self.options.snapshot is None
-                or repo != self.options.snapshot.repo
-                or commit != self.options.snapshot.commit
-                or backend != self.backend.backend
-                or (use_gpu_str == "true") != self.use_gpu
-            ):
+            header = _parse_cache_header(lines)
+            if header is None or not self._cache_header_matches(header):
                 return None
             payload = graph_path.read_text(encoding="utf-8")
             rx_graph = loads_node_link_json(payload)
-            return store_from_rx(rx_graph)
+            policy = self._policy_from_cache_metadata(kind, rx_graph)
+            if policy is None:
+                return None
+            return store_from_rx(rx_graph, weight_policy=policy)
         except (OSError, TypeError, ValueError, rx.JSONDeserializationError):
             return None
 
@@ -563,7 +632,9 @@ class GraphRuntime:
         meta_path = base.with_suffix(".meta")
         graph_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            payload = dumps_node_link_json(graph.graph)
+            metadata = _graph_metadata_for_cache(kind, graph, engine=self.backend.engine)
+            apply_graph_metadata(graph.graph, metadata)
+            payload = dumps_node_link_json(graph.graph, require_metadata=True)
             graph_path.write_text(payload, encoding="utf-8")
             use_gpu_str = "true" if self.use_gpu else "false"
             meta_path.write_text(

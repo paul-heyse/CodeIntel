@@ -23,11 +23,12 @@ from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     TableTargetTableContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -75,32 +76,68 @@ class SemanticRoleGraphFrames:
 
 
 def semantic_role_module_frames(
+    env: BuildEnv,
     q__core__modules: InferableTabularInput,
     q__core__goids: InferableTabularInput,
     q__analytics__function_ast_features: InferableTabularInput,
 ) -> SemanticRoleModuleFrames:
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     return SemanticRoleModuleFrames(
-        modules_frame=tabular_to_arrow_table(q__core__modules),
-        goids_frame=tabular_to_arrow_table(q__core__goids),
-        features_frame=tabular_to_arrow_table(q__analytics__function_ast_features),
+        modules_frame=tabular_to_scoped_table(
+            q__core__modules,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        goids_frame=tabular_to_scoped_table(
+            q__core__goids,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        features_frame=tabular_to_scoped_table(
+            q__analytics__function_ast_features,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
     )
 
 
 def semantic_role_effect_frames(
+    env: BuildEnv,
     q__analytics__function_effects: InferableTabularInput,
     q__analytics__function_contracts: InferableTabularInput,
 ) -> SemanticRoleEffectFrames:
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     return SemanticRoleEffectFrames(
-        function_effects_frame=tabular_to_arrow_table(q__analytics__function_effects),
-        function_contracts_frame=tabular_to_arrow_table(q__analytics__function_contracts),
+        function_effects_frame=tabular_to_scoped_table(
+            q__analytics__function_effects,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        function_contracts_frame=tabular_to_scoped_table(
+            q__analytics__function_contracts,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
     )
 
 
 def semantic_role_graph_frames(
+    env: BuildEnv,
     q__analytics__graph_metrics_functions: InferableTabularInput,
 ) -> SemanticRoleGraphFrames:
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     return SemanticRoleGraphFrames(
-        graph_metrics_frame=tabular_to_arrow_table(q__analytics__graph_metrics_functions),
+        graph_metrics_frame=tabular_to_scoped_table(
+            q__analytics__graph_metrics_functions,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
     )
 
 
@@ -286,29 +323,27 @@ def semantic_roles_modules__base(
 
 
 _MODULE = sys.modules[__name__]
-_SEMANTIC_ROLES_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_SEMANTIC_ROLES_TABLE_CONTEXTS = (
+    TableTargetTableContext.from_contract(
+        contract=SEMANTIC_ROLES_FUNCTIONS_CONTRACT,
+        node_name="semantic_roles_functions__table",
+        input_type=pa.Table,
+    ),
+    TableTargetTableContext.from_contract(
+        contract=SEMANTIC_ROLES_MODULES_CONTRACT,
+        node_name="semantic_roles_modules__table",
+        input_type=pa.Table,
+    ),
+)
+_SEMANTIC_ROLES_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="analytics",
         target_name=SEMANTIC_ROLES_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=SEMANTIC_ROLES_FUNCTIONS_CONTRACT,
-                    node_name="semantic_roles_functions__table",
-                    input_type=pa.Table,
-                ),
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=SEMANTIC_ROLES_MODULES_CONTRACT,
-                    node_name="semantic_roles_modules__table",
-                    input_type=pa.Table,
-                ),
-            ),
-        ),
+        tables=(),
         table_materializations_node="semantic_roles__table_materializations",
         anchor_node_name="t__semantic_roles",
-    )
+    ),
+    table_contexts=_SEMANTIC_ROLES_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_SEMANTIC_ROLES_TABLE_TARGET_SPEC)
 semantic_roles_functions__table = _MODULE.semantic_roles_functions__table

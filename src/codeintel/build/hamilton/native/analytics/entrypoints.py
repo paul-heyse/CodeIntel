@@ -26,11 +26,12 @@ from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     TableTargetTableContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -184,6 +185,7 @@ def _feature_from_row(row: dict[str, object]) -> FunctionAstFeatures | None:
 
 
 def entrypoint_module_frames(
+    env: BuildEnv,
     q__core__modules: InferableTabularInput,
     q__core__goids: InferableTabularInput,
     q__analytics__function_ast_features: InferableTabularInput,
@@ -195,14 +197,31 @@ def entrypoint_module_frames(
     EntrypointModuleFrames
         Frame bundle with modules, goids, and AST features.
     """
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     return EntrypointModuleFrames(
-        modules_frame=tabular_to_arrow_table(q__core__modules),
-        goids_frame=tabular_to_arrow_table(q__core__goids),
-        features_frame=tabular_to_arrow_table(q__analytics__function_ast_features),
+        modules_frame=tabular_to_scoped_table(
+            q__core__modules,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        goids_frame=tabular_to_scoped_table(
+            q__core__goids,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        features_frame=tabular_to_scoped_table(
+            q__analytics__function_ast_features,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
     )
 
 
 def entrypoint_test_frames(
+    env: BuildEnv,
     q__analytics__test_catalog: InferableTabularInput,
 ) -> EntrypointTestFrames:
     """Collect test-related frames for entrypoint detection.
@@ -212,12 +231,19 @@ def entrypoint_test_frames(
     EntrypointTestFrames
         Frame bundle with the test catalog snapshot.
     """
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     return EntrypointTestFrames(
-        test_catalog_frame=tabular_to_arrow_table(q__analytics__test_catalog),
+        test_catalog_frame=tabular_to_scoped_table(
+            q__analytics__test_catalog,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
     )
 
 
 def entrypoint_subsystem_frames(
+    env: BuildEnv,
     q__analytics__subsystems: InferableTabularInput,
     q__analytics__subsystem_modules: InferableTabularInput,
 ) -> EntrypointSubsystemFrames:
@@ -228,9 +254,20 @@ def entrypoint_subsystem_frames(
     EntrypointSubsystemFrames
         Frame bundle with subsystem metadata and module mapping.
     """
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     return EntrypointSubsystemFrames(
-        subsystems_frame=tabular_to_arrow_table(q__analytics__subsystems),
-        subsystem_modules_frame=tabular_to_arrow_table(q__analytics__subsystem_modules),
+        subsystems_frame=tabular_to_scoped_table(
+            q__analytics__subsystems,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        subsystem_modules_frame=tabular_to_scoped_table(
+            q__analytics__subsystem_modules,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
     )
 
 
@@ -314,29 +351,26 @@ def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pa.Table:
 
 
 _MODULE = sys.modules[__name__]
-_ENTRYPOINTS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_ENTRYPOINTS_TABLE_CONTEXTS = (
+    TableTargetTableContext.from_contract(
+        contract=ENTRYPOINTS_CONTRACT,
+        node_name="entrypoints__table",
+    ),
+    TableTargetTableContext.from_contract(
+        contract=ENTRYPOINT_TESTS_CONTRACT,
+        node_name="entrypoint_tests__table",
+    ),
+)
+_ENTRYPOINTS_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="analytics",
         target_name=ENTRYPOINTS_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=ENTRYPOINTS_CONTRACT,
-                    node_name="entrypoints__table",
-                    input_type=pa.Table,
-                ),
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=ENTRYPOINT_TESTS_CONTRACT,
-                    node_name="entrypoint_tests__table",
-                    input_type=pa.Table,
-                ),
-            ),
-        ),
+        tables=(),
         table_materializations_node="entrypoints__table_materializations",
         anchor_node_name="t__entrypoints",
-    )
+        default_input_type=pa.Table,
+    ),
+    table_contexts=_ENTRYPOINTS_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_ENTRYPOINTS_TABLE_TARGET_SPEC)
 entrypoints__table = _MODULE.entrypoints__table

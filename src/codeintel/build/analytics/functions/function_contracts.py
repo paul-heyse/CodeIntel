@@ -11,10 +11,14 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.build.analytics.utilities.ast import literal_int, literal_value, safe_unparse
+from codeintel.build.analytics.utilities.ast import (
+    RowDecoder,
+    literal_int,
+    literal_value,
+    safe_unparse,
+)
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.serialization.payload import decode_payload
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
@@ -182,18 +186,20 @@ def _doc_map_from_frame(
         return {}
     has_repo = "repo" in frame.column_names
     has_commit = "commit" in frame.column_names
+    decoder = RowDecoder(columns=("params", "returns"))
     mapping: dict[tuple[str, str], dict[str, object]] = {}
     for row in iter_rows(frame):
-        if has_repo and row.get("repo") != repo:
+        decoded = decoder.decode(row)
+        if has_repo and decoded.get("repo") != repo:
             continue
-        if has_commit and row.get("commit") != commit:
+        if has_commit and decoded.get("commit") != commit:
             continue
-        rel_path = row.get("rel_path")
-        qualname = row.get("qualname")
+        rel_path = decoded.get("rel_path")
+        qualname = decoded.get("qualname")
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
             continue
-        params = row.get("params")
-        returns = row.get("returns")
+        params = decoded.get("params")
+        returns = decoded.get("returns")
         mapping[rel_path, qualname] = {
             "params": _coerce_json(params) or [],
             "returns": _coerce_json(returns),
@@ -211,31 +217,32 @@ def _type_map_from_frame(
         return {}
     has_repo = "repo" in frame.column_names
     has_commit = "commit" in frame.column_names
+    decoder = RowDecoder(columns=("param_types",))
     mapping: dict[int, dict[str, object]] = {}
     for row in iter_rows(frame):
-        if has_repo and row.get("repo") != repo:
+        decoded = decoder.decode(row)
+        if has_repo and decoded.get("repo") != repo:
             continue
-        if has_commit and row.get("commit") != commit:
+        if has_commit and decoded.get("commit") != commit:
             continue
-        goid = normalize_decimal_id(row.get("function_goid_h128"))
+        goid = normalize_decimal_id(decoded.get("function_goid_h128"))
         if goid is None:
             continue
-        return_type = row.get("return_type")
+        return_type = decoded.get("return_type")
         mapping[goid] = {
             "return_type": str(return_type) if return_type is not None else None,
-            "param_types": _coerce_json(row.get("param_types")) or {},
+            "param_types": _coerce_json(decoded.get("param_types")) or {},
         }
     return mapping
 
 
 def _coerce_json(value: object) -> object:
-    decoded = decode_payload(value)
-    if isinstance(decoded, str):
+    if isinstance(value, str):
         try:
-            return json.loads(decoded)
+            return json.loads(value)
         except json.JSONDecodeError:
-            return decoded
-    return decoded
+            return value
+    return value
 
 
 def _analyze_function(

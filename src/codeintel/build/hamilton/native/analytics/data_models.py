@@ -26,12 +26,13 @@ from codeintel.build.hamilton.native.patterns import (
     TableTargetContext,
     TableTargetTableContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
@@ -94,26 +95,60 @@ class DataModelUsageFrames:
 
 
 def data_model_usage_core_frames(
+    env: BuildEnv,
     q__core__modules: InferableTabularInput,
     q__core__goids: InferableTabularInput,
     q__analytics__data_models: InferableTabularInput,
 ) -> DataModelUsageCoreFrames:
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     return DataModelUsageCoreFrames(
-        modules_frame=tabular_to_arrow_table(q__core__modules),
-        goids_frame=tabular_to_arrow_table(q__core__goids),
-        data_models_frame=tabular_to_arrow_table(q__analytics__data_models),
+        modules_frame=tabular_to_scoped_table(
+            q__core__modules,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        goids_frame=tabular_to_scoped_table(
+            q__core__goids,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        data_models_frame=tabular_to_scoped_table(
+            q__analytics__data_models,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
     )
 
 
 def data_model_usage_subsystem_frames(
+    env: BuildEnv,
     q__analytics__subsystem_modules: InferableTabularInput,
     q__analytics__subsystems: InferableTabularInput,
     q__analytics__function_types: InferableTabularInput,
 ) -> DataModelUsageSubsystemFrames:
+    scope = SnapshotScope.from_snapshot(env.snapshot)
     return DataModelUsageSubsystemFrames(
-        subsystem_modules_frame=tabular_to_arrow_table(q__analytics__subsystem_modules),
-        subsystems_frame=tabular_to_arrow_table(q__analytics__subsystems),
-        function_types_frame=tabular_to_arrow_table(q__analytics__function_types),
+        subsystem_modules_frame=tabular_to_scoped_table(
+            q__analytics__subsystem_modules,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        subsystems_frame=tabular_to_scoped_table(
+            q__analytics__subsystems,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        function_types_frame=tabular_to_scoped_table(
+            q__analytics__function_types,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
     )
 
 
@@ -155,9 +190,25 @@ def data_models_result(
     DataModelsResult
         Computed data model rows and metadata.
     """
-    goids_frame = tabular_to_arrow_table(q__core__goids)
-    modules_frame = tabular_to_arrow_table(q__core__modules)
-    docstrings_frame = tabular_to_arrow_table(q__core__docstrings)
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    goids_frame = tabular_to_scoped_table(
+        q__core__goids,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    modules_frame = tabular_to_scoped_table(
+        q__core__modules,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    docstrings_frame = tabular_to_scoped_table(
+        q__core__docstrings,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     return compute_data_models_pure(
         env.snapshot,
         goids_frame=goids_frame,
@@ -220,36 +271,30 @@ def data_model_relationships__base(
 
 
 _MODULE = sys.modules[__name__]
-_DATA_MODELS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_DATA_MODELS_TABLE_CONTEXTS = (
+    TableTargetTableContext.from_contract(
+        contract=DATA_MODELS_CONTRACT,
+        node_name="data_models__table",
+    ),
+    TableTargetTableContext.from_contract(
+        contract=DATA_MODEL_FIELDS_CONTRACT,
+        node_name="data_model_fields__table",
+    ),
+    TableTargetTableContext.from_contract(
+        contract=DATA_MODEL_RELATIONSHIPS_CONTRACT,
+        node_name="data_model_relationships__table",
+    ),
+)
+_DATA_MODELS_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="analytics",
         target_name=DATA_MODELS_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=DATA_MODELS_CONTRACT,
-                    node_name="data_models__table",
-                    input_type=pa.Table,
-                ),
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=DATA_MODEL_FIELDS_CONTRACT,
-                    node_name="data_model_fields__table",
-                    input_type=pa.Table,
-                ),
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=DATA_MODEL_RELATIONSHIPS_CONTRACT,
-                    node_name="data_model_relationships__table",
-                    input_type=pa.Table,
-                ),
-            ),
-        ),
+        tables=(),
         table_materializations_node="data_models__table_materializations",
         anchor_node_name="t__data_models",
-    )
+        default_input_type=pa.Table,
+    ),
+    table_contexts=_DATA_MODELS_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_DATA_MODELS_TABLE_TARGET_SPEC)
 data_models__table = _MODULE.data_models__table

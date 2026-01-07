@@ -41,6 +41,7 @@ from codeintel.build.hamilton.native.patterns.table_target import (
     build_multi_table_target_spec,
     build_multi_table_target_spec_from_contexts,
     build_single_table_target_spec,
+    build_table_target_specs,
 )
 from codeintel.build.hamilton.native.patterns.tool_target import (
     IngestStep,
@@ -77,6 +78,7 @@ __all__ = [
     "build_multi_table_target_spec",
     "build_multi_table_target_spec_from_contexts",
     "build_single_table_target_spec",
+    "build_table_target_specs",
     "finalize_target_from_materializations",
     "load_table",
     "load_table_spec",

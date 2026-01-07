@@ -21,7 +21,8 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.scopes.snapshot import SnapshotScope
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
@@ -52,10 +53,31 @@ def function_contracts__base(
     pa.Table
         Reader containing function contract rows.
     """
-    goids_frame = tabular_to_arrow_table(q__core__goids)
-    modules_frame = tabular_to_arrow_table(q__core__modules)
-    docstrings_frame = tabular_to_arrow_table(q__core__docstrings)
-    function_types_frame = tabular_to_arrow_table(q__analytics__function_types)
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    goids_frame = tabular_to_scoped_table(
+        q__core__goids,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    modules_frame = tabular_to_scoped_table(
+        q__core__modules,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    docstrings_frame = tabular_to_scoped_table(
+        q__core__docstrings,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    function_types_frame = tabular_to_scoped_table(
+        q__analytics__function_types,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
     request = FunctionAstLoadRequest(
         repo=env.repo,

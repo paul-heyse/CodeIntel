@@ -15,11 +15,11 @@ import rustworkx as rx
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.build.graphs.builders import EdgeWeightPolicy, build_call_graph_from_rows
+from codeintel.build.graphs.builders import build_call_graph_from_rows
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 from codeintel.build.graphs.rx.store import RxGraphStore
-from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     from codeintel.storage.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
-_EDGE_WEIGHT_POLICY = EdgeWeightPolicy()
 
 
 def _default_io_apis() -> dict[str, list[str]]:
@@ -158,6 +157,17 @@ class _EffectInputs:
     call_graph_nodes: pa.Table | None = None
 
 
+@dataclass(frozen=True)
+class _EffectRowContext:
+    snapshot: SnapshotRef
+    now: datetime
+    analyses: dict[int, EffectAnalysis]
+    direct_flags: dict[int, bool]
+    missing: set[int]
+    transitive_hits: dict[int, set[int]]
+    unresolved_calls: dict[int, int]
+
+
 def _effects_payload(
     analysis: EffectAnalysis, transitive_targets: set[int] | None
 ) -> dict[str, list[dict[str, object]]]:
@@ -249,10 +259,7 @@ def build_function_effects_rows(
     return rows
 
 
-def _build_effect_rows(
-    inputs: _EffectInputs,
-    now: datetime,
-) -> list[dict[str, object]]:
+def _resolve_effect_asts(inputs: _EffectInputs) -> tuple[dict[int, FunctionAst], set[int]]:
     if inputs.ast_map is not None:
         ast_by_goid = inputs.ast_map
         missing = inputs.missing_goids or set()
@@ -271,14 +278,95 @@ def _build_effect_rows(
             len(missing),
             sorted(missing),
         )
-    all_goids = {span.goid for span in inputs.catalog.catalog().function_spans}
+    return ast_by_goid, missing
+
+
+def _analysis_maps(
+    ast_by_goid: dict[int, FunctionAst],
+    options: FunctionEffectsOptions,
+) -> tuple[dict[int, EffectAnalysis], dict[int, bool]]:
     analyses: dict[int, EffectAnalysis] = {
-        goid: _analyze_function(info, inputs.options) for goid, info in ast_by_goid.items()
+        goid: _analyze_function(info, options) for goid, info in ast_by_goid.items()
     }
     direct_flags: dict[int, bool] = {
         goid: analysis.direct_effectful for goid, analysis in analyses.items()
     }
+    return analyses, direct_flags
 
+
+def _default_analysis(goid: int, missing: set[int]) -> EffectAnalysis:
+    if goid not in missing:
+        return EffectAnalysis(
+            uses_io=False,
+            touches_db=False,
+            uses_time=False,
+            uses_randomness=False,
+            modifies_globals=False,
+            modifies_closure=False,
+            spawns_threads_or_tasks=False,
+            evidence={},
+        )
+    return EffectAnalysis(
+        uses_io=False,
+        touches_db=False,
+        uses_time=False,
+        uses_randomness=False,
+        modifies_globals=False,
+        modifies_closure=False,
+        spawns_threads_or_tasks=False,
+        evidence={
+            "errors": [
+                {
+                    "path": "",
+                    "lineno": None,
+                    "end_lineno": None,
+                    "snippet": "",
+                    "details": {"kind": "missing_ast"},
+                    "tags": ["error"],
+                }
+            ]
+        },
+    )
+
+
+def _build_effect_row(goid: int, context: _EffectRowContext) -> dict[str, object]:
+    analysis = context.analyses.get(goid) or _default_analysis(goid, context.missing)
+    transitive_targets = context.transitive_hits.get(goid)
+    is_pure = (
+        not context.direct_flags.get(goid, False)
+        and not transitive_targets
+        and goid not in context.missing
+    )
+    purity_confidence = _purity_confidence(
+        parsed=goid not in context.missing,
+        unresolved_call_count=context.unresolved_calls.get(goid, 0),
+    )
+    return {
+        "repo": context.snapshot.repo,
+        "commit": context.snapshot.commit,
+        "function_goid_h128": goid,
+        "is_pure": is_pure,
+        "uses_io": analysis.uses_io,
+        "touches_db": analysis.touches_db,
+        "uses_time": analysis.uses_time,
+        "uses_randomness": analysis.uses_randomness,
+        "modifies_globals": analysis.modifies_globals,
+        "modifies_closure": analysis.modifies_closure,
+        "spawns_threads_or_tasks": analysis.spawns_threads_or_tasks,
+        "has_transitive_effects": bool(transitive_targets),
+        "purity_confidence": purity_confidence,
+        "effects_json": _effects_payload(analysis, transitive_targets),
+        "created_at": context.now,
+    }
+
+
+def _build_effect_rows(
+    inputs: _EffectInputs,
+    now: datetime,
+) -> list[dict[str, object]]:
+    ast_by_goid, missing = _resolve_effect_asts(inputs)
+    analyses, direct_flags = _analysis_maps(ast_by_goid, inputs.options)
+    all_goids = {span.goid for span in inputs.catalog.catalog().function_spans}
     call_graph = _call_graph_from_frames(
         inputs.call_graph_edges,
         inputs.call_graph_nodes,
@@ -302,61 +390,16 @@ def _build_effect_rows(
             sorted(unresolved_calls),
         )
 
-    rows: list[dict[str, object]] = []
-    for goid in all_goids:
-        analysis = analyses.get(
-            goid,
-            EffectAnalysis(
-                uses_io=False,
-                touches_db=False,
-                uses_time=False,
-                uses_randomness=False,
-                modifies_globals=False,
-                modifies_closure=False,
-                spawns_threads_or_tasks=False,
-                evidence={
-                    "errors": [
-                        {
-                            "path": "",
-                            "lineno": None,
-                            "end_lineno": None,
-                            "snippet": "",
-                            "details": {"kind": "missing_ast"},
-                            "tags": ["error"],
-                        }
-                    ]
-                }
-                if goid in missing
-                else {},
-            ),
-        )
-        transitive_targets = transitive_hits.get(goid)
-        is_pure = not direct_flags.get(goid) and not transitive_targets and goid not in missing
-        purity_confidence = _purity_confidence(
-            parsed=goid not in missing,
-            unresolved_call_count=unresolved_calls.get(goid, 0),
-        )
-
-        rows.append(
-            {
-                "repo": inputs.snapshot.repo,
-                "commit": inputs.snapshot.commit,
-                "function_goid_h128": goid,
-                "is_pure": is_pure,
-                "uses_io": analysis.uses_io,
-                "touches_db": analysis.touches_db,
-                "uses_time": analysis.uses_time,
-                "uses_randomness": analysis.uses_randomness,
-                "modifies_globals": analysis.modifies_globals,
-                "modifies_closure": analysis.modifies_closure,
-                "spawns_threads_or_tasks": analysis.spawns_threads_or_tasks,
-                "has_transitive_effects": bool(transitive_targets),
-                "purity_confidence": purity_confidence,
-                "effects_json": _effects_payload(analysis, transitive_targets),
-                "created_at": now,
-            }
-        )
-    return rows
+    row_context = _EffectRowContext(
+        snapshot=inputs.snapshot,
+        now=now,
+        analyses=analyses,
+        direct_flags=direct_flags,
+        missing=missing,
+        transitive_hits=transitive_hits,
+        unresolved_calls=unresolved_calls,
+    )
+    return [_build_effect_row(goid, row_context) for goid in all_goids]
 
 
 def _compute_transitive_effects(
@@ -435,8 +478,8 @@ def _unresolved_call_counts_from_frame(
         return counts
     if "caller_goid_h128" not in edges_frame.column_names:
         return counts
-    scope = SnapshotScope(repo=repo, commit=commit)
-    filtered = scope.filter_arrow_table(edges_frame, require_columns=False)
+    context = FilterExprContext(repo=repo, commit=commit)
+    filtered = context.apply(edges_frame)
     for row in iter_rows(filtered):
         callee = row.get("callee_goid_h128")
         if callee is not None and callee != -1:
@@ -456,8 +499,12 @@ def _filter_edges_rows(
 ) -> list[dict[str, object]]:
     if edges_frame is None or edges_frame.num_rows == 0:
         return []
-    scope = SnapshotScope(repo=repo, commit=commit)
-    filtered = scope.filter_arrow_table(edges_frame, require_columns=True)
+    missing = [name for name in ("repo", "commit") if name not in edges_frame.column_names]
+    if missing:
+        msg = f"Missing snapshot columns: {missing}"
+        raise ValueError(msg)
+    context = FilterExprContext(repo=repo, commit=commit)
+    filtered = context.apply(edges_frame)
     if filtered.num_rows == 0:
         return []
     return list(iter_rows(filtered))
@@ -474,7 +521,7 @@ def _call_graph_from_frames(
     if not rows:
         return RxGraphStore.directed()
     node_rows = iter_rows(nodes_frame) if nodes_frame is not None else None
-    return build_call_graph_from_rows(rows, node_rows, policy=_EDGE_WEIGHT_POLICY)
+    return build_call_graph_from_rows(rows, node_rows)
 
 
 def _purity_confidence(*, parsed: bool, unresolved_call_count: int) -> float:

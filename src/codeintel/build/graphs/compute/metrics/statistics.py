@@ -6,6 +6,7 @@ for rustworkx graph stores.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -262,13 +263,14 @@ def compute_diameter_estimate(graph: GraphInput) -> float | None:
     undirected_graph = _undirected_graph(work_store)
     subgraph = undirected_graph.subgraph(list(largest), preserve_attrs=True)
     try:
-        lengths = rx.graph_all_pairs_dijkstra_path_lengths(subgraph, lambda _payload: 1.0)
+        distances = rx.graph_distance_matrix(subgraph)
     except rx.NullGraph:
         return None
     diameter = 0.0
-    for targets in lengths.values():
-        if targets:
-            diameter = max(diameter, max(targets.values(), default=0))
+    for row in distances:
+        for distance in row:
+            if math.isfinite(distance):
+                diameter = max(diameter, float(distance))
     return float(diameter)
 
 
@@ -306,17 +308,9 @@ def compute_avg_shortest_path_length(graph: GraphInput) -> float | None:
     undirected_graph = _undirected_graph(work_store)
     subgraph = undirected_graph.subgraph(list(largest), preserve_attrs=True)
     try:
-        lengths = rx.graph_all_pairs_dijkstra_path_lengths(subgraph, lambda _payload: 1.0)
+        return float(rx.graph_unweighted_average_shortest_path_length(subgraph))
     except rx.NullGraph:
         return None
-    total = 0.0
-    count = 0
-    for targets in lengths.values():
-        total += sum(targets.values())
-        count += len(targets)
-    if count == 0:
-        return 0.0
-    return total / count
 
 
 def compute_condensation_layer_count(graph: GraphInput) -> int | None:
@@ -381,14 +375,7 @@ def _component_membership(components: Sequence[set[int]]) -> dict[int, int]:
 def _layer_count(graph: rx.PyDiGraph) -> int:
     if graph.num_nodes() == 0:
         return 0
-    layers: dict[int, int] = {
-        node_idx: 0 for node_idx in graph.node_indices() if graph.in_degree(node_idx) == 0
-    }
-    for node_idx in rx.topological_sort(graph):
-        base = layers.get(node_idx, 0)
-        for succ in graph.successor_indices(node_idx):
-            layers[succ] = max(layers.get(succ, 0), base + 1)
-    return max(layers.values(), default=0) + 1
+    return int(rx.dag_longest_path_length(graph)) + 1
 
 
 def compute_graph_statistics(graph: GraphInput) -> GraphStatistics:

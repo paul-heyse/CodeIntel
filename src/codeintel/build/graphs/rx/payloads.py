@@ -13,6 +13,7 @@ _ENCODED_VALUE_KEY = "value"
 _ENCODED_DATA_KEY = "data"
 _PAYLOAD_ID_KEY = "id"
 _PAYLOAD_ATTRS_KEY = "attrs"
+NODE_PAYLOAD_VERSION = "v1"
 
 
 def _is_json_primitive(value: object) -> bool:
@@ -150,6 +151,7 @@ def decode_node_payload(payload: object) -> tuple[Hashable, dict[str, object]]:
 
 
 __all__ = [
+    "NODE_PAYLOAD_VERSION",
     "decode_node_id",
     "decode_node_payload",
     "encode_node_id",

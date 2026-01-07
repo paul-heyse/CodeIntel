@@ -7,6 +7,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.serialization.payload import decode_payload
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
@@ -18,6 +20,26 @@ class CallTarget:
     library: str | None
     attribute: str | None
     base: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RowDecoder:
+    """Decode msgspec-backed payload columns from row mappings."""
+
+    columns: Sequence[str]
+
+    def decode(self, row: Mapping[str, object]) -> dict[str, object]:
+        """Return a copy of the row with decoded payload columns.
+
+        Returns
+        -------
+        dict[str, object]
+            Row mapping with requested columns decoded from payloads.
+        """
+        decoded = dict(row)
+        for name in self.columns:
+            decoded[name] = decode_payload(row.get(name))
+        return decoded
 
 
 def call_name(node: ast.AST | None) -> str | None:
@@ -234,6 +256,7 @@ def _base_name(node: ast.AST) -> str | None:
 
 __all__ = [
     "CallTarget",
+    "RowDecoder",
     "call_name",
     "literal_bool",
     "literal_int",

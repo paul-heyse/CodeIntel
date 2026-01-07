@@ -15,19 +15,20 @@ from pathlib import Path
 
 import pyarrow as pa
 
-from codeintel.build.graphs.builders import EdgeWeightPolicy, add_weighted_edge
+from codeintel.build.graphs.builders import add_weighted_edge
 from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
     scan_snapshot_reader,
 )
-from codeintel.build.graphs.rx import RxGraphStore
+from codeintel.build.graphs.engine.protocol import GraphKind
+from codeintel.build.graphs.rx.policies import weight_policy_for_kind
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.columnar.iter import iter_tuples as iter_arrow_tuples
 from codeintel.core.columnar.type_normalization import normalize_reader
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
 
 log = logging.getLogger(__name__)
-_EDGE_WEIGHT_POLICY = EdgeWeightPolicy()
 
 
 def _ensure_dataset_root(dataset_root: Path | None, table_key: str) -> Path | None:
@@ -78,8 +79,13 @@ def _iter_tuples(
         yield from iter_arrow_tuples(batch, columns=columns)
 
 
-def _empty_graph(*, directed: bool) -> RxGraphStore:
-    return RxGraphStore.directed() if directed else RxGraphStore.undirected()
+def _empty_graph(*, directed: bool, kind: GraphKind) -> RxGraphStore:
+    policy = weight_policy_for_kind(kind)
+    return (
+        RxGraphStore.directed(weight_policy=policy)
+        if directed
+        else RxGraphStore.undirected(weight_policy=policy)
+    )
 
 
 def _module_name_map(
@@ -112,7 +118,7 @@ def _add_call_edges(store: RxGraphStore, reader: pa.RecordBatchReader) -> None:
         callee = normalize_decimal(callee_raw)
         if caller is None or callee is None:
             continue
-        add_weighted_edge(store, caller, callee, policy=_EDGE_WEIGHT_POLICY)
+        add_weighted_edge(store, caller, callee)
 
 
 def _add_call_nodes(store: RxGraphStore, reader: pa.RecordBatchReader) -> None:
@@ -216,7 +222,7 @@ def load_call_graph(
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.call_graph_edges")
     if dataset_root is None:
-        return _empty_graph(directed=True)
+        return _empty_graph(directed=True, kind=GraphKind.CALL_GRAPH)
     edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -228,9 +234,9 @@ def load_call_graph(
         )
     )
     if edge_reader is None:
-        return _empty_graph(directed=True)
+        return _empty_graph(directed=True, kind=GraphKind.CALL_GRAPH)
 
-    store = RxGraphStore.directed()
+    store = RxGraphStore.directed(weight_policy=weight_policy_for_kind(GraphKind.CALL_GRAPH))
     _add_call_edges(store, edge_reader)
 
     node_reader = scan_snapshot_reader(
@@ -279,7 +285,7 @@ def load_import_graph(
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.import_graph_edges")
     if dataset_root is None:
-        return _empty_graph(directed=True)
+        return _empty_graph(directed=True, kind=GraphKind.IMPORT_GRAPH)
     edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -291,9 +297,9 @@ def load_import_graph(
         )
     )
     if edge_reader is None:
-        return _empty_graph(directed=True)
+        return _empty_graph(directed=True, kind=GraphKind.IMPORT_GRAPH)
 
-    store = RxGraphStore.directed()
+    store = RxGraphStore.directed(weight_policy=weight_policy_for_kind(GraphKind.IMPORT_GRAPH))
     fallback_layer_by_module: dict[str, int] = {}
     for src, dst, layer in _iter_tuples(edge_reader):
         if src is None or dst is None:
@@ -303,7 +309,7 @@ def load_import_graph(
         layer_value = as_int(layer)
         if layer_value is not None:
             fallback_layer_by_module[source] = layer_value
-        add_weighted_edge(store, source, target, policy=_EDGE_WEIGHT_POLICY)
+        add_weighted_edge(store, source, target)
 
     module_reader = scan_snapshot_reader(
         SnapshotScanRequest(
@@ -415,7 +421,7 @@ def _populate_config_graph(
         for module_name in filtered_modules:
             module_node = ("m", module_name)
             store.set_node_attrs(module_node, {"bipartite": 1})
-            add_weighted_edge(store, key_node, module_node, policy=_EDGE_WEIGHT_POLICY)
+            add_weighted_edge(store, key_node, module_node)
     return stats
 
 
@@ -450,7 +456,7 @@ def load_config_module_bipartite(
     """
     dataset_root = _ensure_dataset_root(dataset_root, "analytics.config_values")
     if dataset_root is None:
-        return _empty_graph(directed=False)
+        return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
     modules_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -460,7 +466,7 @@ def load_config_module_bipartite(
         )
     )
     if modules_reader is None:
-        return _empty_graph(directed=False)
+        return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
     allowed_modules = _allowed_modules_from_reader(modules_reader, repo=repo, commit=commit)
 
     config_reader = _scan_snapshot_reader(
@@ -472,9 +478,11 @@ def load_config_module_bipartite(
         )
     )
     if config_reader is None:
-        return _empty_graph(directed=False)
+        return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
 
-    store = RxGraphStore.undirected()
+    store = RxGraphStore.undirected(
+        weight_policy=weight_policy_for_kind(GraphKind.CONFIG_MODULE_BIPARTITE)
+    )
     stats = _populate_config_graph(
         store,
         config_reader,
@@ -528,7 +536,7 @@ def load_symbol_module_graph(
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
-        return _empty_graph(directed=False)
+        return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
     edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -538,7 +546,7 @@ def load_symbol_module_graph(
         )
     )
     if edge_reader is None:
-        return _empty_graph(directed=False)
+        return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
     module_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -548,13 +556,15 @@ def load_symbol_module_graph(
         )
     )
     if module_reader is None:
-        return _empty_graph(directed=False)
+        return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
     module_by_path = _module_name_map(
         module_reader,
         repo=repo,
         commit=commit,
     )
-    store = RxGraphStore.undirected()
+    store = RxGraphStore.undirected(
+        weight_policy=weight_policy_for_kind(GraphKind.SYMBOL_MODULE_GRAPH)
+    )
     for def_path, use_path in _iter_tuples(edge_reader):
         if def_path is None or use_path is None:
             continue
@@ -564,7 +574,7 @@ def load_symbol_module_graph(
             continue
         if def_module == use_module:
             continue
-        add_weighted_edge(store, use_module, def_module, policy=_EDGE_WEIGHT_POLICY)
+        add_weighted_edge(store, use_module, def_module)
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
@@ -595,7 +605,7 @@ def load_symbol_function_graph(
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
-        return _empty_graph(directed=False)
+        return _empty_graph(directed=False, kind=GraphKind.SYMBOL_FUNCTION_GRAPH)
     edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -605,9 +615,11 @@ def load_symbol_function_graph(
         )
     )
     if edge_reader is None:
-        return _empty_graph(directed=False)
+        return _empty_graph(directed=False, kind=GraphKind.SYMBOL_FUNCTION_GRAPH)
 
-    store = RxGraphStore.undirected()
+    store = RxGraphStore.undirected(
+        weight_policy=weight_policy_for_kind(GraphKind.SYMBOL_FUNCTION_GRAPH)
+    )
     for def_goid, use_goid in _iter_tuples(edge_reader):
         if def_goid is None or use_goid is None:
             continue
@@ -615,7 +627,7 @@ def load_symbol_function_graph(
         right = normalize_decimal(use_goid)
         if left is None or right is None or left == right:
             continue
-        add_weighted_edge(store, left, right, policy=_EDGE_WEIGHT_POLICY)
+        add_weighted_edge(store, left, right)
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 

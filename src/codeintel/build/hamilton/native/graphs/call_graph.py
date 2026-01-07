@@ -16,8 +16,9 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
     filter_python_modules,
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -360,11 +361,22 @@ def call_graph_nodes_compute(
     InferableTabularInput
         Arrow reader for computed call graph nodes.
     """
-    goids_table = tabular_to_arrow_table(q__core__goids)
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    goids_table = tabular_to_scoped_table(
+        q__core__goids,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     if goids_table.num_rows == 0:
         return empty_table_for_table(CALL_GRAPH_NODES_TABLE_KEY)
 
-    modules_table = tabular_to_arrow_table(q__core__modules)
+    modules_table = tabular_to_scoped_table(
+        q__core__modules,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     module_by_path = _module_by_path(modules_table)
     output_rows = _call_graph_node_rows(
         env=env,
@@ -387,11 +399,22 @@ def call_graph_edges_compute(
     InferableTabularInput
         Tabular input for computed call graph edges.
     """
-    goids_table = tabular_to_arrow_table(q__core__goids)
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    goids_table = tabular_to_scoped_table(
+        q__core__goids,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     if goids_table.num_rows == 0:
         return empty_table_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
 
-    modules_table = tabular_to_arrow_table(q__core__modules)
+    modules_table = tabular_to_scoped_table(
+        q__core__modules,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     module_by_path = _module_by_path(modules_table)
     goid_by_qualname, local_name_map, goid_language = _call_graph_indices(
         goids_table,

@@ -12,6 +12,7 @@ from typing import cast
 
 import rustworkx as rx
 
+from codeintel.build.graphs.rx.convert import store_from_rx
 from codeintel.build.graphs.rx.normalize import (
     NanPolicy,
     edge_weight_from_payload,
@@ -19,7 +20,7 @@ from codeintel.build.graphs.rx.normalize import (
     sorted_mapping,
     stable_key,
 )
-from codeintel.build.graphs.rx.payloads import decode_node_payload
+from codeintel.build.graphs.rx.policies import GraphNumericPolicy
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 RxGraph = rx.PyGraph | rx.PyDiGraph
@@ -27,20 +28,6 @@ DirectedRxGraph = rx.PyDiGraph
 UndirectedRxGraph = rx.PyGraph
 GraphInput = RxGraphStore | RxGraph
 
-_CLUSTERING_ABS_TOL = 1e-9
-_CLUSTERING_REL_TOL = 1e-6
-_CONSTRAINT_ABS_TOL = 1e-9
-_CONSTRAINT_REL_TOL = 1e-6
-_EFFECTIVE_ABS_TOL = 1e-9
-_EFFECTIVE_REL_TOL = 1e-6
-_HARMONIC_ABS_TOL = 1e-9
-_HARMONIC_REL_TOL = 1e-6
-_PROJECTION_ABS_TOL = 1e-12
-_PROJECTION_REL_TOL = 1e-9
-_BIPARTITE_ABS_TOL = 1e-12
-_BIPARTITE_REL_TOL = 1e-9
-_DIJKSTRA_ABS_TOL = 1e-12
-_DIJKSTRA_REL_TOL = 1e-9
 _MIN_BETWEENNESS_NODES = 2
 _MIN_CLUSTERING_DEGREE = 2
 
@@ -52,6 +39,12 @@ def _apply_tolerance(value: float, *, abs_tol: float, rel_tol: float) -> float:
         if math.isclose(value, target, abs_tol=abs_tol, rel_tol=rel_tol):
             return target
     return value
+
+
+def _resolve_nan_policy(store: RxGraphStore, nan_policy: NanPolicy | None) -> NanPolicy:
+    if nan_policy is None:
+        return store.numeric_policy.nan_policy
+    return nan_policy
 
 
 def _normalize_float_mapping(
@@ -97,7 +90,7 @@ class PagerankOptions:
     max_iter: int = 100
     tol: float = 1e-6
     weight: str | None = None
-    nan_policy: NanPolicy = "keep"
+    nan_policy: NanPolicy | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,32 +101,14 @@ class BetweennessOptions:
     k: int | None = None
     weight: str | None = None
     seed: int | None = None
-    nan_policy: NanPolicy = "keep"
-
-
-def _store_from_rx(graph: RxGraph) -> RxGraphStore:
-    id_to_index: dict[Hashable, int] = {}
-    index_to_id: dict[int, Hashable] = {}
-    node_attrs: dict[Hashable, dict[str, object]] = {}
-    for node_idx in graph.node_indices():
-        node_id, attrs = decode_node_payload(graph.get_node_data(node_idx))
-        id_to_index[node_id] = node_idx
-        index_to_id[node_idx] = node_id
-        node_attrs[node_id] = attrs
-    return RxGraphStore(
-        graph=graph,
-        id_to_index=id_to_index,
-        index_to_id=index_to_id,
-        node_attrs=node_attrs,
-        is_directed=isinstance(graph, rx.PyDiGraph),
-    )
+    nan_policy: NanPolicy | None = None
 
 
 def ensure_store(
     graph: GraphInput,
     *,
     weight: str | None = "weight",
-    nan_policy: NanPolicy = "keep",
+    nan_policy: NanPolicy | None = None,
 ) -> RxGraphStore:
     """Coerce supported graph inputs into an RxGraphStore.
 
@@ -150,7 +125,7 @@ def ensure_store(
     if isinstance(graph, RxGraphStore):
         return graph
     if isinstance(graph, (rx.PyGraph, rx.PyDiGraph)):
-        return _store_from_rx(graph)
+        return store_from_rx(graph)
     message = (
         f"Unsupported graph input: {type(graph).__name__} "
         f"(weight={weight}, nan_policy={nan_policy})"
@@ -193,9 +168,7 @@ def to_undirected_store(store: RxGraphStore) -> RxGraphStore:
     """
     if not store.is_directed:
         return store
-    directed_graph = _directed_graph(store)
-    undirected = directed_graph.to_undirected()
-    return _store_from_rx(undirected)
+    return store.as_undirected()
 
 
 def to_directed_store(store: RxGraphStore) -> RxGraphStore:
@@ -208,16 +181,14 @@ def to_directed_store(store: RxGraphStore) -> RxGraphStore:
     """
     if store.is_directed:
         return store
-    undirected_graph = _undirected_graph(store)
-    directed = undirected_graph.to_directed()
-    return _store_from_rx(directed)
+    return store.as_directed()
 
 
 def ensure_directed_store(
     graph: GraphInput,
     *,
     weight: str | None = "weight",
-    nan_policy: NanPolicy = "keep",
+    nan_policy: NanPolicy | None = None,
 ) -> RxGraphStore:
     """Coerce supported inputs into a directed RxGraphStore.
 
@@ -274,13 +245,14 @@ def pagerank_by_id(
     """
     resolved = options or PagerankOptions()
     store = ensure_directed_store(graph, weight=resolved.weight, nan_policy=resolved.nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, resolved.nan_policy)
     node_count = store.graph.num_nodes()
     if node_count == 0:
         return {}
     directed_graph = _directed_graph(store)
     weight_fn: Callable[[object], float] | None = None
     if resolved.weight is not None:
-        weight_fn = _edge_weight_fn(nan_policy=resolved.nan_policy)
+        weight_fn = _edge_weight_fn(nan_policy=resolved_nan_policy)
     raw = rx.pagerank(
         directed_graph,
         alpha=resolved.alpha,
@@ -289,7 +261,7 @@ def pagerank_by_id(
         max_iter=resolved.max_iter,
     )
     mapped = {store.index_to_id[idx]: float(score) for idx, score in raw.items()}
-    return _normalize_float_mapping(mapped, nan_policy=resolved.nan_policy)
+    return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
 
 
 def eigenvector_centrality_by_id(
@@ -298,7 +270,7 @@ def eigenvector_centrality_by_id(
     max_iter: int = 100,
     tol: float = 1e-6,
     weight: str | None = None,
-    nan_policy: NanPolicy = "keep",
+    nan_policy: NanPolicy | None = None,
 ) -> dict[Hashable, float]:
     """Compute eigenvector centrality keyed by node id.
 
@@ -308,13 +280,14 @@ def eigenvector_centrality_by_id(
         Eigenvector centrality scores keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
     work_store = to_undirected_store(store)
     if work_store.graph.num_nodes() == 0:
         return {}
     undirected_graph = _undirected_graph(work_store)
     weight_fn: Callable[[object], float] | None = None
     if weight is not None:
-        weight_fn = _edge_weight_fn(nan_policy=nan_policy)
+        weight_fn = _edge_weight_fn(nan_policy=resolved_nan_policy)
     raw = rx.graph_eigenvector_centrality(
         undirected_graph,
         weight_fn=weight_fn,
@@ -322,7 +295,7 @@ def eigenvector_centrality_by_id(
         tol=tol,
     )
     mapped = {work_store.index_to_id[idx]: float(score) for idx, score in raw.items()}
-    return _normalize_float_mapping(mapped, nan_policy=nan_policy)
+    return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
 
 
 def closeness_by_id(
@@ -330,7 +303,7 @@ def closeness_by_id(
     *,
     weight: str | None = None,
     wf_improved: bool = True,
-    nan_policy: NanPolicy = "keep",
+    nan_policy: NanPolicy | None = None,
 ) -> dict[Hashable, float]:
     """Compute closeness centrality keyed by node id.
 
@@ -340,6 +313,7 @@ def closeness_by_id(
         Closeness centrality scores keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
     if store.graph.num_nodes() == 0:
         return {}
     if weight is None:
@@ -350,7 +324,7 @@ def closeness_by_id(
             undirected_graph = _undirected_graph(store)
             raw = rx.graph_closeness_centrality(undirected_graph, wf_improved=wf_improved)
     else:
-        weight_fn = _edge_weight_fn(nan_policy=nan_policy)
+        weight_fn = _edge_weight_fn(nan_policy=resolved_nan_policy)
         if store.is_directed:
             directed_graph = _directed_graph(store)
             raw = rx.digraph_newman_weighted_closeness_centrality(
@@ -368,7 +342,7 @@ def closeness_by_id(
                 wf_improved=wf_improved,
             )
     mapped = {store.index_to_id[idx]: float(score) for idx, score in raw.items()}
-    return _normalize_float_mapping(mapped, nan_policy=nan_policy)
+    return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
 
 
 def _edge_weight_map(store: RxGraphStore, *, nan_policy: NanPolicy) -> dict[tuple[int, int], float]:
@@ -456,10 +430,16 @@ def _brandes_unweighted(
 def _brandes_weighted(
     neighbors: Mapping[int, Sequence[tuple[int, float]]],
     sources: Sequence[int],
+    *,
+    numeric_policy: GraphNumericPolicy,
 ) -> dict[int, float]:
     betweenness = dict.fromkeys(neighbors, 0.0)
     for source in sources:
-        stack, predecessors, sigma = _brandes_weighted_paths(neighbors, source)
+        stack, predecessors, sigma = _brandes_weighted_paths(
+            neighbors,
+            source,
+            numeric_policy=numeric_policy,
+        )
         delta = _brandes_dependency(predecessors, sigma, stack)
         for node in delta:
             if node != source:
@@ -470,6 +450,8 @@ def _brandes_weighted(
 def _brandes_weighted_paths(
     neighbors: Mapping[int, Sequence[tuple[int, float]]],
     source: int,
+    *,
+    numeric_policy: GraphNumericPolicy,
 ) -> tuple[list[int], dict[int, list[int]], dict[int, float]]:
     stack: list[int] = []
     predecessors: dict[int, list[int]] = {node: [] for node in neighbors}
@@ -485,7 +467,7 @@ def _brandes_weighted_paths(
         stack.append(node)
         for neighbor, weight in neighbors[node]:
             path_dist = distance[node] + weight
-            if path_dist < distance[neighbor] - _DIJKSTRA_ABS_TOL:
+            if path_dist < distance[neighbor] - numeric_policy.dijkstra_abs_tol:
                 distance[neighbor] = path_dist
                 heapq.heappush(queue, (path_dist, neighbor))
                 sigma[neighbor] = sigma[node]
@@ -493,8 +475,8 @@ def _brandes_weighted_paths(
             elif math.isclose(
                 path_dist,
                 distance[neighbor],
-                rel_tol=_DIJKSTRA_REL_TOL,
-                abs_tol=_DIJKSTRA_ABS_TOL,
+                rel_tol=numeric_policy.dijkstra_rel_tol,
+                abs_tol=numeric_policy.dijkstra_abs_tol,
             ):
                 sigma[neighbor] += sigma[node]
                 predecessors[neighbor].append(node)
@@ -540,6 +522,41 @@ def _rescale_betweenness(
     return betweenness
 
 
+def _betweenness_builtin_by_id(
+    store: RxGraphStore,
+    *,
+    normalized: bool,
+) -> dict[Hashable, float]:
+    if store.is_directed:
+        directed_graph = _directed_graph(store)
+        raw = rx.digraph_betweenness_centrality(
+            directed_graph,
+            normalized=normalized,
+        )
+    else:
+        undirected_graph = _undirected_graph(store)
+        raw = rx.graph_betweenness_centrality(
+            undirected_graph,
+            normalized=normalized,
+        )
+    return {store.index_to_id[idx]: float(val) for idx, val in raw.items()}
+
+
+def _resolve_sampled_indices(
+    store: RxGraphStore,
+    *,
+    k: int | None,
+    seed: int | None,
+) -> tuple[list[int], int | None]:
+    indices = _sorted_node_indices(store)
+    if k is None:
+        return indices, None
+    if k < len(indices):
+        rng = random.Random(seed)
+        return rng.sample(indices, k), k
+    return indices, len(indices)
+
+
 def betweenness_by_id(
     graph: GraphInput,
     *,
@@ -554,41 +571,24 @@ def betweenness_by_id(
     """
     resolved = options or BetweennessOptions()
     store = ensure_store(graph, weight=resolved.weight, nan_policy=resolved.nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, resolved.nan_policy)
+    numeric_policy = store.numeric_policy
     node_count = store.graph.num_nodes()
     if node_count == 0:
         return {}
     if resolved.weight is None and resolved.k is None:
-        if store.is_directed:
-            directed_graph = _directed_graph(store)
-            raw = rx.digraph_betweenness_centrality(
-                directed_graph,
-                normalized=resolved.normalized,
-            )
-        else:
-            undirected_graph = _undirected_graph(store)
-            raw = rx.graph_betweenness_centrality(
-                undirected_graph,
-                normalized=resolved.normalized,
-            )
-        mapped = {store.index_to_id[idx]: float(val) for idx, val in raw.items()}
-        return _normalize_float_mapping(mapped, nan_policy=resolved.nan_policy)
+        mapped = _betweenness_builtin_by_id(store, normalized=resolved.normalized)
+        return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
 
-    indices = _sorted_node_indices(store)
-    sampled = None
-    if resolved.k is not None and resolved.k < len(indices):
-        rng = random.Random(resolved.seed)
-        indices = rng.sample(indices, resolved.k)
-        sampled = resolved.k
-    elif resolved.k is not None:
-        sampled = len(indices)
+    indices, sampled = _resolve_sampled_indices(store, k=resolved.k, seed=resolved.seed)
 
     if resolved.weight is None:
         neighbors = _neighbor_map(store, include_self=False)
         betweenness = _brandes_unweighted(neighbors, indices)
     else:
-        edge_weights = _edge_weight_map(store, nan_policy=resolved.nan_policy)
+        edge_weights = _edge_weight_map(store, nan_policy=resolved_nan_policy)
         neighbors = _weighted_neighbor_map(store, edge_weights)
-        betweenness = _brandes_weighted(neighbors, indices)
+        betweenness = _brandes_weighted(neighbors, indices, numeric_policy=numeric_policy)
 
     rescaled = _rescale_betweenness(
         betweenness,
@@ -598,14 +598,14 @@ def betweenness_by_id(
         sampled=sampled,
     )
     mapped = {store.index_to_id[idx]: float(val) for idx, val in rescaled.items()}
-    return _normalize_float_mapping(mapped, nan_policy=resolved.nan_policy)
+    return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
 
 
 def harmonic_centrality_by_id(
     graph: GraphInput,
     *,
     weight: str | None = None,
-    nan_policy: NanPolicy = "keep",
+    nan_policy: NanPolicy | None = None,
 ) -> dict[Hashable, float]:
     """Compute harmonic centrality keyed by node id.
 
@@ -615,11 +615,13 @@ def harmonic_centrality_by_id(
         Harmonic centrality scores keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
+    numeric_policy = store.numeric_policy
     if store.graph.num_nodes() == 0:
         return {}
     weight_fn: Callable[[object], float] = _constant_weight_fn
     if weight is not None:
-        weight_fn = _edge_weight_fn(nan_policy=nan_policy)
+        weight_fn = _edge_weight_fn(nan_policy=resolved_nan_policy)
     result: dict[Hashable, float] = {}
     directed_graph: DirectedRxGraph | None = None
     undirected_graph: UndirectedRxGraph | None = None
@@ -651,9 +653,9 @@ def harmonic_centrality_by_id(
         result[node_id] = total
     return _normalize_float_mapping(
         result,
-        nan_policy=nan_policy,
-        abs_tol=_HARMONIC_ABS_TOL,
-        rel_tol=_HARMONIC_REL_TOL,
+        nan_policy=resolved_nan_policy,
+        abs_tol=numeric_policy.harmonic_abs_tol,
+        rel_tol=numeric_policy.harmonic_rel_tol,
     )
 
 
@@ -672,26 +674,21 @@ def degree_centrality_by_id(graph: GraphInput) -> dict[Hashable, float]:
     if node_count == 1:
         node_id = store.node_ids()[0]
         return {node_id: 1.0}
-    scale = 1.0 / float(node_count - 1)
     result: dict[Hashable, float] = {}
-    directed_graph: DirectedRxGraph | None = None
-    undirected_graph: UndirectedRxGraph | None = None
     if store.is_directed:
         directed_graph = _directed_graph(store)
+        in_raw = rx.in_degree_centrality(directed_graph)
+        out_raw = rx.out_degree_centrality(directed_graph)
+        for node_id in store.node_ids():
+            idx = store.id_to_index[node_id]
+            result[node_id] = float(in_raw.get(idx, 0.0)) + float(out_raw.get(idx, 0.0))
     else:
         undirected_graph = _undirected_graph(store)
-    for node_id in store.node_ids():
-        idx = store.id_to_index[node_id]
-        if store.is_directed:
-            if directed_graph is None:
-                directed_graph = _directed_graph(store)
-            degree = directed_graph.in_degree(idx) + directed_graph.out_degree(idx)
-        else:
-            if undirected_graph is None:
-                undirected_graph = _undirected_graph(store)
-            degree = undirected_graph.degree(idx)
-        result[node_id] = float(degree) * scale
-    return _normalize_float_mapping(result, nan_policy="keep")
+        raw = rx.degree_centrality(undirected_graph)
+        for node_id in store.node_ids():
+            idx = store.id_to_index[node_id]
+            result[node_id] = float(raw.get(idx, 0.0))
+    return _normalize_float_mapping(result, nan_policy=store.numeric_policy.nan_policy)
 
 
 def in_degree_centrality_by_id(graph: GraphInput) -> dict[Hashable, float]:
@@ -709,13 +706,13 @@ def in_degree_centrality_by_id(graph: GraphInput) -> dict[Hashable, float]:
     if node_count == 1:
         node_id = store.node_ids()[0]
         return {node_id: 1.0}
-    scale = 1.0 / float(node_count - 1)
     result: dict[Hashable, float] = {}
     directed_graph = _directed_graph(store)
+    raw = rx.in_degree_centrality(directed_graph)
     for node_id in store.node_ids():
         idx = store.id_to_index[node_id]
-        result[node_id] = float(directed_graph.in_degree(idx)) * scale
-    return _normalize_float_mapping(result, nan_policy="keep")
+        result[node_id] = float(raw.get(idx, 0.0))
+    return _normalize_float_mapping(result, nan_policy=store.numeric_policy.nan_policy)
 
 
 def out_degree_centrality_by_id(graph: GraphInput) -> dict[Hashable, float]:
@@ -733,13 +730,13 @@ def out_degree_centrality_by_id(graph: GraphInput) -> dict[Hashable, float]:
     if node_count == 1:
         node_id = store.node_ids()[0]
         return {node_id: 1.0}
-    scale = 1.0 / float(node_count - 1)
     result: dict[Hashable, float] = {}
     directed_graph = _directed_graph(store)
+    raw = rx.out_degree_centrality(directed_graph)
     for node_id in store.node_ids():
         idx = store.id_to_index[node_id]
-        result[node_id] = float(directed_graph.out_degree(idx)) * scale
-    return _normalize_float_mapping(result, nan_policy="keep")
+        result[node_id] = float(raw.get(idx, 0.0))
+    return _normalize_float_mapping(result, nan_policy=store.numeric_policy.nan_policy)
 
 
 def _triangle_counts(
@@ -789,7 +786,7 @@ def clustering_by_id(
     graph: GraphInput,
     *,
     weight: str | None = None,
-    nan_policy: NanPolicy = "keep",
+    nan_policy: NanPolicy | None = None,
 ) -> dict[Hashable, float]:
     """Compute clustering coefficients keyed by node id.
 
@@ -799,19 +796,21 @@ def clustering_by_id(
         Clustering coefficients keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
     work_store = to_undirected_store(store)
+    numeric_policy = work_store.numeric_policy
     if work_store.graph.num_nodes() == 0:
         return {}
     neighbors = _neighbor_map(work_store, include_self=False)
     if weight is None:
         result = _clustering_unweighted(work_store, neighbors)
-        return _normalize_float_mapping(result, nan_policy=nan_policy)
-    result = _clustering_weighted(work_store, neighbors, nan_policy=nan_policy)
+        return _normalize_float_mapping(result, nan_policy=resolved_nan_policy)
+    result = _clustering_weighted(work_store, neighbors, nan_policy=resolved_nan_policy)
     return _normalize_float_mapping(
         result,
-        nan_policy=nan_policy,
-        abs_tol=_CLUSTERING_ABS_TOL,
-        rel_tol=_CLUSTERING_REL_TOL,
+        nan_policy=resolved_nan_policy,
+        abs_tol=numeric_policy.clustering_abs_tol,
+        rel_tol=numeric_policy.clustering_rel_tol,
     )
 
 
@@ -940,7 +939,7 @@ def constraint_by_id(
     graph: GraphInput,
     *,
     weight: str | None = None,
-    nan_policy: NanPolicy = "keep",
+    nan_policy: NanPolicy | None = None,
 ) -> dict[Hashable, float]:
     """Compute Burt's constraint keyed by node id.
 
@@ -950,11 +949,13 @@ def constraint_by_id(
         Constraint values keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
     work_store = to_undirected_store(store)
+    numeric_policy = work_store.numeric_policy
     if work_store.graph.num_nodes() == 0:
         return {}
     neighbors = _neighbor_sets_with_self(work_store)
-    edge_weights = _edge_weight_map(work_store, nan_policy=nan_policy)
+    edge_weights = _edge_weight_map(work_store, nan_policy=resolved_nan_policy)
     scale = _neighbor_scale(edge_weights, neighbors, norm=sum)
 
     result: dict[Hashable, float] = {}
@@ -983,17 +984,19 @@ def constraint_by_id(
         result[node_id] = local_sum
     return _normalize_float_mapping(
         result,
-        nan_policy=nan_policy,
-        abs_tol=_CONSTRAINT_ABS_TOL,
-        rel_tol=_CONSTRAINT_REL_TOL,
+        nan_policy=resolved_nan_policy,
+        abs_tol=numeric_policy.constraint_abs_tol,
+        rel_tol=numeric_policy.constraint_rel_tol,
     )
 
 
 def _effective_size_unweighted(
     store: RxGraphStore,
     neighbors: Mapping[int, Sequence[int]],
+    *,
+    nan_policy: NanPolicy,
 ) -> dict[Hashable, float]:
-    edge_weights = _edge_weight_map(store, nan_policy="keep")
+    edge_weights = _edge_weight_map(store, nan_policy=nan_policy)
     result: dict[Hashable, float] = {}
     for node_idx, node_neighbors in neighbors.items():
         node_id = store.index_to_id[node_idx]
@@ -1015,7 +1018,7 @@ def effective_size_by_id(
     graph: GraphInput,
     *,
     weight: str | None = None,
-    nan_policy: NanPolicy = "keep",
+    nan_policy: NanPolicy | None = None,
 ) -> dict[Hashable, float]:
     """Compute effective size keyed by node id.
 
@@ -1025,20 +1028,22 @@ def effective_size_by_id(
         Effective size values keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
     work_store = to_undirected_store(store)
+    numeric_policy = work_store.numeric_policy
     if work_store.graph.num_nodes() == 0:
         return {}
     neighbors = _neighbor_sets_with_self(work_store)
     if weight is None:
-        result = _effective_size_unweighted(work_store, neighbors)
+        result = _effective_size_unweighted(work_store, neighbors, nan_policy=resolved_nan_policy)
         return _normalize_float_mapping(
             result,
-            nan_policy=nan_policy,
-            abs_tol=_EFFECTIVE_ABS_TOL,
-            rel_tol=_EFFECTIVE_REL_TOL,
+            nan_policy=resolved_nan_policy,
+            abs_tol=numeric_policy.effective_abs_tol,
+            rel_tol=numeric_policy.effective_rel_tol,
         )
 
-    edge_weights = _edge_weight_map(work_store, nan_policy=nan_policy)
+    edge_weights = _edge_weight_map(work_store, nan_policy=resolved_nan_policy)
     sum_scale = _neighbor_scale(edge_weights, neighbors, norm=sum)
     max_scale = _neighbor_scale(edge_weights, neighbors, norm=max)
 
@@ -1069,9 +1074,9 @@ def effective_size_by_id(
         result[node_id] = redundancy_sum
     return _normalize_float_mapping(
         result,
-        nan_policy=nan_policy,
-        abs_tol=_EFFECTIVE_ABS_TOL,
-        rel_tol=_EFFECTIVE_REL_TOL,
+        nan_policy=resolved_nan_policy,
+        abs_tol=numeric_policy.effective_abs_tol,
+        rel_tol=numeric_policy.effective_rel_tol,
     )
 
 
@@ -1079,7 +1084,7 @@ def bipartite_degree_centrality_by_id(
     graph: GraphInput,
     primary: set[Hashable],
     *,
-    nan_policy: NanPolicy = "keep",
+    nan_policy: NanPolicy | None = None,
 ) -> dict[Hashable, float]:
     """Compute bipartite degree centrality keyed by node id.
 
@@ -1089,7 +1094,9 @@ def bipartite_degree_centrality_by_id(
         Bipartite degree centrality keyed by node identifier.
     """
     store = ensure_store(graph, nan_policy=nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
     work_store = to_undirected_store(store)
+    numeric_policy = work_store.numeric_policy
     node_ids = set(work_store.node_ids())
     secondary = node_ids - primary
     primary_scale = 1.0 / float(len(secondary)) if secondary else 0.0
@@ -1103,9 +1110,9 @@ def bipartite_degree_centrality_by_id(
         result[node_id] = float(degree) * scale
     return _normalize_float_mapping(
         result,
-        nan_policy=nan_policy,
-        abs_tol=_BIPARTITE_ABS_TOL,
-        rel_tol=_BIPARTITE_REL_TOL,
+        nan_policy=resolved_nan_policy,
+        abs_tol=numeric_policy.bipartite_abs_tol,
+        rel_tol=numeric_policy.bipartite_rel_tol,
     )
 
 
@@ -1114,7 +1121,7 @@ def weighted_projection_store(
     nodes: set[Hashable],
     *,
     ratio: bool = False,
-    nan_policy: NanPolicy = "keep",
+    nan_policy: NanPolicy | None = None,
 ) -> RxGraphStore:
     """Return a weighted projection store for a subset of nodes.
 
@@ -1130,6 +1137,7 @@ def weighted_projection_store(
     """
     store = ensure_store(graph, nan_policy=nan_policy)
     work_store = to_undirected_store(store)
+    numeric_policy = work_store.numeric_policy
     node_indices = {
         work_store.id_to_index[node_id] for node_id in nodes if node_id in work_store.id_to_index
     }
@@ -1140,7 +1148,10 @@ def weighted_projection_store(
         message = "projection nodes must be a strict subset of graph nodes"
         raise ValueError(message)
     neighbors = _neighbor_map(work_store, include_self=False)
-    projected = RxGraphStore.undirected()
+    projected = RxGraphStore.undirected(
+        weight_policy=work_store.weight_policy,
+        numeric_policy=work_store.numeric_policy,
+    )
     for node_id in sorted(nodes, key=stable_key):
         if node_id in work_store.id_to_index:
             projected.ensure_node(node_id)
@@ -1160,8 +1171,8 @@ def weighted_projection_store(
             if ratio:
                 weight = _apply_tolerance(
                     weight,
-                    abs_tol=_PROJECTION_ABS_TOL,
-                    rel_tol=_PROJECTION_REL_TOL,
+                    abs_tol=numeric_policy.projection_abs_tol,
+                    rel_tol=numeric_policy.projection_rel_tol,
                 )
             projected.add_weighted_edge(
                 work_store.index_to_id[left],

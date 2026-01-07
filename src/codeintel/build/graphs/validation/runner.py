@@ -54,6 +54,7 @@ from codeintel.build.graphs.validation.findings import (
     persist_findings,
     resolve_validation_options,
 )
+from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import equal_mask, is_in_mask
 from codeintel.core.validation.runner import ValidationRunner
 
@@ -395,7 +396,7 @@ def log_db_snapshot(
         if table is None:
             return -1
         if filter_expr is not None:
-            table = table.filter(filter_expr(table))
+            table = safe_filter(table, filter_expr(table))
         return table.num_rows
 
     counts = {

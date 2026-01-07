@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import pairwise
 from typing import TYPE_CHECKING, Final, Literal
+
+import rustworkx as rx
+import rustworkx.generators as rx_generators
 
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 from codeintel.build.graphs.rx.store import RxGraphStore
@@ -61,6 +63,31 @@ def _make_store(*, directed: bool) -> RxGraphStore:
     return RxGraphStore.directed() if directed else RxGraphStore.undirected()
 
 
+def _alphabetic_label(index: int) -> str:
+    if index < _ALPHABET_SIZE:
+        return chr(ord("A") + index % _ALPHABET_SIZE)
+    return f"N{index}"
+
+
+def _store_from_generator(
+    graph: rx.PyGraph | rx.PyDiGraph,
+    node_ids: Sequence[object],
+) -> RxGraphStore:
+    store = (
+        RxGraphStore.directed() if isinstance(graph, rx.PyDiGraph) else RxGraphStore.undirected()
+    )
+    if graph.num_nodes() == 0:
+        return store
+    if len(node_ids) < graph.num_nodes():
+        message = "Node id count does not match generated graph size"
+        raise ValueError(message)
+    for node_idx in graph.node_indices():
+        store.ensure_node(node_ids[node_idx])
+    for src_idx, dst_idx in graph.edge_list():
+        store.add_weighted_edge(node_ids[src_idx], node_ids[dst_idx], weight=1.0)
+    return store
+
+
 def _add_edges(
     store: RxGraphStore,
     edges: Sequence[tuple[object, object]],
@@ -102,17 +129,14 @@ def _relabel_store(store: RxGraphStore, mapping: Mapping[object, object]) -> RxG
 
 
 def _set_edge_weight(store: RxGraphStore, src_id: object, dst_id: object, weight: float) -> None:
-    src_idx = store.id_to_index.get(src_id)
-    dst_idx = store.id_to_index.get(dst_id)
-    if src_idx is None or dst_idx is None:
-        return
-    if store.graph.has_edge(src_idx, dst_idx):
-        store.graph.update_edge(src_idx, dst_idx, float(weight))
+    store.set_edge_weight(src_id, dst_id, weight=float(weight))
 
 
 def _set_uniform_edge_weights(store: RxGraphStore, weight: float) -> None:
     for src_idx, dst_idx in store.graph.edge_list():
-        store.graph.update_edge(src_idx, dst_idx, float(weight))
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        store.set_edge_weight(src_id, dst_id, weight=float(weight))
 
 
 @dataclass
@@ -136,41 +160,40 @@ GOLDEN_IMPORT: Final[GraphFixtureSpec] = GraphFixtureSpec(kind="golden", directe
 
 
 def _build_chain(spec: GraphFixtureSpec) -> RxGraphStore:
-    graph = _make_store(directed=spec.directed)
     length = spec.nodes or 0
     if length < 1:
-        return graph
-
-    def node_label(i: int) -> str:
-        return chr(ord("A") + i % _ALPHABET_SIZE) if i < _ALPHABET_SIZE else f"N{i}"
-
-    nodes = [node_label(i) for i in range(length)]
-    for node in nodes:
-        graph.ensure_node(node)
-    for i in range(length - 1):
-        graph.add_weighted_edge(nodes[i], nodes[i + 1], weight=1.0)
-    return graph
+        return _make_store(directed=spec.directed)
+    node_ids = [_alphabetic_label(i) for i in range(length)]
+    if spec.directed:
+        generated = rx_generators.directed_path_graph(num_nodes=length, multigraph=False)
+    else:
+        generated = rx_generators.path_graph(num_nodes=length, multigraph=False)
+    return _store_from_generator(generated, node_ids)
 
 
 def _build_star(spec: GraphFixtureSpec) -> RxGraphStore:
-    graph = _make_store(directed=spec.directed)
     spokes = spec.spokes or 0
-    hub = "hub"
-    graph.ensure_node(hub)
-    for idx in range(spokes):
-        leaf = f"spoke{idx + 1}"
-        graph.ensure_node(leaf)
-        graph.add_weighted_edge(hub, leaf, weight=1.0)
-    return graph
+    node_ids = ["hub"] + [f"spoke{idx + 1}" for idx in range(spokes)]
+    node_count = len(node_ids)
+    if spec.directed:
+        generated = rx_generators.directed_star_graph(num_nodes=node_count, multigraph=False)
+    else:
+        generated = rx_generators.star_graph(num_nodes=node_count, multigraph=False)
+    return _store_from_generator(generated, node_ids)
 
 
 def _build_cycle(spec: GraphFixtureSpec) -> RxGraphStore:
     size = spec.cycle_size or spec.nodes or 0
-    graph = _build_chain(GraphFixtureSpec(kind="chain", directed=spec.directed, nodes=size))
-    nodes = graph.node_ids()
-    if len(nodes) > 1:
-        graph.add_weighted_edge(nodes[-1], nodes[0], weight=1.0)
-    return graph
+    if size < 1:
+        return _make_store(directed=spec.directed)
+    if size < _MIN_CYCLE_SIZE:
+        return _build_chain(GraphFixtureSpec(kind="chain", directed=spec.directed, nodes=size))
+    node_ids = [_alphabetic_label(i) for i in range(size)]
+    if spec.directed:
+        generated = rx_generators.directed_cycle_graph(num_nodes=size, multigraph=False)
+    else:
+        generated = rx_generators.cycle_graph(num_nodes=size, multigraph=False)
+    return _store_from_generator(generated, node_ids)
 
 
 def _build_layered(spec: GraphFixtureSpec) -> RxGraphStore:
@@ -255,26 +278,16 @@ def barbell_graph_small(
     RxGraphStore
         Undirected barbell graph store.
     """
-    store = RxGraphStore.undirected()
     total_nodes = (clique_size * 2) + bridge_size
-    for node in range(total_nodes):
-        store.ensure_node(node)
-
-    for left in range(clique_size):
-        for right in range(left + 1, clique_size):
-            store.add_weighted_edge(left, right, weight=1.0)
-
-    right_start = clique_size + bridge_size
-    for left in range(right_start, right_start + clique_size):
-        for right in range(left + 1, right_start + clique_size):
-            store.add_weighted_edge(left, right, weight=1.0)
-
-    path_nodes = [clique_size - 1]
-    path_nodes.extend(range(clique_size, clique_size + bridge_size))
-    path_nodes.append(right_start)
-    for left, right in pairwise(path_nodes):
-        store.add_weighted_edge(left, right, weight=1.0)
-    return store
+    if total_nodes <= 0:
+        return RxGraphStore.undirected()
+    generated = rx_generators.barbell_graph(
+        num_mesh_nodes=clique_size,
+        num_path_nodes=bridge_size,
+        multigraph=False,
+    )
+    node_ids = list(range(total_nodes))
+    return _store_from_generator(generated, node_ids)
 
 
 def chain_graph(length: int = DEFAULT_CHAIN_LENGTH) -> RxGraphStore:
@@ -436,21 +449,11 @@ def cyclic_graph(size: int = DEFAULT_CYCLE_SIZE) -> RxGraphStore:
     >>> edges
     [('A', 'B'), ('B', 'C'), ('C', 'A')]
     """
-    g = RxGraphStore.directed()
     if size < _MIN_CYCLE_SIZE:
-        return g
-
-    def node_label(i: int) -> str:
-        return chr(ord("A") + i % _ALPHABET_SIZE) if i < _ALPHABET_SIZE else f"N{i}"
-
-    nodes = [node_label(i) for i in range(size)]
-    for node in nodes:
-        g.ensure_node(node)
-
-    for i in range(size):
-        g.add_weighted_edge(nodes[i], nodes[(i + 1) % size], weight=1.0)
-
-    return g
+        return RxGraphStore.directed()
+    node_ids = [_alphabetic_label(i) for i in range(size)]
+    generated = rx_generators.directed_cycle_graph(num_nodes=size, multigraph=False)
+    return _store_from_generator(generated, node_ids)
 
 
 def import_cycle_graph(size: int = DEFAULT_CYCLE_SIZE) -> RxGraphStore:
@@ -648,14 +651,11 @@ def complete_digraph(n: int = DEFAULT_COMPLETE_SIZE) -> RxGraphStore:
     >>> g.graph.num_edges()
     6
     """
-    graph = RxGraphStore.directed()
-    for node in range(n):
-        graph.ensure_node(node)
-    for src in range(n):
-        for dst in range(n):
-            if src != dst:
-                graph.add_weighted_edge(src, dst, weight=1.0)
-    return graph
+    if n <= 0:
+        return RxGraphStore.directed()
+    generated = rx_generators.directed_complete_graph(num_nodes=n, multigraph=False)
+    node_ids = list(range(n))
+    return _store_from_generator(generated, node_ids)
 
 
 def complete_graph(n: int = DEFAULT_COMPLETE_SIZE) -> RxGraphStore:
@@ -671,13 +671,11 @@ def complete_graph(n: int = DEFAULT_COMPLETE_SIZE) -> RxGraphStore:
     RxGraphStore
         Complete undirected graph store.
     """
-    graph = RxGraphStore.undirected()
-    for node in range(n):
-        graph.ensure_node(node)
-    for src in range(n):
-        for dst in range(src + 1, n):
-            graph.add_weighted_edge(src, dst, weight=1.0)
-    return graph
+    if n <= 0:
+        return RxGraphStore.undirected()
+    generated = rx_generators.complete_graph(num_nodes=n, multigraph=False)
+    node_ids = list(range(n))
+    return _store_from_generator(generated, node_ids)
 
 
 def single_node_graph(node: str | int = "A") -> RxGraphStore:

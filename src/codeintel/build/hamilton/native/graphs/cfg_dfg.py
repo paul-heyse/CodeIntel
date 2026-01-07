@@ -21,7 +21,7 @@ from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabul
 from codeintel.build.tabular.arrow_ops import iter_array_values, iter_rows
 from codeintel.build.tabular.compute_helpers import cast_array, safe_filter
 from codeintel.build.tabular.compute_masks import non_empty_string_expr, non_empty_string_mask
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -234,8 +234,9 @@ def cfg_dfg_analysis(
     _CfgDfgAnalysis
         Container of CFG blocks/edges and DFG edges rows.
     """
-    goids_table = tabular_to_arrow_table(q__core__goids).select(
-        [
+    goids_table = tabular_to_scoped_table(
+        q__core__goids,
+        columns=[
             "goid_h128",
             "rel_path",
             "qualname",
@@ -243,14 +244,19 @@ def cfg_dfg_analysis(
             "end_line",
             "kind",
             "language",
-        ]
+        ],
+        scope=None,
+        require_scope_columns=False,
     )
     goids_table = filter_python_goids(goids_table)
     if goids_table.num_rows == 0:
         return _CfgDfgAnalysis(cfg_blocks=(), cfg_edges=(), dfg_edges=())
 
-    ast_nodes_table = tabular_to_arrow_table(q__core__ast_nodes).select(
-        ["path", "node_type", "name", "lineno"]
+    ast_nodes_table = tabular_to_scoped_table(
+        q__core__ast_nodes,
+        columns=["path", "node_type", "name", "lineno"],
+        scope=None,
+        require_scope_columns=False,
     )
     function_keys_by_path, paths = _collect_ast_function_keys(ast_nodes_table)
     goids_by_path = _collect_goids_by_path(goids_table, function_keys_by_path)

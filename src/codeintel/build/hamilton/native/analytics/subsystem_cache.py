@@ -17,8 +17,9 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import align_tabular_to_contract, emit_alignment_report
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -46,8 +47,19 @@ def subsystem_profile_cache__base(
     pa.Table
         Table containing subsystem profile cache rows.
     """
-    subsystems_frame = tabular_to_arrow_table(q__analytics__subsystems)
-    metrics_frame = tabular_to_arrow_table(q__analytics__subsystem_graph_metrics)
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    subsystems_frame = tabular_to_scoped_table(
+        q__analytics__subsystems,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
+    metrics_frame = tabular_to_scoped_table(
+        q__analytics__subsystem_graph_metrics,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     table = build_subsystem_profile_cache_frame(
         env.snapshot,
         subsystems_frame=subsystems_frame,

@@ -17,6 +17,7 @@ from codeintel.build.analytics.compute.graphs import (
     projection_metrics,
 )
 from codeintel.build.analytics.graphs.constants import MAX_BETWEENNESS_NODES
+from codeintel.build.analytics.utilities.ast import RowDecoder
 from codeintel.build.analytics.utilities.datasets import validate_contract_rows
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -24,8 +25,7 @@ from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import and_kleene, equal_mask
+from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
@@ -75,6 +75,16 @@ class ProjectionTargets:
 
     node_table_key: str
     edge_table_key: str
+
+
+@dataclass(frozen=True)
+class _ProjectionPlan:
+    graph: GraphInput
+    keys: set[Hashable]
+    modules: set[Hashable]
+    context: ProjectionContext
+    key_targets: ProjectionTargets
+    module_targets: ProjectionTargets
 
 
 def _projection_rows(
@@ -220,17 +230,8 @@ def _filter_table_by_scope(
     repo: str | None,
     commit: str | None,
 ) -> pa.Table:
-    if repo is None and commit is None:
-        return table
-    mask: pa.Array | pa.ChunkedArray | None = None
-    if repo is not None and "repo" in table.column_names:
-        mask = equal_mask(table["repo"], pa.scalar(repo))
-    if commit is not None and "commit" in table.column_names:
-        commit_mask = equal_mask(table["commit"], pa.scalar(commit))
-        mask = commit_mask if mask is None else and_kleene(mask, commit_mask)
-    if mask is None:
-        return table
-    return safe_filter(table, mask)
+    context = FilterExprContext(repo=repo, commit=commit)
+    return context.apply(table)
 
 
 def _add_bipartite_edge(graph: RxGraphStore, *, key: str, module: str) -> None:
@@ -273,10 +274,17 @@ def _rows_from_tabular(
     repo: str | None,
     commit: str | None,
 ) -> list[dict[str, object]]:
+    decoder = RowDecoder(columns=("reference_modules",))
     if isinstance(rows, pa.Table):
         table = _filter_table_by_scope(cast("pa.Table", rows), repo=repo, commit=commit)
-        return list(iter_rows(table))
-    return [dict(row) for row in rows]
+        return [decoder.decode(row) for row in iter_rows(table)]
+    return [decoder.decode(dict(row)) for row in rows]
+
+
+def _partition_bipartite_nodes(store: RxGraphStore) -> tuple[set[Hashable], set[Hashable]]:
+    keys = {node for node in store.node_ids() if store.get_node_attrs(node).get("bipartite") == 0}
+    modules = set(store.node_ids()) - keys
+    return keys, modules
 
 
 def build_config_module_bipartite(
@@ -363,6 +371,77 @@ class ConfigGraphMetricsResult:
     module_edge_rows: tuple[tuple[object, ...], ...] | None
 
 
+def _empty_config_graph_metrics_result() -> ConfigGraphMetricsResult:
+    return ConfigGraphMetricsResult(
+        key_rows=None,
+        module_rows=None,
+        key_edge_rows=None,
+        module_edge_rows=None,
+    )
+
+
+def _finalize_rows(
+    rows: list[tuple[object, ...]],
+) -> tuple[tuple[object, ...], ...] | None:
+    return tuple(rows) if rows else None
+
+
+def _build_projection_plan(
+    *,
+    repo: str,
+    commit: str,
+    graph: GraphInput,
+    runtime_opts: GraphRuntimeOptions,
+) -> _ProjectionPlan | None:
+    if graph_node_count(graph) == 0:
+        log_empty_graph("config_module_bipartite", graph)
+        return None
+    ctx = resolve_graph_context(
+        GraphContextSpec(
+            repo=repo,
+            commit=commit,
+            use_gpu=runtime_opts.use_gpu,
+            now=datetime.now(UTC),
+            betweenness_cap=MAX_BETWEENNESS_NODES,
+            pagerank_weight="weight",
+            betweenness_weight="weight",
+        )
+    )
+    store = ensure_store(graph)
+    keys, modules = _partition_bipartite_nodes(store)
+    if len(keys) == 0 or len(modules) == 0:
+        log_projection_skipped(
+            "config_projection",
+            "missing partition",
+            nodes=0,
+            graph_nodes=graph_node_count(graph),
+        )
+        return None
+
+    projection_ctx = ProjectionContext(
+        repo=repo,
+        commit=commit,
+        created_at=ctx.resolved_now(),
+        graph_ctx=ctx,
+    )
+    key_targets = ProjectionTargets(
+        node_table_key=CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY,
+        edge_table_key=CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY,
+    )
+    module_targets = ProjectionTargets(
+        node_table_key=CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY,
+        edge_table_key=CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY,
+    )
+    return _ProjectionPlan(
+        graph=graph,
+        keys=keys,
+        modules=modules,
+        context=projection_ctx,
+        key_targets=key_targets,
+        module_targets=module_targets,
+    )
+
+
 def compute_config_graph_metrics_result(
     *,
     repo: str,
@@ -401,69 +480,32 @@ def compute_config_graph_metrics_result(
         repo=repo,
         commit=commit,
     )
-    if graph_node_count(graph) == 0:
-        log_empty_graph("config_module_bipartite", graph)
-        return ConfigGraphMetricsResult(
-            key_rows=None, module_rows=None, key_edge_rows=None, module_edge_rows=None
-        )
-    ctx = resolve_graph_context(
-        GraphContextSpec(
-            repo=repo,
-            commit=commit,
-            use_gpu=runtime_opts.use_gpu,
-            now=datetime.now(UTC),
-            betweenness_cap=MAX_BETWEENNESS_NODES,
-            pagerank_weight="weight",
-            betweenness_weight="weight",
-        )
-    )
-    store = ensure_store(graph)
-    keys = {node for node in store.node_ids() if store.get_node_attrs(node).get("bipartite") == 0}
-    modules = set(store.node_ids()) - keys
-    if len(keys) == 0 or len(modules) == 0:
-        log_projection_skipped(
-            "config_projection",
-            "missing partition",
-            nodes=0,
-            graph_nodes=graph_node_count(graph),
-        )
-        return ConfigGraphMetricsResult(
-            key_rows=None, module_rows=None, key_edge_rows=None, module_edge_rows=None
-        )
-
-    projection_ctx = ProjectionContext(
+    plan = _build_projection_plan(
         repo=repo,
         commit=commit,
-        created_at=ctx.resolved_now(),
-        graph_ctx=ctx,
-    )
-    key_targets = ProjectionTargets(
-        node_table_key=CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY,
-        edge_table_key=CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY,
-    )
-    module_targets = ProjectionTargets(
-        node_table_key=CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY,
-        edge_table_key=CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY,
-    )
-
-    key_rows, key_edges = _projection_payload(
         graph=graph,
-        nodes=keys,
-        context=projection_ctx,
+        runtime_opts=runtime_opts,
+    )
+    if plan is None:
+        return _empty_config_graph_metrics_result()
+    key_rows, key_edges = _projection_payload(
+        graph=plan.graph,
+        nodes=plan.keys,
+        context=plan.context,
         label="config_keys",
-        targets=key_targets,
+        targets=plan.key_targets,
     )
     module_rows, module_edges = _projection_payload(
-        graph=graph,
-        nodes=modules,
-        context=projection_ctx,
+        graph=plan.graph,
+        nodes=plan.modules,
+        context=plan.context,
         label="config_modules",
-        targets=module_targets,
+        targets=plan.module_targets,
     )
 
     return ConfigGraphMetricsResult(
-        key_rows=tuple(key_rows) if key_rows else None,
-        module_rows=tuple(module_rows) if module_rows else None,
-        key_edge_rows=tuple(key_edges) if key_edges else None,
-        module_edge_rows=tuple(module_edges) if module_edges else None,
+        key_rows=_finalize_rows(key_rows),
+        module_rows=_finalize_rows(module_rows),
+        key_edge_rows=_finalize_rows(key_edges),
+        module_edge_rows=_finalize_rows(module_edges),
     )

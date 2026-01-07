@@ -37,7 +37,6 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
 )
 from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.graphs.builders import (
-    EdgeWeightPolicy,
     build_call_graph_from_rows,
     build_import_graph_from_rows,
     build_symbol_function_graph,
@@ -54,7 +53,7 @@ from codeintel.build.hamilton.native.patterns import (
     TableTargetContext,
     TableTargetTableContext,
     attach_table_target_template,
-    build_multi_table_target_spec,
+    build_multi_table_target_spec_from_contexts,
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -170,7 +169,6 @@ class GraphMetricSupportFrames:
 
 
 _FUNCTION_KINDS: frozenset[str] = frozenset({"function", "method"})
-_EDGE_WEIGHT_POLICY = EdgeWeightPolicy()
 
 
 @cache(behavior="ignore")
@@ -269,14 +267,14 @@ def _call_graph_from_rows(
     edges: list[dict[str, object]],
     nodes: list[dict[str, object]],
 ) -> GraphInput:
-    return build_call_graph_from_rows(edges, nodes, policy=_EDGE_WEIGHT_POLICY)
+    return build_call_graph_from_rows(edges, nodes)
 
 
 def _import_graph_from_rows(
     edges: list[dict[str, object]],
     modules: list[dict[str, object]],
 ) -> tuple[GraphInput, ComponentMeta | None]:
-    graph = build_import_graph_from_rows(edges, modules, policy=_EDGE_WEIGHT_POLICY)
+    graph = build_import_graph_from_rows(edges, modules)
     component_meta = _component_meta_from_import_rows(modules)
     return graph, component_meta
 
@@ -327,11 +325,9 @@ def _load_symbol_graphs(
     symbol_module_graph = build_symbol_module_graph(
         symbol_rows,
         module_by_path,
-        policy=_EDGE_WEIGHT_POLICY,
     )
     symbol_function_graph = build_symbol_function_graph(
         symbol_rows,
-        policy=_EDGE_WEIGHT_POLICY,
     )
     return symbol_module_edges, symbol_module_graph, symbol_function_graph
 
@@ -700,33 +696,27 @@ def _graph_metrics_save_spec(table_key: str) -> DatasetSaveSpec:
 
 
 _MODULE = sys.modules[__name__]
-_GRAPH_METRICS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_GRAPH_METRICS_TABLE_CONTEXTS = (
+    TableTargetTableContext.from_contract(
+        contract=GRAPH_METRICS_FUNCTIONS_CONTRACT,
+        node_name="graph_metrics_functions__table",
+    ),
+    TableTargetTableContext.from_contract(
+        contract=GRAPH_METRICS_MODULES_CONTRACT,
+        node_name="graph_metrics_modules__table",
+    ),
+)
+_GRAPH_METRICS_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="analytics",
         target_name=GRAPH_METRICS_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=GRAPH_METRICS_FUNCTIONS_CONTRACT,
-                    node_name="graph_metrics_functions__table",
-                ),
-                save_spec_factory=_graph_metrics_save_spec,
-                default_input_type=pa.Table,
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=GRAPH_METRICS_MODULES_CONTRACT,
-                    node_name="graph_metrics_modules__table",
-                ),
-                save_spec_factory=_graph_metrics_save_spec,
-                default_input_type=pa.Table,
-            ),
-        ),
+        tables=(),
         table_materializations_node="graph_metrics__table_materializations",
         anchor_node_name="t__graph_metrics",
         save_spec_factory=_graph_metrics_save_spec,
         default_input_type=pa.Table,
-    )
+    ),
+    table_contexts=_GRAPH_METRICS_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_GRAPH_METRICS_TABLE_TARGET_SPEC)
 graph_metrics_functions__table = _MODULE.graph_metrics_functions__table
@@ -734,30 +724,26 @@ graph_metrics_modules__table = _MODULE.graph_metrics_modules__table
 graph_metrics__table_materializations = _MODULE.graph_metrics__table_materializations
 t__graph_metrics = _MODULE.t__graph_metrics
 
-_GRAPH_METRICS_EXT_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_GRAPH_METRICS_EXT_TABLE_CONTEXTS = (
+    TableTargetTableContext.from_contract(
+        contract=GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT,
+        node_name="graph_metrics_functions_ext__table",
+    ),
+    TableTargetTableContext.from_contract(
+        contract=GRAPH_METRICS_MODULES_EXT_CONTRACT,
+        node_name="graph_metrics_modules_ext__table",
+    ),
+)
+_GRAPH_METRICS_EXT_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="analytics",
         target_name=GRAPH_METRICS_EXT_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT,
-                    node_name="graph_metrics_functions_ext__table",
-                ),
-                default_input_type=pa.Table,
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=GRAPH_METRICS_MODULES_EXT_CONTRACT,
-                    node_name="graph_metrics_modules_ext__table",
-                ),
-                default_input_type=pa.Table,
-            ),
-        ),
+        tables=(),
         table_materializations_node="graph_metrics_ext__table_materializations",
         anchor_node_name="t__graph_metrics_ext",
         default_input_type=pa.Table,
-    )
+    ),
+    table_contexts=_GRAPH_METRICS_EXT_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_GRAPH_METRICS_EXT_TABLE_TARGET_SPEC)
 graph_metrics_functions_ext__table = _MODULE.graph_metrics_functions_ext__table
@@ -765,30 +751,26 @@ graph_metrics_modules_ext__table = _MODULE.graph_metrics_modules_ext__table
 graph_metrics_ext__table_materializations = _MODULE.graph_metrics_ext__table_materializations
 t__graph_metrics_ext = _MODULE.t__graph_metrics_ext
 
-_SYMBOL_GRAPH_METRICS_TABLE_TARGET_SPEC = build_multi_table_target_spec(
+_SYMBOL_GRAPH_METRICS_TABLE_CONTEXTS = (
+    TableTargetTableContext.from_contract(
+        contract=SYMBOL_GRAPH_FUNCTIONS_CONTRACT,
+        node_name="symbol_graph_metrics_functions__table",
+    ),
+    TableTargetTableContext.from_contract(
+        contract=SYMBOL_GRAPH_MODULES_CONTRACT,
+        node_name="symbol_graph_metrics_modules__table",
+    ),
+)
+_SYMBOL_GRAPH_METRICS_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="analytics",
         target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-        tables=(
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=SYMBOL_GRAPH_FUNCTIONS_CONTRACT,
-                    node_name="symbol_graph_metrics_functions__table",
-                ),
-                default_input_type=pa.Table,
-            ),
-            MultiTableTargetContext.build_table_spec(
-                context=TableTargetTableContext.from_contract(
-                    contract=SYMBOL_GRAPH_MODULES_CONTRACT,
-                    node_name="symbol_graph_metrics_modules__table",
-                ),
-                default_input_type=pa.Table,
-            ),
-        ),
+        tables=(),
         table_materializations_node="symbol_graph_metrics__table_materializations",
         anchor_node_name="t__symbol_graph_metrics",
         default_input_type=pa.Table,
-    )
+    ),
+    table_contexts=_SYMBOL_GRAPH_METRICS_TABLE_CONTEXTS,
 )
 attach_table_target_template(_MODULE, spec=_SYMBOL_GRAPH_METRICS_TABLE_TARGET_SPEC)
 symbol_graph_metrics_functions__table = _MODULE.symbol_graph_metrics_functions__table

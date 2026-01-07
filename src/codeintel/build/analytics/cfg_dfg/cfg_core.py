@@ -94,6 +94,48 @@ def _coerce_block_id(value: object) -> str | int | None:
     return None
 
 
+def _parse_block_row(
+    row: dict[str, object],
+) -> tuple[int, tuple[int, str, int, int]] | None:
+    fn_id = normalize_decimal_id(row.get("function_goid_h128"))
+    block_idx = normalize_decimal_id(row.get("block_idx"))
+    if fn_id is None or block_idx is None:
+        return None
+    kind = row.get("kind")
+    in_deg = normalize_decimal_id(row.get("in_degree")) or 0
+    out_deg = normalize_decimal_id(row.get("out_degree")) or 0
+    return (
+        int(fn_id),
+        (
+            int(block_idx),
+            str(kind) if kind is not None else "unknown",
+            int(in_deg),
+            int(out_deg),
+        ),
+    )
+
+
+def _parse_edge_row(
+    row: dict[str, object],
+) -> tuple[int, tuple[int, int, str]] | None:
+    fn_id = normalize_decimal_id(row.get("function_goid_h128"))
+    if fn_id is None:
+        return None
+    src_idx = parse_block_idx(_coerce_block_id(row.get("src_block_id")))
+    dst_idx = parse_block_idx(_coerce_block_id(row.get("dst_block_id")))
+    if src_idx is None or dst_idx is None:
+        return None
+    edge_kind = row.get("edge_kind")
+    return (
+        int(fn_id),
+        (
+            src_idx,
+            dst_idx,
+            str(edge_kind) if edge_kind is not None else "unknown",
+        ),
+    )
+
+
 def load_cfg_blocks(
     cfg_blocks_frame: pa.Table,
     cfg_edges_frame: pa.Table,
@@ -119,21 +161,11 @@ def load_cfg_blocks(
         require_valid=("function_goid_h128", "block_idx"),
     )
     for row in iter_rows(filtered_blocks):
-        fn_id = normalize_decimal_id(row.get("function_goid_h128"))
-        block_idx = normalize_decimal_id(row.get("block_idx"))
-        if fn_id is None or block_idx is None:
+        parsed = _parse_block_row(row)
+        if parsed is None:
             continue
-        kind = row.get("kind")
-        in_deg = normalize_decimal_id(row.get("in_degree")) or 0
-        out_deg = normalize_decimal_id(row.get("out_degree")) or 0
-        blocks_by_fn[int(fn_id)].append(
-            (
-                int(block_idx),
-                str(kind) if kind is not None else "unknown",
-                int(in_deg),
-                int(out_deg),
-            )
-        )
+        fn_id, payload = parsed
+        blocks_by_fn[fn_id].append(payload)
 
     filtered_edges = prefilter_table(
         cfg_edges_frame,
@@ -142,21 +174,11 @@ def load_cfg_blocks(
         require_valid=("function_goid_h128", "src_block_id", "dst_block_id"),
     )
     for row in iter_rows(filtered_edges):
-        fn_id = normalize_decimal_id(row.get("function_goid_h128"))
-        if fn_id is None:
+        parsed = _parse_edge_row(row)
+        if parsed is None:
             continue
-        src_idx = parse_block_idx(_coerce_block_id(row.get("src_block_id")))
-        dst_idx = parse_block_idx(_coerce_block_id(row.get("dst_block_id")))
-        if src_idx is None or dst_idx is None:
-            continue
-        edge_kind = row.get("edge_kind")
-        edges_by_fn[int(fn_id)].append(
-            (
-                src_idx,
-                dst_idx,
-                str(edge_kind) if edge_kind is not None else "unknown",
-            )
-        )
+        fn_id, payload = parsed
+        edges_by_fn[fn_id].append(payload)
 
     return blocks_by_fn, edges_by_fn
 

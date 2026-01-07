@@ -32,7 +32,7 @@ from codeintel.build.graphs.compute.metrics.components import (
     find_bridges,
 )
 from codeintel.build.graphs.runtime.context import GraphContext
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store, ensure_store
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store, graph_to_store
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.compute.graphs import (
@@ -71,7 +71,7 @@ def _bridge_endpoint_counts(graph: GraphInput) -> dict[int, int]:
     dict[int, int]
         Mapping of node to count of incident bridges.
     """
-    store = ensure_store(graph)
+    store = graph_to_store(graph)
     counts: dict[int, int] = {int(str(node)): 0 for node in store.node_ids()}
     for left, right in find_bridges(store):
         left_idx = int(str(left))

@@ -20,8 +20,9 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
@@ -217,11 +218,22 @@ def function_ast_features__base(
     pa.Table
         Reader with function AST feature rows.
     """
-    goids = tabular_to_arrow_table(q__core__goids)
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    goids = tabular_to_scoped_table(
+        q__core__goids,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     if goids.num_rows == 0:
         return empty_table_for_table(FUNCTION_AST_FEATURES_TABLE_KEY)
 
-    modules = tabular_to_arrow_table(q__core__modules)
+    modules = tabular_to_scoped_table(
+        q__core__modules,
+        columns=None,
+        scope=scope,
+        require_scope_columns=True,
+    )
     module_by_path = _module_by_path(modules)
     nodes_by_path, lines_by_path = _load_module_nodes(env, module_by_path)
 
