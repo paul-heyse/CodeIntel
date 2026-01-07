@@ -24,7 +24,11 @@ Check if data exists for a snapshot:
 
     from codeintel.storage.validation import table_has_rows_for_snapshot
 
-    if table_has_rows_for_snapshot(con, contract, repo=repo, commit=commit):
+    from codeintel.core.queries import RepoCommitScope
+
+    scope = RepoCommitScope(repo=repo, commit=commit)
+
+    if table_has_rows_for_snapshot(con, contract, scope=scope):
 
         ...
 
@@ -32,8 +36,11 @@ Count rows across multiple tables:
 
     from codeintel.storage.validation import count_rows_for_tables
 
-    counts = count_rows_for_tables(con, ["core.goids", "graph.call_graph_edges"],
-                                   repo=repo, commit=commit)
+    counts = count_rows_for_tables(
+        con,
+        ["core.goids", "graph.call_graph_edges"],
+        scope=scope,
+    )
 """
 
 from __future__ import annotations

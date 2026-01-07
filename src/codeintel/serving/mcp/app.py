@@ -20,7 +20,10 @@ from codeintel.serving.mcp.prompts import register_prompts
 from codeintel.serving.mcp.protocols import SemanticKernelProtocol
 from codeintel.serving.mcp.resource_store import ResourceStore
 from codeintel.serving.mcp.resources import register_resources
-from codeintel.serving.mcp.runtime import QueryLimiter
+from codeintel.serving.mcp.runtime import (
+    export_limiter_from_settings,
+    query_limiter_from_settings,
+)
 from codeintel.serving.mcp.tools import (
     register_catalog_tool,
     register_describe_tool,
@@ -99,8 +102,8 @@ def build_mcp_app(
         strict_input_validation=True,
     )
 
-    query_limiter = QueryLimiter(max_concurrent=settings.mcp_max_concurrent_queries)
-    export_limiter = QueryLimiter(max_concurrent=settings.mcp_max_concurrent_exports)
+    query_limiter = query_limiter_from_settings(settings)
+    export_limiter = export_limiter_from_settings(settings)
 
     register_catalog_tool(mcp, ops, query_limiter, settings=settings)
     register_describe_tool(mcp, ops, query_limiter, settings=settings)

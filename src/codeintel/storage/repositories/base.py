@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.queries.context import QueryContext
 from codeintel.core.repository import PagedResult
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.storage import StorageContext
@@ -112,6 +113,11 @@ class BaseRepository:
     def con(self) -> DuckDBConnection:
         """Return the underlying DuckDB connection."""
         return self.gateway.con
+
+    @property
+    def query_context(self) -> QueryContext | None:
+        """Return optional query context for policy-driven helpers."""
+        return self.context.query_context
 
     def _relation(self, table_key: str) -> DuckDBRelation:
         """

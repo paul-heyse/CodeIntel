@@ -10,6 +10,14 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
+class RepoCommitScope:
+    """Lightweight repo/commit scope for snapshot-filtered queries."""
+
+    repo: str
+    commit: str
+
+
+@dataclass(frozen=True, slots=True)
 class QueryContext:
     """Bundle snapshot identity and SQL ingress policy configuration.
 
@@ -71,4 +79,4 @@ class QueryContext:
         return self.snapshot.commit
 
 
-__all__ = ["QueryContext"]
+__all__ = ["QueryContext", "RepoCommitScope"]

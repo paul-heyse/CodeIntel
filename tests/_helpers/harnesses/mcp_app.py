@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 
     from fastmcp.client import FastMCPTransport
 
+    from codeintel.serving.context import ServingContext
     from codeintel.serving.mcp.protocols import SemanticKernelProtocol
-    from codeintel.serving.runtime import ServingRuntime
 
 
 @dataclass(frozen=True)
@@ -61,7 +61,7 @@ class McpAppHarness:
         *,
         settings_overrides: ServingSettingsOverrides | None = None,
         client_kwargs: Mapping[str, Any] | None = None,
-        kernel_builder: Callable[[ServingRuntime], SemanticKernelProtocol] | None = None,
+        kernel_builder: Callable[[ServingContext], SemanticKernelProtocol] | None = None,
     ) -> AsyncIterator[Client[FastMCPTransport]]:
         """Create a FastMCP client bound to the serving MCP server.
 

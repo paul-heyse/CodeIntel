@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codeintel.core.columnar.rows import ColumnarRows
+from codeintel.ingestion.context import IngestionContext
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -115,6 +116,46 @@ class ChangeRequest:
     full_rebuild: bool = False
     scan_profile: ScanProfile | None = None
     modules: Sequence[ModuleRecord] | None = None
+
+    @classmethod
+    def from_context(
+        cls,
+        *,
+        context: IngestionContext,
+        language: str = "python",
+        full_rebuild: bool = False,
+        scan_profile: ScanProfile | None = None,
+        modules: Sequence[ModuleRecord] | None = None,
+    ) -> ChangeRequest:
+        """Build a change request from an ingestion context.
+
+        Parameters
+        ----------
+        context
+            Ingestion context providing repo, commit, and repo root.
+        language
+            Source language (default: "python").
+        full_rebuild
+            Force full rebuild mode.
+        scan_profile
+            Optional scan profile override.
+        modules
+            Optional explicit module list.
+
+        Returns
+        -------
+        ChangeRequest
+            Change request populated from the ingestion context.
+        """
+        return cls(
+            repo=context.repo,
+            commit=context.commit,
+            repo_root=context.repo_root,
+            language=language,
+            full_rebuild=full_rebuild,
+            scan_profile=scan_profile or context.scan_profile,
+            modules=modules,
+        )
 
 
 @runtime_checkable

@@ -28,6 +28,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 
 if TYPE_CHECKING:
@@ -271,6 +272,16 @@ class _ModuleDisResult:
 
 
 @dataclass(frozen=True, slots=True)
+class _DisTables:
+    code_units: pa.Table
+    instructions: pa.Table
+    exceptions: pa.Table
+    blocks: pa.Table
+    cfg_edges: pa.Table
+    defuse_events: pa.Table
+
+
+@dataclass(frozen=True, slots=True)
 class _DisModuleJob:
     module: ModuleRecord
     source_text: str
@@ -279,6 +290,17 @@ class _DisModuleJob:
     commit: str
     options: BytecodeExtractOptions
     frontend: PyFrontend | None
+
+
+def _build_dis_tables(collectors: _DisCollectors) -> _DisTables:
+    return _DisTables(
+        code_units=collectors.code_units.to_table(),
+        instructions=collectors.instructions.to_table(),
+        exceptions=collectors.exceptions.to_table(),
+        blocks=collectors.blocks.to_table(),
+        cfg_edges=collectors.cfg_edges.to_table(),
+        defuse_events=collectors.defuse_events.to_table(),
+    )
 
 
 def _stable_id(*parts: object) -> str:
@@ -1644,12 +1666,7 @@ class DisExtractStep(BaseExtractStep):
             collectors.code_units.row_count,
             collectors.instructions.row_count,
         )
-        code_unit_rows_table = collectors.code_units.to_table()
-        instruction_rows_table = collectors.instructions.to_table()
-        exception_rows_table = collectors.exceptions.to_table()
-        block_rows_table = collectors.blocks.to_table()
-        cfg_edge_rows_table = collectors.cfg_edges.to_table()
-        defuse_event_rows_table = collectors.defuse_events.to_table()
+        tables = _build_dis_tables(collectors)
         return DisExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
             code_unit_rows={},
@@ -1658,12 +1675,12 @@ class DisExtractStep(BaseExtractStep):
             block_rows={},
             cfg_edge_rows={},
             defuse_event_rows={},
-            code_unit_rows_reader=code_unit_rows_table,
-            instruction_rows_reader=instruction_rows_table,
-            exception_rows_reader=exception_rows_table,
-            block_rows_reader=block_rows_table,
-            cfg_edge_rows_reader=cfg_edge_rows_table,
-            defuse_event_rows_reader=defuse_event_rows_table,
+            code_unit_rows_reader=tables.code_units,
+            instruction_rows_reader=tables.instructions,
+            exception_rows_reader=tables.exceptions,
+            block_rows_reader=tables.blocks,
+            cfg_edge_rows_reader=tables.cfg_edges,
+            defuse_event_rows_reader=tables.defuse_events,
             code_unit_row_count=collectors.code_units.row_count,
             instruction_row_count=collectors.instructions.row_count,
             exception_row_count=collectors.exceptions.row_count,

@@ -30,6 +30,7 @@ from codeintel.core.columnar.rows import (
 )
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstCollectContext,
     AstNodeRecord,
@@ -2174,7 +2175,7 @@ class CstExtractStep(BaseExtractStep):
         warnings: list[str] = []
 
         for module, source_bytes in self._iter_python_source_bytes(modules):
-            context = _SyntaxContext(
+            syntax_context = _SyntaxContext(
                 repo=resolved_repo,
                 commit=resolved_commit,
                 rel_path=module.rel_path,
@@ -2190,7 +2191,7 @@ class CstExtractStep(BaseExtractStep):
                 _extract_module_syntax(
                     _SyntaxModuleRequest(
                         module=module,
-                        context=context,
+                        context=syntax_context,
                         source_bytes=source_bytes,
                         collectors=collectors,
                         emit_ast_nodes=self._emit_ast_nodes,

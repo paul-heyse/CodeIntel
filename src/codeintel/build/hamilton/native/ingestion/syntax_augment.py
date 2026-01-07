@@ -308,7 +308,7 @@ def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
         on=["repo", "commit", "rel_path", "start_byte", "end_byte"],
         how="left",
     )
-    join_options = build_join_options(ts_selected, syntax_selected)
+    join_options = build_join_options(ts_selected, syntax_selected, normalize_inputs=False)
     joined = arrow_join_tables(
         ts_selected,
         syntax_selected,
@@ -357,7 +357,7 @@ def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
     xref_selected = select_table_columns(xref_exact, ["ts_node_id", "syntax_node_id"])
     xref_selected = normalize_table_for_join(xref_selected)
     join_spec = ArrowJoinSpec(on=["ts_node_id"], how="left")
-    join_options = build_join_options(ts_selected, xref_selected)
+    join_options = build_join_options(ts_selected, xref_selected, normalize_inputs=False)
     joined = arrow_join_tables(
         ts_selected,
         xref_selected,
@@ -532,7 +532,7 @@ def _xref_fuzzy(
     unmatched_ts_nodes = normalize_table_for_join(unmatched_ts_nodes)
     producer_table = normalize_table_for_join(producer_table)
     join_spec = ArrowJoinSpec(on=["rel_path"], how="left")
-    join_options = build_join_options(unmatched_ts_nodes, producer_table)
+    join_options = build_join_options(unmatched_ts_nodes, producer_table, normalize_inputs=False)
     joined = arrow_join_tables(
         unmatched_ts_nodes,
         producer_table,
@@ -702,7 +702,7 @@ def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
     filtered = normalize_table_for_join(filtered)
     ts_selected = normalize_table_for_join(ts_selected)
     join_spec = ArrowJoinSpec(on=["ts_node_id"], how="left")
-    join_options = build_join_options(filtered, ts_selected)
+    join_options = build_join_options(filtered, ts_selected, normalize_inputs=False)
     joined = arrow_join_tables(
         filtered,
         ts_selected,

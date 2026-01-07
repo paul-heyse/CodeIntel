@@ -15,7 +15,9 @@ from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.ingestion.context import IngestionContext
 from codeintel.ingestion.ports.change_detection import (
+    ChangeRequest,
     ChangeSet,
     FileDigest,
 )
@@ -36,9 +38,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
     from pathlib import Path
 
-    from codeintel.ingestion.ports.change_detection import (
-        ChangeRequest,
-    )
+    from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.ports.storage import IngestStoragePort
     from codeintel.storage.gateway import StorageGateway
 
@@ -171,6 +171,30 @@ class HashChangeDetectionAdapter:
             state_hash=state_hash,
             state_rows=state_rows,
         )
+
+    def compute_changes_for_context(
+        self,
+        *,
+        context: IngestionContext,
+        current_modules: Sequence[ModuleRecord],
+        language: str = "python",
+        full_rebuild: bool = False,
+        scan_profile: ScanProfile | None = None,
+    ) -> ChangeSet:
+        """Compute changes using ingestion context defaults.
+
+        Returns
+        -------
+        ChangeSet
+            Detected changes using the context-derived request.
+        """
+        request = ChangeRequest.from_context(
+            context=context,
+            language=language,
+            full_rebuild=full_rebuild,
+            scan_profile=scan_profile,
+        )
+        return self.compute_changes(request, current_modules)
 
     def load_previous_state(
         self,

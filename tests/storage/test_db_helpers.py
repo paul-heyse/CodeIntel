@@ -5,10 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.storage.validation import (
-    count_rows_for_tables,
-    safe_count_rows,
-)
+from codeintel.core.queries import RepoCommitScope
+from codeintel.storage.validation import count_rows_for_tables, safe_count_rows
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -42,7 +40,8 @@ def test_count_rows_for_tables_returns_dict(
     )
 
     tables = ["core.modules", "core.repo_map"]
-    result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
+    scope = RepoCommitScope(repo=repo, commit=commit)
+    result = count_rows_for_tables(con, tables, scope=scope)
 
     expect_is_not_none(result)
     expect_is_instance(result, dict)
@@ -69,7 +68,8 @@ def test_count_rows_for_tables_filters_by_repo_commit(
     )
 
     tables = ["core.modules"]
-    result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
+    scope = RepoCommitScope(repo=repo, commit=commit)
+    result = count_rows_for_tables(con, tables, scope=scope)
 
     expect_is_not_none(result)
     if result is None:
@@ -86,7 +86,8 @@ def test_count_rows_for_tables_returns_none_on_missing_table(
     commit = "abc123"
 
     tables = ["nonexistent.table"]
-    result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
+    scope = RepoCommitScope(repo=repo, commit=commit)
+    result = count_rows_for_tables(con, tables, scope=scope)
 
     expect_is_none(result)
 
@@ -105,7 +106,8 @@ def test_count_rows_for_tables_handles_special_chars_in_repo(
     )
 
     tables = ["core.modules"]
-    result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
+    scope = RepoCommitScope(repo=repo, commit=commit)
+    result = count_rows_for_tables(con, tables, scope=scope)
 
     expect_is_not_none(result)
     if result is None:
@@ -122,7 +124,8 @@ def test_count_rows_for_tables_handles_empty_tables(
     commit = "abc123"
 
     tables = ["core.modules"]
-    result = count_rows_for_tables(con, repo=repo, commit=commit, tables=tables)
+    scope = RepoCommitScope(repo=repo, commit=commit)
+    result = count_rows_for_tables(con, tables, scope=scope)
 
     expect_is_not_none(result)
     if result is None:
@@ -132,7 +135,8 @@ def test_count_rows_for_tables_handles_empty_tables(
 
 def test_safe_count_rows_tolerates_none_connection() -> None:
     """Verify safe_count_rows returns None when connection is None."""
-    result = safe_count_rows(None, repo="test/repo", commit="abc123", tables=["core.modules"])
+    scope = RepoCommitScope(repo="test/repo", commit="abc123")
+    result = safe_count_rows(None, ["core.modules"], scope=scope)
 
     expect_is_none(result)
 
@@ -150,7 +154,8 @@ def test_safe_count_rows_returns_counts_with_valid_connection(
         [ModuleRow(module="test_mod", path="test.py", repo=repo, commit=commit)],
     )
 
-    result = safe_count_rows(con, repo=repo, commit=commit, tables=["core.modules"])
+    scope = RepoCommitScope(repo=repo, commit=commit)
+    result = safe_count_rows(con, ["core.modules"], scope=scope)
 
     expect_is_not_none(result)
     expect_in("core.modules", result or {})
@@ -170,7 +175,8 @@ def test_safe_count_rows_accepts_iterable_tables(
     )
 
     tables_set = {"core.modules", "core.repo_map"}
-    result = safe_count_rows(con, repo=repo, commit=commit, tables=tables_set)
+    scope = RepoCommitScope(repo=repo, commit=commit)
+    result = safe_count_rows(con, tables_set, scope=scope)
 
     expect_is_not_none(result)
     expect_length(result or {}, 2)
@@ -184,6 +190,7 @@ def test_safe_count_rows_returns_none_on_table_error(
     repo = "test/repo"
     commit = "abc123"
 
-    result = safe_count_rows(con, repo=repo, commit=commit, tables=["nonexistent.table"])
+    scope = RepoCommitScope(repo=repo, commit=commit)
+    result = safe_count_rows(con, ["nonexistent.table"], scope=scope)
 
     expect_is_none(result)

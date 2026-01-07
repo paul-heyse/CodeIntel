@@ -87,7 +87,12 @@ def cpg2_edges__scip_symbol_relationships(
             side="right",
         ),
     )
-    join_options = build_join_options(rels, src_anchor, filter_expression=filter_expr)
+    join_options = build_join_options(
+        rels,
+        src_anchor,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         rels,
         src_anchor,
@@ -114,7 +119,12 @@ def cpg2_edges__scip_symbol_relationships(
             side="right",
         ),
     )
-    join_options = build_join_options(joined, dst_anchor, filter_expression=filter_expr)
+    join_options = build_join_options(
+        joined,
+        dst_anchor,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         joined,
         dst_anchor,
@@ -221,7 +231,12 @@ def cpg2_edges__scip_symbol_goid_xref(
             side="right",
         ),
     )
-    join_options = build_join_options(goid_rows, symbol_anchors, filter_expression=filter_expr)
+    join_options = build_join_options(
+        goid_rows,
+        symbol_anchors,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         goid_rows,
         symbol_anchors,
@@ -241,7 +256,12 @@ def cpg2_edges__scip_symbol_goid_xref(
             side="right",
         ),
     )
-    join_options = build_join_options(joined, goid_anchors, filter_expression=filter_expr)
+    join_options = build_join_options(
+        joined,
+        goid_anchors,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         joined,
         goid_anchors,

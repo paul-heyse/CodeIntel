@@ -483,9 +483,7 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
         )
 
         scan_result = step.execute(
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-            repo_root=env.snapshot.repo_root,
+            snapshot=env.snapshot,
             profile=profile,
             full_rebuild=False,
         )

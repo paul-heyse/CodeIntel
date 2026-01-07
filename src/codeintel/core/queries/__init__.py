@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from codeintel.core.queries.context import QueryContext
+from codeintel.core.queries.context import QueryContext, RepoCommitScope
 
-__all__ = ["QueryContext"]
+__all__ = ["QueryContext", "RepoCommitScope"]

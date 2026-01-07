@@ -19,10 +19,9 @@ from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_op
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetContext,
     attach_table_target_template,
+    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -108,21 +107,15 @@ def subsystem_graph_metrics__base(
 
 
 _MODULE = sys.modules[__name__]
-_SUBSYSTEM_GRAPH_METRICS_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
-            base_node="subsystem_graph_metrics__base",
-            contract=SUBSYSTEM_GRAPH_METRICS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
-            node_name="subsystem_graph_metrics__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="subsystem_graph_metrics__table_materializations",
-    anchor_node_name="t__subsystem_graph_metrics",
+_SUBSYSTEM_GRAPH_METRICS_TABLE_TARGET_SPEC = build_single_table_target_spec(
+    context=TableTargetContext(
+        domain="analytics",
+        target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+        table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
+        base_node="subsystem_graph_metrics__base",
+        contract=SUBSYSTEM_GRAPH_METRICS_CONTRACT,
+        input_type=pa.Table,
+    )
 )
 attach_table_target_template(_MODULE, spec=_SUBSYSTEM_GRAPH_METRICS_TABLE_TARGET_SPEC)
 subsystem_graph_metrics__table = _MODULE.subsystem_graph_metrics__table

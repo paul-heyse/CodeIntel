@@ -23,6 +23,7 @@ from codeintel.core.columnar.rows import (
     table_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

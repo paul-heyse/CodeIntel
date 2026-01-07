@@ -22,9 +22,11 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
+    TableTargetContext,
     TableTargetSpec,
     TableTargetTableSpec,
     attach_table_target_template,
+    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -316,21 +318,15 @@ def data_model_usage__base(
     return reader
 
 
-_DATA_MODEL_USAGE_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=DATA_MODEL_USAGE_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=DATA_MODEL_USAGE_TABLE_KEY,
-            base_node="data_model_usage__base",
-            contract=DATA_MODEL_USAGE_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=DATA_MODEL_USAGE_TABLE_KEY),
-            node_name="data_model_usage__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="data_model_usage__table_materializations",
-    anchor_node_name="t__data_model_usage",
+_DATA_MODEL_USAGE_TABLE_TARGET_SPEC = build_single_table_target_spec(
+    context=TableTargetContext(
+        domain="analytics",
+        target_name=DATA_MODEL_USAGE_TARGET_NAME,
+        table_key=DATA_MODEL_USAGE_TABLE_KEY,
+        base_node="data_model_usage__base",
+        contract=DATA_MODEL_USAGE_CONTRACT,
+        input_type=pa.Table,
+    )
 )
 attach_table_target_template(_MODULE, spec=_DATA_MODEL_USAGE_TABLE_TARGET_SPEC)
 data_model_usage__table = _MODULE.data_model_usage__table

@@ -12,10 +12,9 @@ import pyarrow as pa
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetContext,
     attach_table_target_template,
+    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -360,21 +359,15 @@ def py_cpg_quality_report__base(
 
 
 _MODULE = sys.modules[__name__]
-_PY_CPG_QUALITY_REPORT_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=PY_CPG_QUALITY_REPORT_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=PY_CPG_QUALITY_REPORT_TABLE_KEY,
-            base_node="py_cpg_quality_report__base",
-            contract=PY_CPG_QUALITY_REPORT_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=PY_CPG_QUALITY_REPORT_TABLE_KEY),
-            input_type=pa.Table,
-            node_name="py_cpg_quality_report__table",
-        ),
-    ),
-    table_materializations_node="py_cpg_quality_report__table_materializations",
-    anchor_node_name="t__py_cpg_quality_report",
+_PY_CPG_QUALITY_REPORT_TABLE_TARGET_SPEC = build_single_table_target_spec(
+    context=TableTargetContext(
+        domain="analytics",
+        target_name=PY_CPG_QUALITY_REPORT_TARGET_NAME,
+        table_key=PY_CPG_QUALITY_REPORT_TABLE_KEY,
+        base_node="py_cpg_quality_report__base",
+        contract=PY_CPG_QUALITY_REPORT_CONTRACT,
+        input_type=pa.Table,
+    )
 )
 attach_table_target_template(_MODULE, spec=_PY_CPG_QUALITY_REPORT_TABLE_TARGET_SPEC)
 py_cpg_quality_report__table = _MODULE.py_cpg_quality_report__table

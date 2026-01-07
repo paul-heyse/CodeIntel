@@ -15,9 +15,11 @@ Design Principles
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
+from codeintel.core.storage import StorageContext
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.env_options import EnvOptions, GatewayOptions
 from tests._helpers.fixtures.repos import write_canonical_repo
@@ -204,6 +206,11 @@ class TestContext:
             Path to repository root.
         """
         return self.snapshot.repo_root
+
+    @property
+    def storage_context(self) -> StorageContext:
+        """Return a StorageContext bound to this test snapshot."""
+        return StorageContext(gateway=self.gateway, snapshot=self.snapshot)
 
     @property
     def con(self) -> DuckDBPyConnection:
@@ -559,6 +566,24 @@ def _prepare_paths(
     return repo_root_path, build_dir_path, db_path
 
 
+def make_storage_context(
+    gateway: StorageGateway,
+    *,
+    snapshot: SnapshotRef | None = None,
+    repo: str = "test/repo",
+    commit: str = "abc123",
+    repo_root: Path | None = None,
+) -> StorageContext:
+    """Build a StorageContext for tests without a full TestContext."""
+    resolved_root = repo_root or Path.cwd()
+    resolved_snapshot = snapshot or SnapshotRef(
+        repo=repo,
+        commit=commit,
+        repo_root=resolved_root,
+    )
+    return StorageContext(gateway=gateway, snapshot=resolved_snapshot)
+
+
 __all__ = [
     "EnvOptions",
     "GatewayOptions",
@@ -567,4 +592,5 @@ __all__ = [
     "TestContext",
     "build_test_gateway",
     "graph_ready_context",
+    "make_storage_context",
 ]

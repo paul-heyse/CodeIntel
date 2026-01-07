@@ -14,6 +14,9 @@ if TYPE_CHECKING:
 import anyio
 from anyio import to_thread
 
+from codeintel.serving.context import ServingContext
+from codeintel.serving.settings import ServingSettings
+
 P = ParamSpec("P")
 T = TypeVar("T")
 
@@ -183,5 +186,54 @@ class QueryLimiter:
             with anyio.fail_after(timeout_s):
                 return await coro_fn(*args, **kwargs)
 
+def query_limiter_from_settings(settings: ServingSettings) -> QueryLimiter:
+    """Build a query limiter from serving settings.
 
-__all__ = ["QueryLimiter"]
+    Returns
+    -------
+    QueryLimiter
+        Configured limiter for query concurrency.
+    """
+    return QueryLimiter(max_concurrent=settings.mcp_max_concurrent_queries)
+
+
+def export_limiter_from_settings(settings: ServingSettings) -> QueryLimiter:
+    """Build an export limiter from serving settings.
+
+    Returns
+    -------
+    QueryLimiter
+        Configured limiter for export concurrency.
+    """
+    return QueryLimiter(max_concurrent=settings.mcp_max_concurrent_exports)
+
+
+def query_limiter_from_context(context: ServingContext) -> QueryLimiter:
+    """Build a query limiter from a serving context.
+
+    Returns
+    -------
+    QueryLimiter
+        Configured limiter for query concurrency.
+    """
+    return query_limiter_from_settings(context.settings)
+
+
+def export_limiter_from_context(context: ServingContext) -> QueryLimiter:
+    """Build an export limiter from a serving context.
+
+    Returns
+    -------
+    QueryLimiter
+        Configured limiter for export concurrency.
+    """
+    return export_limiter_from_settings(context.settings)
+
+
+__all__ = [
+    "QueryLimiter",
+    "export_limiter_from_context",
+    "export_limiter_from_settings",
+    "query_limiter_from_context",
+    "query_limiter_from_settings",
+]

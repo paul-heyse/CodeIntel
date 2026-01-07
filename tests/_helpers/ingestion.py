@@ -19,6 +19,7 @@ from codeintel.build.targets import TargetDescriptor
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.columnar.rows import ColumnarRows
+from codeintel.core.storage import StorageContext
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -434,7 +435,7 @@ def materialize_rows_for_snapshot(
     snapshot: SnapshotRef,
 ) -> None:
     """Materialize rows into a snapshot-scoped table."""
-    warehouse = Warehouse(gateway)
+    warehouse = Warehouse(context=StorageContext(gateway=gateway))
     schema = get_schema_service().get_table_schema(table_key)
     columns = tuple(schema.column_names()) if schema is not None else ()
     materialize_table_from_rows(
@@ -953,9 +954,7 @@ def build_parquet_repo_scan_context(
         change_detection=_MemoryChangeDetection(),
     )
     scan_result = scan_step.execute(
-        repo=resolved_snapshot.repo,
-        commit=resolved_snapshot.commit,
-        repo_root=repo_root,
+        snapshot=resolved_snapshot,
         profile=resolved_profile,
     )
     dataset_root = tmp_path / "datasets"

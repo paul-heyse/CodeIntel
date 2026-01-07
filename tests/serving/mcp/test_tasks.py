@@ -20,11 +20,11 @@ if TYPE_CHECKING:
 
     from pyarrow import RecordBatch
 
+    from codeintel.serving.context import ServingContext
     from codeintel.serving.mcp.protocols import SemanticKernelProtocol as SemanticKernel
     from codeintel.serving.mcp.protocols import ServingDBManagerProtocol
     from codeintel.serving.meta.models import ServingKernelMetaResponse
     from codeintel.serving.operations.cancellation import CancelCheck
-    from codeintel.serving.runtime import ServingRuntime
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
     from codeintel.serving.semantic.models import (
         SemanticCatalogResponse,
@@ -172,7 +172,7 @@ async def test_mcp_export_task_cancellation_cleans_up_artifacts(
         "mcp_export_enable_tasks": True,
     }
 
-    def _slow_kernel(runtime: ServingRuntime) -> SemanticKernel:
+    def _slow_kernel(runtime: ServingContext) -> SemanticKernel:
         return _SlowExportKernel(inner=runtime.kernel, delay_s=0.001)
 
     async with harness.mcp_client(

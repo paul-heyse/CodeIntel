@@ -100,7 +100,12 @@ def cpg2_nodes__import_modules(
             side="right",
         ),
     )
-    join_options = build_join_options(normalized, anchors, filter_expression=filter_expr)
+    join_options = build_join_options(
+        normalized,
+        anchors,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         normalized,
         anchors,
@@ -183,7 +188,12 @@ def cpg2_edges__call_graph_edges(
             side="right",
         ),
     )
-    join_options = build_join_options(normalized_edges, src_anchor, filter_expression=filter_expr)
+    join_options = build_join_options(
+        normalized_edges,
+        src_anchor,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         normalized_edges,
         src_anchor,
@@ -207,7 +217,12 @@ def cpg2_edges__call_graph_edges(
             side="right",
         ),
     )
-    join_options = build_join_options(joined, dst_anchor, filter_expression=filter_expr)
+    join_options = build_join_options(
+        joined,
+        dst_anchor,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         joined,
         dst_anchor,
@@ -317,7 +332,12 @@ def cpg2_edges__import_graph_edges(
             side="right",
         ),
     )
-    join_options = build_join_options(normalized_edges, src_anchor, filter_expression=filter_expr)
+    join_options = build_join_options(
+        normalized_edges,
+        src_anchor,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         normalized_edges,
         src_anchor,
@@ -341,7 +361,12 @@ def cpg2_edges__import_graph_edges(
             side="right",
         ),
     )
-    join_options = build_join_options(joined, dst_anchor, filter_expression=filter_expr)
+    join_options = build_join_options(
+        joined,
+        dst_anchor,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         joined,
         dst_anchor,

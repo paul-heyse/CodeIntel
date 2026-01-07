@@ -11,10 +11,9 @@ from codeintel.build.analytics.subsystems.cache import build_subsystem_profile_c
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetContext,
     attach_table_target_template,
+    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -63,21 +62,17 @@ def subsystem_profile_cache__base(
 
 
 _MODULE = sys.modules[__name__]
-_SUBSYSTEM_CACHES_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=SUBSYSTEM_CACHES_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
-            base_node="subsystem_profile_cache__base",
-            contract=SUBSYSTEM_PROFILE_CACHE_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY),
-            node_name="subsystem_profile_cache__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="subsystem_caches__table_materializations",
-    anchor_node_name="t__subsystem_caches",
+_SUBSYSTEM_CACHES_TABLE_TARGET_SPEC = build_single_table_target_spec(
+    context=TableTargetContext(
+        domain="analytics",
+        target_name=SUBSYSTEM_CACHES_TARGET_NAME,
+        table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
+        base_node="subsystem_profile_cache__base",
+        contract=SUBSYSTEM_PROFILE_CACHE_CONTRACT,
+        input_type=pa.Table,
+        node_name="subsystem_profile_cache__table",
+        table_materializations_node="subsystem_caches__table_materializations",
+    )
 )
 attach_table_target_template(_MODULE, spec=_SUBSYSTEM_CACHES_TABLE_TARGET_SPEC)
 subsystem_profile_cache__table = _MODULE.subsystem_profile_cache__table

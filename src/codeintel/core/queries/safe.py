@@ -37,7 +37,7 @@ from codeintel.core.duckdb_types import (
 )
 from codeintel.core.errors.storage import ColumnNotFoundError, QueryError, TableNotFoundError
 from codeintel.core.filters import FilterSpecInput
-from codeintel.core.queries.context import QueryContext
+from codeintel.core.queries.context import QueryContext, RepoCommitScope
 from codeintel.core.queries.filter_compiler import (
     FilterCompilerError,
     compile_filter_predicates,
@@ -68,6 +68,20 @@ class RelationGateway(Protocol):
     def relation_from_table_key(self, table_key: str) -> DuckDBRelation: ...
 
 
+class SnapshotScope(Protocol):
+    """Protocol for objects that provide repo/commit scope."""
+
+    @property
+    def repo(self) -> str:
+        """Repository identifier."""
+        ...
+
+    @property
+    def commit(self) -> str:
+        """Commit identifier."""
+        ...
+
+
 DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (
     DuckDBError,
     DuckDBCatalogException,
@@ -95,18 +109,23 @@ def _ensure_valid_table_key(table_key: str) -> bool:
 
 def _resolve_repo_commit(
     *,
-    repo: str | None,
-    commit: str | None,
-    snapshot: SnapshotRef | None,
+    scope: SnapshotScope | None,
     context: QueryContext | None,
 ) -> tuple[str, str]:
-    resolved_snapshot = snapshot or (context.snapshot if context is not None else None)
-    if resolved_snapshot is not None:
-        return resolved_snapshot.repo, resolved_snapshot.commit
-    if repo is None or commit is None:
-        msg = "Snapshot scoping requires repo/commit or a snapshot context"
-        raise ValueError(msg)
-    return repo, commit
+    resolved_scope = scope or (context.snapshot if context is not None else None)
+    if resolved_scope is not None:
+        return resolved_scope.repo, resolved_scope.commit
+    msg = "Snapshot scoping requires a scope or query context with snapshot"
+    raise ValueError(msg)
+
+
+def _resolved_scope(
+    *,
+    scope: SnapshotScope | None,
+    context: QueryContext | None,
+) -> RepoCommitScope:
+    resolved_repo, resolved_commit = _resolve_repo_commit(scope=scope, context=context)
+    return RepoCommitScope(repo=resolved_repo, commit=resolved_commit)
 
 
 def policy_from_context(context: QueryContext) -> SqlIngressPolicy:
@@ -357,9 +376,7 @@ def table_has_rows_for_snapshot(
     con: DuckDBConnection,
     contract: DatasetContract,
     *,
-    repo: str | None = None,
-    commit: str | None = None,
-    snapshot: SnapshotRef | None = None,
+    scope: SnapshotScope | None = None,
     context: QueryContext | None = None,
 ) -> bool:
     """Check if a dataset table has rows for the given repo/commit.
@@ -370,12 +387,8 @@ def table_has_rows_for_snapshot(
         DuckDB connection.
     contract
         Dataset contract with schema information.
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    snapshot
-        Optional snapshot reference (overrides repo/commit when provided).
+    scope
+        Optional repo/commit scope for filtering.
     context
         Optional query context carrying snapshot metadata.
 
@@ -389,12 +402,7 @@ def table_has_rows_for_snapshot(
     When the contract schema includes both ``repo`` and ``commit`` columns, the
     query filters by those values. Otherwise, it checks for any row existence.
     """
-    resolved_repo, resolved_commit = _resolve_repo_commit(
-        repo=repo,
-        commit=commit,
-        snapshot=snapshot,
-        context=context,
-    )
+    resolved_repo, resolved_commit = _resolve_repo_commit(scope=scope, context=context)
     table_key = contract.table_key
     schema = contract.schema
     has_repo_col = schema is not None and any(c.name == "repo" for c in schema.columns)
@@ -415,9 +423,7 @@ def count_rows_for_snapshot(
     con: DuckDBConnection,
     table_key: str,
     *,
-    repo: str | None = None,
-    commit: str | None = None,
-    snapshot: SnapshotRef | None = None,
+    scope: SnapshotScope | None = None,
     context: QueryContext | None = None,
 ) -> int:
     """Count rows in a table filtered by repo/commit.
@@ -428,12 +434,8 @@ def count_rows_for_snapshot(
         DuckDB connection.
     table_key
         Fully qualified table name (schema.table).
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    snapshot
-        Optional snapshot reference (overrides repo/commit when provided).
+    scope
+        Optional repo/commit scope for filtering.
     context
         Optional query context carrying snapshot metadata.
 
@@ -442,12 +444,7 @@ def count_rows_for_snapshot(
     int
         Number of rows matching the repo/commit filter.
     """
-    resolved_repo, resolved_commit = _resolve_repo_commit(
-        repo=repo,
-        commit=commit,
-        snapshot=snapshot,
-        context=context,
-    )
+    resolved_repo, resolved_commit = _resolve_repo_commit(scope=scope, context=context)
     predicate = _snapshot_filter_expression(repo=resolved_repo, commit=resolved_commit)
     relation = con.table(table_key).filter(predicate)
     result = relation.count("*").fetchone()
@@ -460,9 +457,7 @@ def count_rows_for_tables(
     con: DuckDBConnection,
     tables: Sequence[str],
     *,
-    repo: str | None = None,
-    commit: str | None = None,
-    snapshot: SnapshotRef | None = None,
+    scope: SnapshotScope | None = None,
     context: QueryContext | None = None,
 ) -> dict[str, int] | None:
     """Compute row counts for multiple tables filtered by repo/commit.
@@ -473,12 +468,8 @@ def count_rows_for_tables(
         DuckDB connection.
     tables
         Sequence of fully qualified table names.
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    snapshot
-        Optional snapshot reference (overrides repo/commit when provided).
+    scope
+        Optional repo/commit scope for filtering.
     context
         Optional query context carrying snapshot metadata.
 
@@ -487,20 +478,14 @@ def count_rows_for_tables(
     dict[str, int] | None
         Mapping of table name to row counts, or None if any table fails.
     """
-    resolved_repo, resolved_commit = _resolve_repo_commit(
-        repo=repo,
-        commit=commit,
-        snapshot=snapshot,
-        context=context,
-    )
+    resolved_scope = _resolved_scope(scope=scope, context=context)
     counts: dict[str, int] = {}
     for table in tables:
         try:
             counts[table] = count_rows_for_snapshot(
                 con,
                 table,
-                repo=resolved_repo,
-                commit=resolved_commit,
+                scope=resolved_scope,
             )
         except DuckDBError:
             return None
@@ -511,9 +496,7 @@ def safe_count_rows(
     con: DuckDBConnection | None,
     tables: Iterable[str],
     *,
-    repo: str | None = None,
-    commit: str | None = None,
-    snapshot: SnapshotRef | None = None,
+    scope: SnapshotScope | None = None,
     context: QueryContext | None = None,
 ) -> dict[str, int] | None:
     """Tolerant variant of count_rows_for_tables that handles None connection.
@@ -524,12 +507,8 @@ def safe_count_rows(
         DuckDB connection, or None.
     tables
         Iterable of fully qualified table names.
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    snapshot
-        Optional snapshot reference (overrides repo/commit when provided).
+    scope
+        Optional repo/commit scope for filtering.
     context
         Optional query context carrying snapshot metadata.
 
@@ -546,9 +525,7 @@ def safe_count_rows(
     return count_rows_for_tables(
         con,
         table_list,
-        repo=repo,
-        commit=commit,
-        snapshot=snapshot,
+        scope=scope,
         context=context,
     )
 

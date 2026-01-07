@@ -75,8 +75,14 @@ class TableTargetContext:
     target_name: str
     table_key: str
     base_node: str
-    contract: TableContractSpec
-    input_type: object
+    contract: TableContractSpec | None = None
+    input_type: object | None = None
+    save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None
+    node_name: str | None = None
+    extra_tags: Mapping[TagKey, TagValue] | None = None
+    table_materializations_node: str | None = None
+    anchor_node_name: str | None = None
+    attach_anchor: bool = True
 
 
 def build_single_table_target_spec(*, context: TableTargetContext) -> TableTargetSpec:
@@ -87,6 +93,13 @@ def build_single_table_target_spec(*, context: TableTargetContext) -> TableTarge
     TableTargetSpec
         Standardized target spec configured for a single table output.
     """
+    save_spec = context.save_spec or DatasetSaveSpec(table_key=context.table_key)
+    table_materializations_node = (
+        context.table_materializations_node or f"{context.target_name}__table_materializations"
+    )
+    anchor_node_name = None
+    if context.attach_anchor:
+        anchor_node_name = context.anchor_node_name or f"t__{context.target_name}"
     return TableTargetSpec(
         domain=context.domain,
         target_name=context.target_name,
@@ -95,13 +108,16 @@ def build_single_table_target_spec(*, context: TableTargetContext) -> TableTarge
                 table_key=context.table_key,
                 base_node=context.base_node,
                 contract=context.contract,
-                save_spec=DatasetSaveSpec(table_key=context.table_key),
-                node_name=f"{context.target_name}__table",
+                save_spec=save_spec,
+                node_name=context.node_name or f"{context.target_name}__table",
                 input_type=context.input_type,
+                extra_tags=context.extra_tags,
             ),
         ),
-        table_materializations_node=f"{context.target_name}__table_materializations",
-        anchor_node_name=f"t__{context.target_name}",
+        extra_tags=context.extra_tags,
+        table_materializations_node=table_materializations_node,
+        anchor_node_name=anchor_node_name,
+        attach_anchor=context.attach_anchor,
     )
 
 
@@ -386,7 +402,9 @@ def _validate_table_spec(table_spec: TableTargetTableSpec) -> None:
 
 
 __all__ = [
+    "TableTargetContext",
     "TableTargetSpec",
     "TableTargetTableSpec",
     "attach_table_target_template",
+    "build_single_table_target_spec",
 ]

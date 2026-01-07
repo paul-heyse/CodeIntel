@@ -13,10 +13,9 @@ from codeintel.build.analytics.graphs.subsystem_agreement import (
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetContext,
     attach_table_target_template,
+    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -73,21 +72,15 @@ def subsystem_agreement__base(
 
 
 _MODULE = sys.modules[__name__]
-_SUBSYSTEM_AGREEMENT_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY,
-            base_node="subsystem_agreement__base",
-            contract=SUBSYSTEM_AGREEMENT_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY),
-            node_name="subsystem_agreement__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="subsystem_agreement__table_materializations",
-    anchor_node_name="t__subsystem_agreement",
+_SUBSYSTEM_AGREEMENT_TABLE_TARGET_SPEC = build_single_table_target_spec(
+    context=TableTargetContext(
+        domain="analytics",
+        target_name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
+        table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY,
+        base_node="subsystem_agreement__base",
+        contract=SUBSYSTEM_AGREEMENT_CONTRACT,
+        input_type=pa.Table,
+    )
 )
 attach_table_target_template(_MODULE, spec=_SUBSYSTEM_AGREEMENT_TABLE_TARGET_SPEC)
 subsystem_agreement__table = _MODULE.subsystem_agreement__table

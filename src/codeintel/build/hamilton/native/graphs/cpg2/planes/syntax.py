@@ -100,7 +100,7 @@ def cpg2_nodes__syntax_nodes(
         on=["repo", "commit", "rel_path", "producer", "node_id"],
         how="left",
     )
-    join_options = build_join_options(normalized, anchor_map)
+    join_options = build_join_options(normalized, anchor_map, normalize_inputs=False)
     joined = arrow_join_tables(
         normalized,
         anchor_map,
@@ -264,7 +264,12 @@ def _join_anchor_with_filter(
             side="right",
         ),
     )
-    join_options = build_join_options(left, right, filter_expression=filter_expr)
+    join_options = build_join_options(
+        left,
+        right,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     return arrow_join_tables(left, right, spec=spec, options=join_options)
 
 

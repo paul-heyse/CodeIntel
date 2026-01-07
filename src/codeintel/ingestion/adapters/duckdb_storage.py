@@ -28,7 +28,9 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.duckdb_types import DuckDBError
 from codeintel.core.schemas.service import get_schema_service
+from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
 
@@ -243,10 +245,34 @@ class DuckDBStorageAdapter:
         sql = f"DELETE FROM {table_key} WHERE {where_clause}"
         try:
             self._gateway.execute(sql, params)
-        except Exception as exc:
+        except (DuckDBError, OSError, RuntimeError, TypeError, ValueError) as exc:
             message = f"Failed to delete rows from {table_key}"
             raise ValueError(message) from exc
         return 0
+
+    def delete_by_paths_for_context(
+        self,
+        table_key: str,
+        paths: Sequence[str],
+        *,
+        context: IngestionContext,
+        path_column: str = "rel_path",
+    ) -> int:
+        """Delete rows filtered by path using repo/commit from context.
+
+        Returns
+        -------
+        int
+            Number of rows deleted (DuckDB returns 0).
+        """
+        repo, commit = resolve_repo_commit(context=context, repo=None, commit=None)
+        return self.delete_by_paths(
+            table_key,
+            paths,
+            path_column=path_column,
+            repo=repo,
+            commit=commit,
+        )
 
     def execute_query(
         self,

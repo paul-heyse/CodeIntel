@@ -1073,7 +1073,7 @@ class SymtableExtractStep(BaseExtractStep):
 
         warnings: list[str] = []
         for module, source_text, source_index, tree in self._iter_python_source_bundles(modules):
-            context = _ModuleContext(
+            module_context = _ModuleContext(
                 repo=resolved_repo,
                 commit=resolved_commit,
                 module=module,
@@ -1081,7 +1081,7 @@ class SymtableExtractStep(BaseExtractStep):
                 source_index=source_index,
                 ast_tree=tree,
             )
-            _process_module(context, collectors, warnings=warnings)
+            _process_module(module_context, collectors, warnings=warnings)
             _flush_symtable_collectors(collectors)
 
         scope_rows_table = collectors.scopes.to_table()

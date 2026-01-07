@@ -17,6 +17,7 @@ from codeintel.core.columnar.rows import (
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.spans import normalize_byte_span
 from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 from codeintel.ingestion.tree_sitter.registry import language_for_path, language_metadata
 from codeintel.ingestion.tree_sitter.runner import TreeSitterRunOptions, run_tree_sitter

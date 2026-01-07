@@ -32,7 +32,6 @@ from codeintel.serving.http.middleware import (
     get_correlation_id,
 )
 from codeintel.serving.http.routes import build_http_router
-from codeintel.serving.http.state import ServingState
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.meta.service import build_kernel_meta_payload
 from codeintel.serving.runtime import build_runtime
@@ -90,12 +89,7 @@ def create_serving_app(
     cfg.validate_mcp_single_worker(mount_mcp=mount_mcp)
 
     runtime = build_runtime(cfg)
-    state = ServingState(
-        settings=cfg,
-        db=runtime.db_manager,
-        kernel=runtime.kernel,
-        ops=runtime.ops,
-    )
+    state = runtime
 
     app = FastAPI(
         title="CodeIntel Serving",

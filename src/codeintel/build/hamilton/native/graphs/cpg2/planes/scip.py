@@ -102,7 +102,12 @@ def cpg2_nodes__scip_symbols(
             side="right",
         ),
     )
-    join_options = build_join_options(normalized, anchors, filter_expression=filter_expr)
+    join_options = build_join_options(
+        normalized,
+        anchors,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         normalized,
         anchors,

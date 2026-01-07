@@ -100,7 +100,7 @@ def cpg2_nodes__cfg_blocks(
     normalized_blocks = normalize_table_for_join(normalized_blocks)
     goid_ctx = normalize_table_for_join(_goid_context(goids))
     join_spec = ArrowJoinSpec(on=["function_goid_h128"], how="left")
-    join_options = build_join_options(normalized_blocks, goid_ctx)
+    join_options = build_join_options(normalized_blocks, goid_ctx, normalize_inputs=False)
     joined = arrow_join_tables(
         normalized_blocks,
         goid_ctx,
@@ -116,7 +116,7 @@ def cpg2_nodes__cfg_blocks(
     anchors = normalize_table_for_join(anchors)
     joined = normalize_table_for_join(joined)
     join_spec = ArrowJoinSpec(on=["function_goid_h128", "block_idx"], how="left")
-    join_options = build_join_options(joined, anchors)
+    join_options = build_join_options(joined, anchors, normalize_inputs=False)
     joined = arrow_join_tables(
         joined,
         anchors,
@@ -421,7 +421,7 @@ def _cfg_block_lookup(cfg_blocks: pa.Table, goids: pa.Table) -> pa.Table:
     normalized_blocks = normalize_table_for_join(normalized_blocks)
     goid_ctx = normalize_table_for_join(_goid_context(goids))
     join_spec = ArrowJoinSpec(on=["function_goid_h128"], how="left")
-    join_options = build_join_options(normalized_blocks, goid_ctx)
+    join_options = build_join_options(normalized_blocks, goid_ctx, normalize_inputs=False)
     joined = arrow_join_tables(
         normalized_blocks,
         goid_ctx,
@@ -477,7 +477,7 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
     edges = normalize_table_for_join(edges)
     src_lookup = normalize_table_for_join(src_lookup)
     join_spec = ArrowJoinSpec(on=["function_goid_h128", "src_block_id"], how="left")
-    join_options = build_join_options(edges, src_lookup)
+    join_options = build_join_options(edges, src_lookup, normalize_inputs=False)
     joined = arrow_join_tables(
         edges,
         src_lookup,
@@ -497,7 +497,7 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
     joined = normalize_table_for_join(joined)
     dst_lookup = normalize_table_for_join(dst_lookup)
     join_spec = ArrowJoinSpec(on=["function_goid_h128", "dst_block_id"], how="left")
-    join_options = build_join_options(joined, dst_lookup)
+    join_options = build_join_options(joined, dst_lookup, normalize_inputs=False)
     return arrow_join_tables(
         joined,
         dst_lookup,
@@ -528,7 +528,12 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
             side="right",
         ),
     )
-    join_options = build_join_options(edges, src_anchor, filter_expression=filter_expr)
+    join_options = build_join_options(
+        edges,
+        src_anchor,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     joined = arrow_join_tables(
         edges,
         src_anchor,
@@ -552,7 +557,12 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
             side="right",
         ),
     )
-    join_options = build_join_options(joined, dst_anchor, filter_expression=filter_expr)
+    join_options = build_join_options(
+        joined,
+        dst_anchor,
+        filter_expression=filter_expr,
+        normalize_inputs=False,
+    )
     return arrow_join_tables(
         joined,
         dst_anchor,

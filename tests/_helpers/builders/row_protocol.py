@@ -18,6 +18,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
+from codeintel.core.storage import StorageContext
 from codeintel.storage.warehouse import MaterializeOptions, UpsertConfig, Warehouse
 from tests._helpers.columnar_tables import materialize_table_from_rows
 from tests._helpers.sql import validate_identifier
@@ -106,7 +107,7 @@ def insert_rows(
     if not row_list:
         return 0
 
-    warehouse = Warehouse(gateway)
+    warehouse = Warehouse(context=StorageContext(gateway=gateway))
 
     grouped: dict[tuple[str, tuple[str, ...]], list[InsertableRow]] = {}
     for row in row_list:

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.core.paths import path_to_module, repo_relpath
+from codeintel.ingestion.context import IngestionContext, resolve_scan_profile
 from codeintel.ingestion.infrastructure.scanning import SourceScanner
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
@@ -72,6 +73,33 @@ class FilesystemDiscoveryAdapter:
             Repository root directory.
         """
         self._repo_root = repo_root
+
+    @classmethod
+    def from_context(cls, context: IngestionContext) -> FilesystemDiscoveryAdapter:
+        """Construct the adapter from an ingestion context.
+
+        Returns
+        -------
+        FilesystemDiscoveryAdapter
+            Adapter configured with the context repo root.
+        """
+        return cls(context.repo_root)
+
+    @staticmethod
+    def discover_modules_from_context(
+        context: IngestionContext,
+        *,
+        scan_profile: ScanProfile | None = None,
+    ) -> Sequence[ModuleRecord]:
+        """Discover modules using scan profile from an ingestion context.
+
+        Returns
+        -------
+        Sequence[ModuleRecord]
+            Discovered module records.
+        """
+        profile = resolve_scan_profile(context=context, scan_profile=scan_profile)
+        return FilesystemDiscoveryAdapter.discover_modules(context.repo_root, profile)
 
     @staticmethod
     def discover_modules(
@@ -183,6 +211,29 @@ class FilesystemDiscoveryAdapter:
                 )
 
         return _gen()
+
+    @staticmethod
+    def iter_modules_from_context(
+        module_map: dict[str, str],
+        context: IngestionContext,
+        *,
+        logger: logging.Logger | None = None,
+        scan_profile: ScanProfile | None = None,
+    ) -> Iterator[ModuleRecord]:
+        """Iterate modules using scan profile from an ingestion context.
+
+        Returns
+        -------
+        Iterator[ModuleRecord]
+            Iterator yielding module records.
+        """
+        profile = resolve_scan_profile(context=context, scan_profile=scan_profile)
+        return FilesystemDiscoveryAdapter.iter_modules(
+            module_map,
+            context.repo_root,
+            logger=logger,
+            scan_profile=profile,
+        )
 
     @staticmethod
     def read_module_source(record: ModuleRecord) -> str | None:

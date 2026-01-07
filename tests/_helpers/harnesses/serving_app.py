@@ -9,9 +9,10 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from fastapi.testclient import TestClient
 from fastmcp.client import Client
 
+from codeintel.serving.context import ServingContext
 from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.mcp.app import build_mcp_app
-from codeintel.serving.runtime import ServingRuntime, build_runtime
+from codeintel.serving.runtime import build_runtime
 from codeintel.serving.settings import ServingSettings
 from tests._helpers.serving_snapshot_factory import ServingSnapshot
 
@@ -150,7 +151,7 @@ class ServingAppHarness:
         self,
         *,
         settings_overrides: ServingSettingsOverrides | None = None,
-    ) -> ServingRuntime:
+    ) -> ServingContext:
         """Build a serving runtime for the configured snapshot.
 
         Parameters
@@ -160,8 +161,8 @@ class ServingAppHarness:
 
         Returns
         -------
-        ServingRuntime
-            Runtime with a DB manager and semantic kernel.
+        ServingContext
+            Context with a DB manager and semantic kernel.
         """
         settings = _apply_overrides(self.settings, settings_overrides)
         return build_runtime(settings)
@@ -172,7 +173,7 @@ class ServingAppHarness:
         *,
         settings_overrides: ServingSettingsOverrides | None = None,
         client_kwargs: Mapping[str, Any] | None = None,
-        kernel_builder: Callable[[ServingRuntime], SemanticKernelProtocol] | None = None,
+        kernel_builder: Callable[[ServingContext], SemanticKernelProtocol] | None = None,
     ) -> AsyncIterator[Client[FastMCPTransport]]:
         """Create a FastMCP client bound to the serving MCP server.
 
@@ -199,7 +200,7 @@ class ServingAppHarness:
 
 
 def _build_mcp_app(
-    runtime: ServingRuntime,
+    runtime: ServingContext,
     settings: ServingSettings,
     kernel: SemanticKernelProtocol,
 ) -> FastMCP:

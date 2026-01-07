@@ -29,40 +29,65 @@
   - `src/codeintel/build/hamilton/native/analytics/config_graphs.py`
   - `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`
   - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
-
-## Current Duplication and Drift (Selected)
-- Snapshot filtering with inconsistent strictness (resolved via SnapshotScope):
-  - `src/codeintel/build/analytics/semantic_roles/core.py`
-  - `src/codeintel/build/analytics/subsystems/cache.py`
-  - `src/codeintel/build/analytics/compute/functions/goids.py`
-  - `src/codeintel/build/hamilton/native/analytics/config_graphs.py`
-  - `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`
-  - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
-- Row collection logic duplicated across analytics modules (resolved via collect_scoped_rows):
-  - `src/codeintel/build/hamilton/native/analytics/config_graphs.py`
-  - `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`
-  - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
-- Call/import graph assembly and edge weight logic duplicated:
+- Added shared graph builders + edge-weight policy and migrated call/import/symbol graph assembly:
+  - `src/codeintel/build/graphs/builders.py`
   - `src/codeintel/build/analytics/graphs/graph_metrics.py`
   - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
-  - `src/codeintel/build/analytics/functions/function_effects.py`
-  - `src/codeintel/build/graphs/engine/views.py`
-- Symbol graph building duplicated:
   - `src/codeintel/build/analytics/graphs/symbol_graph_metrics.py`
-  - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
-- GraphRuntimeOptions from BuildEnv repeated:
-  - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
-  - `src/codeintel/build/hamilton/native/analytics/config_graphs.py`
-  - `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`
-- GraphContext resolution for extended metrics repeated:
+  - `src/codeintel/build/graphs/engine/views.py`
+- Introduced shared GraphContext helpers (GraphContextFactory + GraphContextOverrides) and
+  GraphMetricsContext:
+  - `src/codeintel/build/analytics/graphs/context_helpers.py`
+  - `src/codeintel/build/analytics/graphs/graph_metrics.py`
   - `src/codeintel/build/analytics/graphs/graph_metrics_ext.py`
   - `src/codeintel/build/analytics/graphs/module_graph_metrics_ext.py`
-- ArrowJoinSpec option usage and normalization patterns need to be standardized:
-  - `src/codeintel/build/tabular/arrow_ops.py`
-  - `src/codeintel/build/hamilton/native/graphs/cpg2/planes/*`
-- Table target scaffolding repeated:
+- Added RowBuildContext and updated row builders to use it:
+  - `src/codeintel/build/analytics/compute/row_builders/context.py`
+  - `src/codeintel/build/analytics/compute/row_builders/graph_metrics.py`
+  - `src/codeintel/build/analytics/compute/row_builders/graph_metrics_ext.py`
+  - `src/codeintel/build/analytics/compute/row_builders/symbol_metrics.py`
+  - `src/codeintel/build/analytics/graphs/graph_metrics.py`
+  - `src/codeintel/build/analytics/graphs/graph_metrics_ext.py`
+  - `src/codeintel/build/analytics/graphs/module_graph_metrics_ext.py`
+  - `src/codeintel/build/analytics/graphs/symbol_orchestrator.py`
+- Centralized GraphRuntimeOptions construction from BuildEnv:
+  - `src/codeintel/build/graphs/runtime/runtime.py`
+  - `src/codeintel/build/graphs/runtime/__init__.py`
+  - `src/codeintel/build/hamilton/native/analytics/config_graphs.py`
+  - `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`
+  - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
+- Added TableTargetContext + single-table spec factory and migrated initial targets:
+  - `src/codeintel/build/hamilton/native/patterns/table_target.py`
+  - `src/codeintel/build/hamilton/native/patterns/__init__.py`
   - `src/codeintel/build/hamilton/native/analytics/function_contracts.py`
   - `src/codeintel/build/hamilton/native/analytics/function_effects.py`
+- Standardized ArrowJoinSpec normalization in cpg2 planes + syntax augment joins:
+  - `src/codeintel/build/hamilton/native/graphs/cpg2/planes/flow.py`
+  - `src/codeintel/build/hamilton/native/graphs/cpg2/planes/goids.py`
+  - `src/codeintel/build/hamilton/native/graphs/cpg2/planes/link.py`
+  - `src/codeintel/build/hamilton/native/graphs/cpg2/planes/scip.py`
+  - `src/codeintel/build/hamilton/native/graphs/cpg2/planes/symbol.py`
+  - `src/codeintel/build/hamilton/native/graphs/cpg2/planes/syntax.py`
+  - `src/codeintel/build/hamilton/native/ingestion/syntax_augment.py`
+- Expanded TableTargetContext adoption for single-table targets:
+  - `src/codeintel/build/hamilton/native/analytics/data_models.py` (data_model_usage)
+  - `src/codeintel/build/hamilton/native/analytics/function_ast_features.py`
+  - `src/codeintel/build/hamilton/native/analytics/function_types.py`
+  - `src/codeintel/build/hamilton/native/analytics/function_validation.py`
+  - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py` (graph_stats)
+  - `src/codeintel/build/hamilton/native/analytics/graph_validation.py`
+  - `src/codeintel/build/hamilton/native/analytics/py_cpg_quality_report.py`
+  - `src/codeintel/build/hamilton/native/analytics/subsystem_agreement.py`
+  - `src/codeintel/build/hamilton/native/analytics/subsystem_cache.py`
+  - `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`
+  - `src/codeintel/build/hamilton/native/export/serving_artifacts.py`
+  - `src/codeintel/build/hamilton/native/graphs/symbol_use.py`
+  - `src/codeintel/build/hamilton/native/ingestion/file_line_index.py`
+
+## Remaining Duplication and Drift (Selected)
+- Table target scaffolding repeated outside the initial templates:
+  - Remaining targets listed below under Table Target Spec Factory (function_contracts and
+    function_effects already migrated).
 
 ## Proposed Shared Modules and Ownership
 - `src/codeintel/build/scopes/snapshot.py` (new)
@@ -80,14 +105,18 @@
 - `src/codeintel/build/graphs/builders.py` (new)
   - Call/import/symbol graph builders and edge weight policy helpers.
   - Ownership: graph construction belongs under build/graphs.
+  - Status: implemented and adopted.
 - `src/codeintel/build/graphs/runtime/runtime.py` (existing)
   - Add `graph_runtime_options_from_env(env: BuildEnv)` to remove repeated logic.
+  - Status: implemented and adopted.
 - `src/codeintel/build/analytics/graphs/context_helpers.py` (new)
-  - GraphContextFactory for extended metrics + GraphMetricsContext bridge.
+  - GraphContextFactory + GraphContextOverrides for extended metrics + GraphMetricsContext bridge.
   - Ownership: analytics graph computations share context derivation patterns.
+  - Status: implemented and adopted.
 - `src/codeintel/build/analytics/compute/row_builders/context.py` (new)
   - RowBuildContext (repo, commit, created_at) + row helper conventions.
   - Ownership: row builders are analytics compute concerns.
+  - Status: implemented and adopted.
 - `src/codeintel/build/tabular/arrow_ops.py` (existing)
   - ArrowJoinOptions + JoinFilterClause + normalize_table_for_join helpers for join execution.
   - Ownership: Arrow join configuration belongs in tabular helpers.
@@ -95,6 +124,7 @@
   - Expression helpers (e.g., is_valid_expr) used by join filter clauses.
 - `src/codeintel/build/hamilton/native/patterns/table_target.py` (existing)
   - Add TableTargetContext + factory for `TableContractSpec` + `TableTargetSpec` with defaults.
+  - Status: implemented; initial targets migrated.
 
 ## Strict Snapshot Alignment
 
@@ -275,7 +305,6 @@ Location: `src/codeintel/build/graphs/builders.py`
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,20 +312,10 @@ class EdgeWeightPolicy:
     default: int = 1
 
     def next_weight(self, value: object | None) -> int:
-        if value is None:
+        parsed = _coerce_edge_weight(value)
+        if parsed is None:
             return self.default
-        if isinstance(value, bool):
-            return int(value) + 1
-        if isinstance(value, int):
-            return value + 1
-        if isinstance(value, float):
-            return int(value) + 1
-        if isinstance(value, str):
-            try:
-                return int(value) + 1
-            except ValueError:
-                return self.default
-        return self.default
+        return parsed + 1
 ```
 
 ### Call/import graph builders
@@ -313,13 +332,14 @@ def add_weighted_edge(
     source: object,
     target: object,
     *,
-    policy: EdgeWeightPolicy,
+    policy: EdgeWeightPolicy | None = None,
 ) -> None:
+    resolved = policy or EdgeWeightPolicy()
     if graph.has_edge(source, target):
         attrs = graph[source][target]
-        attrs["weight"] = policy.next_weight(attrs.get("weight"))
+        attrs["weight"] = resolved.next_weight(attrs.get("weight"))
         return
-    graph.add_edge(source, target, weight=policy.default)
+    graph.add_edge(source, target, weight=resolved.default)
 
 
 def build_call_graph_from_rows(
@@ -329,24 +349,9 @@ def build_call_graph_from_rows(
     policy: EdgeWeightPolicy | None = None,
 ) -> nx.DiGraph:
     graph = nx.DiGraph()
-    edge_policy = policy or EdgeWeightPolicy()
-    for row in rows:
-        caller = normalize_decimal_id(row.get("caller_goid_h128"))
-        callee = normalize_decimal_id(row.get("callee_goid_h128"))
-        if caller is None or callee is None:
-            continue
-        add_weighted_edge(graph, caller, callee, policy=edge_policy)
-    if nodes is None:
-        return graph
-    for row in nodes:
-        node = normalize_decimal_id(row.get("goid_h128"))
-        if node is None or node in graph:
-            continue
-        attrs: dict[str, object] = {}
-        kind = row.get("kind")
-        if kind is not None:
-            attrs["kind"] = str(kind)
-        graph.add_node(node, **attrs)
+    add_call_graph_edges(graph, rows, policy=policy)
+    if nodes is not None:
+        add_call_graph_nodes(graph, nodes)
     return graph
 ```
 
@@ -366,7 +371,6 @@ def build_symbol_module_graph(
     policy: EdgeWeightPolicy | None = None,
 ) -> nx.Graph:
     graph = nx.Graph()
-    edge_policy = policy or EdgeWeightPolicy()
     for row in rows:
         def_path = row.get("def_path")
         use_path = row.get("use_path")
@@ -376,7 +380,7 @@ def build_symbol_module_graph(
         use_module = module_by_path.get(str(use_path))
         if def_module is None or use_module is None or def_module == use_module:
             continue
-        add_weighted_edge(graph, use_module, def_module, policy=edge_policy)
+        add_weighted_edge(graph, use_module, def_module, policy=policy)
     return graph
 
 
@@ -386,13 +390,12 @@ def build_symbol_function_graph(
     policy: EdgeWeightPolicy | None = None,
 ) -> nx.Graph:
     graph = nx.Graph()
-    edge_policy = policy or EdgeWeightPolicy()
     for row in rows:
         def_goid = normalize_decimal_id(row.get("def_goid_h128"))
         use_goid = normalize_decimal_id(row.get("use_goid_h128"))
         if def_goid is None or use_goid is None or def_goid == use_goid:
             continue
-        add_weighted_edge(graph, use_goid, def_goid, policy=edge_policy)
+        add_weighted_edge(graph, use_goid, def_goid, policy=policy)
     return graph
 ```
 
@@ -413,7 +416,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from codeintel.build.graphs.runtime import GraphRuntimeOptions
+from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import (
     GraphContext,
     GraphContextSpec,
@@ -428,20 +431,40 @@ class GraphContextFactory:
     pagerank_weight: str | None = "weight"
     betweenness_weight: str | None = "weight"
 
-    def build(self, runtime: GraphRuntimeOptions, *, repo: str, commit: str) -> GraphContext:
+    def build(
+        self,
+        runtime: GraphRuntimeOptions,
+        *,
+        repo: str,
+        commit: str,
+        overrides: GraphContextOverrides | None = None,
+    ) -> GraphContext:
+        resolved = overrides or GraphContextOverrides()
         return resolve_graph_context(
             GraphContextSpec(
                 repo=repo,
                 commit=commit,
-                use_gpu=runtime.use_gpu,
+                use_gpu=runtime.use_gpu if resolved.use_gpu is None else resolved.use_gpu,
+                options=resolved.options,
                 now=datetime.now(UTC),
                 betweenness_cap=self.betweenness_cap,
                 eigen_cap=self.eigen_cap,
                 pagerank_weight=self.pagerank_weight,
                 betweenness_weight=self.betweenness_weight,
-                community_detection_limit=runtime.features.community_detection_limit,
+                community_detection_limit=(
+                    runtime.features.community_detection_limit
+                    if resolved.community_detection_limit is None
+                    else resolved.community_detection_limit
+                ),
             )
         )
+
+
+@dataclass(frozen=True, slots=True)
+class GraphContextOverrides:
+    options: GraphMetricsOptions | None = None
+    use_gpu: bool | None = None
+    community_detection_limit: int | None = None
 ```
 
 Usage pattern:
@@ -453,7 +476,12 @@ factory = GraphContextFactory(
     pagerank_weight="weight",
     betweenness_weight="weight",
 )
-ctx = factory.build(runtime_opts, repo=repo, commit=commit)
+ctx = factory.build(
+    runtime_opts,
+    repo=repo,
+    commit=commit,
+    overrides=GraphContextOverrides(options=options, use_gpu=use_gpu),
+)
 ```
 
 File targets:
@@ -489,20 +517,22 @@ class GraphMetricsContext:
         *,
         snapshot: SnapshotRef,
         runtime: GraphRuntimeOptions | None,
-        filters: GraphMetricFilters | None,
+        filters: GraphMetricFilters,
         context_factory: GraphContextFactory,
+        overrides: GraphContextOverrides | None = None,
     ) -> "GraphMetricsContext":
         runtime_opts = runtime or GraphRuntimeOptions(snapshot=snapshot)
         graph_ctx = context_factory.build(
             runtime_opts,
             repo=snapshot.repo,
             commit=snapshot.commit,
+            overrides=overrides,
         )
         return cls(
             snapshot=snapshot,
             runtime=runtime_opts,
             graph_context=graph_ctx,
-            filters=filters or GraphMetricFilters(),
+            filters=filters,
         )
 ```
 
@@ -514,13 +544,13 @@ context = GraphMetricsContext.from_inputs(
     runtime=runtime_options,
     filters=active_filters,
     context_factory=context_factory,
+    overrides=GraphContextOverrides(options=options, use_gpu=use_gpu),
 )
 ```
 
 File targets:
 - `src/codeintel/build/analytics/graphs/context_helpers.py` (new)
 - `src/codeintel/build/analytics/graphs/graph_metrics.py`
-- `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
 
 ## Shared RowBuildContext
 
@@ -546,13 +576,19 @@ class RowBuildContext:
         cls,
         snapshot: SnapshotRef,
         *,
-        now: datetime | None = None,
+        created_at: datetime | None = None,
     ) -> "RowBuildContext":
-        return cls(
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            created_at=now or datetime.now(UTC),
-        )
+        return cls.from_repo_commit(snapshot.repo, snapshot.commit, created_at=created_at)
+
+    @classmethod
+    def from_repo_commit(
+        cls,
+        repo: str,
+        commit: str,
+        *,
+        created_at: datetime | None = None,
+    ) -> "RowBuildContext":
+        return cls(repo=repo, commit=commit, created_at=created_at or datetime.now(UTC))
 ```
 
 Usage pattern in row builders:
@@ -633,6 +669,7 @@ Usage pattern (explicit join normalization):
 ```python
 left = normalize_table_for_join(left)
 right = normalize_table_for_join(right)
+join_options = build_join_options(left, right, normalize_inputs=False)
 joined = arrow_join_tables(left, right, spec=join_spec, options=join_options)
 ```
 
@@ -748,10 +785,11 @@ File targets:
 
 ## Implementation Steps
 1. Add `scopes` package and move dulwich snapshot logic out of
-   `src/codeintel/build/schemas/inference_service.py`.
-2. Implement strict SnapshotScope filtering and `collect_scoped_rows`.
-3. Add GraphContextFactory + GraphMetricsContext helpers for analytics graphs.
-4. Update snapshot filtering call sites to use SnapshotScope strict matching:
+   `src/codeintel/build/schemas/inference_service.py`. (done)
+2. Implement strict SnapshotScope filtering and `collect_scoped_rows`. (done)
+3. Add GraphContextFactory + GraphContextOverrides + GraphMetricsContext helpers for
+   analytics graphs. (done)
+4. Update snapshot filtering call sites to use SnapshotScope strict matching: (done)
    - `src/codeintel/build/analytics/semantic_roles/core.py`
    - `src/codeintel/build/analytics/subsystems/cache.py`
    - `src/codeintel/build/analytics/compute/functions/goids.py`
@@ -759,16 +797,17 @@ File targets:
    - `src/codeintel/build/hamilton/native/analytics/subsystem_metrics.py`
    - `src/codeintel/build/hamilton/native/analytics/graph_metrics.py`
    - `src/codeintel/build/analytics/functions/function_effects.py`
-5. Add graph builders and switch graph assembly call sites to use them.
+5. Add graph builders and switch graph assembly call sites to use them. (done)
 6. Add `graph_runtime_options_from_env` in `graphs/runtime/runtime.py` and
-   update analytics modules to use it.
+   update analytics modules to use it. (done)
 7. Add RowBuildContext and update row builder call sites to use it
-   for consistent repo/commit/created_at injection.
+   for consistent repo/commit/created_at injection. (done)
 8. Adopt ArrowJoinOptions + join_filter_expr + normalize_table_for_join across
-   Arrow join call sites in build pipelines.
+   Arrow join call sites in build pipelines. (done for cpg2 planes + syntax_augment)
 9. Add TableTargetContext + TableTargetSpec factory and update at least two
-   analytics targets as a template (function_contracts, function_effects).
-10. Remove or deprecate duplicated helpers where appropriate.
+   analytics targets as a template (function_contracts, function_effects). (done)
+10. Expand TableTargetContext adoption across remaining multi-table targets and remove
+    duplicated target scaffolding helpers where appropriate.
 
 ## Testing Plan
 - SnapshotScope filtering:
@@ -784,7 +823,7 @@ File targets:
   - caps/weights applied consistently across function/module contexts
   - runtime.use_gpu propagates to GraphContextSpec
 - RowBuildContext:
-  - created_at is deterministic when `now` supplied
+  - created_at is deterministic when `created_at` supplied
 - ArrowJoinOptions + JoinFilterClause:
   - join_filter_expr resolves fields correctly with suffix/coalesce behavior
   - Arrow joins honor filter_expression and fall back when unsupported

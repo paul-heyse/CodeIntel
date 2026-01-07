@@ -11,10 +11,9 @@ from codeintel.build.analytics.parsing.compute import get_validation_rows
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetContext,
     attach_table_target_template,
+    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -54,21 +53,15 @@ def function_validation__base(
 
 
 _MODULE = sys.modules[__name__]
-_FUNCTION_VALIDATION_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=FUNCTION_VALIDATION_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=FUNCTION_VALIDATION_TABLE_KEY,
-            base_node="function_validation__base",
-            contract=FUNCTION_VALIDATION_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=FUNCTION_VALIDATION_TABLE_KEY),
-            node_name="function_validation__table",
-            input_type=pa.Table,
-        ),
-    ),
-    table_materializations_node="function_validation__table_materializations",
-    anchor_node_name="t__function_validation",
+_FUNCTION_VALIDATION_TABLE_TARGET_SPEC = build_single_table_target_spec(
+    context=TableTargetContext(
+        domain="analytics",
+        target_name=FUNCTION_VALIDATION_TARGET_NAME,
+        table_key=FUNCTION_VALIDATION_TABLE_KEY,
+        base_node="function_validation__base",
+        contract=FUNCTION_VALIDATION_CONTRACT,
+        input_type=pa.Table,
+    )
 )
 attach_table_target_template(_MODULE, spec=_FUNCTION_VALIDATION_TABLE_TARGET_SPEC)
 function_validation__table = _MODULE.function_validation__table

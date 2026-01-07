@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.ports.change_detection import ChangeDetectionPort, ChangeSet
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
@@ -114,8 +115,7 @@ class RepoScanStep:
     def execute(
         self,
         *,
-        repo: str | None = None,
-        commit: str | None = None,
+        snapshot: SnapshotRef | None = None,
         repo_root: Path | None = None,
         profile: ScanProfile | None = None,
         full_rebuild: bool = False,
@@ -125,10 +125,8 @@ class RepoScanStep:
 
         Parameters
         ----------
-        repo
-            Repository identifier.
-        commit
-            Commit identifier.
+        snapshot
+            Optional snapshot reference (provides repo/commit/root when set).
         repo_root
             Repository root path.
         profile
@@ -145,10 +143,13 @@ class RepoScanStep:
         """
         resolved_repo, resolved_commit = resolve_repo_commit(
             context=context,
-            repo=repo,
-            commit=commit,
+            repo=snapshot.repo if snapshot is not None else None,
+            commit=snapshot.commit if snapshot is not None else None,
         )
-        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
+        resolved_root = resolve_repo_root(
+            context=context,
+            repo_root=snapshot.repo_root if snapshot is not None else repo_root,
+        )
         resolved_profile = resolve_scan_profile(context=context, scan_profile=profile)
 
         modules = list(self._discovery.discover_modules(resolved_root, resolved_profile))

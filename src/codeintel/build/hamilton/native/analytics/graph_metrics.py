@@ -51,9 +51,11 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
+    TableTargetContext,
     TableTargetSpec,
     TableTargetTableSpec,
     attach_table_target_template,
+    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
@@ -822,21 +824,15 @@ symbol_graph_metrics_modules__table = _MODULE.symbol_graph_metrics_modules__tabl
 symbol_graph_metrics__table_materializations = _MODULE.symbol_graph_metrics__table_materializations
 t__symbol_graph_metrics = _MODULE.t__symbol_graph_metrics
 
-_GRAPH_STATS_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="analytics",
-    target_name=GRAPH_STATS_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=GRAPH_STATS_TABLE_KEY,
-            base_node="graph_stats__base",
-            contract=GRAPH_STATS_CONTRACT,
-            save_spec=DatasetSaveSpec(table_key=GRAPH_STATS_TABLE_KEY),
-            input_type=pa.Table,
-            node_name="graph_stats__table",
-        ),
-    ),
-    table_materializations_node="graph_stats__table_materializations",
-    anchor_node_name="t__graph_stats",
+_GRAPH_STATS_TABLE_TARGET_SPEC = build_single_table_target_spec(
+    context=TableTargetContext(
+        domain="analytics",
+        target_name=GRAPH_STATS_TARGET_NAME,
+        table_key=GRAPH_STATS_TABLE_KEY,
+        base_node="graph_stats__base",
+        contract=GRAPH_STATS_CONTRACT,
+        input_type=pa.Table,
+    )
 )
 attach_table_target_template(_MODULE, spec=_GRAPH_STATS_TABLE_TARGET_SPEC)
 graph_stats__table = _MODULE.graph_stats__table

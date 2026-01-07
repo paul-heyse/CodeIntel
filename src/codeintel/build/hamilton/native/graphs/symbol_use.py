@@ -27,10 +27,9 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
     filter_symbol_occurrences,
 )
 from codeintel.build.hamilton.native.patterns import (
-    DatasetSaveSpec,
-    TableTargetSpec,
-    TableTargetTableSpec,
+    TableTargetContext,
     attach_table_target_template,
+    build_single_table_target_spec,
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -269,19 +268,15 @@ def symbol_use_edges_empty(env: BuildEnv) -> InferableTabularInput:
 
 
 _MODULE = sys.modules[__name__]
-_SYMBOL_USES_TABLE_TARGET_SPEC = TableTargetSpec(
-    domain="graphs",
-    target_name=SYMBOL_USES_TARGET_NAME,
-    tables=(
-        TableTargetTableSpec(
-            table_key=SYMBOL_USE_EDGES_TABLE_KEY,
-            base_node="symbol_use_edges",
-            save_spec=DatasetSaveSpec(table_key=SYMBOL_USE_EDGES_TABLE_KEY),
-            node_name="symbol_use_edges__table",
-        ),
-    ),
-    table_materializations_node="symbol_uses__table_materializations",
-    anchor_node_name="t__symbol_uses",
+_SYMBOL_USES_TABLE_TARGET_SPEC = build_single_table_target_spec(
+    context=TableTargetContext(
+        domain="graphs",
+        target_name=SYMBOL_USES_TARGET_NAME,
+        table_key=SYMBOL_USE_EDGES_TABLE_KEY,
+        base_node="symbol_use_edges",
+        node_name="symbol_use_edges__table",
+        table_materializations_node="symbol_uses__table_materializations",
+    )
 )
 attach_table_target_template(_MODULE, spec=_SYMBOL_USES_TABLE_TARGET_SPEC)
 symbol_use_edges__table = _MODULE.symbol_use_edges__table
