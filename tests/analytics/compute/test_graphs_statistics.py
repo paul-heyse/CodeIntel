@@ -6,7 +6,7 @@ on directed graphs and the type-safe NetworkX wrappers.
 
 from __future__ import annotations
 
-import networkx as nx
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 from codeintel.build.graphs.compute.metrics.statistics import (
     GraphStatistics,
@@ -43,61 +43,74 @@ TRIANGLE_DEGREE = 2
 PATH_MIDDLE_DEGREE = 2
 
 
-def _make_empty_graph() -> nx.DiGraph:
+def _add_edges(store: RxGraphStore, edges: list[tuple[object, object]]) -> None:
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
+
+
+def _directed_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+    store = RxGraphStore.directed()
+    _add_edges(store, edges)
+    return store
+
+
+def _undirected_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+    store = RxGraphStore.undirected()
+    _add_edges(store, edges)
+    return store
+
+
+def _make_empty_graph() -> RxGraphStore:
     """
     Create an empty directed graph.
 
     Returns
     -------
-    nx.DiGraph
-        An empty graph.
+    RxGraphStore
+        An empty graph store.
     """
-    return nx.DiGraph()
+    return RxGraphStore.directed()
 
 
-def _make_single_node() -> nx.DiGraph:
+def _make_single_node() -> RxGraphStore:
     """
     Create a graph with single isolated node.
 
     Returns
     -------
-    nx.DiGraph
-        A graph with one node.
+    RxGraphStore
+        A graph store with one node.
     """
-    graph = nx.DiGraph()
-    graph.add_node("A")
+    graph = RxGraphStore.directed()
+    graph.ensure_node("A")
     return graph
 
 
-def _make_simple_dag() -> nx.DiGraph:
+def _make_simple_dag() -> RxGraphStore:
     """
     Create a simple DAG: A -> B -> C, A -> C.
 
     Returns
     -------
-    nx.DiGraph
-        A simple directed acyclic graph.
+    RxGraphStore
+        A simple directed acyclic graph store.
     """
-    graph = nx.DiGraph()
-    graph.add_edges_from([("A", "B"), ("B", "C"), ("A", "C")])
-    return graph
+    return _directed_store([("A", "B"), ("B", "C"), ("A", "C")])
 
 
-def _make_simple_cycle() -> nx.DiGraph:
+def _make_simple_cycle() -> RxGraphStore:
     """
     Create a simple cycle: A -> B -> C -> A.
 
     Returns
     -------
-    nx.DiGraph
-        A simple cycle graph.
+    RxGraphStore
+        A simple cycle graph store.
     """
-    graph = nx.DiGraph()
-    graph.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
-    return graph
+    return _directed_store([("A", "B"), ("B", "C"), ("C", "A")])
 
 
-def _make_call_graph() -> nx.DiGraph:
+def _make_call_graph() -> RxGraphStore:
     """
     Create a realistic call graph structure.
 
@@ -109,11 +122,10 @@ def _make_call_graph() -> nx.DiGraph:
 
     Returns
     -------
-    nx.DiGraph
-        A realistic call graph.
+    RxGraphStore
+        A realistic call graph store.
     """
-    graph = nx.DiGraph()
-    graph.add_edges_from(
+    return _directed_store(
         [
             ("main", "init"),
             ("main", "process"),
@@ -125,25 +137,21 @@ def _make_call_graph() -> nx.DiGraph:
             ("execute", "helper2"),
         ]
     )
-    return graph
 
 
-def _make_multiple_components() -> nx.DiGraph:
+def _make_multiple_components() -> RxGraphStore:
     """
     Create a graph with multiple weakly connected components.
 
     Returns
     -------
-    nx.DiGraph
-        A graph with three disconnected components.
+    RxGraphStore
+        A graph store with three disconnected components.
     """
-    graph = nx.DiGraph()
-
-    graph.add_edge("A", "B")
-
-    graph.add_edges_from([("X", "Y"), ("Y", "Z")])
-
-    graph.add_node("Isolated")
+    graph = RxGraphStore.directed()
+    graph.add_weighted_edge("A", "B", weight=1.0)
+    _add_edges(graph, [("X", "Y"), ("Y", "Z")])
+    graph.ensure_node("Isolated")
     return graph
 
 

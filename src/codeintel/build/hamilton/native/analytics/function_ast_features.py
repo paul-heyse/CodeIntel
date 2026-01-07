@@ -11,8 +11,7 @@ import pyarrow as pa
 
 from codeintel.build.analytics.ast_features.extract import compute_function_features
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
-from codeintel.build.contracts.registry import require_contract
-from codeintel.build.contracts.types import ContractOverrides
+from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -31,15 +30,12 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FUNCTION_AST_FEATURES_TARGET_NAME = "function_ast_features"
 FUNCTION_AST_FEATURES_TABLE_KEY = "analytics.function_ast_features"
-FUNCTION_AST_FEATURES_CONTRACT = require_contract(
+FUNCTION_AST_FEATURES_CONTRACT = contract_for_table(
     table_key=FUNCTION_AST_FEATURES_TABLE_KEY,
-    domain="analytics",
-    target=FUNCTION_AST_FEATURES_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="function_ast_features__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
+    input_name="function_ast_features__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 

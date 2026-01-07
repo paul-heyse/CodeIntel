@@ -8,8 +8,7 @@ from contextlib import suppress
 import pyarrow as pa
 
 from codeintel.build.analytics.subsystems.cache import build_subsystem_profile_cache_frame
-from codeintel.build.contracts.registry import require_contract
-from codeintel.build.contracts.types import ContractOverrides
+from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -18,7 +17,7 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.arrow_ops import align_table_to_contract, emit_alignment_report
+from codeintel.build.tabular.arrow_ops import align_tabular_to_contract, emit_alignment_report
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -26,15 +25,12 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 SUBSYSTEM_CACHES_TARGET_NAME = "subsystem_caches"
 SUBSYSTEM_PROFILE_CACHE_TABLE_KEY = "analytics.subsystem_profile_cache"
-SUBSYSTEM_PROFILE_CACHE_CONTRACT = require_contract(
+SUBSYSTEM_PROFILE_CACHE_CONTRACT = contract_for_table(
     table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
-    domain="analytics",
-    target=SUBSYSTEM_CACHES_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="subsystem_profile_cache__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=SUBSYSTEM_CACHES_TARGET_NAME,
+    input_name="subsystem_profile_cache__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 
@@ -58,7 +54,7 @@ def subsystem_profile_cache__base(
         subsystem_graph_metrics_frame=metrics_frame,
     )
     with suppress(KeyError, RuntimeError, ValueError):
-        table = align_table_to_contract(
+        table = align_tabular_to_contract(
             SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
             table,
             target_name=SUBSYSTEM_CACHES_TARGET_NAME,

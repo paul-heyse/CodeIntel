@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from codeintel.build.graphs.rx.convert import RxGraph as RxRawGraph
-from codeintel.build.graphs.rx.convert import networkx_to_rx, rx_to_networkx
+from codeintel.build.graphs.rx.convert import store_from_rx
 from codeintel.build.graphs.rx.errors import RxGraphError, run_rx
 from codeintel.build.graphs.rx.normalize import (
     NanPolicy,
@@ -43,15 +43,14 @@ __all__ = [
     "encode_node_id",
     "encode_node_payload",
     "loads_node_link_json",
-    "networkx_to_rx",
     "normalize_float",
     "normalize_mapping",
     "read_node_link_json",
     "run_rx",
-    "rx_to_networkx",
     "sorted_keys",
     "sorted_mapping",
     "sorted_nested_mapping",
     "stable_key",
+    "store_from_rx",
     "write_node_link_json",
 ]

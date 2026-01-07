@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import networkx as nx
+from codeintel.build.graphs.compute.metrics.components import (
+    find_connected,
+    find_cycles,
+    find_strongly_connected,
+    find_weakly_connected,
+)
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_edge_count, graph_node_count
 
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -66,55 +72,62 @@ class ModuleMetricsExpectation:
 
 
 def assert_graph_counts(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
     *,
     nodes: int | None = None,
     edges: int | None = None,
 ) -> None:
     """Assert basic node/edge counts for a graph."""
     if nodes is not None:
-        expect_equal(graph.number_of_nodes(), nodes)
+        expect_equal(graph_node_count(graph), nodes)
     if edges is not None:
-        expect_equal(graph.number_of_edges(), edges)
+        expect_equal(graph_edge_count(graph), edges)
 
 
 def assert_component_counts(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
     *,
     weak: int | None = None,
     strong: int | None = None,
 ) -> None:
     """Assert connected component counts for directed or undirected graphs."""
+    store = ensure_store(graph)
     if weak is not None:
-        if isinstance(graph, nx.DiGraph):
-            expect_equal(len(tuple(nx.weakly_connected_components(graph))), weak)
+        if store.is_directed:
+            expect_equal(len(tuple(find_weakly_connected(store))), weak)
         else:
-            expect_equal(len(tuple(nx.connected_components(graph))), weak)
+            expect_equal(len(tuple(find_connected(store))), weak)
     if strong is not None:
-        if isinstance(graph, nx.DiGraph):
-            expect_equal(len(tuple(nx.strongly_connected_components(graph))), strong)
+        if store.is_directed:
+            expect_equal(len(find_strongly_connected(store).components), strong)
         else:
-            expect_equal(len(tuple(nx.connected_components(graph))), strong)
+            expect_equal(len(tuple(find_connected(store))), strong)
 
 
-def assert_cycle_membership(graph: nx.DiGraph, expected: Iterable[Iterable[object]]) -> None:
+def assert_cycle_membership(graph: GraphInput, expected: Iterable[Iterable[object]]) -> None:
     """Assert that a directed graph contains the expected simple cycles."""
-    cycles = [tuple(cycle) for cycle in nx.simple_cycles(graph)]
+    cycles = [tuple(cycle) for cycle in find_cycles(graph)]
     expect_equal(set(map(tuple, expected)), set(cycles))
 
 
 def assert_filtered_graph(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     *,
     expected_nodes: Collection[object],
     expected_edges: Collection[tuple[object, object]],
 ) -> None:
     """Assert nodes and edges on a filtered directed graph."""
+    store = ensure_store(graph)
     node_set = set(expected_nodes)
     edge_set = set(expected_edges)
-    expect_equal(set(graph.nodes), node_set)
-    expect_equal(set(graph.edges), edge_set)
-    expect_true(edge_set <= set(graph.edges))
+    actual_nodes = set(store.node_ids())
+    actual_edges = {
+        (store.index_to_id[src_idx], store.index_to_id[dst_idx])
+        for src_idx, dst_idx in store.graph.edge_list()
+    }
+    expect_equal(actual_nodes, node_set)
+    expect_equal(actual_edges, edge_set)
+    expect_true(edge_set <= actual_edges)
 
 
 def assert_graph_metrics_for_goids(ctx: TestContext, goids: Iterable[int]) -> None:
@@ -127,9 +140,9 @@ def assert_graph_metrics_for_goids(ctx: TestContext, goids: Iterable[int]) -> No
         expect_true(count > 0, message=f"Expected graph metrics for GOID {goid}")
 
 
-def assert_cycle_counts(graph: nx.DiGraph, expected: int) -> None:
+def assert_cycle_counts(graph: GraphInput, expected: int) -> None:
     """Assert the directed graph contains the expected number of simple cycles."""
-    expect_equal(len(tuple(nx.simple_cycles(graph))), expected)
+    expect_equal(len(tuple(find_cycles(graph))), expected)
 
 
 def _count_for_snapshot(con: DuckDBPyConnection, snapshot: SnapshotRef, query: str) -> int:

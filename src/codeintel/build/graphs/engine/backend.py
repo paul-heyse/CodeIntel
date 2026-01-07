@@ -1,13 +1,8 @@
-"""Helpers for configuring NetworkX backends (CPU vs GPU).
-
-These helpers apply the graph_backend configuration to the NetworkX runtime.
-"""
+"""Helpers for configuring rustworkx execution (CPU only)."""
 
 from __future__ import annotations
 
-import importlib
 import logging
-import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -17,7 +12,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import GraphBackendConfig
 
 LOG = logging.getLogger(__name__)
-_GPU_AUTOCONFIG_ENV = "NX_CUGRAPH_AUTOCONFIG"
 
 
 @dataclass(frozen=True)
@@ -32,43 +26,9 @@ class BackendEnablement:
 
 
 def _enable_nx_cugraph_backend() -> None:
-    """
-    Enable the nx-cugraph backend when available.
-
-    Support both old API (set_default_backend) and NetworkX 3.x config API.
-
-    Raises
-    ------
-    RuntimeError
-        If nx_cugraph is missing or cannot be enabled.
-    """
-    try:
-        nx_cugraph = importlib.import_module("nx_cugraph")
-    except ImportError as exc:
-        message = "Requested GPU backend, but nx_cugraph is not installed."
-        raise RuntimeError(message) from exc
-
-    set_backend = getattr(nx_cugraph, "set_default_backend", None)
-    if set_backend is not None:
-        set_backend()
-        LOG.info("NetworkX GPU backend enabled via nx_cugraph.set_default_backend.")
-        return
-
-    try:
-        nx = importlib.import_module("networkx")
-        config = getattr(nx, "config", None)
-        if config is not None and hasattr(config, "backend_priority"):
-            config.backend_priority = ["cugraph"]
-
-            if hasattr(config, "warnings_to_ignore"):
-                config.warnings_to_ignore.add("cache")
-            LOG.info("NetworkX GPU backend enabled via nx.config.backend_priority=['cugraph'].")
-            return
-    except (ImportError, AttributeError) as exc:
-        LOG.debug("NetworkX config API not available: %s", exc)
-
-    os.environ.setdefault("NETWORKX_BACKEND_PRIORITY", "cugraph")
-    LOG.info("NetworkX GPU backend enabled via NETWORKX_BACKEND_PRIORITY env var.")
+    """Raise because rustworkx has no GPU backend."""
+    message = "Rustworkx execution is CPU-only; GPU backend is unavailable."
+    raise RuntimeError(message)
 
 
 def maybe_enable_nx_gpu(
@@ -78,16 +38,16 @@ def maybe_enable_nx_gpu(
     enabler: Callable[[], None] | None = None,
 ) -> BackendEnablement:
     """
-    Configure NetworkX backend based on GraphBackendConfig.
+    Validate GPU intent and return rustworkx-only enablement status.
 
     Parameters
     ----------
     cfg : GraphBackendConfig
         Backend selection options.
     env : MutableMapping[str, str] | None, optional
-        Environment mapping to mutate; defaults to os.environ.
+        Environment mapping (unused; kept for compatibility).
     enabler : Callable[[], None] | None, optional
-        Callback that enables the GPU backend; defaults to nx-cugraph enabler.
+        Callback invoked when GPU was requested (unused by default).
 
     Returns
     -------
@@ -97,9 +57,10 @@ def maybe_enable_nx_gpu(
     Raises
     ------
     RuntimeError
-        If strict mode is enabled and the GPU backend cannot be configured.
+        If strict mode is enabled and GPU usage was requested.
     """
-    env_vars = env if env is not None else os.environ
+    if env is not None:
+        LOG.debug("Ignoring backend env overrides for rustworkx-only execution.")
     enable_backend = enabler or _enable_nx_cugraph_backend
     requested = cfg.backend
     base = BackendEnablement(
@@ -111,46 +72,29 @@ def maybe_enable_nx_gpu(
     )
 
     if not cfg.use_gpu:
-        LOG.debug("Graph backend: CPU (use_gpu=False).")
+        LOG.debug("Graph backend: CPU (rustworkx-only).")
         return base
 
-    backend = cfg.backend
-    LOG.info("Graph backend requested: %s", backend)
-    if backend == "cpu":
-        LOG.info("Graph backend pinned to CPU.")
-        return base
-
-    if backend in {"auto", "nx-cugraph"}:
-        env_vars.setdefault(_GPU_AUTOCONFIG_ENV, "True")
-        try:
-            enable_backend()
-            return BackendEnablement(
-                requested_backend=requested,
-                requested_gpu=True,
-                effective_backend="nx-cugraph",
-                gpu_enabled=True,
-                fallback_reason=None,
-            )
-        except RuntimeError as exc:
-            if cfg.strict:
-                LOG.exception("Failed to enable GPU backend (strict=True).")
-                raise
-            LOG.exception("Failed to enable GPU backend; continuing with CPU backend.")
-            return BackendEnablement(
-                requested_backend=requested,
-                requested_gpu=True,
-                effective_backend="cpu",
-                gpu_enabled=False,
-                fallback_reason=str(exc),
-            )
-
-    LOG.warning("Unknown graph backend '%s'; using CPU backend.", backend)
+    LOG.info("GPU backend requested but rustworkx is CPU-only.")
+    try:
+        enable_backend()
+    except RuntimeError as exc:
+        if cfg.strict:
+            LOG.exception("Failed to enable GPU backend (strict=True).")
+            raise
+        return BackendEnablement(
+            requested_backend=requested,
+            requested_gpu=True,
+            effective_backend="cpu",
+            gpu_enabled=False,
+            fallback_reason=str(exc),
+        )
     return BackendEnablement(
         requested_backend=requested,
-        requested_gpu=cfg.use_gpu,
+        requested_gpu=True,
         effective_backend="cpu",
         gpu_enabled=False,
-        fallback_reason=f"unknown backend {backend}",
+        fallback_reason="rustworkx cpu-only",
     )
 
 

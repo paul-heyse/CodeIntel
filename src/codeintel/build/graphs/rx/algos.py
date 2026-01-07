@@ -10,7 +10,6 @@ from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import cast
 
-import networkx as nx
 import rustworkx as rx
 
 from codeintel.build.graphs.rx.normalize import (
@@ -26,7 +25,7 @@ from codeintel.build.graphs.rx.store import RxGraphStore
 RxGraph = rx.PyGraph | rx.PyDiGraph
 DirectedRxGraph = rx.PyDiGraph
 UndirectedRxGraph = rx.PyGraph
-GraphInput = RxGraphStore | RxGraph | nx.Graph | nx.DiGraph
+GraphInput = RxGraphStore | RxGraph
 
 _CLUSTERING_ABS_TOL = 1e-9
 _CLUSTERING_REL_TOL = 1e-6
@@ -130,23 +129,6 @@ def _store_from_rx(graph: RxGraph) -> RxGraphStore:
     )
 
 
-def _store_from_networkx(
-    graph: nx.Graph | nx.DiGraph,
-    *,
-    weight: str | None,
-    nan_policy: NanPolicy,
-) -> RxGraphStore:
-    store = RxGraphStore.directed() if isinstance(graph, nx.DiGraph) else RxGraphStore.undirected()
-    for node_id, attrs in graph.nodes(data=True):
-        store.set_node_attrs(node_id, attrs)
-    for src, dst, attrs in graph.edges(data=True):
-        edge_weight = 1.0
-        if weight is not None:
-            edge_weight = edge_weight_from_payload(attrs.get(weight), nan_policy=nan_policy)
-        store.add_weighted_edge(src, dst, weight=edge_weight)
-    return store
-
-
 def ensure_store(
     graph: GraphInput,
     *,
@@ -169,9 +151,10 @@ def ensure_store(
         return graph
     if isinstance(graph, (rx.PyGraph, rx.PyDiGraph)):
         return _store_from_rx(graph)
-    if isinstance(graph, (nx.Graph, nx.DiGraph)):
-        return _store_from_networkx(graph, weight=weight, nan_policy=nan_policy)
-    message = f"Unsupported graph input: {type(graph).__name__}"
+    message = (
+        f"Unsupported graph input: {type(graph).__name__} "
+        f"(weight={weight}, nan_policy={nan_policy})"
+    )
     raise TypeError(message)
 
 
@@ -248,8 +231,6 @@ def graph_node_count(graph: GraphInput) -> int:
         return graph.graph.num_nodes()
     if isinstance(graph, (rx.PyGraph, rx.PyDiGraph)):
         return graph.num_nodes()
-    if isinstance(graph, (nx.Graph, nx.DiGraph)):
-        return graph.number_of_nodes()
     return 0
 
 
@@ -265,8 +246,6 @@ def graph_edge_count(graph: GraphInput) -> int:
         return graph.graph.num_edges()
     if isinstance(graph, (rx.PyGraph, rx.PyDiGraph)):
         return graph.num_edges()
-    if isinstance(graph, (nx.Graph, nx.DiGraph)):
-        return graph.number_of_edges()
     return 0
 
 

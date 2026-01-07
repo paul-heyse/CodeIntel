@@ -7,7 +7,7 @@ including degree centrality and weighted projections.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from codeintel.build.graphs.rx.algos import (
     GraphInput,
@@ -16,11 +16,8 @@ from codeintel.build.graphs.rx.algos import (
     to_undirected_store,
     weighted_projection_store,
 )
-from codeintel.build.graphs.rx.convert import rx_to_networkx
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, sorted_mapping
-
-if TYPE_CHECKING:
-    import networkx as nx
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 
 @dataclass(frozen=True)
@@ -127,7 +124,7 @@ def compute_bipartite_degrees(
 def compute_weighted_projection(
     bipartite_graph: GraphInput,
     nodes: set[Any],
-) -> nx.Graph | None:
+) -> RxGraphStore | None:
     """Build a weighted projection graph from a bipartite partition.
 
     Parameters
@@ -139,8 +136,8 @@ def compute_weighted_projection(
 
     Returns
     -------
-    nx.Graph | None
-        Projected graph, or None if projection cannot be computed.
+    RxGraphStore | None
+        Projected graph store, or None if projection cannot be computed.
 
     Notes
     -----
@@ -172,7 +169,7 @@ def compute_weighted_projection(
         projection_store = weighted_projection_store(store, nodes, ratio=False)
     except ValueError:
         return None
-    return rx_to_networkx(projection_store.graph)
+    return projection_store
 
 
 __all__ = [

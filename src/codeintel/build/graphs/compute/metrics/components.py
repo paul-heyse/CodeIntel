@@ -10,7 +10,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
-import networkx as nx
 import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.statistics import (
@@ -26,7 +25,6 @@ from codeintel.build.graphs.rx.algos import (
     ensure_store,
     to_undirected_store,
 )
-from codeintel.build.graphs.rx.convert import rx_to_networkx
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -69,7 +67,7 @@ class SCCResult:
 
     components: tuple[ComponentInfo, ...]
     node_to_component: dict[Any, int]
-    condensation: nx.DiGraph | None = None
+    condensation: RxGraphStore | None = None
 
 
 class ComponentStats(TypedDict):
@@ -131,7 +129,8 @@ def find_strongly_connected(
 
     Examples
     --------
-    >>> g = nx.DiGraph([(1, 2), (2, 3), (3, 1), (4, 5)])
+    >>> g = RxGraphStore.directed()
+    >>> g.add_weighted_edge(1, 2, weight=1.0)
     >>> result = find_strongly_connected(g)
     >>> len(result.components) >= 2
     True
@@ -172,7 +171,7 @@ def find_strongly_connected(
             if src_comp is None or dst_comp is None or src_comp == dst_comp:
                 continue
             condensed_store.add_weighted_edge(src_comp, dst_comp, weight=1.0)
-        condensation = cast("nx.DiGraph", rx_to_networkx(condensed_store.graph))
+        condensation = condensed_store
 
     return SCCResult(
         components=tuple(components),

@@ -20,8 +20,7 @@ from codeintel.build.analytics.graphs.config_graph_metrics import (
     compute_config_graph_metrics_result,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
-from codeintel.build.contracts.registry import require_contract
-from codeintel.build.contracts.types import ContractOverrides
+from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
 from codeintel.build.graphs.rx.algos import GraphInput
 from codeintel.build.graphs.rx.store import RxGraphStore
@@ -48,15 +47,12 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 CONFIG_DATA_FLOW_TARGET_NAME = "config_data_flow"
 CONFIG_DATA_FLOW_TABLE_KEY = "analytics.config_data_flow"
-CONFIG_DATA_FLOW_CONTRACT = require_contract(
+CONFIG_DATA_FLOW_CONTRACT = contract_for_table(
     table_key=CONFIG_DATA_FLOW_TABLE_KEY,
-    domain="analytics",
-    target=CONFIG_DATA_FLOW_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="config_data_flow__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CONFIG_DATA_FLOW_TARGET_NAME,
+    input_name="config_data_flow__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 CONFIG_GRAPH_TARGET_NAME = "config_graph_metrics"
@@ -70,45 +66,33 @@ CONFIG_GRAPH_TABLE_KEYS = (
     CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
     CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
 )
-CONFIG_GRAPH_KEYS_CONTRACT = require_contract(
+CONFIG_GRAPH_KEYS_CONTRACT = contract_for_table(
     table_key=CONFIG_GRAPH_KEYS_TABLE_KEY,
-    domain="analytics",
-    target=CONFIG_GRAPH_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="config_graph_metrics_keys__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CONFIG_GRAPH_TARGET_NAME,
+    input_name="config_graph_metrics_keys__base",
+    required_cols=(),
+    clip_column=None,
 )
-CONFIG_GRAPH_MODULES_CONTRACT = require_contract(
+CONFIG_GRAPH_MODULES_CONTRACT = contract_for_table(
     table_key=CONFIG_GRAPH_MODULES_TABLE_KEY,
-    domain="analytics",
-    target=CONFIG_GRAPH_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="config_graph_metrics_modules__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CONFIG_GRAPH_TARGET_NAME,
+    input_name="config_graph_metrics_modules__base",
+    required_cols=(),
+    clip_column=None,
 )
-CONFIG_GRAPH_KEY_EDGES_CONTRACT = require_contract(
+CONFIG_GRAPH_KEY_EDGES_CONTRACT = contract_for_table(
     table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
-    domain="analytics",
-    target=CONFIG_GRAPH_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="config_projection_key_edges__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CONFIG_GRAPH_TARGET_NAME,
+    input_name="config_projection_key_edges__base",
+    required_cols=(),
+    clip_column=None,
 )
-CONFIG_GRAPH_MODULE_EDGES_CONTRACT = require_contract(
+CONFIG_GRAPH_MODULE_EDGES_CONTRACT = contract_for_table(
     table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
-    domain="analytics",
-    target=CONFIG_GRAPH_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="config_projection_module_edges__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CONFIG_GRAPH_TARGET_NAME,
+    input_name="config_projection_module_edges__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 _FUNCTION_KINDS: frozenset[str] = frozenset({"function", "method"})

@@ -13,8 +13,7 @@ import pyarrow.compute as pc
 from codeintel.build.contracts.types import ContractPolicy
 from codeintel.build.tabular.arrow_ops import (
     AlignmentReporter,
-    align_reader_to_contract,
-    align_table_to_contract,
+    align_tabular_to_contract,
     emit_alignment_report,
 )
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
@@ -163,30 +162,20 @@ def align_contract_output(
     policy: ContractPolicy | None = None,
     reporter: AlignmentReporter | None = emit_alignment_report,
 ) -> TabularInput:
-    """Align Arrow outputs to the contract schema when possible.
+    """Align Arrow or Polars outputs to the contract schema when possible.
 
     Returns
     -------
     TabularInput
-        Aligned Arrow table/reader or the original input for other data.
+        Aligned tabular input or the original input for unsupported data.
     """
-    if isinstance(df, pa.RecordBatchReader):
-        return align_reader_to_contract(
-            table_key,
-            df,
-            target_name=target_name,
-            policy=policy,
-            reporter=reporter,
-        )
-    if isinstance(df, pa.Table):
-        return align_table_to_contract(
-            table_key,
-            df,
-            target_name=target_name,
-            policy=policy,
-            reporter=reporter,
-        )
-    return df
+    return align_tabular_to_contract(
+        table_key,
+        df,
+        target_name=target_name,
+        policy=policy,
+        reporter=reporter,
+    )
 
 
 def _selector_by_name(names: Sequence[str]) -> pl.Expr | list[str]:

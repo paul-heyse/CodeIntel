@@ -11,7 +11,6 @@ from collections.abc import Hashable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-import networkx as nx
 import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.centrality import centrality_directed
@@ -474,29 +473,32 @@ def cfg_reachable_nodes(graph: GraphInput, entry_idx: int) -> set[Any]:
 def build_cfg_graph(
     blocks: list[tuple[int, str, int, int]],
     edges: list[tuple[int, int, str]],
-) -> tuple[nx.DiGraph, int, int]:
+) -> tuple[RxGraphStore, int, int]:
     """Build a control-flow graph from block and edge tuples.
 
     Returns
     -------
-    tuple[nx.DiGraph, int, int]
+    tuple[RxGraphStore, int, int]
         Graph, entry node id, and exit node id.
     """
-    graph = nx.DiGraph()
+    graph = RxGraphStore.directed()
     entry_idx = None
     exit_idx = None
     out_deg_map: dict[int, int] = {}
     for idx, kind, in_deg, out_deg in blocks:
-        graph.add_node(idx, kind=kind, in_degree=in_deg, out_degree=out_deg)
+        graph.set_node_attrs(
+            idx,
+            {"kind": kind, "in_degree": in_deg, "out_degree": out_deg},
+        )
         if kind == "entry":
             entry_idx = idx
         if kind == "exit":
             exit_idx = idx
         out_deg_map[idx] = out_deg
-    for src, dst, edge_type in edges:
-        graph.add_edge(src, dst, edge_type=edge_type)
-    if entry_idx is None and graph.nodes:
-        entry_idx = min(int(str(node)) for node in graph.nodes)
+    for src, dst, _edge_type in edges:
+        graph.add_weighted_edge(src, dst, weight=1.0)
+    if entry_idx is None and graph.graph.num_nodes() > 0:
+        entry_idx = min(int(str(node)) for node in graph.node_ids())
     if exit_idx is None:
         exits = [node for node, deg in out_deg_map.items() if deg == 0]
         exit_idx = exits[0] if exits else (entry_idx if entry_idx is not None else 0)

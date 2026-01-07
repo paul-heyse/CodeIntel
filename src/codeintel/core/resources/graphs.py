@@ -26,7 +26,7 @@ class MyGraphProvider:
         self._cached = None
 
     @property
-    def call_graph(self) -> nx.DiGraph | None:
+    def call_graph(self) -> GraphInput | None:
         return self.get().call_graph
 ```
 """
@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Protocol, TypeVar, runtime_checkable
 
 if TYPE_CHECKING:
-    import networkx as nx
+    from codeintel.build.graphs.rx.algos import GraphInput
 
 T_co = TypeVar("T_co", covariant=True)
 
@@ -72,12 +72,12 @@ class GraphBundle:
     ...     print(f"Call graph has {bundle.call_graph.number_of_nodes()} nodes")
     """
 
-    call_graph: nx.DiGraph | None = None
-    import_graph: nx.DiGraph | None = None
-    symbol_module_graph: nx.Graph | None = None
-    symbol_function_graph: nx.Graph | None = None
-    config_module_bipartite: nx.Graph | None = None
-    cfg_graph: nx.DiGraph | None = None
+    call_graph: GraphInput | None = None
+    import_graph: GraphInput | None = None
+    symbol_module_graph: GraphInput | None = None
+    symbol_function_graph: GraphInput | None = None
+    config_module_bipartite: GraphInput | None = None
+    cfg_graph: GraphInput | None = None
 
     @classmethod
     def empty(cls) -> GraphBundle:
@@ -163,7 +163,7 @@ class GraphProviderProtocol(Protocol[T_co]):
     ...     def get(self) -> GraphBundle: ...
     ...     def invalidate(self) -> None: ...
     ...     @property
-    ...     def call_graph(self) -> nx.DiGraph | None: ...
+    ...     def call_graph(self) -> GraphInput | None: ...
     """
 
     RESOURCE_NAME: ClassVar[str]
@@ -186,23 +186,23 @@ class GraphProviderProtocol(Protocol[T_co]):
         ...
 
     @property
-    def call_graph(self) -> nx.DiGraph | None:
+    def call_graph(self) -> GraphInput | None:
         """Access call graph directly.
 
         Returns
         -------
-        nx.DiGraph | None
+        GraphInput | None
             The call graph, or None if not available.
         """
         ...
 
     @property
-    def import_graph(self) -> nx.DiGraph | None:
+    def import_graph(self) -> GraphInput | None:
         """Access import graph directly.
 
         Returns
         -------
-        nx.DiGraph | None
+        GraphInput | None
             The import graph, or None if not available.
         """
         ...
@@ -217,45 +217,45 @@ class ExtendedGraphProviderProtocol(GraphProviderProtocol[T_co], Protocol[T_co])
     """
 
     @property
-    def symbol_module_graph(self) -> nx.Graph | None:
+    def symbol_module_graph(self) -> GraphInput | None:
         """Access symbol-module bipartite graph.
 
         Returns
         -------
-        nx.Graph | None
+        GraphInput | None
             The symbol-module graph, or None if not available.
         """
         ...
 
     @property
-    def symbol_function_graph(self) -> nx.Graph | None:
+    def symbol_function_graph(self) -> GraphInput | None:
         """Access symbol-function bipartite graph.
 
         Returns
         -------
-        nx.Graph | None
+        GraphInput | None
             The symbol-function graph, or None if not available.
         """
         ...
 
     @property
-    def config_module_bipartite(self) -> nx.Graph | None:
+    def config_module_bipartite(self) -> GraphInput | None:
         """Access config-module bipartite graph.
 
         Returns
         -------
-        nx.Graph | None
+        GraphInput | None
             The config-module graph, or None if not available.
         """
         ...
 
     @property
-    def cfg_graph(self) -> nx.DiGraph | None:
+    def cfg_graph(self) -> GraphInput | None:
         """Access control flow graph.
 
         Returns
         -------
-        nx.DiGraph | None
+        GraphInput | None
             The CFG, or None if not available.
         """
         ...

@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
-
-import networkx as nx
 import pytest
 
 from codeintel.build.analytics.compute.graphs.conversions import (
@@ -19,6 +17,7 @@ from codeintel.build.analytics.compute.graphs.conversions import (
     log_projection_skipped,
     safe_float,
 )
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.data_models.ids import normalize_decimal_id
 from tests._helpers.assertions import (
     expect_equal,
@@ -194,7 +193,7 @@ class TestLogEmptyGraph:
     @staticmethod
     def test_logs_for_empty_graph(caplog: pytest.LogCaptureFixture) -> None:
         """Verify debug log is emitted for empty graph."""
-        empty_graph: nx.Graph = nx.Graph()
+        empty_graph = RxGraphStore.undirected()
 
         with caplog.at_level(logging.DEBUG):
             log_empty_graph("test_graph", empty_graph)
@@ -204,8 +203,8 @@ class TestLogEmptyGraph:
     @staticmethod
     def test_no_log_for_nonempty_graph(caplog: pytest.LogCaptureFixture) -> None:
         """Verify no log is emitted for non-empty graph."""
-        graph: nx.Graph = nx.Graph()
-        graph.add_node(1)
+        graph = RxGraphStore.undirected()
+        graph.ensure_node(1)
 
         with caplog.at_level(logging.DEBUG):
             log_empty_graph("test_graph", graph)
@@ -215,7 +214,7 @@ class TestLogEmptyGraph:
     @staticmethod
     def test_works_with_digraph(caplog: pytest.LogCaptureFixture) -> None:
         """Verify function works with DiGraph."""
-        empty_digraph: nx.DiGraph = nx.DiGraph()
+        empty_digraph = RxGraphStore.directed()
 
         with caplog.at_level(logging.DEBUG):
             log_empty_graph("call_graph", empty_digraph)
@@ -271,13 +270,13 @@ class TestIntegrationScenarios:
     @staticmethod
     def test_graph_node_id_normalization() -> None:
         """Verify numeric graph nodes normalize to ints."""
-        graph: nx.DiGraph = nx.DiGraph()
-        graph.add_node(Decimal("123"))
-        graph.add_node(456)
-        graph.add_node("789")
-        graph.add_node("func_name")
+        graph = RxGraphStore.directed()
+        graph.ensure_node(Decimal("123"))
+        graph.ensure_node(456)
+        graph.ensure_node("789")
+        graph.ensure_node("func_name")
 
-        normalized = {normalize_decimal_id(n) for n in graph.nodes()}
+        normalized = {normalize_decimal_id(n) for n in graph.node_ids()}
         expected = {123, 456, 789, None}
         expect_equal(normalized, expected)
 

@@ -12,8 +12,7 @@ from codeintel.build.analytics.subsystems.materialize import (
     SubsystemRows,
     build_subsystem_rows,
 )
-from codeintel.build.contracts.registry import require_contract
-from codeintel.build.contracts.types import ContractOverrides
+from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -32,25 +31,19 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 SUBSYSTEMS_TARGET_NAME = "subsystems"
 SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
 SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
-SUBSYSTEMS_CONTRACT = require_contract(
+SUBSYSTEMS_CONTRACT = contract_for_table(
     table_key=SUBSYSTEMS_TABLE_KEY,
-    domain="analytics",
-    target=SUBSYSTEMS_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="subsystems__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=SUBSYSTEMS_TARGET_NAME,
+    input_name="subsystems__base",
+    required_cols=(),
+    clip_column=None,
 )
-SUBSYSTEM_MODULES_CONTRACT = require_contract(
+SUBSYSTEM_MODULES_CONTRACT = contract_for_table(
     table_key=SUBSYSTEM_MODULES_TABLE_KEY,
-    domain="analytics",
-    target=SUBSYSTEMS_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="subsystem_modules__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=SUBSYSTEMS_TARGET_NAME,
+    input_name="subsystem_modules__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 

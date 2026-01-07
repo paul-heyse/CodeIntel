@@ -9,8 +9,7 @@ from datetime import UTC, datetime
 
 import pyarrow as pa
 
-from codeintel.build.contracts.registry import require_contract
-from codeintel.build.contracts.types import ContractOverrides
+from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -32,15 +31,12 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 PY_CPG_QUALITY_REPORT_TARGET_NAME = "py_cpg_quality_report"
 PY_CPG_QUALITY_REPORT_TABLE_KEY = "analytics.py_cpg_quality_report"
 
-PY_CPG_QUALITY_REPORT_CONTRACT = require_contract(
+PY_CPG_QUALITY_REPORT_CONTRACT = contract_for_table(
     table_key=PY_CPG_QUALITY_REPORT_TABLE_KEY,
-    domain="analytics",
-    target=PY_CPG_QUALITY_REPORT_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="py_cpg_quality_report__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=PY_CPG_QUALITY_REPORT_TARGET_NAME,
+    input_name="py_cpg_quality_report__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 

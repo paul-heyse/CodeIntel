@@ -1,8 +1,8 @@
-"""NetworkX-backed GraphEngine implementation.
+"""Rustworkx-backed GraphEngine implementation.
 
 This module provides the primary GraphEngine implementation using
-NetworkX for graph representation and Parquet-backed datasets for
-data loading. It is a hybrid service layer (not a Hamilton DAG
+rustworkx stores for graph representation and Parquet-backed datasets
+for data loading. It is a hybrid service layer (not a Hamilton DAG
 module) and avoids view-registry fallbacks.
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -19,13 +19,12 @@ import pyarrow.dataset as ds
 from codeintel.build.graphs.engine import views
 from codeintel.build.graphs.engine.cache import GraphCache, GraphCacheMetadata
 from codeintel.build.graphs.engine.protocol import GraphKind
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.datasets.parquet_metadata import metadata_from_schema
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.hashing.fingerprint import stable_hash
 
 if TYPE_CHECKING:
-    import networkx as nx
-
     from codeintel.build.graphs.engine.backend import BackendEnablement
     from codeintel.config.primitives import SnapshotRef
 
@@ -42,7 +41,7 @@ _GRAPH_CACHE_TABLES: dict[GraphKind, tuple[str, ...]] = {
 
 @dataclass
 class NxGraphEngine:
-    """NetworkX-backed GraphEngine powered by Parquet-backed datasets."""
+    """Rustworkx-backed GraphEngine powered by Parquet-backed datasets."""
 
     dataset_root_dir: Path | None
     snapshot: SnapshotRef
@@ -51,7 +50,7 @@ class NxGraphEngine:
     backend_info: BackendEnablement | None = None
     _cache: GraphCache = field(default_factory=GraphCache)
 
-    def seed(self, kind: GraphKind, graph: nx.Graph | None) -> None:
+    def seed(self, kind: GraphKind, graph: RxGraphStore | None) -> None:
         """
         Pre-populate the cache when a graph is already available.
 
@@ -59,8 +58,8 @@ class NxGraphEngine:
         ----------
         kind : GraphKind
             Type of graph being cached.
-        graph : nx.Graph | None
-            Graph instance to cache, or None to skip.
+        graph : RxGraphStore | None
+            Graph store to cache, or None to skip.
         """
         self._cache.seed(kind, graph)
 
@@ -74,14 +73,14 @@ class NxGraphEngine:
         """Commit identifier for the bound snapshot."""
         return self.snapshot.commit
 
-    def call_graph(self) -> nx.DiGraph:
+    def call_graph(self) -> RxGraphStore:
         """
         Return the call graph for the configured snapshot.
 
         Returns
         -------
-        nx.DiGraph
-            Cached or freshly materialized call graph.
+        RxGraphStore
+            Cached or freshly materialized call graph store.
         """
         metadata = self._graph_cache_metadata(GraphKind.CALL_GRAPH)
         graph = self._cache.get(
@@ -94,27 +93,27 @@ class NxGraphEngine:
             ),
             metadata=metadata,
         )
-        return cast("nx.DiGraph", graph)
+        return graph
 
-    def load_call_graph(self) -> nx.DiGraph:
+    def load_call_graph(self) -> RxGraphStore:
         """
         Alias for call_graph to satisfy GraphEngine protocol.
 
         Returns
         -------
-        nx.DiGraph
-            Directed call graph.
+        RxGraphStore
+            Directed call graph store.
         """
         return self.call_graph()
 
-    def import_graph(self) -> nx.DiGraph:
+    def import_graph(self) -> RxGraphStore:
         """
         Return the import graph for the configured snapshot.
 
         Returns
         -------
-        nx.DiGraph
-            Cached or freshly materialized import graph.
+        RxGraphStore
+            Cached or freshly materialized import graph store.
         """
         metadata = self._graph_cache_metadata(GraphKind.IMPORT_GRAPH)
         graph = self._cache.get(
@@ -127,27 +126,27 @@ class NxGraphEngine:
             ),
             metadata=metadata,
         )
-        return cast("nx.DiGraph", graph)
+        return graph
 
-    def load_import_graph(self) -> nx.DiGraph:
+    def load_import_graph(self) -> RxGraphStore:
         """
         Alias for import_graph to satisfy GraphEngine protocol.
 
         Returns
         -------
-        nx.DiGraph
-            Directed import graph.
+        RxGraphStore
+            Directed import graph store.
         """
         return self.import_graph()
 
-    def symbol_module_graph(self) -> nx.Graph:
+    def symbol_module_graph(self) -> RxGraphStore:
         """
         Return the symbol coupling graph aggregated at module granularity.
 
         Returns
         -------
-        nx.Graph
-            Cached or freshly materialized symbol-module graph.
+        RxGraphStore
+            Cached or freshly materialized symbol-module graph store.
         """
         metadata = self._graph_cache_metadata(GraphKind.SYMBOL_MODULE_GRAPH)
         return self._cache.get(
@@ -161,25 +160,25 @@ class NxGraphEngine:
             metadata=metadata,
         )
 
-    def load_symbol_module_graph(self) -> nx.Graph:
+    def load_symbol_module_graph(self) -> RxGraphStore:
         """
         Alias for symbol_module_graph to satisfy GraphEngine protocol.
 
         Returns
         -------
-        nx.Graph
-            Symbol-module coupling graph.
+        RxGraphStore
+            Symbol-module coupling graph store.
         """
         return self.symbol_module_graph()
 
-    def symbol_function_graph(self) -> nx.Graph:
+    def symbol_function_graph(self) -> RxGraphStore:
         """
         Return the symbol coupling graph aggregated at function granularity.
 
         Returns
         -------
-        nx.Graph
-            Cached or freshly materialized symbol-function graph.
+        RxGraphStore
+            Cached or freshly materialized symbol-function graph store.
         """
         metadata = self._graph_cache_metadata(GraphKind.SYMBOL_FUNCTION_GRAPH)
         return self._cache.get(
@@ -192,25 +191,25 @@ class NxGraphEngine:
             metadata=metadata,
         )
 
-    def load_symbol_function_graph(self) -> nx.Graph:
+    def load_symbol_function_graph(self) -> RxGraphStore:
         """
         Alias for symbol_function_graph to satisfy GraphEngine protocol.
 
         Returns
         -------
-        nx.Graph
-            Symbol-function coupling graph.
+        RxGraphStore
+            Symbol-function coupling graph store.
         """
         return self.symbol_function_graph()
 
-    def config_module_bipartite(self) -> nx.Graph:
+    def config_module_bipartite(self) -> RxGraphStore:
         """
         Return the config key <-> module bipartite graph.
 
         Returns
         -------
-        nx.Graph
-            Cached or freshly materialized config bipartite graph.
+        RxGraphStore
+            Cached or freshly materialized config bipartite graph store.
         """
         metadata = self._graph_cache_metadata(GraphKind.CONFIG_MODULE_BIPARTITE)
         return self._cache.get(
@@ -224,14 +223,14 @@ class NxGraphEngine:
             metadata=metadata,
         )
 
-    def load_config_module_bipartite(self) -> nx.Graph:
+    def load_config_module_bipartite(self) -> RxGraphStore:
         """
         Alias for config_module_bipartite to satisfy GraphEngine protocol.
 
         Returns
         -------
-        nx.Graph
-            Config-module bipartite graph.
+        RxGraphStore
+            Config-module bipartite graph store.
         """
         return self.config_module_bipartite()
 

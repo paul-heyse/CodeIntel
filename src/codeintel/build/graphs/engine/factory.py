@@ -65,21 +65,8 @@ def build_graph_engine(
         If an unsupported graph backend is requested.
     """
     opts = options or EngineBuildOptions()
-    allowed_backends = {"auto", "cpu", "nx-cugraph"}
-    allowed_engines = {"networkx", "rustworkx"}
-    engine_name = opts.graph_backend.engine if opts.graph_backend is not None else "rustworkx"
-    if engine_name not in allowed_engines:
-        message = f"Unsupported graph engine: {engine_name}"
-        raise ValueError(message)
-    if opts.graph_backend is not None and opts.graph_backend.backend not in allowed_backends:
-        message = f"Unsupported graph backend: {opts.graph_backend.backend}"
-        raise ValueError(message)
-    if engine_name != "rustworkx":
-        log.info("Graph engine selection %s ignored; rustworkx is the only engine.", engine_name)
-    if opts.graph_backend is not None and (
-        opts.graph_backend.use_gpu or opts.graph_backend.backend == "nx-cugraph"
-    ):
-        log.info("GPU/backend preference ignored; rustworkx is CPU-only.")
+    if opts.graph_backend is not None and opts.graph_backend.use_gpu:
+        log.info("GPU preference ignored; rustworkx is CPU-only.")
     normalized_snapshot = (
         snapshot
         if isinstance(snapshot, SnapshotRef)

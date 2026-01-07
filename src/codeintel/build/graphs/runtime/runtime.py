@@ -17,14 +17,14 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Self, TypeVar, cast
 
-import networkx as nx
 import rustworkx as rx
 
 from codeintel.build.graphs.engine import GraphKind
 from codeintel.build.graphs.engine.datasets import resolve_dataset_root
 from codeintel.build.graphs.engine.factory import EngineBuildOptions, build_graph_engine
-from codeintel.build.graphs.rx.convert import networkx_to_rx, rx_to_networkx
+from codeintel.build.graphs.rx.convert import store_from_rx
 from codeintel.build.graphs.rx.serialization import dumps_node_link_json, loads_node_link_json
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 from codeintel.core.options import ValidationOutcome
 
@@ -39,49 +39,22 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 GRAPH_CACHE_VERSION = "v3"
-GraphCacheValue = nx.Graph | nx.DiGraph
-GraphT = TypeVar("GraphT", nx.Graph, nx.DiGraph)
+GraphCacheValue = RxGraphStore
+GraphT = TypeVar("GraphT", bound=RxGraphStore)
 
 
-def _coerce_int(value: object) -> int | None:
-    """Coerce a primitive value into an integer when possible.
-
-    Returns
-    -------
-    int | None
-        Coerced integer value, or None when coercion is not possible.
-    """
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, (bytes, bytearray, str)):
-        try:
-            return int(value)
-        except ValueError:
-            return None
-    return None
-
-
-def _safe_graph_count(graph: object, *, primary: str, fallback: str) -> int | None:
-    """Fetch graph counts from known methods without raising.
+def _graph_counts(store: RxGraphStore) -> tuple[int | None, int | None]:
+    """Fetch node/edge counts without raising.
 
     Returns
     -------
-    int | None
-        Count from the first available method or None on failure.
+    tuple[int | None, int | None]
+        Node and edge counts when available, otherwise None values.
     """
-    for attr in (primary, fallback):
-        func = getattr(graph, attr, None)
-        if callable(func):
-            try:
-                value = func()
-            except (RuntimeError, TypeError, ValueError):
-                return None
-            return _coerce_int(value)
-    return None
+    try:
+        return store.graph.num_nodes(), store.graph.num_edges()
+    except (RuntimeError, TypeError, ValueError):
+        return None, None
 
 
 @dataclass(frozen=True)
@@ -397,12 +370,12 @@ class GraphRuntime:
     options: GraphRuntimeOptions
     engine: GraphEngine
     backend_info: BackendEnablement | None = None
-    call_graph: nx.DiGraph | None = None
-    import_graph: nx.DiGraph | None = None
-    cfg_graph: nx.DiGraph | None = None
-    symbol_module_graph: nx.Graph | None = None
-    symbol_function_graph: nx.Graph | None = None
-    config_module_bipartite: nx.Graph | None = None
+    call_graph: RxGraphStore | None = None
+    import_graph: RxGraphStore | None = None
+    cfg_graph: RxGraphStore | None = None
+    symbol_module_graph: RxGraphStore | None = None
+    symbol_function_graph: RxGraphStore | None = None
+    config_module_bipartite: RxGraphStore | None = None
     _cache: dict[GraphKind, GraphCacheValue] = field(default_factory=dict, repr=False)
 
     @property
@@ -415,54 +388,54 @@ class GraphRuntime:
         """Flag indicating whether the backend prefers GPU execution."""
         return False
 
-    def ensure_call_graph(self) -> nx.DiGraph:
+    def ensure_call_graph(self) -> RxGraphStore:
         """Return a cached call graph, loading it from the engine when needed.
 
         Returns
         -------
-        nx.DiGraph
-            Call graph for the runtime snapshot.
+        RxGraphStore
+            Call graph store for the runtime snapshot.
         """
         graph, cache_hit = self._get_graph(GraphKind.CALL_GRAPH, self.engine.load_call_graph)
         self.call_graph = graph
         self._log_graph_stats("call_graph", self.call_graph, cache_hit=cache_hit)
         return self.call_graph
 
-    def ensure_import_graph(self) -> nx.DiGraph:
+    def ensure_import_graph(self) -> RxGraphStore:
         """Return a cached import graph, loading it from the engine when needed.
 
         Returns
         -------
-        nx.DiGraph
-            Import graph for the runtime snapshot.
+        RxGraphStore
+            Import graph store for the runtime snapshot.
         """
         graph, cache_hit = self._get_graph(GraphKind.IMPORT_GRAPH, self.engine.load_import_graph)
         self.import_graph = graph
         self._log_graph_stats("import_graph", self.import_graph, cache_hit=cache_hit)
         return self.import_graph
 
-    def ensure_cfg_graph(self) -> nx.DiGraph | None:
+    def ensure_cfg_graph(self) -> RxGraphStore | None:
         """Return a cached CFG graph when available.
 
         Returns
         -------
-        nx.DiGraph | None
-            Cached CFG graph when present; otherwise ``None``.
+        RxGraphStore | None
+            Cached CFG graph store when present; otherwise ``None``.
         """
         if self.cfg_graph is not None:
             return self.cfg_graph
         cached = self._cache.get(GraphKind.CFG_GRAPH)
-        if isinstance(cached, nx.DiGraph):
+        if isinstance(cached, RxGraphStore):
             self.cfg_graph = cached
         return self.cfg_graph
 
-    def ensure_symbol_module_graph(self) -> nx.Graph:
+    def ensure_symbol_module_graph(self) -> RxGraphStore:
         """Return a cached symbol-module graph, loading from the engine when needed.
 
         Returns
         -------
-        nx.Graph
-            Symbol-module coupling graph.
+        RxGraphStore
+            Symbol-module coupling graph store.
         """
         graph, cache_hit = self._get_graph(
             GraphKind.SYMBOL_MODULE_GRAPH, self.engine.load_symbol_module_graph
@@ -471,13 +444,13 @@ class GraphRuntime:
         self._log_graph_stats("symbol_module_graph", self.symbol_module_graph, cache_hit=cache_hit)
         return self.symbol_module_graph
 
-    def ensure_symbol_function_graph(self) -> nx.Graph:
+    def ensure_symbol_function_graph(self) -> RxGraphStore:
         """Return a cached symbol-function graph, loading from the engine when needed.
 
         Returns
         -------
-        nx.Graph
-            Symbol-function coupling graph.
+        RxGraphStore
+            Symbol-function coupling graph store.
         """
         graph, cache_hit = self._get_graph(
             GraphKind.SYMBOL_FUNCTION_GRAPH, self.engine.load_symbol_function_graph
@@ -488,13 +461,13 @@ class GraphRuntime:
         )
         return self.symbol_function_graph
 
-    def ensure_config_module_bipartite(self) -> nx.Graph:
+    def ensure_config_module_bipartite(self) -> RxGraphStore:
         """Return a cached config-module bipartite graph.
 
         Returns
         -------
-        nx.Graph
-            Config key to module bipartite graph.
+        RxGraphStore
+            Config key to module bipartite graph store.
         """
         graph, cache_hit = self._get_graph(
             GraphKind.CONFIG_MODULE_BIPARTITE, self.engine.load_config_module_bipartite
@@ -552,7 +525,7 @@ class GraphRuntime:
         )
         return self.options.graph_cache_dir / base
 
-    def _read_cached_graph(self, kind: GraphKind) -> nx.Graph | None:
+    def _read_cached_graph(self, kind: GraphKind) -> RxGraphStore | None:
         base = self._cache_base(kind)
         graph_path = base.with_suffix(".json")
         meta_path = base.with_suffix(".meta")
@@ -576,11 +549,11 @@ class GraphRuntime:
                 return None
             payload = graph_path.read_text(encoding="utf-8")
             rx_graph = loads_node_link_json(payload)
-            return rx_to_networkx(rx_graph)
+            return store_from_rx(rx_graph)
         except (OSError, TypeError, ValueError, rx.JSONDeserializationError):
             return None
 
-    def _write_cached_graph(self, kind: GraphKind, graph: nx.Graph) -> None:
+    def _write_cached_graph(self, kind: GraphKind, graph: RxGraphStore) -> None:
         snapshot = self.options.snapshot
         if snapshot is None:
             message = "Snapshot is required for writing graph cache."
@@ -590,8 +563,7 @@ class GraphRuntime:
         meta_path = base.with_suffix(".meta")
         graph_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            rx_graph = networkx_to_rx(graph).graph
-            payload = dumps_node_link_json(rx_graph)
+            payload = dumps_node_link_json(graph.graph)
             graph_path.write_text(payload, encoding="utf-8")
             use_gpu_str = "true" if self.use_gpu else "false"
             meta_path.write_text(
@@ -610,17 +582,8 @@ class GraphRuntime:
         except (OSError, TypeError, ValueError, rx.JSONSerializationError):
             return
 
-    def _log_graph_stats(self, name: str, graph: nx.Graph, *, cache_hit: bool) -> None:
-        node_count = _safe_graph_count(
-            graph,
-            primary="number_of_nodes",
-            fallback="num_nodes",
-        )
-        edge_count = _safe_graph_count(
-            graph,
-            primary="number_of_edges",
-            fallback="num_edges",
-        )
+    def _log_graph_stats(self, name: str, graph: RxGraphStore, *, cache_hit: bool) -> None:
+        node_count, edge_count = _graph_counts(graph)
         if node_count is None or edge_count is None:
             node_count = -1
             edge_count = -1

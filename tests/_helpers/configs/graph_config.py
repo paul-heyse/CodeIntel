@@ -10,9 +10,8 @@ from tests._helpers.fixtures.snapshots import METRICS_VARIANT, SnapshotVariant
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import networkx as nx
-
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.build.graphs.rx.store import RxGraphStore
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -41,8 +40,8 @@ class GraphEngineSeed:
 
     snapshot_variant: SnapshotVariant = METRICS_VARIANT
     repo_root: Path | None = None
-    call_graph: nx.DiGraph | None = None
-    import_graph: nx.DiGraph | None = None
+    call_graph: RxGraphStore | None = None
+    import_graph: RxGraphStore | None = None
 
     @property
     def repo(self) -> str:

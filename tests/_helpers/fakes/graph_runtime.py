@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 from importlib import import_module
 from typing import TYPE_CHECKING, Final, TypedDict, TypeVar, Unpack, cast
 
-import networkx as nx
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.store import RxGraphStore
 from duckdb import Error as DuckDBError
 
 from codeintel.build.graphs.engine.protocol import GraphEngine, GraphKind
@@ -39,19 +40,19 @@ class GraphRuntimeInitKwargs(TypedDict, total=False):
 
     gateway: StorageGateway | None
     snapshot: SnapshotRef | None
-    call_graph: nx.DiGraph | None
-    import_graph: nx.DiGraph | None
-    symbol_module_graph: nx.Graph | None
-    symbol_function_graph: nx.Graph | None
-    config_graph: nx.Graph | None
-    cfg_graph: nx.DiGraph | None
+    call_graph: RxGraphStore | None
+    import_graph: RxGraphStore | None
+    symbol_module_graph: RxGraphStore | None
+    symbol_function_graph: RxGraphStore | None
+    config_graph: RxGraphStore | None
+    cfg_graph: RxGraphStore | None
     backend: GraphBackendConfig | None
     use_gpu: bool
-    call_graph_obj: nx.DiGraph | None
-    import_graph_obj: nx.DiGraph | None
-    symbol_module_graph_obj: nx.Graph | None
-    symbol_function_graph_obj: nx.Graph | None
-    config_bipartite_obj: nx.Graph | None
+    call_graph_obj: RxGraphStore | None
+    import_graph_obj: RxGraphStore | None
+    symbol_module_graph_obj: RxGraphStore | None
+    symbol_function_graph_obj: RxGraphStore | None
+    config_bipartite_obj: RxGraphStore | None
     copy_graphs: bool
     calls: list[GraphCallRecord]
 
@@ -59,12 +60,12 @@ class GraphRuntimeInitKwargs(TypedDict, total=False):
 class GraphEngineSeedKwargs(TypedDict, total=False):
     """Graph seeds for building GraphEngine-compatible doubles."""
 
-    call_graph: nx.DiGraph | None
-    import_graph: nx.DiGraph | None
-    symbol_module_graph: nx.Graph | None
-    symbol_function_graph: nx.Graph | None
-    config_graph: nx.Graph | None
-    cfg_graph: nx.DiGraph | None
+    call_graph: RxGraphStore | None
+    import_graph: RxGraphStore | None
+    symbol_module_graph: RxGraphStore | None
+    symbol_function_graph: RxGraphStore | None
+    config_graph: RxGraphStore | None
+    cfg_graph: RxGraphStore | None
     backend: GraphBackendConfig | None
     use_gpu: bool
     copy_graphs: bool
@@ -144,12 +145,12 @@ class GraphRuntimeDouble:
 
     gateway: StorageGateway | None = None
     snapshot: SnapshotRef | None = None
-    call_graph_obj: nx.DiGraph | None = None
-    import_graph_obj: nx.DiGraph | None = None
-    symbol_module_graph_obj: nx.Graph | None = None
-    symbol_function_graph_obj: nx.Graph | None = None
-    config_bipartite_obj: nx.Graph | None = None
-    _cfg_graph_internal: nx.DiGraph | None = None
+    call_graph_obj: RxGraphStore | None = None
+    import_graph_obj: RxGraphStore | None = None
+    symbol_module_graph_obj: RxGraphStore | None = None
+    symbol_function_graph_obj: RxGraphStore | None = None
+    config_bipartite_obj: RxGraphStore | None = None
+    _cfg_graph_internal: RxGraphStore | None = None
     _backend_internal: GraphBackendConfig | None = None
     _use_gpu_internal: bool = False
     _recorder: GraphCallRecorder
@@ -231,8 +232,8 @@ class GraphRuntimeDouble:
             spokes=DEFAULT_SPOKES,
         )
         resolved_options = options or GraphRuntimeFixtureOptions()
-        call_graph = cast("nx.DiGraph", GraphFixtureFactory.build(specs.call_spec))
-        import_graph = cast("nx.DiGraph", GraphFixtureFactory.build(specs.import_spec))
+        call_graph = GraphFixtureFactory.build(specs.call_spec)
+        import_graph = GraphFixtureFactory.build(specs.import_spec)
         symbol_graph = GraphFixtureFactory.build(resolved_symbol_spec)
         return cls(
             gateway=resolved_options.gateway,
@@ -241,32 +242,32 @@ class GraphRuntimeDouble:
             import_graph_obj=import_graph,
             symbol_module_graph_obj=symbol_graph,
             symbol_function_graph_obj=symbol_graph,
-            config_bipartite_obj=nx.Graph(),
+            config_bipartite_obj=RxGraphStore.undirected(),
             cfg_graph=None,
             backend=resolved_options.backend,
             copy_graphs=resolved_options.copy_graphs,
         )
 
     @property
-    def call_graph(self) -> nx.DiGraph | None:
+    def call_graph(self) -> RxGraphStore | None:
         self._recorder.record("call_graph")
         graph = self.call_graph_obj
         if graph is None and self.gateway and self.snapshot:
             graph = self._load_call_graph_from_db()
             self.call_graph_obj = graph
-        return cast("nx.DiGraph | None", self._clone_graph(graph))
+        return self._clone_graph(graph)
 
     @property
-    def import_graph(self) -> nx.DiGraph | None:
+    def import_graph(self) -> RxGraphStore | None:
         self._recorder.record("import_graph")
         graph = self.import_graph_obj
         if graph is None and self.gateway and self.snapshot:
             graph = self._load_import_graph_from_db()
             self.import_graph_obj = graph
-        return cast("nx.DiGraph | None", self._clone_graph(graph))
+        return self._clone_graph(graph)
 
     @property
-    def symbol_module_graph(self) -> nx.Graph | None:
+    def symbol_module_graph(self) -> RxGraphStore | None:
         self._recorder.record("symbol_module_graph")
         graph = self.symbol_module_graph_obj
         if graph is None and self.gateway and self.snapshot:
@@ -275,22 +276,22 @@ class GraphRuntimeDouble:
         return self._clone_graph(graph)
 
     @property
-    def symbol_function_graph(self) -> nx.Graph | None:
+    def symbol_function_graph(self) -> RxGraphStore | None:
         self._recorder.record("symbol_function_graph")
         return self._clone_graph(self.symbol_function_graph_obj)
 
     @property
-    def config_module_bipartite(self) -> nx.Graph | None:
+    def config_module_bipartite(self) -> RxGraphStore | None:
         self._recorder.record("config_module_bipartite")
         return self._clone_graph(self.config_bipartite_obj)
 
     @property
-    def cfg_graph(self) -> nx.DiGraph | None:
+    def cfg_graph(self) -> RxGraphStore | None:
         self._recorder.record("cfg_graph")
-        return cast("nx.DiGraph | None", self._clone_graph(self._cfg_graph_internal))
+        return self._clone_graph(self._cfg_graph_internal)
 
     @cfg_graph.setter
-    def cfg_graph(self, graph: nx.DiGraph | None) -> None:
+    def cfg_graph(self, graph: RxGraphStore | None) -> None:
         self._cfg_graph_internal = graph
 
     @property
@@ -309,48 +310,48 @@ class GraphRuntimeDouble:
     def use_gpu(self, value: bool) -> None:
         self._use_gpu_internal = value
 
-    def ensure_call_graph(self) -> nx.DiGraph | None:
+    def ensure_call_graph(self) -> RxGraphStore | None:
         self._recorder.record("ensure_call_graph")
         return self._graph_or_db(
             "call_graph_obj",
             loader=self._load_call_graph_from_db,
-            default_type=nx.DiGraph,
+            default_factory=RxGraphStore.directed,
             return_default_on_missing=False,
         )
 
-    def ensure_import_graph(self) -> nx.DiGraph | None:
+    def ensure_import_graph(self) -> RxGraphStore | None:
         self._recorder.record("ensure_import_graph")
         return self._graph_or_db(
             "import_graph_obj",
             loader=self._load_import_graph_from_db,
-            default_type=nx.DiGraph,
+            default_factory=RxGraphStore.directed,
             return_default_on_missing=False,
         )
 
-    def ensure_symbol_module_graph(self) -> nx.Graph | None:
+    def ensure_symbol_module_graph(self) -> RxGraphStore | None:
         self._recorder.record("ensure_symbol_module_graph")
         return self._graph_or_db(
             "symbol_module_graph_obj",
             loader=self._load_symbol_graph_from_db,
-            default_type=nx.Graph,
+            default_factory=RxGraphStore.undirected,
             return_default_on_missing=False,
         )
 
-    def ensure_symbol_function_graph(self) -> nx.Graph | None:
+    def ensure_symbol_function_graph(self) -> RxGraphStore | None:
         self._recorder.record("ensure_symbol_function_graph")
         return self._graph_or_db(
             "symbol_function_graph_obj",
             loader=lambda: None,
-            default_type=nx.Graph,
+            default_factory=RxGraphStore.undirected,
             return_default_on_missing=False,
         )
 
-    def ensure_config_module_bipartite(self) -> nx.Graph | None:
+    def ensure_config_module_bipartite(self) -> RxGraphStore | None:
         self._recorder.record("ensure_config_module_bipartite")
         return self._graph_or_db(
             "config_bipartite_obj",
             loader=lambda: None,
-            default_type=nx.Graph,
+            default_factory=RxGraphStore.undirected,
             return_default_on_missing=False,
         )
 
@@ -367,12 +368,12 @@ class GraphRuntimeDouble:
             if hasattr(self, attr):
                 setattr(self, attr, None)
 
-    def ensure_cfg_graph(self) -> nx.DiGraph | None:
+    def ensure_cfg_graph(self) -> RxGraphStore | None:
         self._recorder.record("ensure_cfg_graph")
         return self._graph_or_db(
             "_cfg_graph_internal",
             loader=lambda: None,
-            default_type=nx.DiGraph,
+            default_factory=RxGraphStore.directed,
             return_default_on_missing=False,
         )
 
@@ -381,30 +382,36 @@ class GraphRuntimeDouble:
         attr: str,
         *,
         loader: Callable[[], _GraphT | None],
-        default_type: type[_GraphT],
+        default_factory: Callable[[], _GraphT],
         return_default_on_missing: bool = True,
     ) -> _GraphT | None:
         graph_candidate = getattr(self, attr, None)
-        graph: _GraphT | None = (
-            graph_candidate if isinstance(graph_candidate, default_type) else None
-        )
+        graph: _GraphT | None = graph_candidate if isinstance(graph_candidate, RxGraphStore) else None
         if graph is None and self.gateway and self.snapshot:
             graph = loader()
         if graph is None and return_default_on_missing:
-            graph = default_type()
-        return cast("_GraphT | None", self._clone_graph(graph))
+            graph = default_factory()
+        return self._clone_graph(graph)
 
-    def _clone_graph(self, graph: nx.Graph | None) -> nx.Graph | None:
+    def _clone_graph(self, graph: RxGraphStore | None) -> RxGraphStore | None:
         if graph is None:
             return None
-        if self.copy_graphs and hasattr(graph, "copy"):
-            return graph.copy()
-        return graph
+        if not self.copy_graphs:
+            return graph
+        cloned = RxGraphStore.directed() if graph.is_directed else RxGraphStore.undirected()
+        for node_id in graph.node_ids():
+            cloned.set_node_attrs(node_id, graph.get_node_attrs(node_id))
+        for src_idx, dst_idx in graph.graph.edge_list():
+            src_id = graph.index_to_id[src_idx]
+            dst_id = graph.index_to_id[dst_idx]
+            weight = edge_weight_from_payload(graph.graph.get_edge_data(src_idx, dst_idx))
+            cloned.add_weighted_edge(src_id, dst_id, weight=weight)
+        return cloned
 
-    def _load_call_graph_from_db(self) -> nx.DiGraph | None:
+    def _load_call_graph_from_db(self) -> RxGraphStore | None:
         if self.gateway is None or self.snapshot is None:
             return None
-        graph = nx.DiGraph()
+        graph = RxGraphStore.directed()
         try:
             rows = self.gateway.con.execute(
                 "SELECT caller_goid_h128, callee_goid_h128, confidence "
@@ -416,13 +423,13 @@ class GraphRuntimeDouble:
         for caller, callee, weight in rows:
             if callee is None:
                 continue
-            graph.add_edge(caller, callee, weight=float(weight))
+            graph.add_weighted_edge(caller, callee, weight=float(weight))
         return graph
 
-    def _load_import_graph_from_db(self) -> nx.DiGraph | None:
+    def _load_import_graph_from_db(self) -> RxGraphStore | None:
         if self.gateway is None or self.snapshot is None:
             return None
-        graph = nx.DiGraph()
+        graph = RxGraphStore.directed()
         try:
             rows = self.gateway.con.execute(
                 "SELECT src_module, dst_module FROM graph.import_graph_edges "
@@ -432,13 +439,13 @@ class GraphRuntimeDouble:
         except DuckDBError:
             return None
         for src, dst in rows:
-            graph.add_edge(src, dst, weight=1.0)
+            graph.add_weighted_edge(src, dst, weight=1.0)
         return graph
 
-    def _load_symbol_graph_from_db(self) -> nx.Graph | None:
+    def _load_symbol_graph_from_db(self) -> RxGraphStore | None:
         if self.gateway is None or self.snapshot is None:
             return None
-        graph = nx.Graph()
+        graph = RxGraphStore.undirected()
         try:
             rows = self.gateway.con.execute(
                 "SELECT def_path, use_path FROM graph.symbol_use_edges"
@@ -446,7 +453,7 @@ class GraphRuntimeDouble:
         except DuckDBError:
             return None
         for defin, use in rows:
-            graph.add_edge(defin, use, weight=1.0)
+            graph.add_weighted_edge(defin, use, weight=1.0)
         return graph
 
 
@@ -484,35 +491,47 @@ class GraphEngineAdapter(GraphEngine):
     def commit(self) -> str:
         return self._snapshot.commit
 
-    def call_graph(self) -> nx.DiGraph:
-        return self._ensure_graph(self._runtime.ensure_call_graph, nx.DiGraph)
+    def call_graph(self) -> RxGraphStore:
+        return self._ensure_graph(self._runtime.ensure_call_graph, RxGraphStore.directed)
 
-    def load_call_graph(self) -> nx.DiGraph:
-        return self._ensure_graph(self._runtime.ensure_call_graph, nx.DiGraph)
+    def load_call_graph(self) -> RxGraphStore:
+        return self._ensure_graph(self._runtime.ensure_call_graph, RxGraphStore.directed)
 
-    def import_graph(self) -> nx.DiGraph:
-        return self._ensure_graph(self._runtime.ensure_import_graph, nx.DiGraph)
+    def import_graph(self) -> RxGraphStore:
+        return self._ensure_graph(self._runtime.ensure_import_graph, RxGraphStore.directed)
 
-    def load_import_graph(self) -> nx.DiGraph:
-        return self._ensure_graph(self._runtime.ensure_import_graph, nx.DiGraph)
+    def load_import_graph(self) -> RxGraphStore:
+        return self._ensure_graph(self._runtime.ensure_import_graph, RxGraphStore.directed)
 
-    def symbol_module_graph(self) -> nx.Graph:
-        return self._ensure_graph(self._runtime.ensure_symbol_module_graph, nx.Graph)
+    def symbol_module_graph(self) -> RxGraphStore:
+        return self._ensure_graph(self._runtime.ensure_symbol_module_graph, RxGraphStore.undirected)
 
-    def load_symbol_module_graph(self) -> nx.Graph:
-        return self._ensure_graph(self._runtime.ensure_symbol_module_graph, nx.Graph)
+    def load_symbol_module_graph(self) -> RxGraphStore:
+        return self._ensure_graph(self._runtime.ensure_symbol_module_graph, RxGraphStore.undirected)
 
-    def symbol_function_graph(self) -> nx.Graph:
-        return self._ensure_graph(self._runtime.ensure_symbol_function_graph, nx.Graph)
+    def symbol_function_graph(self) -> RxGraphStore:
+        return self._ensure_graph(
+            self._runtime.ensure_symbol_function_graph,
+            RxGraphStore.undirected,
+        )
 
-    def load_symbol_function_graph(self) -> nx.Graph:
-        return self._ensure_graph(self._runtime.ensure_symbol_function_graph, nx.Graph)
+    def load_symbol_function_graph(self) -> RxGraphStore:
+        return self._ensure_graph(
+            self._runtime.ensure_symbol_function_graph,
+            RxGraphStore.undirected,
+        )
 
-    def config_module_bipartite(self) -> nx.Graph:
-        return self._ensure_graph(self._runtime.ensure_config_module_bipartite, nx.Graph)
+    def config_module_bipartite(self) -> RxGraphStore:
+        return self._ensure_graph(
+            self._runtime.ensure_config_module_bipartite,
+            RxGraphStore.undirected,
+        )
 
-    def load_config_module_bipartite(self) -> nx.Graph:
-        return self._ensure_graph(self._runtime.ensure_config_module_bipartite, nx.Graph)
+    def load_config_module_bipartite(self) -> RxGraphStore:
+        return self._ensure_graph(
+            self._runtime.ensure_config_module_bipartite,
+            RxGraphStore.undirected,
+        )
 
     def clear_cache(self) -> None:
         """Clear any cached graphs on the runtime."""
@@ -525,9 +544,9 @@ class GraphEngineAdapter(GraphEngine):
     @staticmethod
     def _ensure_graph(
         loader: Callable[[], _GraphT | None],
-        graph_type: type[_GraphT],
+        graph_factory: Callable[[], _GraphT],
     ) -> _GraphT:
-        return loader() or graph_type()
+        return loader() or graph_factory()
 
 
 class CountingGraphEngineAdapter(GraphEngineAdapter):
@@ -546,23 +565,23 @@ class CountingGraphEngineAdapter(GraphEngineAdapter):
     def _increment(self, name: str) -> None:
         self.method_counts[name] = self.method_counts.get(name, 0) + 1
 
-    def load_call_graph(self) -> nx.DiGraph:
+    def load_call_graph(self) -> RxGraphStore:
         self._increment("load_call_graph")
         return super().load_call_graph()
 
-    def load_import_graph(self) -> nx.DiGraph:
+    def load_import_graph(self) -> RxGraphStore:
         self._increment("load_import_graph")
         return super().load_import_graph()
 
-    def load_symbol_module_graph(self) -> nx.Graph:
+    def load_symbol_module_graph(self) -> RxGraphStore:
         self._increment("load_symbol_module_graph")
         return super().load_symbol_module_graph()
 
-    def load_symbol_function_graph(self) -> nx.Graph:
+    def load_symbol_function_graph(self) -> RxGraphStore:
         self._increment("load_symbol_function_graph")
         return super().load_symbol_function_graph()
 
-    def load_config_module_bipartite(self) -> nx.Graph:
+    def load_config_module_bipartite(self) -> RxGraphStore:
         self._increment("load_config_module_bipartite")
         return super().load_config_module_bipartite()
 
@@ -590,7 +609,7 @@ def build_graph_engine_double(
 def graph_engine_with_cache(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
-    seed: Mapping[GraphKind, nx.Graph],
+    seed: Mapping[GraphKind, RxGraphStore],
     *,
     copy_graphs: bool = True,
 ) -> GraphEngineAdapter:
@@ -654,8 +673,9 @@ def create_mock_runtime_with_call_graph(
     """
     if edges is None:
         edges = [("func_a", "func_b"), ("func_b", "func_c")]
-    call_g = nx.DiGraph()
-    call_g.add_edges_from(edges)
+    call_g = RxGraphStore.directed()
+    for src, dst in edges:
+        call_g.add_weighted_edge(src, dst, weight=1.0)
     return GraphRuntimeDouble(call_graph=call_g)
 
 
@@ -676,8 +696,9 @@ def create_mock_runtime_with_import_graph(
     """
     if edges is None:
         edges = [("mod_a", "mod_b"), ("mod_b", "mod_c")]
-    import_g = nx.DiGraph()
-    import_g.add_edges_from(edges)
+    import_g = RxGraphStore.directed()
+    for src, dst in edges:
+        import_g.add_weighted_edge(src, dst, weight=1.0)
     return GraphRuntimeDouble(import_graph=import_g)
 
 
@@ -689,12 +710,23 @@ def create_mock_runtime_all_graphs() -> GraphRuntimeDouble:
     GraphRuntimeDouble
         Runtime seeded with all graph types.
     """
-    call_g = nx.DiGraph([("f1", "f2"), ("f2", "f3")])
-    import_g = nx.DiGraph([("m1", "m2"), ("m2", "m3")])
-    symbol_mod_g = nx.Graph([("sym1", "mod1"), ("sym2", "mod2")])
-    symbol_func_g = nx.Graph([("sym1", "func1"), ("sym2", "func2")])
-    config_mod_g = nx.Graph([("config1", "mod1")])
-    cfg_g = nx.DiGraph([("entry", "block1"), ("block1", "exit")])
+    call_g = RxGraphStore.directed()
+    call_g.add_weighted_edge("f1", "f2", weight=1.0)
+    call_g.add_weighted_edge("f2", "f3", weight=1.0)
+    import_g = RxGraphStore.directed()
+    import_g.add_weighted_edge("m1", "m2", weight=1.0)
+    import_g.add_weighted_edge("m2", "m3", weight=1.0)
+    symbol_mod_g = RxGraphStore.undirected()
+    symbol_mod_g.add_weighted_edge("sym1", "mod1", weight=1.0)
+    symbol_mod_g.add_weighted_edge("sym2", "mod2", weight=1.0)
+    symbol_func_g = RxGraphStore.undirected()
+    symbol_func_g.add_weighted_edge("sym1", "func1", weight=1.0)
+    symbol_func_g.add_weighted_edge("sym2", "func2", weight=1.0)
+    config_mod_g = RxGraphStore.undirected()
+    config_mod_g.add_weighted_edge("config1", "mod1", weight=1.0)
+    cfg_g = RxGraphStore.directed()
+    cfg_g.add_weighted_edge("entry", "block1", weight=1.0)
+    cfg_g.add_weighted_edge("block1", "exit", weight=1.0)
     return GraphRuntimeDouble(
         call_graph=call_g,
         import_graph=import_g,
@@ -768,4 +800,4 @@ __all__ = [
     "graph_engine_with_cache",
     "runtime_with_graphs",
 ]
-_GraphT = TypeVar("_GraphT", bound=nx.Graph)
+_GraphT = TypeVar("_GraphT", bound=RxGraphStore)

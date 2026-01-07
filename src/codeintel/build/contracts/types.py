@@ -43,7 +43,7 @@ class ContractDescriptor:
     """Contract identity metadata for table outputs."""
 
     table_key: str
-    contract_version: str
+    contract_version: str | None
     contract_hash: str
 
 

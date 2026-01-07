@@ -15,12 +15,13 @@ from __future__ import annotations
 
 from collections.abc import Hashable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
+
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-    import networkx as nx
 
 
 @dataclass(frozen=True)
@@ -78,27 +79,33 @@ class GraphData:
         return cls(nodes=(), edges=())
 
     @classmethod
-    def from_nx(cls, graph: nx.Graph | nx.DiGraph) -> GraphData:
-        """Create GraphData from a NetworkX graph.
+    def from_store(cls, graph: GraphInput) -> GraphData:
+        """Create GraphData from a rustworkx-backed graph input.
 
         Parameters
         ----------
         graph
-            NetworkX graph to convert.
+            Rustworkx graph input to convert.
 
         Returns
         -------
         GraphData
-            Graph data extracted from NetworkX.
+            Graph data extracted from rustworkx.
         """
-        nodes = tuple(graph.nodes())
-
-        edges_list = cast("list[tuple[Any, Any]]", list(graph.edges()))
+        store = ensure_store(graph)
+        nodes = tuple(store.node_ids())
+        edges_list: list[tuple[Any, Any]] = [
+            (store.index_to_id[src_idx], store.index_to_id[dst_idx])
+            for src_idx, dst_idx in store.graph.edge_list()
+        ]
         edges = tuple(edges_list)
-        node_attrs = {node: dict(graph.nodes[node]) for node in graph.nodes()}
+        node_attrs = {node: store.get_node_attrs(node) for node in store.node_ids()}
         edge_attrs_dict: dict[tuple[Hashable, Hashable], Mapping[str, object]] = {}
-        for src, dst in edges_list:
-            edge_attrs_dict[src, dst] = dict(graph.edges[src, dst])
+        for src_id, dst_id in edges_list:
+            src_idx = store.id_to_index[src_id]
+            dst_idx = store.id_to_index[dst_id]
+            payload = store.graph.get_edge_data(src_idx, dst_idx)
+            edge_attrs_dict[src_id, dst_id] = {"weight": edge_weight_from_payload(payload)}
         return cls(
             nodes=nodes,
             edges=edges,

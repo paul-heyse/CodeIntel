@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import networkx as nx
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 from codeintel.build.analytics.compute.row_builders import component_metadata_from_import_rows
 from codeintel.build.analytics.graphs.config_graph_metrics import build_config_module_bipartite
@@ -279,7 +279,7 @@ def _subsystem_ids_for_graph_metrics(
 def _call_graph_for_graph_metrics(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
-) -> nx.DiGraph:
+) -> RxGraphStore:
     call_edge_rows = _fetch_rows(
         gateway,
         "SELECT caller_goid_h128, callee_goid_h128 "
@@ -299,7 +299,7 @@ def _call_graph_for_graph_metrics(
 def _import_graph_for_graph_metrics(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
-) -> tuple[nx.DiGraph, Mapping[str, Mapping[str, int | bool]] | None]:
+) -> tuple[RxGraphStore, Mapping[str, Mapping[str, int | bool]] | None]:
     import_edge_rows = _fetch_rows(
         gateway,
         "SELECT src_module, dst_module, module_layer "
@@ -322,7 +322,7 @@ def _import_graph_for_graph_metrics(
 def _symbol_graph_inputs_for_graph_metrics(
     gateway: StorageGateway,
     module_by_path: Mapping[str, str],
-) -> tuple[SymbolModuleEdges, nx.Graph, nx.Graph]:
+) -> tuple[SymbolModuleEdges, RxGraphStore, RxGraphStore]:
     symbol_rows = _fetch_rows(
         gateway,
         "SELECT def_path, use_path, def_goid_h128, use_goid_h128 FROM graph.symbol_use_edges",
@@ -340,7 +340,7 @@ def _config_bipartite_for_graph_metrics(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     module_names: set[str],
-) -> nx.Graph:
+) -> RxGraphStore:
     config_rows = _fetch_rows(
         gateway,
         "SELECT repo, commit, key, reference_modules "
@@ -359,8 +359,8 @@ def _config_bipartite_for_graph_metrics(
 @dataclass(frozen=True)
 class _GraphMetricArtifacts:
     graph_inputs: GraphMetricsInputs
-    symbol_module_graph: nx.Graph
-    symbol_function_graph: nx.Graph
+    symbol_module_graph: RxGraphStore
+    symbol_function_graph: RxGraphStore
 
 
 def _graph_metrics_artifacts_for_gateway(

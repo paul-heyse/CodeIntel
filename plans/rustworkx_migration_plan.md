@@ -132,6 +132,13 @@ rustworkx-only execution model.
     (`centrality.py`, `structural.py`, `paths.py`, `dfg.py`, `cfg.py`, `components.py`,
     `statistics.py`, `community.py`, `bipartite.py`, `projections.py`).
   - Deterministic ordering, NaN handling, and numeric tolerance policies applied across outputs.
+- Completed Workstream C analytics + validation cutover (code migration):
+  - `src/codeintel/build/analytics/graphs/*`, `src/codeintel/build/analytics/subsystems/*`,
+    `src/codeintel/build/analytics/cfg_dfg/*`, and
+    `src/codeintel/build/analytics/functions/function_effects.py` now use rustworkx stores.
+  - `src/codeintel/build/graphs/validation/*` migrated to rustworkx-compatible checks.
+  - Hamilton analytics adapters (`src/codeintel/build/hamilton/native/analytics/*`) updated.
+  - Pending: tests/fixtures + type annotations alignment and quality report cleanup.
 
 ### Workstreams (Run in Parallel; No Gradual Rollout)
 
@@ -146,24 +153,23 @@ Workstream B: Algorithm + Metrics Migration (Parity First)
   and numeric tolerance policies for custom algorithms.
 
 Workstream C: Analytics + Validation + Tests (Full Cutover)
-- Update analytics orchestrators and subsystem metrics to consume rustworkx.
-- Migrate validation checks to rustworkx-compatible operations.
-- Replace NetworkX fixtures/tests and remove `typings/networkx`.
+- Status: Implemented (code migration complete; tests/fixtures + quality fixes pending).
+- Analytics orchestrators and subsystem metrics consume rustworkx.
+- Validation checks migrated to rustworkx-compatible operations.
+- Remaining scope: tests/fixtures updates, type annotations cleanup, and dependency removal.
 
 ### Next Actions (Recommended, Two Sets)
 
-Set 1 — Workstream C (Analytics + Validation Cutover)
-- Update analytics consumers (`build/analytics/graphs/*`, `build/analytics/subsystems/*`,
-  `build/analytics/cfg_dfg/*`, `build/analytics/functions/function_effects.py`) to call
-  rustworkx wrappers or `GraphInput`-based helpers directly.
-- Migrate validation checks and fixtures under `src/codeintel/build/graphs/validation/*`
-  to rustworkx-compatible operations and deterministic outputs.
-- Update analytics tests/fixtures to expect rustworkx-driven deterministic ordering and
-  the new NaN/tolerance policies.
+Set 1 — Quality + Tests Alignment
+- Resolve Ruff/Pyright/Pyrefly issues introduced by analytics + validation changes, and
+  normalize type annotations for `GraphInput`/`RxGraphStore` across touched modules.
+- Update tests and fixtures (`tests/_helpers/fixtures/graphs.py`, `tests/analytics/*`,
+  `tests/graphs/*`) to use rustworkx-first stores and deterministic ordering expectations.
+- Re-run quality report and targeted pytest segments for analytics + validation areas.
 
 Set 2 — Dependency Removal + API Surface Cleanup
 - Remove NetworkX dependency/stubs from `pyproject.toml`, `uv.lock`,
-  and `typings/networkx`, then update type annotations to rustworkx-first types.
+  and `typings/networkx`, then update remaining type annotations to rustworkx-first types.
 - Simplify or remove NetworkX-compatible protocols/adapters in
   `src/codeintel/build/graphs/engine/*`, `src/codeintel/build/graphs/runtime/*`,
   and `src/codeintel/core/resources/graphs.py` if still present for compatibility.

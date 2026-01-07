@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import networkx as nx
-
 from codeintel.build.graphs.compute.metrics.bipartite import (
     compute_bipartite_degrees,
     compute_weighted_projection,
@@ -18,6 +16,7 @@ from codeintel.build.graphs.compute.metrics.structural import compute_clustering
 from codeintel.build.graphs.compute.metrics.types import BipartiteDegrees, ProjectionMetrics
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, sorted_mapping
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.compute.centrality import compute_betweenness, compute_closeness
 
 if TYPE_CHECKING:
@@ -36,13 +35,13 @@ def build_projection_graph(
     nodes: Iterable[Any],
     *,
     label: str,
-) -> nx.Graph:
-    """Build a weighted projection graph from a bipartite partition.
+) -> RxGraphStore:
+    """Build a weighted projection graph store from a bipartite partition.
 
     Returns
     -------
-    nx.Graph
-        Weighted projection graph for the requested partition.
+    RxGraphStore
+        Weighted projection graph store for the requested partition.
     """
     nodes_set = set(nodes)
     store = ensure_store(bipartite_graph)
@@ -64,7 +63,7 @@ def build_projection_graph(
             nodes=len(nodes_set),
             graph_nodes=graph_nodes,
         )
-        return nx.Graph()
+        return RxGraphStore.undirected()
     return result
 
 

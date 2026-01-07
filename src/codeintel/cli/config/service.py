@@ -267,11 +267,9 @@ def build_graph_backend_config(flags: BackendFlags) -> GraphBackendConfig:
     GraphBackendConfig
         Configured graph backend settings.
     """
-    backend: Literal["auto", "cpu", "nx-cugraph"] = "auto"
-    if flags.backend == "cpu":
-        backend = "cpu"
-    elif flags.backend == "nx-cugraph":
-        backend = "nx-cugraph"
+    backend: Literal["auto", "cpu"] = "cpu"
+    if flags.backend == "auto":
+        backend = "auto"
     return GraphBackendConfig(
         use_gpu=flags.use_gpu,
         backend=backend,

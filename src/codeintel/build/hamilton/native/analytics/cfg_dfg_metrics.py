@@ -23,8 +23,7 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
 )
-from codeintel.build.contracts.registry import require_contract
-from codeintel.build.contracts.types import ContractOverrides
+from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.graphs.runtime.context import (
     GraphContext,
     GraphContextSpec,
@@ -58,65 +57,47 @@ DFG_BLOCK_METRICS_TABLE_KEY = "analytics.dfg_block_metrics"
 DFG_FUNCTION_METRICS_EXT_TABLE_KEY = "analytics.dfg_function_metrics_ext"
 
 
-CFG_FUNCTION_METRICS_CONTRACT = require_contract(
+CFG_FUNCTION_METRICS_CONTRACT = contract_for_table(
     table_key=CFG_FUNCTION_METRICS_TABLE_KEY,
-    domain="analytics",
-    target=CFG_DFG_METRICS_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="cfg_function_metrics__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CFG_DFG_METRICS_TARGET_NAME,
+    input_name="cfg_function_metrics__base",
+    required_cols=(),
+    clip_column=None,
 )
-CFG_BLOCK_METRICS_CONTRACT = require_contract(
+CFG_BLOCK_METRICS_CONTRACT = contract_for_table(
     table_key=CFG_BLOCK_METRICS_TABLE_KEY,
-    domain="analytics",
-    target=CFG_DFG_METRICS_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="cfg_block_metrics__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CFG_DFG_METRICS_TARGET_NAME,
+    input_name="cfg_block_metrics__base",
+    required_cols=(),
+    clip_column=None,
 )
-CFG_FUNCTION_METRICS_EXT_CONTRACT = require_contract(
+CFG_FUNCTION_METRICS_EXT_CONTRACT = contract_for_table(
     table_key=CFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-    domain="analytics",
-    target=CFG_DFG_METRICS_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="cfg_function_metrics_ext__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CFG_DFG_METRICS_TARGET_NAME,
+    input_name="cfg_function_metrics_ext__base",
+    required_cols=(),
+    clip_column=None,
 )
-DFG_FUNCTION_METRICS_CONTRACT = require_contract(
+DFG_FUNCTION_METRICS_CONTRACT = contract_for_table(
     table_key=DFG_FUNCTION_METRICS_TABLE_KEY,
-    domain="analytics",
-    target=CFG_DFG_METRICS_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="dfg_function_metrics__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CFG_DFG_METRICS_TARGET_NAME,
+    input_name="dfg_function_metrics__base",
+    required_cols=(),
+    clip_column=None,
 )
-DFG_BLOCK_METRICS_CONTRACT = require_contract(
+DFG_BLOCK_METRICS_CONTRACT = contract_for_table(
     table_key=DFG_BLOCK_METRICS_TABLE_KEY,
-    domain="analytics",
-    target=CFG_DFG_METRICS_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="dfg_block_metrics__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CFG_DFG_METRICS_TARGET_NAME,
+    input_name="dfg_block_metrics__base",
+    required_cols=(),
+    clip_column=None,
 )
-DFG_FUNCTION_METRICS_EXT_CONTRACT = require_contract(
+DFG_FUNCTION_METRICS_EXT_CONTRACT = contract_for_table(
     table_key=DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-    domain="analytics",
-    target=CFG_DFG_METRICS_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="dfg_function_metrics_ext__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=CFG_DFG_METRICS_TARGET_NAME,
+    input_name="dfg_function_metrics_ext__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 

@@ -410,11 +410,7 @@ def compute_config_graph_metrics_result(
         )
     )
     store = ensure_store(graph)
-    keys = {
-        node
-        for node in store.node_ids()
-        if store.get_node_attrs(node).get("bipartite") == 0
-    }
+    keys = {node for node in store.node_ids() if store.get_node_attrs(node).get("bipartite") == 0}
     modules = set(store.node_ids()) - keys
     if len(keys) == 0 or len(modules) == 0:
         log_projection_skipped(

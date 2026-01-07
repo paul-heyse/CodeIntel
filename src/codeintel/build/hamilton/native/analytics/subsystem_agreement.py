@@ -10,8 +10,7 @@ from codeintel.build.analytics.graphs.subsystem_agreement import (
     SubsystemAgreementInputs,
     build_subsystem_agreement_rows,
 )
-from codeintel.build.contracts.registry import require_contract
-from codeintel.build.contracts.types import ContractOverrides
+from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -29,15 +28,12 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 SUBSYSTEM_AGREEMENT_TARGET_NAME = "subsystem_agreement"
 SUBSYSTEM_AGREEMENT_TABLE_KEY = "analytics.subsystem_agreement"
-SUBSYSTEM_AGREEMENT_CONTRACT = require_contract(
+SUBSYSTEM_AGREEMENT_CONTRACT = contract_for_table(
     table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY,
-    domain="analytics",
-    target=SUBSYSTEM_AGREEMENT_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="subsystem_agreement__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
+    input_name="subsystem_agreement__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 

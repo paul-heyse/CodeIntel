@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, TypedDict
 
-import networkx as nx
-from networkx.exception import NetworkXAlgorithmError
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 from codeintel.build.analytics.compute.graphs import centrality as centrality_module
 from codeintel.build.graphs.runtime.context import GraphContext
@@ -53,65 +52,73 @@ TEST_HARMONIC = 0.8
 TEST_EIGENVECTOR = 0.6
 
 
-def _make_simple_chain() -> nx.DiGraph:
+def _directed_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+    store = RxGraphStore.directed()
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
+    return store
+
+
+def _undirected_store(edges: list[tuple[object, object]]) -> RxGraphStore:
+    store = RxGraphStore.undirected()
+    for src, dst in edges:
+        store.add_weighted_edge(src, dst, weight=1.0)
+    return store
+
+
+def _make_simple_chain() -> RxGraphStore:
     """
     Create a simple linear chain graph: A -> B -> C -> D.
 
     Returns
     -------
-    nx.DiGraph
-        A directed chain graph.
+    RxGraphStore
+        A directed chain graph store.
     """
-    graph = nx.DiGraph()
-    graph.add_edges_from([("A", "B"), ("B", "C"), ("C", "D")])
-    return graph
+    return _directed_store([("A", "B"), ("B", "C"), ("C", "D")])
 
 
-def _make_simple_cycle() -> nx.DiGraph:
+def _make_simple_cycle() -> RxGraphStore:
     """
     Create a simple cycle graph: A -> B -> C -> A.
 
     Returns
     -------
-    nx.DiGraph
-        A directed cycle graph.
+    RxGraphStore
+        A directed cycle graph store.
     """
-    graph = nx.DiGraph()
-    graph.add_edges_from([("A", "B"), ("B", "C"), ("C", "A")])
-    return graph
+    return _directed_store([("A", "B"), ("B", "C"), ("C", "A")])
 
 
-def _make_star_graph() -> nx.DiGraph:
+def _make_star_graph() -> RxGraphStore:
     """
     Create a star graph with hub node pointing to spokes: Hub -> {A, B, C, D}.
 
     Returns
     -------
-    nx.DiGraph
-        An out-star directed graph.
+    RxGraphStore
+        An out-star directed graph store.
     """
-    graph = nx.DiGraph()
-    for spoke in ["A", "B", "C", "D"]:
-        graph.add_edge("Hub", spoke)
-    return graph
+    return _directed_store(
+        [("Hub", "A"), ("Hub", "B"), ("Hub", "C"), ("Hub", "D")]
+    )
 
 
-def _make_reverse_star_graph() -> nx.DiGraph:
+def _make_reverse_star_graph() -> RxGraphStore:
     """
     Create a reverse star with spokes pointing to hub: {A, B, C, D} -> Hub.
 
     Returns
     -------
-    nx.DiGraph
-        An in-star directed graph.
+    RxGraphStore
+        An in-star directed graph store.
     """
-    graph = nx.DiGraph()
-    for spoke in ["A", "B", "C", "D"]:
-        graph.add_edge(spoke, "Hub")
-    return graph
+    return _directed_store(
+        [("A", "Hub"), ("B", "Hub"), ("C", "Hub"), ("D", "Hub")]
+    )
 
 
-def _make_call_graph_realistic() -> nx.DiGraph:
+def _make_call_graph_realistic() -> RxGraphStore:
     """
     Create a realistic call graph structure.
 
@@ -122,67 +129,60 @@ def _make_call_graph_realistic() -> nx.DiGraph:
 
     Returns
     -------
-    nx.DiGraph
-        A realistic call graph.
+    RxGraphStore
+        A realistic call graph store.
     """
-    graph = nx.DiGraph()
-
-    graph.add_edge("main", "process_request")
-    graph.add_edge("main", "handle_error")
-
-    graph.add_edge("process_request", "validate")
-    graph.add_edge("process_request", "execute")
-    graph.add_edge("process_request", "log_result")
-
-    graph.add_edge("validate", "check_input")
-    graph.add_edge("validate", "sanitize")
-
-    graph.add_edge("execute", "fetch_data")
-    graph.add_edge("execute", "transform")
-    graph.add_edge("execute", "save_result")
-
-    graph.add_edge("validate", "format_error")
-    graph.add_edge("execute", "format_error")
-    graph.add_edge("handle_error", "format_error")
-    graph.add_edge("handle_error", "log_result")
-    return graph
+    return _directed_store(
+        [
+            ("main", "process_request"),
+            ("main", "handle_error"),
+            ("process_request", "validate"),
+            ("process_request", "execute"),
+            ("process_request", "log_result"),
+            ("validate", "check_input"),
+            ("validate", "sanitize"),
+            ("execute", "fetch_data"),
+            ("execute", "transform"),
+            ("execute", "save_result"),
+            ("validate", "format_error"),
+            ("execute", "format_error"),
+            ("handle_error", "format_error"),
+            ("handle_error", "log_result"),
+        ]
+    )
 
 
-def _make_disconnected_components() -> nx.DiGraph:
+def _make_disconnected_components() -> RxGraphStore:
     """
     Create a graph with multiple disconnected components.
 
     Returns
     -------
-    nx.DiGraph
-        A graph with three disconnected components.
+    RxGraphStore
+        A graph store with three disconnected components.
     """
-    graph = nx.DiGraph()
-
-    graph.add_edges_from([("A", "B"), ("B", "C")])
-
-    graph.add_edges_from([("X", "Y"), ("Y", "Z")])
-
-    graph.add_node("Isolated")
+    graph = _directed_store([("A", "B"), ("B", "C"), ("X", "Y"), ("Y", "Z")])
+    graph.ensure_node("Isolated")
     return graph
 
 
-def _make_dense_cluster() -> nx.DiGraph:
+def _make_dense_cluster() -> RxGraphStore:
     """
     Create a densely connected cluster.
 
     Returns
     -------
-    nx.DiGraph
-        A complete directed graph with 5 nodes.
+    RxGraphStore
+        A complete directed graph store with 5 nodes.
     """
-    graph = nx.DiGraph()
+    graph = RxGraphStore.directed()
     nodes = ["N1", "N2", "N3", "N4", "N5"]
-
+    for node in nodes:
+        graph.ensure_node(node)
     for source in nodes:
         for target in nodes:
             if source != target:
-                graph.add_edge(source, target)
+                graph.add_weighted_edge(source, target, weight=1.0)
     return graph
 
 
@@ -225,15 +225,15 @@ def test_metrics_is_frozen() -> None:
 
 def test_pagerank_empty_graph() -> None:
     """Empty graph returns empty PageRank dictionary."""
-    graph = nx.DiGraph()
+    graph = RxGraphStore.directed()
     result = compute_pagerank(graph)
     expect_equal(result, {})
 
 
 def test_pagerank_single_node() -> None:
     """Single node gets PageRank of 1.0."""
-    graph = nx.DiGraph()
-    graph.add_node("single")
+    graph = RxGraphStore.directed()
+    graph.ensure_node("single")
     result = compute_pagerank(graph)
     expect_in("single", result)
     expect_true(abs(result["single"] - PAGERANK_SUM) < TOLERANCE)
@@ -336,8 +336,9 @@ def test_pagerank_sums_to_one() -> None:
 
 def test_pagerank_keys_match_nodes() -> None:
     """PageRank result keys match original node types."""
-    graph = nx.DiGraph()
-    graph.add_edges_from([(1, 2), (2, 3)])
+    graph = RxGraphStore.directed()
+    graph.add_weighted_edge(1, 2, weight=1.0)
+    graph.add_weighted_edge(2, 3, weight=1.0)
     result = compute_pagerank(graph)
 
     for key in result:
@@ -354,15 +355,15 @@ def test_pagerank_values_are_floats() -> None:
 
 def test_betweenness_empty_graph() -> None:
     """Empty graph returns empty betweenness dictionary."""
-    graph = nx.DiGraph()
+    graph = RxGraphStore.directed()
     result = compute_betweenness(graph)
     expect_equal(result, {})
 
 
 def test_betweenness_single_node_zero() -> None:
     """Single node has zero betweenness."""
-    graph = nx.DiGraph()
-    graph.add_node("single")
+    graph = RxGraphStore.directed()
+    graph.ensure_node("single")
     result = compute_betweenness(graph)
     expect_in("single", result)
     expect_equal(result["single"], 0.0)
@@ -441,8 +442,9 @@ def test_betweenness_realistic_call_graph() -> None:
 
 def test_betweenness_keys_match_nodes() -> None:
     """Betweenness result keys match original node types."""
-    graph = nx.DiGraph()
-    graph.add_edges_from([(1, 2), (2, 3)])
+    graph = RxGraphStore.directed()
+    graph.add_weighted_edge(1, 2, weight=1.0)
+    graph.add_weighted_edge(2, 3, weight=1.0)
     result = compute_betweenness(graph)
 
     for key in result:
@@ -548,8 +550,9 @@ def test_centrality_undirected_logs_eigen_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Eigenvector failures in undirected centrality emit warnings."""
-    graph = nx.Graph()
-    graph.add_edges_from([("a", "b"), ("b", "c")])
+    graph = RxGraphStore.undirected()
+    graph.add_weighted_edge("a", "b", weight=1.0)
+    graph.add_weighted_edge("b", "c", weight=1.0)
     caplog.set_level("WARNING", logger=centrality_module.__name__)
 
     context = _make_context()
@@ -573,13 +576,14 @@ def test_centrality_undirected_logs_structural_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Structural hole failures surface as warnings."""
-    graph = nx.Graph()
-    graph.add_edges_from([("x", "y"), ("y", "z")])
+    graph = RxGraphStore.undirected()
+    graph.add_weighted_edge("x", "y", weight=1.0)
+    graph.add_weighted_edge("y", "z", weight=1.0)
     caplog.set_level("WARNING", logger=centrality_module.__name__)
 
     def _raise_constraint(*_: object, **__: object) -> None:
         error_message = "failed to converge"
-        raise NetworkXAlgorithmError(error_message)
+        raise ValueError(error_message)
 
     context = _make_context()
     bundle = centrality_module.centrality_undirected(
@@ -591,7 +595,7 @@ def test_centrality_undirected_logs_structural_warning(
         ),
     )
 
-    expect_length(bundle.pagerank, graph.number_of_nodes())
+    expect_length(bundle.pagerank, graph.graph.num_nodes())
     assert_logged(
         caplog.records,
         level="WARNING",

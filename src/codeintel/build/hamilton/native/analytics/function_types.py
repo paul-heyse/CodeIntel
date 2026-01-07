@@ -7,8 +7,7 @@ import sys
 import pyarrow as pa
 
 from codeintel.build.analytics.functions.metrics import FunctionAnalyticsResult
-from codeintel.build.contracts.registry import require_contract
-from codeintel.build.contracts.types import ContractOverrides
+from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -24,15 +23,12 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FUNCTION_TYPES_TARGET_NAME = "function_types"
 FUNCTION_TYPES_TABLE_KEY = "analytics.function_types"
-FUNCTION_TYPES_CONTRACT = require_contract(
+FUNCTION_TYPES_CONTRACT = contract_for_table(
     table_key=FUNCTION_TYPES_TABLE_KEY,
-    domain="analytics",
-    target=FUNCTION_TYPES_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="function_types__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=FUNCTION_TYPES_TARGET_NAME,
+    input_name="function_types__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 

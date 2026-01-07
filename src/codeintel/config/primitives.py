@@ -470,19 +470,19 @@ class GraphBackendConfig:
     Attributes
     ----------
     use_gpu : bool
-        Prefer GPU-capable backend such as nx-cugraph when available.
+        Prefer GPU-capable backend when available (ignored; rustworkx is CPU-only).
     backend : str
-        Backend identifier: "auto", "cpu", or "nx-cugraph".
+        Backend identifier: "auto" or "cpu" (rustworkx only).
     strict : bool
         Raise when the requested backend cannot be enabled.
     engine : str
-        Graph engine implementation: "networkx" or "rustworkx".
+        Graph engine implementation: "rustworkx".
     """
 
     use_gpu: bool = False
-    backend: Literal["auto", "cpu", "nx-cugraph"] = "auto"
+    backend: Literal["auto", "cpu"] = "cpu"
     strict: bool = False
-    engine: Literal["networkx", "rustworkx"] = "networkx"
+    engine: Literal["rustworkx"] = "rustworkx"
 
 
 @dataclass(frozen=True)

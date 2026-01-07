@@ -64,9 +64,7 @@ def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]
     if config_graph is not None and graph_node_count(config_graph) > 0:
         store = ensure_store(config_graph)
         keys = {
-            node
-            for node in store.node_ids()
-            if store.get_node_attrs(node).get("bipartite") == 0
+            node for node in store.node_ids() if store.get_node_attrs(node).get("bipartite") == 0
         }
         modules = set(store.node_ids()) - keys
         if keys and modules:

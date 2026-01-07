@@ -10,7 +10,6 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-import networkx as nx
 import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.centrality import centrality_directed
@@ -20,6 +19,7 @@ from codeintel.build.graphs.compute.metrics.components import (
 )
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 from codeintel.build.graphs.rx.normalize import stable_key
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
     from codeintel.build.graphs.compute.metrics.components import (
@@ -326,26 +326,19 @@ def dfg_centralities(
 
 def build_dfg_graph(
     edges: list[tuple[int, int, str, str, bool, str]],
-) -> tuple[nx.DiGraph, int, int]:
+) -> tuple[RxGraphStore, int, int]:
     """Build a data-flow graph from edge tuples.
 
     Returns
     -------
-    tuple[nx.DiGraph, int, int]
+    tuple[RxGraphStore, int, int]
         Graph, phi edge count, and symbol count.
     """
-    graph: nx.DiGraph = nx.DiGraph()
+    graph = RxGraphStore.directed()
     phi_edges = 0
     symbols: set[str] = set()
-    for src, dst, src_sym, dst_sym, via_phi, use_kind in edges:
-        graph.add_edge(
-            src,
-            dst,
-            src_symbol=src_sym,
-            dst_symbol=dst_sym,
-            via_phi=via_phi,
-            use_kind=use_kind,
-        )
+    for src, dst, src_sym, dst_sym, via_phi, _use_kind in edges:
+        graph.add_weighted_edge(src, dst, weight=1.0)
         symbols.add(src_sym)
         symbols.add(dst_sym)
         if via_phi:

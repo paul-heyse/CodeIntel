@@ -6,8 +6,6 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from networkx.exception import NetworkXAlgorithmError
-
 from codeintel.build.graphs.compute.metrics.types import CentralityBundle, NeighborStats
 from codeintel.build.graphs.rx.algos import (
     GraphInput,
@@ -182,7 +180,7 @@ def centrality_undirected(
         try:
             constraint_fn = overrides.constraint_fn or constraint_by_id
             constraint_fn(graph)
-        except NetworkXAlgorithmError:
+        except (TypeError, ValueError):
             log.warning("Structural holes calculation failed for graph=%s", graph)
 
     return CentralityBundle(

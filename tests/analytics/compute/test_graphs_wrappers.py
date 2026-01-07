@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import networkx as nx
-
 from codeintel.build.analytics.compute.graphs.centrality import (
     centrality_directed,
     centrality_undirected,
@@ -41,6 +39,7 @@ from codeintel.build.analytics.compute.graphs.structural import (
     structural_metrics,
 )
 from codeintel.build.graphs.runtime.context import GraphContext
+from codeintel.build.graphs.rx.store import RxGraphStore
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -122,14 +121,10 @@ class DataFlowEdge:
 
 def test_centrality_wrappers_and_neighbor_stats() -> None:
     """Compute centrality bundles and neighbor stats on small graphs."""
-    graph = nx.DiGraph()
-    graph.add_weighted_edges_from(
-        [
-            ("a", "b", 2),
-            ("b", "c", 1),
-            ("c", "a", 3),
-        ]
-    )
+    graph = RxGraphStore.directed()
+    graph.add_weighted_edge("a", "b", weight=2.0)
+    graph.add_weighted_edge("b", "c", weight=1.0)
+    graph.add_weighted_edge("c", "a", weight=3.0)
     stats = neighbor_stats(graph, weight="weight")
     expect_equal(stats.out_counts["a"], 2)
     expect_equal(stats.in_counts["a"], 3)
@@ -139,9 +134,9 @@ def test_centrality_wrappers_and_neighbor_stats() -> None:
     expect_equal(set(directed.pagerank), {"a", "b", "c"})
     expect_true(directed.eigenvector)
 
-    undirected_graph = nx.Graph()
-    undirected_graph.add_edge("x", "y", weight=1)
-    undirected_graph.add_edge("y", "z", weight=2)
+    undirected_graph = RxGraphStore.undirected()
+    undirected_graph.add_weighted_edge("x", "y", weight=1.0)
+    undirected_graph.add_weighted_edge("y", "z", weight=2.0)
     undirected = centrality_undirected(
         undirected_graph,
         ctx,
@@ -153,32 +148,38 @@ def test_centrality_wrappers_and_neighbor_stats() -> None:
 
 def test_structural_metrics_and_paths() -> None:
     """Evaluate structural metrics for empty and populated graphs."""
-    empty = structural_metrics(nx.Graph())
+    empty = structural_metrics(RxGraphStore.undirected())
     expect_equal(empty.clustering, {})
     expect_equal(empty.community_id, {})
 
-    graph = nx.Graph()
-    graph.add_edges_from([(1, 2), (2, 3), (3, 4)])
+    graph = RxGraphStore.undirected()
+    graph.add_weighted_edge(1, 2, weight=1.0)
+    graph.add_weighted_edge(2, 3, weight=1.0)
+    graph.add_weighted_edge(3, 4, weight=1.0)
     populated = structural_metrics(graph, community_limit=10)
     expect_equal(set(populated.clustering), {1, 2, 3, 4})
     expect_true(populated.community_id)
 
-    digraph = nx.DiGraph()
-    digraph.add_edges_from([(1, 2), (2, 3)])
+    digraph = RxGraphStore.directed()
+    digraph.add_weighted_edge(1, 2, weight=1.0)
+    digraph.add_weighted_edge(2, 3, weight=1.0)
     bounded = bounded_simple_path_count(digraph, sources=[1], targets=[3], max_paths=5, cutoff=3)
     expect_true(bounded > 0)
 
 
 def test_component_metadata_and_global_stats() -> None:
     """Compute component metadata and global statistics."""
-    graph = nx.DiGraph()
-    graph.add_edges_from([(1, 2), (2, 1), (3, 4)])
+    graph = RxGraphStore.directed()
+    graph.add_weighted_edge(1, 2, weight=1.0)
+    graph.add_weighted_edge(2, 1, weight=1.0)
+    graph.add_weighted_edge(3, 4, weight=1.0)
     metadata = component_metadata(graph)
     expect_true(metadata.in_cycle[1])
     expect_equal(metadata.component_size[3], 2)
 
-    undirected = nx.Graph()
-    undirected.add_edges_from([(10, 11), (12, 13)])
+    undirected = RxGraphStore.undirected()
+    undirected.add_weighted_edge(10, 11, weight=1.0)
+    undirected.add_weighted_edge(12, 13, weight=1.0)
     comp_id, comp_size = component_ids_undirected(undirected)
     expect_equal(comp_id[10], comp_id[11])
     expect_equal(comp_size[12], 2)
@@ -248,16 +249,12 @@ def test_dfg_helpers_and_metrics() -> None:
 
 def test_projection_metrics_and_degrees() -> None:
     """Compute projection metrics and bipartite degrees."""
-    bipartite = nx.Graph()
-    bipartite.add_edges_from(
-        [
-            ("user1", "repo1"),
-            ("user1", "repo2"),
-            ("user2", "repo2"),
-        ]
-    )
+    bipartite = RxGraphStore.undirected()
+    bipartite.add_weighted_edge("user1", "repo1", weight=1.0)
+    bipartite.add_weighted_edge("user1", "repo2", weight=1.0)
+    bipartite.add_weighted_edge("user2", "repo2", weight=1.0)
     projection = build_projection_graph(bipartite, {"user1", "user2"}, label="users")
-    expect_equal(projection.number_of_nodes(), 2)
+    expect_equal(projection.graph.num_nodes(), 2)
 
     ctx = _context()
     metrics = projection_metrics(

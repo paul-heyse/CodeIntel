@@ -1,7 +1,7 @@
-"""Shared helpers to materialize Parquet-backed graphs as NetworkX views.
+"""Shared helpers to materialize Parquet-backed graphs as rustworkx stores.
 
 This module provides functions to load various graph types from
-Parquet datasets into NetworkX graph structures. View-registry
+Parquet datasets into rustworkx graph stores. View-registry
 fallthrough is intentionally disallowed in this layer.
 """
 
@@ -12,7 +12,6 @@ import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
@@ -21,16 +20,13 @@ from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
     scan_snapshot_reader,
 )
-from codeintel.build.graphs.rx import RxGraphStore, rx_to_networkx
+from codeintel.build.graphs.rx import RxGraphStore
 from codeintel.core.columnar.type_normalization import (
     normalize_binary_view_array,
     normalize_string_view_array,
 )
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
-
-if TYPE_CHECKING:
-    import networkx as nx
 
 log = logging.getLogger(__name__)
 _EDGE_WEIGHT_POLICY = EdgeWeightPolicy()
@@ -129,9 +125,8 @@ def _iter_tuples(
         yield from _iter_tuples_from_batch(normalized, columns=columns)
 
 
-def _empty_graph(*, directed: bool) -> nx.Graph:
-    store = RxGraphStore.directed() if directed else RxGraphStore.undirected()
-    return rx_to_networkx(store.graph)
+def _empty_graph(*, directed: bool) -> RxGraphStore:
+    return RxGraphStore.directed() if directed else RxGraphStore.undirected()
 
 
 def _module_name_map(
@@ -178,25 +173,25 @@ def _add_call_nodes(store: RxGraphStore, reader: pa.RecordBatchReader) -> None:
         store.set_node_attrs(node, attrs)
 
 
-def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
+def _maybe_to_gpu_graph(store: RxGraphStore, *, use_gpu: bool) -> RxGraphStore:
     """
     No-op for rustworkx-backed execution (CPU-only).
 
     Parameters
     ----------
-    graph : nx.Graph
-        Graph instance to optionally prepare for GPU execution.
+    store : RxGraphStore
+        Graph store to optionally prepare for GPU execution.
     use_gpu : bool
         Whether GPU execution was requested.
 
     Returns
     -------
-    nx.Graph
-        The original graph or a GPU-backed equivalent.
+    RxGraphStore
+        The original graph store.
     """
     if use_gpu:
         log.debug("GPU backend requested; rustworkx execution is CPU-only.")
-    return graph
+    return store
 
 
 def module_attrs_from_row(
@@ -244,9 +239,9 @@ def load_call_graph(
     commit: str,
     *,
     use_gpu: bool = False,
-) -> nx.DiGraph:
+) -> RxGraphStore:
     """
-    Build a call graph `DiGraph` of caller -> callee edges.
+    Build a call graph store of caller -> callee edges.
 
     Nodes are GOID integers; parallel edges are aggregated via `weight`.
 
@@ -263,12 +258,12 @@ def load_call_graph(
 
     Returns
     -------
-    nx.DiGraph
-        Directed call graph with weighted edges and isolated nodes preserved.
+    RxGraphStore
+        Directed call graph store with weighted edges and isolated nodes preserved.
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.call_graph_edges")
     if dataset_root is None:
-        return cast("nx.DiGraph", _empty_graph(directed=True))
+        return _empty_graph(directed=True)
     edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -280,7 +275,7 @@ def load_call_graph(
         )
     )
     if edge_reader is None:
-        return cast("nx.DiGraph", _empty_graph(directed=True))
+        return _empty_graph(directed=True)
 
     store = RxGraphStore.directed()
     _add_call_edges(store, edge_reader)
@@ -298,8 +293,7 @@ def load_call_graph(
     if node_reader is not None:
         _add_call_nodes(store, node_reader)
 
-    graph = rx_to_networkx(store.graph)
-    return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
+    return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
 def load_import_graph(
@@ -308,9 +302,9 @@ def load_import_graph(
     commit: str,
     *,
     use_gpu: bool = False,
-) -> nx.DiGraph:
+) -> RxGraphStore:
     """
-    Build a directed import graph `DiGraph` of module -> module edges.
+    Build a directed import graph store of module -> module edges.
 
     Edge weights represent aggregated edge counts when multiple edges exist.
 
@@ -327,12 +321,12 @@ def load_import_graph(
 
     Returns
     -------
-    nx.DiGraph
-        Directed import graph with weights capturing edge multiplicity.
+    RxGraphStore
+        Directed import graph store with weights capturing edge multiplicity.
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.import_graph_edges")
     if dataset_root is None:
-        return cast("nx.DiGraph", _empty_graph(directed=True))
+        return _empty_graph(directed=True)
     edge_reader = scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root,
@@ -344,7 +338,7 @@ def load_import_graph(
         )
     )
     if edge_reader is None:
-        return cast("nx.DiGraph", _empty_graph(directed=True))
+        return _empty_graph(directed=True)
 
     store = RxGraphStore.directed()
     fallback_layer_by_module: dict[str, int] = {}
@@ -375,8 +369,7 @@ def load_import_graph(
     elif fallback_layer_by_module:
         for module, layer in fallback_layer_by_module.items():
             store.set_node_attrs(module, {"layer": layer})
-    graph = rx_to_networkx(store.graph)
-    return cast("nx.DiGraph", _maybe_to_gpu_graph(graph, use_gpu=use_gpu))
+    return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
 def parse_reference_modules(ref_modules: object, allowed_modules: set[str]) -> list[str]:
@@ -479,9 +472,9 @@ def load_config_module_bipartite(
     commit: str,
     *,
     use_gpu: bool = False,
-) -> nx.Graph:
+) -> RxGraphStore:
     """
-    Build a bipartite graph of config keys <-> modules.
+    Build a bipartite graph store of config keys <-> modules.
 
     Keys are ("c", key); modules are ("m", module). Edge weight equals one per
     reference occurrence.
@@ -499,8 +492,8 @@ def load_config_module_bipartite(
 
     Returns
     -------
-    nx.Graph
-        Undirected bipartite graph for configuration references.
+    RxGraphStore
+        Undirected bipartite graph store for configuration references.
     """
     dataset_root = _ensure_dataset_root(dataset_root, "analytics.config_values")
     if dataset_root is None:
@@ -536,7 +529,7 @@ def load_config_module_bipartite(
         commit=commit,
         allowed_modules=allowed_modules,
     )
-    graph = rx_to_networkx(store.graph)
+    graph = store.graph
     log.info(
         "Config bipartite built: rows=%d empty_refs=%d allowed_modules=%d "
         "parsed_modules=%d kept_modules=%d dropped_modules=%d graph_nodes=%d edges=%d",
@@ -546,10 +539,10 @@ def load_config_module_bipartite(
         stats.parsed_modules,
         stats.kept_modules,
         stats.dropped_modules,
-        graph.number_of_nodes(),
-        graph.number_of_edges(),
+        graph.num_nodes(),
+        graph.num_edges(),
     )
-    return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
+    return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
 def load_symbol_module_graph(
@@ -558,9 +551,9 @@ def load_symbol_module_graph(
     commit: str,
     *,
     use_gpu: bool = False,
-) -> nx.Graph:
+) -> RxGraphStore:
     """
-    Build an undirected weighted graph of module-level symbol coupling.
+    Build an undirected weighted graph store of module-level symbol coupling.
 
     Edge weights count shared symbol def/use pairs between modules.
 
@@ -577,8 +570,8 @@ def load_symbol_module_graph(
 
     Returns
     -------
-    nx.Graph
-        Undirected graph where weights reflect shared symbol relations.
+    RxGraphStore
+        Undirected graph store where weights reflect shared symbol relations.
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
@@ -619,8 +612,7 @@ def load_symbol_module_graph(
         if def_module == use_module:
             continue
         add_weighted_edge(store, use_module, def_module, policy=_EDGE_WEIGHT_POLICY)
-    graph = rx_to_networkx(store.graph)
-    return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
+    return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
 def load_symbol_function_graph(
@@ -628,9 +620,9 @@ def load_symbol_function_graph(
     commit: str,
     *,
     use_gpu: bool = False,
-) -> nx.Graph:
+) -> RxGraphStore:
     """
-    Build an undirected weighted graph of function-level symbol coupling (GOIDs).
+    Build an undirected weighted graph store of function-level symbol coupling (GOIDs).
 
     Edge weights count shared symbol def/use pairs between functions when available.
 
@@ -645,8 +637,8 @@ def load_symbol_function_graph(
 
     Returns
     -------
-    nx.Graph
-        Undirected graph linking functions by shared symbol usage.
+    RxGraphStore
+        Undirected graph store linking functions by shared symbol usage.
     """
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
@@ -671,8 +663,7 @@ def load_symbol_function_graph(
         if left is None or right is None or left == right:
             continue
         add_weighted_edge(store, left, right, policy=_EDGE_WEIGHT_POLICY)
-    graph = rx_to_networkx(store.graph)
-    return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
+    return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
 __all__ = [

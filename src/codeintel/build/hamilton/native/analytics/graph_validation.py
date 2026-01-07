@@ -6,8 +6,7 @@ import sys
 
 import pyarrow as pa
 
-from codeintel.build.contracts.registry import require_contract
-from codeintel.build.contracts.types import ContractOverrides
+from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.validation.runner import (
     GraphValidationRunRequest,
@@ -29,15 +28,12 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 GRAPH_VALIDATION_TARGET_NAME = "graph_validation"
 GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
-GRAPH_VALIDATION_CONTRACT = require_contract(
+GRAPH_VALIDATION_CONTRACT = contract_for_table(
     table_key=GRAPH_VALIDATION_TABLE_KEY,
-    domain="analytics",
-    target=GRAPH_VALIDATION_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="graph_validation__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=GRAPH_VALIDATION_TARGET_NAME,
+    input_name="graph_validation__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 

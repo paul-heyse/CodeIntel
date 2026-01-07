@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Protocol, TypeVar, cast
+from types import ModuleType
+from typing import Protocol, TypedDict, TypeVar, Unpack, cast
 
 from codeintel.build.contracts.types import (
     UNSET,
@@ -16,7 +17,7 @@ from codeintel.build.contracts.types import (
 )
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.core.schemas.hashing import schema_digest, schema_hash
+from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import TableSchema
 
 _T = TypeVar("_T")
@@ -119,18 +120,38 @@ class ContractResolver:
         return _apply_overrides(spec, overrides)
 
 
+@dataclass(frozen=True, slots=True)
+class ContractForTableInput:
+    """Specification for building a contract spec for a target table."""
+
+    table_key: str
+    input_name: str
+    ops_module: ModuleType | UnsetType | None = UNSET
+    columns_to_pass: Sequence[str] | UnsetType = UNSET
+    required_cols: Sequence[str] | UnsetType = UNSET
+    clip_column: str | UnsetType | None = UNSET
+    policy: ContractPolicy | UnsetType = UNSET
+
+
+class ContractForTableOverrides(TypedDict, total=False):
+    """Override values accepted by contract_for_table."""
+
+    ops_module: ModuleType | None
+    columns_to_pass: Sequence[str]
+    required_cols: Sequence[str]
+    clip_column: str | None
+    policy: ContractPolicy
+
+
 def _resolve_contract_version(
     *,
     table_key: str,
-    schema_digest_value: str,
-) -> str:
+) -> str | None:
     try:
         contract = get_contract_for_table_key(table_key)
     except (KeyError, ValueError, RuntimeError):
-        return schema_digest_value
-    if contract.schema_version:
-        return contract.schema_version
-    return schema_digest_value
+        return None
+    return contract.schema_version
 
 
 def contract_descriptor_for_table_schema(table_schema: TableSchema) -> ContractDescriptor:
@@ -142,13 +163,9 @@ def contract_descriptor_for_table_schema(table_schema: TableSchema) -> ContractD
         Contract descriptor with version and hash values.
     """
     schema_hash_value = schema_hash(table_schema)
-    schema_digest_value = schema_digest(table_schema)
     return ContractDescriptor(
         table_key=table_schema.table_key,
-        contract_version=_resolve_contract_version(
-            table_key=table_schema.table_key,
-            schema_digest_value=schema_digest_value,
-        ),
+        contract_version=_resolve_contract_version(table_key=table_schema.table_key),
         contract_hash=schema_hash_value,
     )
 
@@ -355,12 +372,78 @@ def require_contract_for_target(
     )
 
 
+def contract_for_table(
+    *,
+    table_key: str,
+    target_name: str,
+    input_name: str,
+    **overrides: Unpack[ContractForTableOverrides],
+) -> TableContractSpec:
+    """Return a contract spec for a target table with override inputs.
+
+    Returns
+    -------
+    TableContractSpec
+        Resolved contract spec.
+    """
+    resolved_overrides = ContractOverrides(
+        input_name=input_name,
+        **overrides,
+    )
+    return require_contract_for_target(
+        table_key=table_key,
+        target_name=target_name,
+        overrides=resolved_overrides,
+    )
+
+
+def contracts_for_target(
+    *,
+    target_name: str,
+    specs: Sequence[ContractForTableInput],
+) -> tuple[TableContractSpec, ...]:
+    """Return contract specs for a target from per-table inputs.
+
+    Returns
+    -------
+    tuple[TableContractSpec, ...]
+        Resolved contract specs.
+    """
+    return tuple(
+        contract_for_table(
+            table_key=spec.table_key,
+            target_name=target_name,
+            input_name=spec.input_name,
+            **_overrides_from_spec(spec),
+        )
+        for spec in specs
+    )
+
+
+def _overrides_from_spec(spec: ContractForTableInput) -> ContractForTableOverrides:
+    overrides: ContractForTableOverrides = {}
+    if spec.ops_module is not UNSET:
+        overrides["ops_module"] = cast("ModuleType | None", spec.ops_module)
+    if spec.columns_to_pass is not UNSET:
+        overrides["columns_to_pass"] = cast("Sequence[str]", spec.columns_to_pass)
+    if spec.required_cols is not UNSET:
+        overrides["required_cols"] = cast("Sequence[str]", spec.required_cols)
+    if spec.clip_column is not UNSET:
+        overrides["clip_column"] = cast("str | None", spec.clip_column)
+    if spec.policy is not UNSET:
+        overrides["policy"] = cast("ContractPolicy", spec.policy)
+    return overrides
+
+
 __all__ = [
+    "ContractForTableInput",
     "ContractRegistry",
     "ContractResolver",
     "SchemaBackedContractRegistry",
     "contract_descriptor_for_table_key",
     "contract_descriptor_for_table_schema",
+    "contract_for_table",
+    "contracts_for_target",
     "get_contract",
     "get_contract_for_target",
     "get_contract_registry",

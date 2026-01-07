@@ -17,7 +17,7 @@ Hexagonal Architecture (Ports, Compute):
 Consolidated Domain Packages:
 - storage.catalog: Function catalog (spans, metadata, service)
 - validation/: Graph validation checks, findings, and orchestration
-- engine/: Graph engine protocol, NetworkX implementation, and views
+- engine/: Graph engine protocol, rustworkx implementation, and views
 
 Callgraph logic is in compute/callgraph/ (pure functions and persistence utilities).
 

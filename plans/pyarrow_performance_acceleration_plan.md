@@ -10,7 +10,7 @@ Goal: maximize scan throughput by enabling Parquet fragment scan options and met
 Approach: extend dataset scan settings and plumb them into scanner construction so every scan can
 enable `cache_metadata` and `ParquetFragmentScanOptions` with performance-first defaults.
 
-Status: In progress (core plumbing complete; remaining call-site override exposure).
+Status: Completed.
 
 Files (completed):
 - `src/codeintel/core/constants.py`
@@ -20,10 +20,8 @@ Files (completed):
 - `src/codeintel/core/datasets/scanner_ops.py`
 - `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`
 - `src/codeintel/build/hamilton/diagnostics.py`
-
-Files (remaining):
-- `src/codeintel/build/tabular/arrow_ops.py` (expose cache/fragment overrides in `ParquetScanOptions`)
-- `src/codeintel/build/graphs/engine/datasets.py` (surface scan overrides for snapshot readers)
+- `src/codeintel/build/tabular/arrow_ops.py`
+- `src/codeintel/build/graphs/engine/datasets.py`
 
 Code pattern:
 ```python
@@ -84,16 +82,15 @@ accelerate throughput.
 Approach: replace eager `to_table`/`reader_to_table` usage with batch iterators, only materializing
 when required by downstream APIs.
 
-Status: In progress (streaming defaults adopted in key paths; remaining call-site audit).
+Status: Completed.
 
 Files (completed):
 - `src/codeintel/build/tabular/conversion.py`
 - `src/codeintel/build/hamilton/diagnostics.py`
 - `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`
-
-Files (remaining):
-- `src/codeintel/build/tabular/arrow_ops.py` (evaluate `scan_parquet_table`/`reader_to_table` usage)
-- `src/codeintel/build/graphs/engine/datasets.py` (convert call sites to reader/batch iteration)
+- `src/codeintel/build/tabular/arrow_ops.py`
+- `src/codeintel/build/graphs/engine/datasets.py`
+- `src/codeintel/build/graphs/engine/views.py`
 
 Code pattern:
 ```python
@@ -113,15 +110,13 @@ iteration and maximize vectorization.
 Approach: build `pc.Expression` filters for dataset scans and use `Table.group_by().aggregate()`
 or Acero for filter-project-aggregate pipelines.
 
-Status: In progress (call-graph and config analytics pushdown in place).
+Status: Completed.
 
 Files (completed):
 - `src/codeintel/build/graphs/validation/checks/database.py`
 - `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
 - `src/codeintel/build/analytics/graphs/config_data_flow.py`
 - `src/codeintel/build/analytics/functions/function_effects.py`
-
-Files (remaining):
 - `src/codeintel/build/analytics/semantic_roles/core.py`
 
 Code pattern:

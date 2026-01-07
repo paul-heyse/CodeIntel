@@ -379,16 +379,14 @@ def _call_graph_findings_impl(
                 "path": None,
                 "detail": f"{len(sccs)} recursion cluster(s), largest size {len(largest)}",
                 "context": {
-                    "largest_cluster": [
-                        str(node) for node in sorted(largest, key=stable_key)
-                    ][: SAMPLE_LIMIT * 4]
+                    "largest_cluster": [str(node) for node in sorted(largest, key=stable_key)][
+                        : SAMPLE_LIMIT * 4
+                    ]
                 },
             }
         )
 
-    degree_threshold = max(
-        HUB_MIN_DEGREE_FLOOR, int(store.graph.num_nodes() * HUB_DEGREE_RATIO)
-    )
+    degree_threshold = max(HUB_MIN_DEGREE_FLOOR, int(store.graph.num_nodes() * HUB_DEGREE_RATIO))
     degree_map = {
         node: _node_degree(store, store.id_to_index[node])
         for node in store.node_ids()

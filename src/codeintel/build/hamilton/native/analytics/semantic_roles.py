@@ -16,8 +16,7 @@ from codeintel.build.analytics.semantic_roles.core import (
     build_semantic_roles_rows,
 )
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.contracts.registry import require_contract
-from codeintel.build.contracts.types import ContractOverrides
+from codeintel.build.contracts.registry import contract_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -41,25 +40,19 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 SEMANTIC_ROLES_TARGET_NAME = "semantic_roles"
 SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY = "analytics.semantic_roles_functions"
 SEMANTIC_ROLES_MODULES_TABLE_KEY = "analytics.semantic_roles_modules"
-SEMANTIC_ROLES_FUNCTIONS_CONTRACT = require_contract(
+SEMANTIC_ROLES_FUNCTIONS_CONTRACT = contract_for_table(
     table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY,
-    domain="analytics",
-    target=SEMANTIC_ROLES_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="semantic_roles_functions__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=SEMANTIC_ROLES_TARGET_NAME,
+    input_name="semantic_roles_functions__base",
+    required_cols=(),
+    clip_column=None,
 )
-SEMANTIC_ROLES_MODULES_CONTRACT = require_contract(
+SEMANTIC_ROLES_MODULES_CONTRACT = contract_for_table(
     table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY,
-    domain="analytics",
-    target=SEMANTIC_ROLES_TARGET_NAME,
-    overrides=ContractOverrides(
-        input_name="semantic_roles_modules__base",
-        required_cols=(),
-        clip_column=None,
-    ),
+    target_name=SEMANTIC_ROLES_TARGET_NAME,
+    input_name="semantic_roles_modules__base",
+    required_cols=(),
+    clip_column=None,
 )
 
 

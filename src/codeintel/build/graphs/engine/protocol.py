@@ -10,8 +10,7 @@ from enum import Flag, auto
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    import networkx as nx
-
+    from codeintel.build.graphs.rx.store import RxGraphStore
     from codeintel.config.primitives import SnapshotRef
 
 
@@ -42,78 +41,78 @@ class GraphEngine(Protocol):
         """Preferred backend GPU flag."""
         ...
 
-    def call_graph(self) -> nx.DiGraph:
+    def call_graph(self) -> RxGraphStore:
         """
         Return the directed call graph (cached or freshly loaded).
 
         Returns
         -------
-        nx.DiGraph
-            Directed call graph.
+        RxGraphStore
+            Directed call graph store.
         """
         ...
 
-    def load_call_graph(self) -> nx.DiGraph:
+    def load_call_graph(self) -> RxGraphStore:
         """Return the directed call graph."""
         ...
 
-    def import_graph(self) -> nx.DiGraph:
+    def import_graph(self) -> RxGraphStore:
         """
         Return the directed import graph (cached or freshly loaded).
 
         Returns
         -------
-        nx.DiGraph
-            Directed import graph.
+        RxGraphStore
+            Directed import graph store.
         """
         ...
 
-    def load_import_graph(self) -> nx.DiGraph:
+    def load_import_graph(self) -> RxGraphStore:
         """Return the directed import graph."""
         ...
 
-    def symbol_module_graph(self) -> nx.Graph:
+    def symbol_module_graph(self) -> RxGraphStore:
         """
         Return the undirected symbol-module coupling graph (cached or loaded).
 
         Returns
         -------
-        nx.Graph
-            Symbol-module coupling graph.
+        RxGraphStore
+            Symbol-module coupling graph store.
         """
         ...
 
-    def load_symbol_module_graph(self) -> nx.Graph:
+    def load_symbol_module_graph(self) -> RxGraphStore:
         """Return the undirected symbol-module coupling graph."""
         ...
 
-    def symbol_function_graph(self) -> nx.Graph:
+    def symbol_function_graph(self) -> RxGraphStore:
         """
         Return the undirected symbol-function coupling graph (cached or loaded).
 
         Returns
         -------
-        nx.Graph
-            Symbol-function coupling graph.
+        RxGraphStore
+            Symbol-function coupling graph store.
         """
         ...
 
-    def load_symbol_function_graph(self) -> nx.Graph:
+    def load_symbol_function_graph(self) -> RxGraphStore:
         """Return the undirected symbol-function coupling graph."""
         ...
 
-    def config_module_bipartite(self) -> nx.Graph:
+    def config_module_bipartite(self) -> RxGraphStore:
         """
         Return the config key <-> module bipartite graph (cached or loaded).
 
         Returns
         -------
-        nx.Graph
-            Config-module bipartite graph.
+        RxGraphStore
+            Config-module bipartite graph store.
         """
         ...
 
-    def load_config_module_bipartite(self) -> nx.Graph:
+    def load_config_module_bipartite(self) -> RxGraphStore:
         """Return the config key <-> module bipartite graph."""
         ...
 

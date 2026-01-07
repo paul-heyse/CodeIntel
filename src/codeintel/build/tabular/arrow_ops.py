@@ -28,6 +28,7 @@ from codeintel.build.tabular import array_ops as _array_ops
 from codeintel.build.tabular.compute_helpers import cast_array, scalar_from_compute
 from codeintel.build.tabular.compute_masks import equal_expr
 from codeintel.build.tabular.conversion import (
+    arrow_reader_to_lazyframe,
     lazyframe_to_reader,
     reader_to_table,
     table_to_frame,
@@ -1166,6 +1167,60 @@ def align_table_to_contract(
     return reader_to_table(aligned)
 
 
+def align_tabular_to_contract(
+    table_key: str,
+    value: InferableTabularInput,
+    *,
+    options: AlignmentOptions | None = None,
+    **overrides: Unpack[AlignmentOverrides],
+) -> InferableTabularInput:
+    """Align an inferable tabular input to the contract schema.
+
+    Returns
+    -------
+    InferableTabularInput
+        Aligned tabular input, preserving the input type when possible.
+    """
+    if isinstance(value, pa.RecordBatchReader):
+        return align_reader_to_contract(
+            table_key,
+            value,
+            options=options,
+            **overrides,
+        )
+    if isinstance(value, pa.Table):
+        return align_table_to_contract(
+            table_key,
+            value,
+            options=options,
+            **overrides,
+        )
+    if isinstance(value, pl.DataFrame):
+        aligned = align_table_to_contract(
+            table_key,
+            value.to_arrow(),
+            options=options,
+            **overrides,
+        )
+        return table_to_frame(aligned)
+    if isinstance(value, pl.LazyFrame):
+        reader = lazyframe_to_reader(value)
+        aligned = align_reader_to_contract(
+            table_key,
+            reader,
+            options=options,
+            **overrides,
+        )
+        return arrow_reader_to_lazyframe(aligned)
+    reader = tabular_to_arrow_reader(value)
+    return align_reader_to_contract(
+        table_key,
+        reader,
+        options=options,
+        **overrides,
+    )
+
+
 def concat_tables_unified(tables: Sequence[pa.Table]) -> pa.Table:
     """Concatenate tables after unifying schemas.
 
@@ -1402,6 +1457,7 @@ __all__ = [
     "JoinFilterClause",
     "align_reader_to_contract",
     "align_table_to_contract",
+    "align_tabular_to_contract",
     "arrow_join_frames",
     "arrow_join_lazyframes",
     "arrow_join_tables",

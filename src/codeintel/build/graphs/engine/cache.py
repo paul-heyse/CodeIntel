@@ -14,9 +14,8 @@ from codeintel.core.cache import CacheStatsCollector
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    import networkx as nx
-
     from codeintel.build.graphs.engine.protocol import GraphKind
+    from codeintel.build.graphs.rx.store import RxGraphStore
     from codeintel.core.cache import CacheStats
 
 
@@ -34,7 +33,7 @@ class GraphCacheMetadata:
 class GraphCacheEntry:
     """Cached graph plus its associated metadata."""
 
-    graph: nx.Graph
+    graph: RxGraphStore
     metadata: GraphCacheMetadata | None
 
 
@@ -64,7 +63,7 @@ class GraphCache:
     def seed(
         self,
         kind: GraphKind,
-        graph: nx.Graph | None,
+        graph: RxGraphStore | None,
         *,
         metadata: GraphCacheMetadata | None = None,
     ) -> None:
@@ -75,8 +74,8 @@ class GraphCache:
         ----------
         kind : GraphKind
             Type of graph being cached.
-        graph : nx.Graph | None
-            Graph instance to cache, or None to skip.
+        graph : RxGraphStore | None
+            Graph store to cache, or None to skip.
         metadata : GraphCacheMetadata | None
             Optional metadata used to validate cache entries.
         """
@@ -87,10 +86,10 @@ class GraphCache:
     def get(
         self,
         kind: GraphKind,
-        loader: Callable[[], nx.Graph],
+        loader: Callable[[], RxGraphStore],
         *,
         metadata: GraphCacheMetadata | None = None,
-    ) -> nx.Graph:
+    ) -> RxGraphStore:
         """
         Retrieve a graph from cache or load it using the provided loader.
 
@@ -98,15 +97,15 @@ class GraphCache:
         ----------
         kind : GraphKind
             Type of graph to retrieve.
-        loader : Callable[[], nx.Graph]
-            Function to load the graph if not cached.
+        loader : Callable[[], RxGraphStore]
+            Function to load the graph store if not cached.
         metadata : GraphCacheMetadata | None
             Optional metadata used to validate cache entries.
 
         Returns
         -------
-        nx.Graph
-            Cached or freshly loaded graph.
+        RxGraphStore
+            Cached or freshly loaded graph store.
         """
         entry = self._cache.get(kind)
         if entry is None:

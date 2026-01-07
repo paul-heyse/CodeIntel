@@ -19,9 +19,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final
 
-import networkx as nx
+from codeintel.build.graphs.compute.metrics.components import find_strongly_connected
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 from tests._helpers.fixtures.graphs import GOLDEN_CALL, GOLDEN_IMPORT, GraphFixtureFactory
 from tests._helpers.fixtures.rows import (
@@ -106,29 +107,29 @@ class GoldenGraphStats:
     config_key_count: int
 
 
-def _map_nodes_to_goids(graph: nx.Graph, goids: list[GoidRow]) -> dict[object, GoidRow]:
+def _map_nodes_to_goids(graph: RxGraphStore, goids: list[GoidRow]) -> dict[object, GoidRow]:
     function_goids = [goid for goid in goids if goid.kind == "function"]
-    nodes = list(graph.nodes())
+    nodes = graph.node_ids()
     if len(nodes) > len(function_goids):
         message = "Golden graph has more nodes than available function GOIDs"
         raise ValueError(message)
     return {node: function_goids[idx] for idx, node in enumerate(nodes)}
 
 
-def _map_nodes_to_modules(graph: nx.Graph) -> dict[object, str]:
+def _map_nodes_to_modules(graph: RxGraphStore) -> dict[object, str]:
     modules = list(GOLDEN_MODULES.values())
-    nodes = list(graph.nodes())
+    nodes = graph.node_ids()
     if len(nodes) > len(modules):
         message = "Golden graph has more nodes than available modules"
         raise ValueError(message)
     return {node: modules[idx] for idx, node in enumerate(nodes)}
 
 
-def _cycle_nodes(graph: nx.DiGraph) -> set[object]:
+def _cycle_nodes(graph: RxGraphStore) -> set[object]:
     cycle_nodes: set[object] = set()
-    for component in nx.strongly_connected_components(graph):
-        if len(component) > 1:
-            cycle_nodes.update(component)
+    for component in find_strongly_connected(graph).components:
+        if component.size > 1:
+            cycle_nodes.update(component.nodes)
     return cycle_nodes
 
 
@@ -321,11 +322,14 @@ def _build_call_graph_edges(repo: str, commit: str, goids: list[GoidRow]) -> lis
     list[CallGraphEdgeRow]
         Call graph edge rows.
     """
-    graph = cast("nx.DiGraph", GraphFixtureFactory.build(GOLDEN_CALL))
+    graph = GraphFixtureFactory.build(GOLDEN_CALL)
     node_to_goid = _map_nodes_to_goids(graph, goids)
     edges: list[CallGraphEdgeRow] = []
 
-    edge_pairs = cast("list[tuple[object, object]]", list(graph.edges()))
+    edge_pairs = [
+        (graph.index_to_id[src_idx], graph.index_to_id[dst_idx])
+        for src_idx, dst_idx in graph.graph.edge_list()
+    ]
     for idx, edge in enumerate(edge_pairs):
         caller_node = edge[0]
         callee_node = edge[1]
@@ -366,14 +370,17 @@ def _build_import_edges(repo: str, commit: str) -> list[ImportGraphEdgeRow]:
     list[ImportGraphEdgeRow]
         Import graph edge rows.
     """
-    graph = cast("nx.DiGraph", GraphFixtureFactory.build(GOLDEN_IMPORT))
+    graph = GraphFixtureFactory.build(GOLDEN_IMPORT)
     node_to_module = _map_nodes_to_modules(graph)
     cycle_nodes = _cycle_nodes(graph)
 
     edges: list[ImportGraphEdgeRow] = []
     fan_out_counts: dict[str, int] = {}
     fan_in_counts: dict[str, int] = {}
-    edge_pairs = cast("list[tuple[object, object]]", list(graph.edges()))
+    edge_pairs = [
+        (graph.index_to_id[src_idx], graph.index_to_id[dst_idx])
+        for src_idx, dst_idx in graph.graph.edge_list()
+    ]
     for edge in edge_pairs:
         src_node = edge[0]
         dst_node = edge[1]

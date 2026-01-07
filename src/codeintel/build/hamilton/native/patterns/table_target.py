@@ -719,6 +719,9 @@ def _validate_table_spec(table_spec: TableTargetTableSpec) -> None:
         raise ValueError(msg)
     if table_spec.contract is None:
         return
+    if table_spec.contract.contract_hash is None:
+        msg = "TableContractSpec.contract_hash is required for contract-aligned targets"
+        raise ValueError(msg)
     if table_spec.contract.table_key != table_spec.table_key:
         msg = (
             "TableContractSpec table_key mismatch: "
