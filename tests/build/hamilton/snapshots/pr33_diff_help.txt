@@ -19,8 +19,9 @@ Diff two versions of an asset.
 │    ROOT --root -r        Explicit project root directory. [env var:          │
 │                          CODEINTEL_BUILD_DIFF_ROOT,                          │
 │                          CODEINTEL_BUILD_DIFF_ROOT] [default: (none)]        │
-│    OUTPUT-FORMAT         Output format. [choices: text, json, jsonl] [env    │
-│      --output-format     var: CODEINTEL_BUILD_DIFF_OUTPUT_FORMAT,            │
+│    OUTPUT-FORMAT         Output format. [choices: text, json, jsonl,         │
+│      --output-format     arrow-ipc] [env var:                                │
+│                          CODEINTEL_BUILD_DIFF_OUTPUT_FORMAT,                 │
 │                          CODEINTEL_BUILD_DIFF_OUTPUT_FORMAT] [default: text] │
 │    JSON --json           Alias for --output-format json. [env var:           │
 │                          CODEINTEL_BUILD_DIFF_JSON,                          │

@@ -4,15 +4,15 @@ Show current state of build targets.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ MODULE --module -m    Filter status to a specific module (ingestion, graphs, │
-│                       analytics, export). [env var:                          │
+│                       analytics, export, views). [env var:                   │
 │                       CODEINTEL_BUILD_STATUS_MODULE,                         │
 │                       CODEINTEL_BUILD_STATUS_MODULE] [default: (none)]       │
 │ *                     [env var: CODEINTEL_BUILD_STATUS_*] [default: *]       │
 │ ROOT --root -r        Explicit project root directory. [env var:             │
 │                       CODEINTEL_BUILD_STATUS_ROOT,                           │
 │                       CODEINTEL_BUILD_STATUS_ROOT] [default: (none)]         │
-│ OUTPUT-FORMAT         Output format. [choices: text, json, jsonl] [env var:  │
-│   --output-format     CODEINTEL_BUILD_STATUS_OUTPUT_FORMAT,                  │
+│ OUTPUT-FORMAT         Output format. [choices: text, json, jsonl, arrow-ipc] │
+│   --output-format     [env var: CODEINTEL_BUILD_STATUS_OUTPUT_FORMAT,        │
 │                       CODEINTEL_BUILD_STATUS_OUTPUT_FORMAT] [default: text]  │
 │ JSON --json           Alias for --output-format json. [env var:              │
 │                       CODEINTEL_BUILD_STATUS_JSON,                           │

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable, Mapping
 from types import ModuleType
 
@@ -19,6 +20,7 @@ from codeintel.build.hamilton.tagging import tag_loader_query
 
 
 def _build_driver(module: ModuleType) -> h_driver.Driver:
+    sys.modules[module.__name__] = module
     return h_driver.Builder().with_modules(module).allow_module_overrides().build()
 
 
@@ -37,10 +39,12 @@ def _module_with_duplicate_anchors() -> ModuleType:
 
     @codeintel_target(domain="analytics", target="dup")
     def t__dup_one() -> int:
+        """Duplicate target anchor one."""
         return 1
 
     @codeintel_target(domain="analytics", target="dup")
     def t__dup_two() -> int:
+        """Duplicate target anchor two."""
         return 2
 
     _register_module_functions(
@@ -58,14 +62,17 @@ def _module_with_branching_chain() -> ModuleType:
 
     @codeintel_target(domain="analytics", target="beta")
     def t__beta() -> int:
+        """Beta target."""
         return 1
 
     @codeintel_target(domain="analytics", target="gamma")
     def t__gamma() -> int:
+        """Gamma target."""
         return 1
 
     @codeintel_target(domain="analytics", target="alpha")
     def t__alpha(t__beta: int, t__gamma: int) -> int:
+        """Alpha target."""
         return t__beta + t__gamma
 
     _register_module_functions(
@@ -109,6 +116,7 @@ def _module_with_duplicate_outputs() -> ModuleType:
         m__core__dup_one: object,
         m__core__dup_two: object,
     ) -> int:
+        """Duplicate output target."""
         _ = (m__core__dup_one, m__core__dup_two)
         return 1
 
@@ -156,6 +164,7 @@ def _module_with_io_surface() -> ModuleType:
 
     @codeintel_target(domain="analytics", target="alpha")
     def t__alpha(alpha_rows: pl.LazyFrame) -> int:
+        """Alpha IO target."""
         _ = alpha_rows
         return 1
 

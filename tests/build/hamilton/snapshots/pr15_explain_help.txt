@@ -3,39 +3,32 @@ Usage: codeintel build explain TARGET [ARGS]
 Explain the structural plan entry for a target.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
-│ *  TARGET --target              Target name to explain (e.g.,                │
-│                                 function_types). [env var:                 │
-│                                 CODEINTEL_BUILD_EXPLAIN_TARGET,              │
-│                                 CODEINTEL_BUILD_EXPLAIN_TARGET] [required]   │
-│    FORCE --force --empty-force  Mark specific targets as forced              │
-│      -f                         (repeatable). [env var:                      │
-│                                 CODEINTEL_BUILD_EXPLAIN_FORCE,               │
-│                                 CODEINTEL_BUILD_EXPLAIN_FORCE] [default:     │
-│                                 (none)]                                      │
-│    IO-SURFACE --io-surface      Include a per-target IO surface              │
-│                                 (reads/writes) derived strictly from         │
-│                                 Hamilton DAG tags. [env var:                 │
-│                                 CODEINTEL_BUILD_EXPLAIN_IO_SURFACE,          │
-│                                 CODEINTEL_BUILD_EXPLAIN_IO_SURFACE]          │
-│                                 [default: false]                             │
-│    *                            [env var: CODEINTEL_BUILD_EXPLAIN_*]         │
-│                                 [default: *]                                 │
-│    ROOT --root -r               Explicit project root directory. [env var:   │
-│                                 CODEINTEL_BUILD_EXPLAIN_ROOT,                │
-│                                 CODEINTEL_BUILD_EXPLAIN_ROOT] [default:      │
-│                                 (none)]                                      │
-│    OUTPUT-FORMAT                Output format. [choices: text, json, jsonl]  │
-│      --output-format            [env var:                                    │
-│                                 CODEINTEL_BUILD_EXPLAIN_OUTPUT_FORMAT,       │
-│                                 CODEINTEL_BUILD_EXPLAIN_OUTPUT_FORMAT]       │
-│                                 [default: text]                              │
-│    JSON --json                  Alias for --output-format json. [env var:    │
-│                                 CODEINTEL_BUILD_EXPLAIN_JSON,                │
-│                                 CODEINTEL_BUILD_EXPLAIN_JSON] [default:      │
-│                                 false]                                       │
-│    VERBOSE --verbose -v         Increase verbosity (0=warnings, 1=info,      │
-│                                 2=debug). [env var:                          │
-│                                 CODEINTEL_BUILD_EXPLAIN_VERBOSE,             │
-│                                 CODEINTEL_BUILD_EXPLAIN_VERBOSE] [default:   │
-│                                 0]                                           │
+│ *  TARGET --target          Target name to explain (e.g., function_types).   │
+│                             [env var: CODEINTEL_BUILD_EXPLAIN_TARGET,        │
+│                             CODEINTEL_BUILD_EXPLAIN_TARGET] [required]       │
+│    FORCE --force -f         Mark specific targets as forced (repeatable).    │
+│      --empty-force          [env var: CODEINTEL_BUILD_EXPLAIN_FORCE,         │
+│                             CODEINTEL_BUILD_EXPLAIN_FORCE] [default: (none)] │
+│    IO-SURFACE --io-surface  Include a per-target IO surface (reads/writes)   │
+│                             derived strictly from Hamilton DAG tags. [env    │
+│                             var: CODEINTEL_BUILD_EXPLAIN_IO_SURFACE,         │
+│                             CODEINTEL_BUILD_EXPLAIN_IO_SURFACE] [default:    │
+│                             false]                                           │
+│    *                        [env var: CODEINTEL_BUILD_EXPLAIN_*] [default:   │
+│                             *]                                               │
+│    ROOT --root -r           Explicit project root directory. [env var:       │
+│                             CODEINTEL_BUILD_EXPLAIN_ROOT,                    │
+│                             CODEINTEL_BUILD_EXPLAIN_ROOT] [default: (none)]  │
+│    OUTPUT-FORMAT            Output format. [choices: text, json, jsonl,      │
+│      --output-format        arrow-ipc] [env var:                             │
+│                             CODEINTEL_BUILD_EXPLAIN_OUTPUT_FORMAT,           │
+│                             CODEINTEL_BUILD_EXPLAIN_OUTPUT_FORMAT] [default: │
+│                             text]                                            │
+│    JSON --json              Alias for --output-format json. [env var:        │
+│                             CODEINTEL_BUILD_EXPLAIN_JSON,                    │
+│                             CODEINTEL_BUILD_EXPLAIN_JSON] [default: false]   │
+│    VERBOSE --verbose -v     Increase verbosity (0=warnings, 1=info,          │
+│                             2=debug). [env var:                              │
+│                             CODEINTEL_BUILD_EXPLAIN_VERBOSE,                 │
+│                             CODEINTEL_BUILD_EXPLAIN_VERBOSE] [default: 0]    │
 ╰──────────────────────────────────────────────────────────────────────────────╯

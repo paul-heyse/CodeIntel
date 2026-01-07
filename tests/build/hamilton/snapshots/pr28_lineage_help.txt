@@ -4,7 +4,7 @@ Show asset lineage for the current snapshot.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ *  ASSET --asset             Asset key to traverse (e.g.,                    │
-│                              analytics.function_types). [env var:         │
+│                              analytics.function_types). [env var:            │
 │                              CODEINTEL_BUILD_LINEAGE_ASSET,                  │
 │                              CODEINTEL_BUILD_LINEAGE_ASSET] [required]       │
 │    DIRECTION --direction -d  Traversal direction: up (dependencies) or down  │
@@ -23,8 +23,8 @@ Show asset lineage for the current snapshot.
 │    ROOT --root -r            Explicit project root directory. [env var:      │
 │                              CODEINTEL_BUILD_LINEAGE_ROOT,                   │
 │                              CODEINTEL_BUILD_LINEAGE_ROOT] [default: (none)] │
-│    OUTPUT-FORMAT             Output format. [choices: text, json, jsonl]     │
-│      --output-format         [env var:                                       │
+│    OUTPUT-FORMAT             Output format. [choices: text, json, jsonl,     │
+│      --output-format         arrow-ipc] [env var:                            │
 │                              CODEINTEL_BUILD_LINEAGE_OUTPUT_FORMAT,          │
 │                              CODEINTEL_BUILD_LINEAGE_OUTPUT_FORMAT]          │
 │                              [default: text]                                 │

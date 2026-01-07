@@ -102,6 +102,15 @@ def _write_empty_scip_index(output_scip: Path, proto_module_path: Path) -> None:
     write_index_proto(empty_index, output_scip)
 
 
+@dataclass(frozen=True)
+class _ScipToolRun:
+    output_scip: Path
+    target_dir: Path | None
+    rel_paths: Sequence[str] | None
+    environment_json: Path | None
+    timeout_s: float | None
+
+
 @dataclass
 class ScipPlugin(ToolPlugin):
     """Plugin for SCIP indexing via scip-python."""
@@ -213,17 +222,17 @@ class ScipPlugin(ToolPlugin):
             environment_json,
             timeout_s,
         ) = self._validate_kwargs(dict(kwargs))
+        run_args = _ScipToolRun(
+            output_scip=output_scip,
+            target_dir=target_dir,
+            rel_paths=rel_paths,
+            environment_json=environment_json,
+            timeout_s=timeout_s,
+        )
 
         result: ToolPluginResult | None = None
         try:
-            await self._run_scip_python(
-                repo_root,
-                output_scip=output_scip,
-                target_dir=target_dir,
-                rel_paths=rel_paths,
-                environment_json=environment_json,
-                timeout_s=timeout_s,
-            )
+            await self._run_scip_python(repo_root, run_args=run_args)
         except ToolNotFoundError as exc:
             log.warning("scip-python binary not found; SCIP index cannot be built")
             result = ToolPluginResult(
@@ -294,24 +303,24 @@ class ScipPlugin(ToolPlugin):
         self,
         repo_root: Path,
         *,
-        output_scip: Path,
-        target_dir: Path | None,
-        rel_paths: Sequence[str] | None,
-        environment_json: Path | None,
-        timeout_s: float | None,
+        run_args: _ScipToolRun,
     ) -> ToolRunResult:
-        target_base = await to_thread.run_sync(resolve_target_base, repo_root, target_dir)
+        output_scip = run_args.output_scip
+        target_base = await to_thread.run_sync(
+            resolve_target_base,
+            repo_root,
+            run_args.target_dir,
+        )
         await to_thread.run_sync(_mkdir_parents, output_scip.parent)
 
-        if environment_json is None:
+        if run_args.environment_json is None:
             ensure_pip_available()
         args = build_scip_python_args(
             target_base=target_base,
             output_scip=output_scip,
             project_name=self.tools_config.scip_project_name,
-            rel_paths=rel_paths,
-            scope_paths=None,
-            environment_json=environment_json,
+            target_paths=run_args.rel_paths,
+            environment_json=run_args.environment_json,
         )
 
         result = await self.runner.run_async(
@@ -320,8 +329,8 @@ class ScipPlugin(ToolPlugin):
             options=ToolRunOptions(
                 cwd=repo_root,
                 output_path=output_scip,
-                timeout_s=timeout_s
-                if timeout_s is not None
+                timeout_s=run_args.timeout_s
+                if run_args.timeout_s is not None
                 else self.tools_config.default_timeout_s,
             ),
         )

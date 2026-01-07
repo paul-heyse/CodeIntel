@@ -99,10 +99,10 @@ class ScipIncrementalConfig:
     tools_config: ToolsConfig
     tool_runner: ToolRunner
     scope_paths: Sequence[str] | None
-    environment_json: Path | None
     max_file_size_kb: int
     timeout_seconds: int
     target_dir: Path | None
+    environment_json: Path | None = None
     force_full_rebuild: bool = False
     batch_size: int = 200
     batch_max_bytes: int = 50_000_000
@@ -236,14 +236,7 @@ def update_index_incremental(
     _initialize_telemetry(context, decision)
     _log_plan_summary(context, decision)
     if decision.mode == "full":
-        result = _full_rebuild(
-            run_config=context.run_config,
-            output_scip=context.config.output_scip,
-            scope_paths=context.config.scope_paths,
-            manifest_file=context.manifest_file,
-            telemetry=telemetry,
-            error=None,
-        )
+        result = _full_rebuild(context)
     else:
         base_index, fallback = _load_base_index_or_full_rebuild(context)
         if fallback is not None:
@@ -370,14 +363,7 @@ def _load_base_index_or_full_rebuild(
         )
     except (_DECODE_ERROR, OSError, AttributeError, TypeError, ValueError) as exc:
         log.warning("SCIP index parse failed; falling back to full rebuild: %s", exc)
-        result = _full_rebuild(
-            run_config=context.run_config,
-            output_scip=context.config.output_scip,
-            scope_paths=context.config.scope_paths,
-            manifest_file=context.manifest_file,
-            telemetry=context.config.telemetry,
-            error=str(exc),
-        )
+        result = _full_rebuild(context, error=str(exc))
         if context.config.telemetry is not None:
             context.config.telemetry.decision = "parse_failed_full_rebuild"
         return None, result
@@ -495,14 +481,7 @@ def _index_shards_or_full_rebuild(
         RuntimeError,
     ) as exc:
         log.exception("Incremental SCIP indexing failed for change set")
-        result = _full_rebuild(
-            run_config=plan.context.run_config,
-            output_scip=plan.context.config.output_scip,
-            scope_paths=plan.context.config.scope_paths,
-            manifest_file=plan.context.manifest_file,
-            telemetry=plan.context.config.telemetry,
-            error=str(exc),
-        )
+        result = _full_rebuild(plan.context, error=str(exc))
         if plan.context.config.telemetry is not None:
             plan.context.config.telemetry.decision = "incremental_failed_full_rebuild"
         return None, result
@@ -522,14 +501,15 @@ def _record_shard_metrics(
 
 
 def _full_rebuild(
+    context: _IncrementalRunContext,
     *,
-    run_config: _ScipRunConfig,
-    output_scip: Path,
-    scope_paths: Sequence[str] | None,
-    manifest_file: Path,
-    telemetry: ScipRunTelemetry | None,
     error: str | None = None,
 ) -> ScipIncrementalResult:
+    run_config = context.run_config
+    output_scip = context.config.output_scip
+    scope_paths = context.config.scope_paths
+    manifest_file = context.manifest_file
+    telemetry = context.config.telemetry
     if telemetry is not None:
         telemetry.mode = "full"
         telemetry.tool_version = _resolve_scip_python_version(run_config)
@@ -929,8 +909,7 @@ def _run_scip_python(
         target_base=run_config.target_base,
         output_scip=output_scip,
         project_name=run_config.tools_config.scip_project_name,
-        rel_paths=rel_paths,
-        scope_paths=scope_paths,
+        target_paths=rel_paths if rel_paths is not None else scope_paths,
         environment_json=run_config.environment_json,
     )
     result = asyncio.run(

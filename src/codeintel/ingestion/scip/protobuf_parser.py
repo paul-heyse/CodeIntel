@@ -153,7 +153,13 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
 
 
 def rebase_parsed_index(parsed: ScipParsedIndex, repo_root: Path) -> ScipParsedIndex:
-    """Rebase document and diagnostic paths to repo_root."""
+    """Rebase document and diagnostic paths to repo_root.
+
+    Returns
+    -------
+    ScipParsedIndex
+        Parsed index with paths rebased when possible.
+    """
     project_root = parsed.project_root
     if project_root is None:
         return parsed

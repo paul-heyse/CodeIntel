@@ -25,6 +25,13 @@ def _build_environment_entries() -> list[dict[str, object]]:
 
 
 def main() -> int:
+    """Write the scip-python environment JSON to stdout.
+
+    Returns
+    -------
+    int
+        Exit code.
+    """
     entries = _build_environment_entries()
     sys.stdout.write(json.dumps(entries, indent=2, sort_keys=True))
     sys.stdout.write("\n")

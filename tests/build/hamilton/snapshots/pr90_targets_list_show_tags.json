@@ -6,12 +6,14 @@
         "domain": "ingestion",
         "tags": {
           "domain": "ingestion",
+          "kind": "target",
           "module": "codeintel.build.hamilton.native.ingestion.ingest_targets",
           "node_type": "materialize",
+          "schema_ref": "modules",
           "target": "modules",
           "target_execution": "{\"cpu_intensive\":false,\"io_intensive\":false,\"isolation\":\"thread\",\"max_parallelism\":null,\"max_runtime_ms\":60000,\"memory_intensive\":false,\"supports_incremental\":true}",
           "target_parameters": "{}",
-          "target_resources": "{\"gateway\":true,\"modules\":false,\"tools\":[],\"tracker\":false}",
+          "target_resources": "{\"gateway\":false,\"modules\":false,\"tools\":[],\"tracker\":false}",
           "target_spec_version": "1"
         },
         "target": "modules"

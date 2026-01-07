@@ -3,7 +3,7 @@ Usage: codeintel build run [ARGS]
 Build targets with automatic dependency resolution.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
-│ TARGETS --targets             Target names to build (e.g., function_types, │
+│ TARGETS --targets             Target names to build (e.g., function_types,   │
 │   --empty-targets             call_graph). [env var:                         │
 │                               CODEINTEL_BUILD_RUN_TARGETS,                   │
 │                               CODEINTEL_BUILD_RUN_TARGETS] [default: (none)] │
@@ -12,7 +12,7 @@ Build targets with automatic dependency resolution.
 │                               CODEINTEL_BUILD_RUN_TAGS,                      │
 │                               CODEINTEL_BUILD_RUN_TAG] [default: (none)]     │
 │ MODULE --module -m            Build all targets in a module (ingestion,      │
-│                               graphs, analytics, export). [env var:          │
+│                               graphs, analytics, export, views). [env var:   │
 │                               CODEINTEL_BUILD_RUN_MODULE,                    │
 │                               CODEINTEL_BUILD_RUN_MODULE] [default: (none)]  │
 │ ALL --all -a                  Build all targets across all modules. [env     │
@@ -21,15 +21,15 @@ Build targets with automatic dependency resolution.
 │ DRY-RUN --dry-run -n          Show build plan without executing. [env var:   │
 │                               CODEINTEL_BUILD_RUN_DRY_RUN,                   │
 │                               CODEINTEL_BUILD_RUN_DRY_RUN] [default: false]  │
-│ FORCE --force --empty-force   Force recompute of specific targets            │
-│   -f                          (repeatable). [env var:                        │
+│ FORCE --force -f              Force recompute of specific targets            │
+│   --empty-force               (repeatable). [env var:                        │
 │                               CODEINTEL_BUILD_RUN_FORCE,                     │
 │                               CODEINTEL_BUILD_RUN_FORCE] [default: (none)]   │
 │ VALIDATE-OUTPUTS              Validate produced datasets against Pandera     │
 │   --validate-outputs          schemas after write. [env var:                 │
 │                               CODEINTEL_BUILD_RUN_VALIDATE_OUTPUTS,          │
 │                               CODEINTEL_BUILD_RUN_VALIDATE_OUTPUTS]          │
-│                               [default: false]                               │
+│                               [default: true]                                │
 │ VALIDATION-MODE               Contract validation mode: lenient, strict, or  │
 │   --validation-mode           off. [env var:                                 │
 │                               CODEINTEL_BUILD_RUN_VALIDATION_MODE,           │
@@ -37,8 +37,8 @@ Build targets with automatic dependency resolution.
 │                               (none)]                                        │
 │ PUBLISH-SERVING-SNAPSHOT      Publish an immutable serving snapshot (writes  │
 │   --publish-serving-snapshot  current.json and snapshot artifacts). [env     │
-│                               var:                                           │
-│                               CODEINTEL_BUILD_RUN_PUBLISH_SERVING_SNAPSHOT,  │
+│   --no-publish-serving-snaps  var:                                           │
+│   hot                         CODEINTEL_BUILD_RUN_PUBLISH_SERVING_SNAPSHOT,  │
 │                               CODEINTEL_BUILD_RUN_PUBLISH_SERVING_SNAPSHOT]  │
 │                               [default: false]                               │
 │ SHOW-TAGS --show-tags         Include Hamilton tag metadata in build         │
@@ -101,8 +101,9 @@ Build targets with automatic dependency resolution.
 │ ROOT --root -r                Explicit project root directory. [env var:     │
 │                               CODEINTEL_BUILD_RUN_ROOT,                      │
 │                               CODEINTEL_BUILD_RUN_ROOT] [default: (none)]    │
-│ OUTPUT-FORMAT                 Output format. [choices: text, json, jsonl]    │
-│   --output-format             [env var: CODEINTEL_BUILD_RUN_OUTPUT_FORMAT,   │
+│ OUTPUT-FORMAT                 Output format. [choices: text, json, jsonl,    │
+│   --output-format             arrow-ipc] [env var:                           │
+│                               CODEINTEL_BUILD_RUN_OUTPUT_FORMAT,             │
 │                               CODEINTEL_BUILD_RUN_OUTPUT_FORMAT] [default:   │
 │                               text]                                          │
 │ JSON --json                   Alias for --output-format json. [env var:      │

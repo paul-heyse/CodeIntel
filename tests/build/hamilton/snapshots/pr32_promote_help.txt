@@ -33,8 +33,8 @@ Set an alias for an asset version.
 │                                 CODEINTEL_BUILD_PROMOTE_ROOT,                │
 │                                 CODEINTEL_BUILD_PROMOTE_ROOT] [default:      │
 │                                 (none)]                                      │
-│    OUTPUT-FORMAT                Output format. [choices: text, json, jsonl]  │
-│      --output-format            [env var:                                    │
+│    OUTPUT-FORMAT                Output format. [choices: text, json, jsonl,  │
+│      --output-format            arrow-ipc] [env var:                         │
 │                                 CODEINTEL_BUILD_PROMOTE_OUTPUT_FORMAT,       │
 │                                 CODEINTEL_BUILD_PROMOTE_OUTPUT_FORMAT]       │
 │                                 [default: text]                              │

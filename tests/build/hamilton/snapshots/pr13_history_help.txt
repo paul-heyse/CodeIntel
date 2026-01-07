@@ -13,8 +13,8 @@ Show build run history and details.
 │ ROOT --root -r        Explicit project root directory. [env var:             │
 │                       CODEINTEL_BUILD_HISTORY_ROOT,                          │
 │                       CODEINTEL_BUILD_HISTORY_ROOT] [default: (none)]        │
-│ OUTPUT-FORMAT         Output format. [choices: text, json, jsonl] [env var:  │
-│   --output-format     CODEINTEL_BUILD_HISTORY_OUTPUT_FORMAT,                 │
+│ OUTPUT-FORMAT         Output format. [choices: text, json, jsonl, arrow-ipc] │
+│   --output-format     [env var: CODEINTEL_BUILD_HISTORY_OUTPUT_FORMAT,       │
 │                       CODEINTEL_BUILD_HISTORY_OUTPUT_FORMAT] [default: text] │
 │ JSON --json           Alias for --output-format json. [env var:              │
 │                       CODEINTEL_BUILD_HISTORY_JSON,                          │

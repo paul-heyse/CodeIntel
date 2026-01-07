@@ -4,7 +4,7 @@ List materialized assets for the current snapshot.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ ASSET --asset         Filter to a specific asset key (e.g.,                  │
-│                       analytics.function_types). [env var:                 │
+│                       analytics.function_types). [env var:                   │
 │                       CODEINTEL_BUILD_ASSETS_ASSET,                          │
 │                       CODEINTEL_BUILD_ASSETS_ASSET] [default: (none)]        │
 │ TARGET --target -t    Filter to assets produced by a specific target. [env   │
@@ -20,8 +20,8 @@ List materialized assets for the current snapshot.
 │ ROOT --root -r        Explicit project root directory. [env var:             │
 │                       CODEINTEL_BUILD_ASSETS_ROOT,                           │
 │                       CODEINTEL_BUILD_ASSETS_ROOT] [default: (none)]         │
-│ OUTPUT-FORMAT         Output format. [choices: text, json, jsonl] [env var:  │
-│   --output-format     CODEINTEL_BUILD_ASSETS_OUTPUT_FORMAT,                  │
+│ OUTPUT-FORMAT         Output format. [choices: text, json, jsonl, arrow-ipc] │
+│   --output-format     [env var: CODEINTEL_BUILD_ASSETS_OUTPUT_FORMAT,        │
 │                       CODEINTEL_BUILD_ASSETS_OUTPUT_FORMAT] [default: text]  │
 │ JSON --json           Alias for --output-format json. [env var:              │
 │                       CODEINTEL_BUILD_ASSETS_JSON,                           │
