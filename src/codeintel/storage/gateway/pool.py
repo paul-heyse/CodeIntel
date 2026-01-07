@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from queue import Empty, LifoQueue
 from typing import TYPE_CHECKING, cast
 
+from codeintel.core.storage import StorageContext
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
@@ -106,7 +107,8 @@ class ReadPoolWarehouse:
         )
         con = session.open_reader()
         gateway = MinimalStorageGateway(con, config=self._storage_config)
-        return Warehouse(gateway=cast("StorageGateway", gateway))
+        context = StorageContext(gateway=cast("StorageGateway", gateway))
+        return Warehouse(context=context)
 
     def _init_handles(self) -> None:
         for _ in range(max(1, self._cfg.size)):

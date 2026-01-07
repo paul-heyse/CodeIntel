@@ -11,7 +11,7 @@ from cyclopts import Parameter
 from codeintel.cli.options.registry import JSON_FLAG, OUTPUT_FORMAT, PROJECT_ROOT, VERBOSE
 from codeintel.cli.options.types import CommandPath, option_param
 from codeintel.cli.rendering.types import OutputFormat
-from codeintel.observability.cli import RunContext
+from codeintel.observability.cli import CliInvocationContext
 
 
 class SharedFlagsProtocol(Protocol):
@@ -21,7 +21,7 @@ class SharedFlagsProtocol(Protocol):
     output_format: OutputFormat
     json: bool
     verbose: int
-    run_context: RunContext | None
+    run_context: CliInvocationContext | None
 
 
 _SHARED_FLAGS_CACHE: dict[tuple[CommandPath, OutputFormat], type[SharedFlagsProtocol]] = {}
@@ -76,7 +76,7 @@ def shared_flags_type(
         ),
         (
             "run_context",
-            Annotated[RunContext | None, Parameter(parse=False)],
+            Annotated[CliInvocationContext | None, Parameter(parse=False)],
             field(default=None),
         ),
     ]

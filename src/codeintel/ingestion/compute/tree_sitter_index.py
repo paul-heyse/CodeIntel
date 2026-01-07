@@ -626,9 +626,10 @@ class TreeSitterIndexStep(BaseExtractStep):
         self,
         modules: Sequence[ModuleRecord],
         *,
-        repo: str,
-        commit: str,
+        repo: str | None = None,
+        commit: str | None = None,
         options: TreeSitterIndexRunOptions | None = None,
+        context: IngestionContext | None = None,
     ) -> TreeSitterIndexResult:
         """Execute tree-sitter parsing for supported module files.
 
@@ -637,6 +638,11 @@ class TreeSitterIndexStep(BaseExtractStep):
         TreeSitterIndexResult
             Extraction result with columnar rows.
         """
+        resolved_repo, resolved_commit = resolve_repo_commit(
+            context=context,
+            repo=repo,
+            commit=commit,
+        )
         try:
             buffers = _build_buffers()
         except (KeyError, RuntimeError) as exc:
@@ -663,8 +669,8 @@ class TreeSitterIndexStep(BaseExtractStep):
                 _process_module(
                     _ProcessModuleContext(
                         module=module,
-                        repo=repo,
-                        commit=commit,
+                        repo=resolved_repo,
+                        commit=resolved_commit,
                         buffers=buffers,
                         discovery=self._discovery,
                         config=config,

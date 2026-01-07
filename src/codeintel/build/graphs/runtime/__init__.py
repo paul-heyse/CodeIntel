@@ -23,6 +23,7 @@ from codeintel.build.graphs.runtime.runtime import (
     GraphRuntimePool,
     PooledRuntime,
     build_graph_runtime,
+    graph_runtime_options_from_env,
     resolve_graph_runtime,
 )
 
@@ -39,6 +40,7 @@ __all__ = [
     "PooledRuntime",
     "build_graph_context",
     "build_graph_runtime",
+    "graph_runtime_options_from_env",
     "load_prior_manifest",
     "resolve_graph_context",
     "resolve_graph_runtime",

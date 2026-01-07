@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.graphs.engine import GraphEngine
     from codeintel.build.graphs.engine.backend import BackendEnablement
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.config.primitives import SnapshotRef
 
 log = logging.getLogger(__name__)
@@ -318,6 +319,23 @@ class GraphRuntimeOptions:
             else:
                 result[f.name] = value
         return result
+
+
+def graph_runtime_options_from_env(env: BuildEnv) -> GraphRuntimeOptions:
+    """Build GraphRuntimeOptions derived from BuildEnv execution settings.
+
+    Returns
+    -------
+    GraphRuntimeOptions
+        Runtime options derived from the build environment.
+    """
+    if env.execution_context is None:
+        return GraphRuntimeOptions(snapshot=env.snapshot)
+    return GraphRuntimeOptions(
+        snapshot=env.snapshot,
+        backend=env.execution_context.graph_backend,
+        features=env.execution_context.graph_features,
+    )
 
 
 @dataclass

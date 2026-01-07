@@ -7,10 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.build.analytics.compute.row_builders import (
-    build_symbol_module_edges,
-    component_metadata_from_import_rows,
-)
+from codeintel.build.analytics.compute.row_builders import component_metadata_from_import_rows
 from codeintel.build.analytics.graphs.config_data_flow import (
     ConfigDataFlowInputs,
     compute_config_data_flow_result,
@@ -47,6 +44,7 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_module_rows,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
+from codeintel.build.graphs.builders import build_symbol_module_edges
 from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.catalog import FunctionCatalog

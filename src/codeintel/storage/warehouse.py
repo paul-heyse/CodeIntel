@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
@@ -41,6 +41,7 @@ from codeintel.core.queries.filter_compiler import (
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.resolution import resolve_table_schema
+from codeintel.core.storage import StorageContext
 from codeintel.core.validation.mode import ContractValidationMode
 from codeintel.core.validation.schema_constraints import schema_metadata_errors
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
@@ -165,16 +166,43 @@ class Warehouse:
 
     Parameters
     ----------
-    gateway
-        Storage gateway providing DuckDB access.
+    context
+        Storage context providing DuckDB access and snapshot identity.
     """
 
-    gateway: StorageGateway
+    context: StorageContext
 
-    def delete_for_snapshot(self, table_key: str, *, snapshot: SnapshotRef) -> None:
+    @property
+    def gateway(self) -> StorageGateway:
+        """Return the underlying storage gateway."""
+        return self.context.gateway
+
+    def _resolve_snapshot(self, snapshot: RepoCommitScope | None) -> RepoCommitScope | None:
+        return snapshot or self.context.snapshot
+
+    def _require_snapshot(self, snapshot: SnapshotRef | None) -> SnapshotRef:
+        if snapshot is not None:
+            return snapshot
+        return self.context.require_snapshot()
+
+    def _resolve_options(self, options: MaterializeOptions) -> MaterializeOptions:
+        resolved_snapshot = self._resolve_snapshot(options.snapshot)
+        if resolved_snapshot is None:
+            return options
+        if resolved_snapshot is options.snapshot:
+            return options
+        return replace(options, snapshot=resolved_snapshot)
+
+    def delete_for_snapshot(
+        self,
+        table_key: str,
+        *,
+        snapshot: SnapshotRef | None = None,
+    ) -> None:
         """Delete rows for a snapshot from a specific table."""
+        resolved = self._require_snapshot(snapshot)
         self.gateway.policy.delete_for_snapshot(
-            table_key, repo=snapshot.repo, commit=snapshot.commit
+            table_key, repo=resolved.repo, commit=resolved.commit
         )
 
     def read(
@@ -191,11 +219,15 @@ class Warehouse:
             Relation for the requested table, optionally filtered by snapshot.
         """
         relation = self.gateway.relation_from_table_key(table_key)
-        if snapshot is None:
+        resolved_snapshot = self._resolve_snapshot(snapshot)
+        if resolved_snapshot is None:
             return relation
         if not _relation_has_repo_commit_columns(relation):
             return relation
-        predicate = _snapshot_filter_expression(repo=snapshot.repo, commit=snapshot.commit)
+        predicate = _snapshot_filter_expression(
+            repo=resolved_snapshot.repo,
+            commit=resolved_snapshot.commit,
+        )
         return relation.filter(predicate)
 
     def exists(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> bool:
@@ -215,7 +247,8 @@ class Warehouse:
         except (DuckDBError, FileNotFoundError, RuntimeError, ValueError):
             return False
 
-        if snapshot is None:
+        resolved_snapshot = self._resolve_snapshot(snapshot)
+        if resolved_snapshot is None:
             return True
 
         if not _relation_has_repo_commit_columns(relation):
@@ -223,8 +256,8 @@ class Warehouse:
 
         return _relation_has_snapshot_rows(
             relation,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
+            repo=resolved_snapshot.repo,
+            commit=resolved_snapshot.commit,
         )
 
     def count(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> int:
@@ -236,8 +269,12 @@ class Warehouse:
             Row count for the requested object.
         """
         relation = self.gateway.relation_from_table_key(table_key)
-        if snapshot is not None and _relation_has_repo_commit_columns(relation):
-            predicate = _snapshot_filter_expression(repo=snapshot.repo, commit=snapshot.commit)
+        resolved_snapshot = self._resolve_snapshot(snapshot)
+        if resolved_snapshot is not None and _relation_has_repo_commit_columns(relation):
+            predicate = _snapshot_filter_expression(
+                repo=resolved_snapshot.repo,
+                commit=resolved_snapshot.commit,
+            )
             relation = relation.filter(predicate)
         row = relation.count("*").fetchone()
         return int(row[0]) if row is not None else 0
@@ -256,7 +293,7 @@ class Warehouse:
         MaterializationResult
             Result metadata for the materialization.
         """
-        active = options or MaterializeOptions()
+        active = self._resolve_options(options or MaterializeOptions())
         _validate_materialize_options(
             active,
             supports_upsert=True,
@@ -318,7 +355,7 @@ class Warehouse:
         MaterializationResult
             Structured result describing the write.
         """
-        active = options or MaterializeOptions(mode="append")
+        active = self._resolve_options(options or MaterializeOptions(mode="append"))
         _validate_materialize_options(
             active,
             supports_upsert=False,
@@ -460,7 +497,12 @@ class Warehouse:
         config = getattr(self.gateway, "config", None)
         return getattr(config, "read_only", False) is False
 
-    def delete_snapshot(self, snapshot: SnapshotRef, *, include_views: bool = False) -> int:
+    def delete_snapshot(
+        self,
+        snapshot: SnapshotRef | None = None,
+        *,
+        include_views: bool = False,
+    ) -> int:
         """Delete snapshot-scoped rows for a repo/commit across all datasets.
 
         Parameters
@@ -476,6 +518,7 @@ class Warehouse:
         int
             Number of dataset tables considered for deletion.
         """
+        resolved = self._require_snapshot(snapshot)
         targets: list[str] = []
         for contract in self.gateway.datasets.by_table_key.values():
             if not include_views and contract.is_view:
@@ -488,7 +531,9 @@ class Warehouse:
 
         for table_key in sorted(set(targets)):
             self.gateway.policy.delete_for_snapshot(
-                table_key, repo=snapshot.repo, commit=snapshot.commit
+                table_key,
+                repo=resolved.repo,
+                commit=resolved.commit,
             )
 
         return len(set(targets))

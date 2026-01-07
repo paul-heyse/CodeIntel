@@ -19,14 +19,10 @@ def _coerce_edge_weight(value: object | None) -> int | None:
         return None
     if isinstance(value, bool):
         return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
+    if isinstance(value, (int, float)):
         return int(value)
     if isinstance(value, str):
         text = value.strip()
-        if not text:
-            return None
         try:
             return int(float(text))
         except ValueError:

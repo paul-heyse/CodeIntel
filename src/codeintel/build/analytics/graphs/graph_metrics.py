@@ -29,6 +29,7 @@ from codeintel.build.analytics.compute.row_builders import (
 )
 from codeintel.build.analytics.graphs.context_helpers import (
     GraphContextFactory,
+    GraphContextOverrides,
     GraphMetricsContext,
 )
 from codeintel.build.graphs.builders import (
@@ -241,11 +242,13 @@ def build_graph_metrics_rows(
     context = GraphMetricsContext.from_inputs(
         snapshot=inputs.snapshot,
         runtime=runtime,
-        filters=inputs.filters,
+        filters=inputs.filters or GraphMetricFilters(),
         context_factory=_GRAPH_CONTEXT_FACTORY,
-        options=opts,
-        use_gpu=inputs.use_gpu,
-        community_detection_limit=inputs.community_detection_limit,
+        overrides=GraphContextOverrides(
+            options=opts,
+            use_gpu=inputs.use_gpu,
+            community_detection_limit=inputs.community_detection_limit,
+        ),
     )
     active_filters = context.filters
     ctx = context.graph_context
@@ -259,7 +262,6 @@ def build_graph_metrics_rows(
     )
     row_context = RowBuildContext.from_snapshot(inputs.snapshot, created_at=ctx.resolved_now())
     function_rows = _build_function_graph_metrics_rows(
-        inputs.snapshot,
         ctx=ctx,
         call_graph=inputs.call_graph,
         filters=active_filters,
@@ -280,7 +282,6 @@ def build_graph_metrics_rows(
 
 
 def _build_function_graph_metrics_rows(
-    snapshot: SnapshotRef,
     *,
     ctx: GraphContext,
     call_graph: nx.DiGraph,
@@ -320,8 +321,8 @@ def _build_function_graph_metrics_rows(
         log.info(
             "graph_metrics_functions rows built: %d rows for %s@%s",
             len(rows),
-            snapshot.repo,
-            snapshot.commit,
+            row_context.repo,
+            row_context.commit,
         )
     return rows
 

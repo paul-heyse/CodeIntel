@@ -2139,8 +2139,9 @@ class CstExtractStep(BaseExtractStep):
         self,
         modules: Sequence[ModuleRecord],
         *,
-        repo: str,
-        commit: str,
+        repo: str | None = None,
+        commit: str | None = None,
+        context: IngestionContext | None = None,
     ) -> CstExtractResult:
         """Execute CST extraction on the provided modules.
 
@@ -2152,12 +2153,19 @@ class CstExtractStep(BaseExtractStep):
             Repository identifier.
         commit
             Commit identifier.
+        context
+            Optional ingestion context supplying repo/commit defaults.
 
         Returns
         -------
         CstExtractResult
             Result bundle with row tuples and execution status.
         """
+        resolved_repo, resolved_commit = resolve_repo_commit(
+            context=context,
+            repo=repo,
+            commit=commit,
+        )
         try:
             collectors = _build_cst_collectors(self._batch_size)
         except (KeyError, RuntimeError) as exc:
@@ -2167,8 +2175,8 @@ class CstExtractStep(BaseExtractStep):
 
         for module, source_bytes in self._iter_python_source_bytes(modules):
             context = _SyntaxContext(
-                repo=repo,
-                commit=commit,
+                repo=resolved_repo,
+                commit=resolved_commit,
                 rel_path=module.rel_path,
                 producer=SYNTAX_PRODUCER,
                 language=SYNTAX_LANGUAGE,
@@ -2194,8 +2202,8 @@ class CstExtractStep(BaseExtractStep):
 
         log.info(
             "CST extraction: repo=%s commit=%s rows=%d",
-            repo,
-            commit,
+            resolved_repo,
+            resolved_commit,
             collectors.cst.row_count,
         )
 

@@ -15,10 +15,7 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
-from codeintel.build.analytics.compute.row_builders import (
-    build_symbol_module_edges,
-    component_metadata_from_import_rows,
-)
+from codeintel.build.analytics.compute.row_builders import component_metadata_from_import_rows
 from codeintel.build.analytics.graphs.config_graph_metrics import build_config_module_bipartite
 from codeintel.build.analytics.graphs.graph_metrics import (
     GraphMetricsInputs,
@@ -43,6 +40,7 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_module_graph,
 )
 from codeintel.build.config import BuildConfig
+from codeintel.build.graphs.builders import build_symbol_module_edges
 from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
 from codeintel.build.providers import create_default_providers
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef

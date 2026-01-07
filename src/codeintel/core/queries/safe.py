@@ -37,6 +37,7 @@ from codeintel.core.duckdb_types import (
 )
 from codeintel.core.errors.storage import ColumnNotFoundError, QueryError, TableNotFoundError
 from codeintel.core.filters import FilterSpecInput
+from codeintel.core.queries.context import QueryContext
 from codeintel.core.queries.filter_compiler import (
     FilterCompilerError,
     compile_filter_predicates,
@@ -90,6 +91,40 @@ def _ensure_valid_table_key(table_key: str) -> bool:
         log.debug("Invalid table key provided: %s", table_key)
         return False
     return True
+
+
+def _resolve_repo_commit(
+    *,
+    repo: str | None,
+    commit: str | None,
+    snapshot: SnapshotRef | None,
+    context: QueryContext | None,
+) -> tuple[str, str]:
+    resolved_snapshot = snapshot or (context.snapshot if context is not None else None)
+    if resolved_snapshot is not None:
+        return resolved_snapshot.repo, resolved_snapshot.commit
+    if repo is None or commit is None:
+        msg = "Snapshot scoping requires repo/commit or a snapshot context"
+        raise ValueError(msg)
+    return repo, commit
+
+
+def policy_from_context(context: QueryContext) -> SqlIngressPolicy:
+    """Build an ingress policy from a query context.
+
+    Returns
+    -------
+    SqlIngressPolicy
+        Policy derived from the query context configuration.
+    """
+    return SqlIngressPolicy(
+        allowed_schemas=context.allowed_schemas,
+        allowed_tables=context.allowed_tables,
+        allowed_functions=context.allowed_functions,
+        deny_functions=context.deny_functions,
+        allow_unqualified_tables=context.allow_unqualified_tables,
+        allow_cross_database_references=context.allow_cross_database_references,
+    )
 
 
 def _relation_for_table_key(
@@ -322,8 +357,10 @@ def table_has_rows_for_snapshot(
     con: DuckDBConnection,
     contract: DatasetContract,
     *,
-    repo: str,
-    commit: str,
+    repo: str | None = None,
+    commit: str | None = None,
+    snapshot: SnapshotRef | None = None,
+    context: QueryContext | None = None,
 ) -> bool:
     """Check if a dataset table has rows for the given repo/commit.
 
@@ -337,6 +374,10 @@ def table_has_rows_for_snapshot(
         Repository slug.
     commit
         Commit SHA.
+    snapshot
+        Optional snapshot reference (overrides repo/commit when provided).
+    context
+        Optional query context carrying snapshot metadata.
 
     Returns
     -------
@@ -348,6 +389,12 @@ def table_has_rows_for_snapshot(
     When the contract schema includes both ``repo`` and ``commit`` columns, the
     query filters by those values. Otherwise, it checks for any row existence.
     """
+    resolved_repo, resolved_commit = _resolve_repo_commit(
+        repo=repo,
+        commit=commit,
+        snapshot=snapshot,
+        context=context,
+    )
     table_key = contract.table_key
     schema = contract.schema
     has_repo_col = schema is not None and any(c.name == "repo" for c in schema.columns)
@@ -356,7 +403,7 @@ def table_has_rows_for_snapshot(
     try:
         relation = con.table(table_key)
         if has_repo_col and has_commit_col:
-            predicate = _snapshot_filter_expression(repo=repo, commit=commit)
+            predicate = _snapshot_filter_expression(repo=resolved_repo, commit=resolved_commit)
             relation = relation.filter(predicate)
         return relation.limit(1).fetchone() is not None
     except (DuckDBError, RuntimeError, ValueError, OSError) as exc:
@@ -368,8 +415,10 @@ def count_rows_for_snapshot(
     con: DuckDBConnection,
     table_key: str,
     *,
-    repo: str,
-    commit: str,
+    repo: str | None = None,
+    commit: str | None = None,
+    snapshot: SnapshotRef | None = None,
+    context: QueryContext | None = None,
 ) -> int:
     """Count rows in a table filtered by repo/commit.
 
@@ -383,13 +432,23 @@ def count_rows_for_snapshot(
         Repository slug.
     commit
         Commit SHA.
+    snapshot
+        Optional snapshot reference (overrides repo/commit when provided).
+    context
+        Optional query context carrying snapshot metadata.
 
     Returns
     -------
     int
         Number of rows matching the repo/commit filter.
     """
-    predicate = _snapshot_filter_expression(repo=repo, commit=commit)
+    resolved_repo, resolved_commit = _resolve_repo_commit(
+        repo=repo,
+        commit=commit,
+        snapshot=snapshot,
+        context=context,
+    )
+    predicate = _snapshot_filter_expression(repo=resolved_repo, commit=resolved_commit)
     relation = con.table(table_key).filter(predicate)
     result = relation.count("*").fetchone()
     if result is None:
@@ -401,8 +460,10 @@ def count_rows_for_tables(
     con: DuckDBConnection,
     tables: Sequence[str],
     *,
-    repo: str,
-    commit: str,
+    repo: str | None = None,
+    commit: str | None = None,
+    snapshot: SnapshotRef | None = None,
+    context: QueryContext | None = None,
 ) -> dict[str, int] | None:
     """Compute row counts for multiple tables filtered by repo/commit.
 
@@ -416,16 +477,31 @@ def count_rows_for_tables(
         Repository slug.
     commit
         Commit SHA.
+    snapshot
+        Optional snapshot reference (overrides repo/commit when provided).
+    context
+        Optional query context carrying snapshot metadata.
 
     Returns
     -------
     dict[str, int] | None
         Mapping of table name to row counts, or None if any table fails.
     """
+    resolved_repo, resolved_commit = _resolve_repo_commit(
+        repo=repo,
+        commit=commit,
+        snapshot=snapshot,
+        context=context,
+    )
     counts: dict[str, int] = {}
     for table in tables:
         try:
-            counts[table] = count_rows_for_snapshot(con, table, repo=repo, commit=commit)
+            counts[table] = count_rows_for_snapshot(
+                con,
+                table,
+                repo=resolved_repo,
+                commit=resolved_commit,
+            )
         except DuckDBError:
             return None
     return counts
@@ -435,8 +511,10 @@ def safe_count_rows(
     con: DuckDBConnection | None,
     tables: Iterable[str],
     *,
-    repo: str,
-    commit: str,
+    repo: str | None = None,
+    commit: str | None = None,
+    snapshot: SnapshotRef | None = None,
+    context: QueryContext | None = None,
 ) -> dict[str, int] | None:
     """Tolerant variant of count_rows_for_tables that handles None connection.
 
@@ -450,6 +528,10 @@ def safe_count_rows(
         Repository slug.
     commit
         Commit SHA.
+    snapshot
+        Optional snapshot reference (overrides repo/commit when provided).
+    context
+        Optional query context carrying snapshot metadata.
 
     Returns
     -------
@@ -461,7 +543,14 @@ def safe_count_rows(
     table_list = tuple(tables)
     if any(not _ensure_valid_table_key(table_key) for table_key in table_list):
         return None
-    return count_rows_for_tables(con, table_list, repo=repo, commit=commit)
+    return count_rows_for_tables(
+        con,
+        table_list,
+        repo=repo,
+        commit=commit,
+        snapshot=snapshot,
+        context=context,
+    )
 
 
 def safe_count(gateway: RelationGateway, table_key: str) -> int | None:
@@ -503,7 +592,9 @@ def safe_count(gateway: RelationGateway, table_key: str) -> int | None:
 def safe_count_with_scope(
     gateway: RelationGateway,
     table_key: str,
-    snapshot: SnapshotRef,
+    snapshot: SnapshotRef | None = None,
+    *,
+    context: QueryContext | None = None,
 ) -> int | None:
     """Safely count rows in a table scoped to a snapshot using relations.
 
@@ -514,7 +605,9 @@ def safe_count_with_scope(
     table_key
         Table key in 'schema.table' format.
     snapshot
-        Snapshot reference for scoping.
+        Optional snapshot reference for scoping.
+    context
+        Optional query context carrying snapshot metadata.
 
     Returns
     -------
@@ -523,12 +616,18 @@ def safe_count_with_scope(
     """
     if not _ensure_valid_table_key(table_key):
         return None
+    resolved_snapshot = snapshot or (context.snapshot if context is not None else None)
+    if resolved_snapshot is None:
+        return None
     relation = _relation_for_table_key(gateway, table_key)
     if relation is None:
         return None
     columns = set(relation.columns)
     if "repo" in columns and "commit" in columns:
-        predicate = _snapshot_filter_expression(repo=snapshot.repo, commit=snapshot.commit)
+        predicate = _snapshot_filter_expression(
+            repo=resolved_snapshot.repo,
+            commit=resolved_snapshot.commit,
+        )
         relation = relation.filter(predicate)
     try:
         result = relation.count("*").fetchone()

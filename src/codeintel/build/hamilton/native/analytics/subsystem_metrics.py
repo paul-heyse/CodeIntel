@@ -15,7 +15,7 @@ from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
     SubsystemGraphMetricInputs,
     build_subsystem_graph_metrics_rows,
 )
-from codeintel.build.graphs.runtime import GraphRuntimeOptions
+from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -49,13 +49,7 @@ SUBSYSTEM_GRAPH_METRICS_CONTRACT = TableContractSpec(
 
 @cache(behavior="ignore")
 def _graph_runtime_options(env: BuildEnv) -> GraphRuntimeOptions:
-    if env.execution_context is None:
-        return GraphRuntimeOptions(snapshot=env.snapshot)
-    return GraphRuntimeOptions(
-        snapshot=env.snapshot,
-        backend=env.execution_context.graph_backend,
-        features=env.execution_context.graph_features,
-    )
+    return graph_runtime_options_from_env(env)
 
 
 def subsystem_graph_metrics__base(

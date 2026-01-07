@@ -68,6 +68,44 @@ class TableTargetSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class TableTargetContext:
+    """Context for constructing single-table target specs."""
+
+    domain: str
+    target_name: str
+    table_key: str
+    base_node: str
+    contract: TableContractSpec
+    input_type: object
+
+
+def build_single_table_target_spec(*, context: TableTargetContext) -> TableTargetSpec:
+    """Build a TableTargetSpec for a single table target.
+
+    Returns
+    -------
+    TableTargetSpec
+        Standardized target spec configured for a single table output.
+    """
+    return TableTargetSpec(
+        domain=context.domain,
+        target_name=context.target_name,
+        tables=(
+            TableTargetTableSpec(
+                table_key=context.table_key,
+                base_node=context.base_node,
+                contract=context.contract,
+                save_spec=DatasetSaveSpec(table_key=context.table_key),
+                node_name=f"{context.target_name}__table",
+                input_type=context.input_type,
+            ),
+        ),
+        table_materializations_node=f"{context.target_name}__table_materializations",
+        anchor_node_name=f"t__{context.target_name}",
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class _TemplateContext:
     module: ModuleType
     domain: str

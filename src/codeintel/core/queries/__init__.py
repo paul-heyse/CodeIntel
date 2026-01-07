@@ -2,4 +2,6 @@
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from codeintel.core.queries.context import QueryContext
+
+__all__ = ["QueryContext"]

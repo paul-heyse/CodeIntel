@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.storage import StorageContext
 from codeintel.storage.exports.service import ExportService
 from codeintel.storage.warehouse import (
     MaterializationResult,
@@ -26,10 +27,15 @@ if TYPE_CHECKING:
 class StorageFacade:
     """Unified storage access surface for non-storage modules."""
 
-    gateway: StorageGateway
+    context: StorageContext
     warehouse: Warehouse
     exports: ExportService
     datasets: DatasetRegistry
+
+    @property
+    def gateway(self) -> StorageGateway:
+        """Return the underlying storage gateway."""
+        return self.context.gateway
 
     @classmethod
     def from_gateway(cls, gateway: StorageGateway) -> StorageFacade:
@@ -40,9 +46,10 @@ class StorageFacade:
         StorageFacade
             Facade wrapping the gateway, warehouse, exports, and datasets.
         """
+        context = StorageContext(gateway=gateway)
         return cls(
-            gateway=gateway,
-            warehouse=Warehouse(gateway=gateway),
+            context=context,
+            warehouse=Warehouse(context=context),
             exports=ExportService(gateway=gateway),
             datasets=gateway.datasets,
         )

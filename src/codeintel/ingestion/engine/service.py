@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from anyio import to_thread
 
+from codeintel.ingestion.context import IngestionContext, resolve_repo_root
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
@@ -113,7 +114,14 @@ class ToolService:
         """
         return self._plugins.get(name)
 
-    async def run_plugin(self, name: str, *, repo_root: Path, **kwargs: object) -> ToolPluginResult:
+    async def run_plugin(
+        self,
+        name: str,
+        *,
+        repo_root: Path | None = None,
+        context: IngestionContext | None = None,
+        **kwargs: object,
+    ) -> ToolPluginResult:
         """
         Execute a tool plugin by name and return its normalized result.
 
@@ -123,6 +131,8 @@ class ToolService:
             Plugin registry name (for example, "pyright", "scip-python").
         repo_root
             Repository root passed to the plugin.
+        context
+            Optional ingestion context providing repo_root.
         **kwargs
             Plugin-specific arguments (for example, repo_root, output_path).
 
@@ -144,13 +154,15 @@ class ToolService:
         missing, extra = plugin.metadata.spec.validate_kwargs(kwargs)
         if missing or extra:
             raise ToolSpecError(plugin.metadata.name, missing=missing, extra=extra)
-        return await plugin.run(repo_root=repo_root, **kwargs)
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
+        return await plugin.run(repo_root=resolved_root, **kwargs)
 
     async def run_pyright(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         paths: Sequence[Path] | None = None,
+        context: IngestionContext | None = None,
     ) -> Mapping[str, int]:
         """
         Run pyright and return error counts keyed by repo-relative path.
@@ -159,6 +171,8 @@ class ToolService:
         ----------
         repo_root
             Repository root supplied to the pyright invocation.
+        context
+            Optional ingestion context providing repo_root.
         paths
             Optional paths to scope diagnostics (relative to repo_root or absolute).
 
@@ -174,9 +188,10 @@ class ToolService:
         RuntimeError
             Raised when a plugin result is missing the expected run metadata.
         """
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
         plugin_result = await self.run_plugin(
             "pyright",
-            repo_root=repo_root,
+            repo_root=resolved_root,
             paths=paths,
         )
 
@@ -204,9 +219,10 @@ class ToolService:
 
     async def run_pyrefly(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         paths: Sequence[Path] | None = None,
+        context: IngestionContext | None = None,
     ) -> Mapping[str, int]:
         """
         Run pyrefly and return error counts keyed by repo-relative path.
@@ -215,6 +231,8 @@ class ToolService:
         ----------
         repo_root
             Repository root supplied to the pyrefly invocation.
+        context
+            Optional ingestion context providing repo_root.
         paths
             Optional paths to scope diagnostics (relative to repo_root or absolute).
 
@@ -223,11 +241,12 @@ class ToolService:
         Mapping[str, int]
             Mapping from relative file paths to error counts.
         """
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
         output_path = self.runner.cache_dir / "pyrefly.json"
 
         plugin_result = await self.run_plugin(
             "pyrefly",
-            repo_root=repo_root,
+            repo_root=resolved_root,
             output_path=output_path,
             paths=paths,
         )
@@ -257,9 +276,10 @@ class ToolService:
 
     async def run_ruff(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         paths: Sequence[Path] | None = None,
+        context: IngestionContext | None = None,
     ) -> Mapping[str, int]:
         """
         Run ruff and return lint error counts keyed by repo-relative path.
@@ -268,6 +288,8 @@ class ToolService:
         ----------
         repo_root
             Repository root supplied to the ruff invocation.
+        context
+            Optional ingestion context providing repo_root.
         paths
             Optional paths to scope diagnostics (relative to repo_root or absolute).
 
@@ -283,9 +305,10 @@ class ToolService:
         RuntimeError
             Raised when a plugin result is missing the expected run metadata.
         """
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
         plugin_result = await self.run_plugin(
             "ruff",
-            repo_root=repo_root,
+            repo_root=resolved_root,
             paths=paths,
         )
 
@@ -313,9 +336,10 @@ class ToolService:
 
     async def run_pytest_report(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         json_report_path: Path,
+        context: IngestionContext | None = None,
     ) -> PytestReportResult:
         """
         Generate a pytest JSON report when missing.
@@ -324,6 +348,8 @@ class ToolService:
         ----------
         repo_root
             Repository root passed to the pytest invocation.
+        context
+            Optional ingestion context providing repo_root.
         json_report_path
             Output path for the pytest JSON report.
 
@@ -332,6 +358,7 @@ class ToolService:
         PytestReportResult
             Structured result describing execution, status, and any errors.
         """
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
         report_exists = await to_thread.run_sync(_path_is_file, json_report_path)
         if report_exists:
             result = PytestReportResult(
@@ -345,7 +372,7 @@ class ToolService:
         else:
             plugin_result = await self.run_plugin(
                 "pytest",
-                repo_root=repo_root,
+                repo_root=resolved_root,
                 json_report_path=json_report_path,
             )
 

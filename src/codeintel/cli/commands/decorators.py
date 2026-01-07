@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
     from codeintel.cli.context import CommandContext
     from codeintel.cli.core import CliResult
-    from codeintel.observability.cli import RunContext
+    from codeintel.observability.cli import CliInvocationContext
 
 LOG = logging.getLogger(__name__)
 
@@ -583,7 +583,7 @@ class _InfrastructureValues:
     project_root: Path | None
     database_path: Path | None
     index_path: Path | None
-    run_context: RunContext | None
+    run_context: CliInvocationContext | None
 
 
 def _extract_infrastructure(command: CommandInstance) -> _InfrastructureValues:

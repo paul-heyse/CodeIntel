@@ -70,7 +70,7 @@ _BUILD_COMMAND = "build"
 
 
 @dataclass(frozen=True, slots=True)
-class RunContext:
+class CliInvocationContext:
     """Invocation context injected into Cyclopts commands."""
 
     invocation_id: str
@@ -483,7 +483,7 @@ def _safe_arg_names(
 def _inject_run_context(
     bound: BoundArguments,
     ignored: Mapping[str, object] | None,
-    ctx: RunContext,
+    ctx: CliInvocationContext,
 ) -> None:
     if not ignored:
         return
@@ -502,13 +502,13 @@ def _inject_run_context(
 
 
 def _is_run_context_annotation(annotation: object) -> bool:
-    if annotation is RunContext:
+    if annotation is CliInvocationContext:
         return True
     origin = get_origin(annotation)
     if origin is None:
         return False
     args = get_args(annotation)
-    return bool(args) and args[0] is RunContext
+    return bool(args) and args[0] is CliInvocationContext
 
 
 def _command_chain(command: object) -> tuple[str, ...]:
@@ -546,9 +546,9 @@ def _span_context(obs: ObservabilityRuntime) -> AbstractContextManager[Span | No
     return nullcontext(None)
 
 
-def _build_run_context(state: _InvocationState) -> RunContext:
+def _build_run_context(state: _InvocationState) -> CliInvocationContext:
     obs = get_observability()
-    return RunContext(
+    return CliInvocationContext(
         invocation_id=state.invocation_id,
         command_chain=state.command_chain,
         start_ns=state.start_ns,
@@ -588,7 +588,7 @@ def normalize_allowlist(values: tuple[str, ...]) -> set[str]:
 
 
 __all__ = [
-    "RunContext",
+    "CliInvocationContext",
     "flatten_arg_names",
     "normalize_allowlist",
     "run_cli_with_telemetry",

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, cast
 
 import networkx as nx
 
+from codeintel.build.graphs.builders import EdgeWeightPolicy, add_weighted_edge
 from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
     scan_snapshot_reader,
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
 log = logging.getLogger(__name__)
+_EDGE_WEIGHT_POLICY = EdgeWeightPolicy()
 
 
 def _ensure_dataset_root(dataset_root: Path | None, table_key: str) -> Path | None:
@@ -110,11 +112,7 @@ def _add_call_edges(graph: nx.DiGraph, reader: object) -> None:
         callee = normalize_decimal(callee_raw)
         if caller is None or callee is None:
             continue
-        if graph.has_edge(caller, callee):
-            attrs = graph[caller][callee]
-            attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
-        else:
-            graph.add_edge(caller, callee, weight=1)
+        add_weighted_edge(graph, caller, callee, policy=_EDGE_WEIGHT_POLICY)
 
 
 def _add_call_nodes(graph: nx.DiGraph, reader: object) -> None:
@@ -157,36 +155,6 @@ def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
 
     log.debug("GPU backend requested; relying on nx_cugraph backend dispatch.")
     return graph
-
-
-def _coerce_edge_weight_int(value: object, *, default: int = 0) -> int:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(float(value))
-        except ValueError:
-            return default
-    return default
-
-
-def _coerce_edge_weight_float(value: object, *, default: float = 0.0) -> float:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return float(int(value))
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except ValueError:
-            return default
-    return default
 
 
 def module_attrs_from_row(
@@ -347,9 +315,7 @@ def load_import_graph(
         layer_value = as_int(layer)
         if layer_value is not None:
             fallback_layer_by_module[source] = layer_value
-        edge_data = graph.get_edge_data(source, target)
-        weight = _coerce_edge_weight_int(edge_data.get("weight") if edge_data is not None else None)
-        graph.add_edge(source, target, weight=weight + 1)
+        add_weighted_edge(graph, source, target, policy=_EDGE_WEIGHT_POLICY)
 
     module_table = scan_snapshot_table(
         SnapshotScanRequest(
@@ -466,11 +432,7 @@ def _populate_config_graph(
             module_node = ("m", module_name)
             if not graph.has_node(module_node):
                 graph.add_node(module_node, bipartite=1)
-            if graph.has_edge(key_node, module_node):
-                attrs = graph[key_node][module_node]
-                attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
-            else:
-                graph.add_edge(key_node, module_node, weight=1)
+            add_weighted_edge(graph, key_node, module_node, policy=_EDGE_WEIGHT_POLICY)
     return stats
 
 
@@ -620,11 +582,7 @@ def load_symbol_module_graph(
             continue
         if def_module == use_module:
             continue
-        if graph.has_edge(use_module, def_module):
-            attrs = graph[use_module][def_module]
-            attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
-        else:
-            graph.add_edge(use_module, def_module, weight=1)
+        add_weighted_edge(graph, use_module, def_module, policy=_EDGE_WEIGHT_POLICY)
     return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
 
 
@@ -677,11 +635,7 @@ def load_symbol_function_graph(
         right = normalize_decimal(use_goid)
         if left is None or right is None or left == right:
             continue
-        if graph.has_edge(left, right):
-            attrs = graph[left][right]
-            attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
-        else:
-            graph.add_edge(left, right, weight=1)
+        add_weighted_edge(graph, left, right, policy=_EDGE_WEIGHT_POLICY)
     return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
 
 

@@ -21,6 +21,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
     table_for_columnar_rows,
 )
+from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.engine.results import parse_test_duration, parse_test_markers
 
 if TYPE_CHECKING:
@@ -91,9 +92,10 @@ class TestsIngestStep:
     def execute(
         _modules: Sequence[ModuleRecord],
         *,
-        repo: str,
-        commit: str,
+        repo: str | None = None,
+        commit: str | None = None,
         json_report_path: Path,
+        context: IngestionContext | None = None,
     ) -> TestsIngestResult:
         """Execute test catalog ingestion.
 
@@ -107,12 +109,19 @@ class TestsIngestStep:
             Commit identifier.
         json_report_path
             Path to the pytest JSON report.
+        context
+            Optional ingestion context supplying repo/commit defaults.
 
         Returns
         -------
         TestsIngestResult
             Result bundle with row tuples and execution status.
         """
+        resolved_repo, resolved_commit = resolve_repo_commit(
+            context=context,
+            repo=repo,
+            commit=commit,
+        )
         created_at = datetime.now(UTC)
 
         if not json_report_path.exists():
@@ -134,15 +143,15 @@ class TestsIngestStep:
         _build_test_catalog_rows(
             buffer,
             tests,
-            repo=repo,
-            commit=commit,
+            repo=resolved_repo,
+            commit=resolved_commit,
             created_at=created_at,
         )
 
         log.info(
             "Test catalog ingest: repo=%s commit=%s tests=%d",
-            repo,
-            commit,
+            resolved_repo,
+            resolved_commit,
             len(tests),
         )
 

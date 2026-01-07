@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import networkx as nx
@@ -16,18 +15,20 @@ from codeintel.build.analytics.compute.graphs import (
 )
 from codeintel.build.analytics.compute.row_builders import (
     ModuleMetricExtInputs,
+    RowBuildContext,
     build_module_metric_ext_rows,
 )
 from codeintel.build.analytics.graphs.constants import (
     CENTRALITY_SAMPLE_LIMIT,
     RICH_CLUB_PERCENTILE,
 )
+from codeintel.build.analytics.graphs.context_helpers import GraphContextFactory
 from codeintel.build.analytics.graphs.orchestrator import (
     ExtendedMetricsConfig,
     ExtendedMetricsRequest,
     build_extended_metrics_rows,
 )
-from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.build.graphs.runtime.context import GraphContext
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.compute.graphs import (
@@ -40,7 +41,6 @@ if TYPE_CHECKING:
         GraphViews,
     )
     from codeintel.build.graphs.runtime import GraphRuntimeOptions
-    from codeintel.build.graphs.runtime.context import GraphContext
 
 
 @dataclass(frozen=True)
@@ -77,32 +77,12 @@ def _rich_club_cutoff(degree_map: dict[str, int]) -> int:
 def _resolve_module_context(runtime: GraphRuntimeOptions, repo: str, commit: str) -> GraphContext:
     """Build graph context with module-specific constants.
 
-    Parameters
-    ----------
-    runtime
-        Runtime options including GPU and community detection settings.
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-
     Returns
     -------
     GraphContext
-        Resolved graph context for module metrics computation.
+        Graph context configured for module-level metrics.
     """
-    return resolve_graph_context(
-        GraphContextSpec(
-            repo=repo,
-            commit=commit,
-            use_gpu=runtime.use_gpu,
-            now=datetime.now(UTC),
-            betweenness_cap=CENTRALITY_SAMPLE_LIMIT,
-            pagerank_weight="weight",
-            betweenness_weight="weight",
-            community_detection_limit=runtime.features.community_detection_limit,
-        )
-    )
+    return _MODULE_CONTEXT_FACTORY.build(runtime, repo=repo, commit=commit)
 
 
 def _module_metric_slices(views: GraphViews, ctx: GraphContext) -> ModuleGraphSlices:
@@ -190,9 +170,13 @@ def _module_metric_rows(
         else False
         for module in nodes
     }
+    row_context = RowBuildContext.from_repo_commit(
+        repo,
+        commit,
+        created_at=ctx.resolved_now(),
+    )
     inputs = ModuleMetricExtInputs(
-        repo=repo,
-        commit=commit,
+        row_context=row_context,
         ctx=ctx,
         centralities=centralities,
         structure=structure,
@@ -202,6 +186,13 @@ def _module_metric_rows(
     )
     return build_module_metric_ext_rows(inputs)
 
+
+# Context factory for module-level extended metrics
+_MODULE_CONTEXT_FACTORY = GraphContextFactory(
+    betweenness_cap=CENTRALITY_SAMPLE_LIMIT,
+    pagerank_weight="weight",
+    betweenness_weight="weight",
+)
 
 # Configuration for module-level extended metrics
 _MODULE_EXT_CONFIG: ExtendedMetricsConfig[ModuleGraphSlices, dict[str, object]] = (

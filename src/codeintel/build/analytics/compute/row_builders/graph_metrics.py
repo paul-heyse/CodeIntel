@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -148,44 +147,6 @@ def merge_component_metadata(
     return {"component_id": ids, "in_cycle": in_cycle, "layer": layer}
 
 
-def build_symbol_module_edges(
-    symbol_use_edges: Iterable[Mapping[str, object]],
-    module_by_path: Mapping[str, str],
-) -> tuple[set[str], dict[str, set[str]], dict[str, set[str]]]:
-    """Aggregate symbol use edges to module-level adjacency.
-
-    Parameters
-    ----------
-    symbol_use_edges
-        Symbol use edges containing def_path/use_path values.
-    module_by_path
-        Mapping of file path to module name.
-
-    Returns
-    -------
-    tuple[set[str], dict[str, set[str]], dict[str, set[str]]]
-        Modules involved plus inbound/outbound adjacency keyed by module.
-    """
-    modules: set[str] = set()
-    inbound: dict[str, set[str]] = defaultdict(set)
-    outbound: dict[str, set[str]] = defaultdict(set)
-
-    for record in symbol_use_edges:
-        def_path = record.get("def_path")
-        use_path = record.get("use_path")
-        if def_path is None or use_path is None:
-            continue
-        def_module = module_by_path.get(str(def_path))
-        use_module = module_by_path.get(str(use_path))
-        if def_module is None or use_module is None:
-            continue
-        modules.update((use_module, def_module))
-        outbound[use_module].add(def_module)
-        inbound[def_module].add(use_module)
-
-    return modules, inbound, outbound
-
-
 def build_module_graph_metric_rows(
     inputs: ModuleGraphMetricInputs,
 ) -> list[dict[str, object]]:
@@ -237,7 +198,6 @@ __all__ = [
     "ModuleGraphMetricInputs",
     "build_function_graph_metric_rows",
     "build_module_graph_metric_rows",
-    "build_symbol_module_edges",
     "component_metadata_from_import_rows",
     "merge_component_metadata",
 ]

@@ -2,4 +2,6 @@
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from codeintel.ingestion.context import IngestionContext
+
+__all__ = ["IngestionContext"]

@@ -12,7 +12,6 @@ from codeintel.build.analytics.compute.row_builders.graph_metrics import (
     ModuleGraphMetricInputs,
     build_function_graph_metric_rows,
     build_module_graph_metric_rows,
-    build_symbol_module_edges,
     component_metadata_from_import_rows,
     merge_component_metadata,
 )
@@ -52,7 +51,6 @@ __all__ = [
     "build_module_metric_ext_rows",
     "build_subsystem_graph_rows",
     "build_symbol_function_rows",
-    "build_symbol_module_edges",
     "build_symbol_module_rows",
     "component_metadata_from_import_rows",
     "merge_component_metadata",

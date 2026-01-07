@@ -3262,3 +3262,262 @@ A few high-signal anchor points you can rely on:
 [23]: https://www.rustworkx.org/release_notes.html?utm_source=chatgpt.com "Release Notes - rustworkx 0.17.1"
 [24]: https://www.rustworkx.org/apiref/rustworkx.TopologicalSorter.html?utm_source=chatgpt.com "TopologicalSorter - rustworkx 0.17.1"
 [25]: https://www.rustworkx.org/apiref/rustworkx.PyGraph.get_edge_data.html?utm_source=chatgpt.com "rustworkx.PyGraph.get_edge_data"
+
+# Deep dive — Custom return types (structured outputs) in rustworkx
+
+rustworkx exposes a set of **custom container classes** (instead of plain `list`/`dict`) for many algorithm and graph-method returns. They’re designed to be **read-only**, fast, and still “Pythonic” by implementing either:
+
+* the **sequence protocol** (indexable like a list), or
+* the **mapping protocol** (dict-like, with `keys/items/values`).
+
+The full list is documented under “Custom Return Types” (BFSSuccessors, NodeIndices, EdgeList, PathMapping, Pos2DMapping, CentralityMapping, Chains, NodeMap, etc.). ([rustworkx.org][1])
+
+Below is the practical “what each one means, how to use it, and how to normalize it deterministically.”
+
+---
+
+## 0) The two big “shape families”
+
+### A) Read-only sequences (list-like)
+
+These support `obj[i]`, `len(obj)`, and `iter(obj)` (read-only). Examples: `NodeIndices`, `EdgeList`, `WeightedEdgeList`, `Chains`, etc. ([rustworkx.org][2])
+
+**Storage stance:** treat as `list(obj)` and (usually) sort for determinism.
+
+### B) Read-only mappings (dict-like)
+
+These support `obj[key]`, `key in obj`, and have `keys()/items()/values()` methods. Examples: `PathMapping`, `EdgeIndexMap`, `Pos2DMapping`, `CentralityMapping`, etc. ([rustworkx.org][3])
+
+**Storage stance:** treat as `dict(obj)` and always sort keys explicitly before writing snapshots/tables.
+
+---
+
+## 1) Sequence protocol return types (what they contain + where they come from)
+
+### 1.1 `NodeIndices`
+
+**Shape:** read-only sequence of integer node indices. ([rustworkx.org][2])
+**Produced by:** graph methods like `graph.node_indices()` (and other bulk node-returning APIs).
+
+**Key usage:**
+
+```python
+nodes = g.node_indices()
+third = nodes[2]
+for n in nodes: ...
+```
+
+(Iteration “yields results in order” per docs; don’t assume numeric ordering—sort if needed.) ([rustworkx.org][2])
+
+---
+
+### 1.2 `EdgeIndices`
+
+**Shape:** read-only sequence of integer edge indices. ([rustworkx.org][4])
+**Produced by:** graph methods like `edge_indices()` and bulk edge-add operations (and other edge-index APIs).
+
+**Why it matters:** edge indices are the only *precise handle* for **multigraph parallel edges** (endpoint-based APIs can be ambiguous).
+
+---
+
+### 1.3 `EdgeList`
+
+**Shape:** read-only sequence of `(u, v)` edge endpoint tuples (node indices). ([rustworkx.org][5])
+**Produced by:** `graph.edge_list()` (and other “edge list” producers).
+
+**Key detail:** endpoints are **indices**, not payloads.
+
+---
+
+### 1.4 `WeightedEdgeList`
+
+**Shape:** read-only sequence of `(u, v, weight)` tuples, where `weight` is the **edge payload object**. ([rustworkx.org][6])
+**Produced by:** `graph.weighted_edge_list()` (and many algorithms that return edge lists with payloads).
+
+**Footgun:** `weight` can be *any Python object* → for deterministic storage, you need a policy (e.g., stable scalar, stable dict, or a `payload_to_str`/hash).
+
+---
+
+### 1.5 `BFSSuccessors` / `BFSPredecessors`
+
+These two are easy to misinterpret.
+
+* `BFSSuccessors`: read-only sequence of `(node_payload, [successor_payloads...])` ([rustworkx.org][7])
+* `BFSPredecessors`: read-only sequence of `(node_payload, [predecessor_payloads...])` ([rustworkx.org][8])
+
+**Important:** these tuples hold **node data payloads**, *not node indices*. ([rustworkx.org][7])
+
+**When to use:** when you want a traversal result already “decoded” to the domain objects you stored as node payloads.
+
+**When not to use:** if you need stable identity or joins (e.g., storing in DuckDB). In that case, use `bfs_search` with a visitor to record indices/events instead (you already have that visitor deep dive).
+
+---
+
+### 1.6 `Chains`
+
+**Shape:** read-only sequence of `EdgeList` instances (i.e., “list of lists of edges”). ([rustworkx.org][9])
+**Produced by:** `chain_decomposition(graph)` returns a `Chains` container. ([rustworkx.org][9])
+
+So:
+
+* `chains[i]` is an `EdgeList`
+* each `EdgeList` element is an `(u, v)` tuple ([rustworkx.org][9])
+
+---
+
+### 1.7 `RelationalCoarsestPartition` and `IndexPartitionBlock`
+
+These show up with maximum bisimulation.
+
+* `RelationalCoarsestPartition`: read-only sequence of `NodeIndices` blocks; returned by `digraph_maximum_bisimulation`. ([rustworkx.org][10])
+* `IndexPartitionBlock`: read-only sequence of integers representing one block of node indices (also from `digraph_maximum_bisimulation`). ([rustworkx.org][11])
+
+**Practical interpretation:** bisimulation gives you a partition of the node set into “equivalence blocks” (store as `(block_id, node)` rows).
+
+---
+
+## 2) Mapping protocol return types (what they contain + where they come from)
+
+### 2.1 `PathMapping` (single-source paths)
+
+**Shape:** read-only mapping `target_node_index -> [path_node_indices...]`. ([rustworkx.org][3])
+**Produced by:** shortest-path routines like Dijkstra shortest paths.
+
+Docs explicitly say it implements the mapping protocol and can be iterated (via `iter(obj)`) to yield results “in order.” ([rustworkx.org][3])
+
+---
+
+### 2.2 `PathLengthMapping` (single-source distances)
+
+**Shape:** read-only mapping `target_node_index -> float distance`. ([rustworkx.org][12])
+Same iteration/mapping semantics as `PathMapping`. ([rustworkx.org][12])
+
+---
+
+### 2.3 `AllPairsPathMapping` / `AllPairsPathLengthMapping` (nested mappings)
+
+* `AllPairsPathMapping`: `source_node_index -> PathMapping` ([rustworkx.org][13])
+* `AllPairsPathLengthMapping`: `source_node_index -> PathLengthMapping` ([rustworkx.org][14])
+
+These are “mapping-of-mappings”. For storage, you almost always flatten them to rows `(source, target, path)` or `(source, target, dist)`.
+
+---
+
+### 2.4 `EdgeIndexMap`
+
+**Shape:** read-only mapping `edge_index -> (u, v, edge_payload)`. ([rustworkx.org][15])
+**Produced by:** graph methods like `edge_index_map()` / incident-edge maps, etc.
+
+Docs call it a drop-in replacement for a **read-only dict**. ([rustworkx.org][15])
+
+**Why it matters:** it’s the bridge from *edge index* → *(endpoints + payload)*, which is critical for multigraph correctness.
+
+---
+
+### 2.5 `Pos2DMapping`
+
+**Shape:** read-only mapping `node_index -> [x, y]`. ([rustworkx.org][16])
+**Produced by:** layout functions (spring/circular/bipartite/etc.) and accepted by `mpl_draw`.
+
+Docs call it a drop-in replacement for a **read-only dict**. ([rustworkx.org][16])
+
+---
+
+### 2.6 `CentralityMapping` / `EdgeCentralityMapping`
+
+* `CentralityMapping`: `node_index -> float score` ([rustworkx.org][17])
+* `EdgeCentralityMapping`: `edge_index -> float score` ([rustworkx.org][18])
+
+Used by centrality routines (betweenness, edge betweenness, etc.). These are the most straightforward to normalize (just rows `(node, score)` / `(edge_index, score)`).
+
+---
+
+### 2.7 `NodeMap` / `ProductNodeMap`
+
+These are “mapping outputs” from graph construction operations (subgraph mappings, products).
+
+* `NodeMap`: mapping `node_index -> node_index`, **unordered**; docs explicitly warn that iteration order may differ between NodeMap objects with the same contents, and recommend sorting when you need consistent order. ([rustworkx.org][19])
+* `ProductNodeMap`: mapping `(node_index_a, node_index_b) -> node_index` (e.g., cartesian product mapping). ([rustworkx.org][20])
+
+---
+
+### 2.8 `BiconnectedComponents`
+
+**Shape:** mapping `(u, v) -> component_id_int` where `(u, v)` is the edge endpoints. ([rustworkx.org][21])
+This is how rustworkx represents the component assignment compactly.
+
+**Storage:** flatten to rows `(u, v, component_id)` sorted by `(component_id, u, v)` or similar.
+
+---
+
+## 3) Deterministic normalization (the “contract layer” you want in practice)
+
+If you’re snapshotting outputs (CI gating, reproducible pipelines), don’t trust iteration order unless the docs promise it—and even then, **sort** for stability.
+
+### 3.1 Recommended canonicalization rules
+
+* **Sequence types** (`NodeIndices`, `EdgeList`, `WeightedEdgeList`, `Chains`, …):
+
+  * `rows = list(obj)`
+  * if you need determinism: `rows = sorted(rows, key=...)` (choose a stable key)
+  * for nested sequences (`Chains`): flatten with `(chain_id, u, v)` rows ([rustworkx.org][9])
+* **Mapping types** (`PathMapping`, `EdgeIndexMap`, `CentralityMapping`, …):
+
+  * never rely on iteration order → always iterate `for k in sorted(mapping.keys()): ...`
+  * `NodeMap` explicitly warns order can vary; sorting is required for determinism ([rustworkx.org][19])
+* **Nested mappings** (`AllPairsPathMapping`, `AllPairsPathLengthMapping`):
+
+  * `for src in sorted(all_pairs.keys()): inner = all_pairs[src]; for dst in sorted(inner.keys()): ...` ([rustworkx.org][13])
+* **Payload-bearing outputs** (`WeightedEdgeList`, `EdgeIndexMap`, BFSSuccessors payloads):
+
+  * define a policy: `payload_to_str`, `payload_hash`, or “structured payload must be JSON-serializable”
+  * otherwise your “deterministic” story will break the moment payloads are dicts with non-deterministic ordering or contain non-serializable objects.
+
+### 3.2 Minimal “universal normalizer” idiom
+
+```python
+def as_py(obj):
+    # mapping-like
+    if hasattr(obj, "keys") and hasattr(obj, "__getitem__"):
+        return dict(obj)
+    # sequence-like
+    return list(obj)
+```
+
+Then you still apply explicit sorting + flattening based on the expected shape.
+
+---
+
+## 4) Quick “which ones contain indices vs payloads” cheat sheet
+
+* **Indices everywhere (best for joins):**
+
+  * `NodeIndices`, `EdgeIndices`, `EdgeList`, `WeightedEdgeList` (endpoints are indices) ([rustworkx.org][2])
+  * `PathMapping`, `PathLengthMapping`, `AllPairs*`, `CentralityMapping`, `EdgeCentralityMapping`, `Pos2DMapping`, `EdgeIndexMap`, `NodeMap`, `ProductNodeMap`, `BiconnectedComponents` ([rustworkx.org][3])
+* **Payload-focused (be careful for storage):**
+
+  * `BFSSuccessors` / `BFSPredecessors` return **node payloads**, not indices ([rustworkx.org][7])
+
+---
+
+[1]: https://www.rustworkx.org/api/custom_return_types.html "Custom Return Types - rustworkx 0.17.1"
+[2]: https://www.rustworkx.org/apiref/rustworkx.NodeIndices.html "NodeIndices - rustworkx 0.17.1"
+[3]: https://www.rustworkx.org/apiref/rustworkx.PathMapping.html "PathMapping - rustworkx 0.17.1"
+[4]: https://www.rustworkx.org/apiref/rustworkx.EdgeIndices.html "EdgeIndices - rustworkx 0.17.1"
+[5]: https://www.rustworkx.org/apiref/rustworkx.EdgeList.html "EdgeList - rustworkx 0.17.1"
+[6]: https://www.rustworkx.org/apiref/rustworkx.WeightedEdgeList.html "WeightedEdgeList - rustworkx 0.17.1"
+[7]: https://www.rustworkx.org/apiref/rustworkx.BFSSuccessors.html "BFSSuccessors - rustworkx 0.17.1"
+[8]: https://www.rustworkx.org/apiref/rustworkx.BFSPredecessors.html "BFSPredecessors - rustworkx 0.17.1"
+[9]: https://www.rustworkx.org/apiref/rustworkx.Chains.html "Chains - rustworkx 0.17.1"
+[10]: https://www.rustworkx.org/apiref/rustworkx.RelationalCoarsestPartition.html "RelationalCoarsestPartition - rustworkx 0.17.1"
+[11]: https://www.rustworkx.org/apiref/rustworkx.IndexPartitionBlock.html "IndexPartitionBlock - rustworkx 0.17.1"
+[12]: https://www.rustworkx.org/apiref/rustworkx.PathLengthMapping.html "PathLengthMapping - rustworkx 0.17.1"
+[13]: https://www.rustworkx.org/apiref/rustworkx.AllPairsPathMapping.html "AllPairsPathMapping - rustworkx 0.17.1"
+[14]: https://www.rustworkx.org/apiref/rustworkx.AllPairsPathLengthMapping.html "AllPairsPathLengthMapping - rustworkx 0.17.1"
+[15]: https://www.rustworkx.org/apiref/rustworkx.EdgeIndexMap.html "EdgeIndexMap - rustworkx 0.17.1"
+[16]: https://www.rustworkx.org/apiref/rustworkx.Pos2DMapping.html "Pos2DMapping - rustworkx 0.17.1"
+[17]: https://www.rustworkx.org/apiref/rustworkx.CentralityMapping.html "CentralityMapping - rustworkx 0.17.1"
+[18]: https://www.rustworkx.org/apiref/rustworkx.EdgeCentralityMapping.html "EdgeCentralityMapping - rustworkx 0.17.1"
+[19]: https://www.rustworkx.org/apiref/rustworkx.NodeMap.html "NodeMap - rustworkx 0.17.1"
+[20]: https://www.rustworkx.org/apiref/rustworkx.ProductNodeMap.html "ProductNodeMap - rustworkx 0.17.1"
+[21]: https://www.rustworkx.org/apiref/rustworkx.BiconnectedComponents.html "BiconnectedComponents - rustworkx 0.17.1"

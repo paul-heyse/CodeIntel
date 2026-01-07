@@ -23,6 +23,7 @@ from codeintel.core.columnar.rows import (
     table_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -296,8 +297,9 @@ class DocstringsExtractStep(BaseExtractStep):
         self,
         modules: Sequence[ModuleRecord],
         *,
-        repo: str,
-        commit: str,
+        repo: str | None = None,
+        commit: str | None = None,
+        context: IngestionContext | None = None,
     ) -> DocstringsExtractResult:
         """Execute docstring extraction on the provided modules.
 
@@ -309,15 +311,22 @@ class DocstringsExtractStep(BaseExtractStep):
             Repository identifier.
         commit
             Commit identifier.
+        context
+            Optional ingestion context supplying repo/commit defaults.
 
         Returns
         -------
         DocstringsExtractResult
             Result bundle with row tuples and execution status.
         """
-        ctx = DocstringContext(
+        resolved_repo, resolved_commit = resolve_repo_commit(
+            context=context,
             repo=repo,
             commit=commit,
+        )
+        ctx = DocstringContext(
+            repo=resolved_repo,
+            commit=resolved_commit,
             created_at=datetime.now(UTC),
         )
 
@@ -334,8 +343,8 @@ class DocstringsExtractStep(BaseExtractStep):
 
         log.info(
             "Docstring extraction: repo=%s commit=%s rows=%d",
-            repo,
-            commit,
+            resolved_repo,
+            resolved_commit,
             buffer.row_count,
         )
 

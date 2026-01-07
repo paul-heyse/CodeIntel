@@ -33,6 +33,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.ingestion.context import IngestionContext, resolve_repo_root
 from codeintel.ingestion.ports.tools import (
     DiagnosticEntry,
     DiagnosticResult,
@@ -122,9 +123,10 @@ class ToolRunnerAdapter:
     async def _run_diagnostic_tool(
         self,
         tool_name: str,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         paths: Sequence[Path] | None = None,
+        context: IngestionContext | None = None,
     ) -> DiagnosticResult:
         """Run a diagnostic tool and convert to DiagnosticResult.
 
@@ -137,19 +139,22 @@ class ToolRunnerAdapter:
             Repository root directory.
         paths
             Optional paths to scope diagnostics (relative to repo_root or absolute).
+        context
+            Optional ingestion context supplying repo root defaults.
 
         Returns
         -------
         DiagnosticResult
             Diagnostic results with error counts per file.
         """
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
         service_method: Callable[..., Awaitable[dict[str, int]]] = getattr(
             self._service,
             f"run_{tool_name}",
         )
         start = time.perf_counter()
         try:
-            errors_by_path = await service_method(repo_root, paths=paths)
+            errors_by_path = await service_method(resolved_root, paths=paths)
             duration = time.perf_counter() - start
 
             diagnostics = [
@@ -181,9 +186,10 @@ class ToolRunnerAdapter:
 
     async def run_pyright(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         paths: Sequence[Path] | None = None,
+        context: IngestionContext | None = None,
     ) -> DiagnosticResult:
         """Run pyright type checker.
 
@@ -193,19 +199,27 @@ class ToolRunnerAdapter:
             Repository root directory.
         paths
             Optional paths to scope diagnostics (relative to repo_root or absolute).
+        context
+            Optional ingestion context supplying repo root defaults.
 
         Returns
         -------
         DiagnosticResult
             Type checking results with diagnostics.
         """
-        return await self._run_diagnostic_tool("pyright", repo_root, paths=paths)
+        return await self._run_diagnostic_tool(
+            "pyright",
+            repo_root,
+            paths=paths,
+            context=context,
+        )
 
     async def run_pyrefly(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         paths: Sequence[Path] | None = None,
+        context: IngestionContext | None = None,
     ) -> DiagnosticResult:
         """Run pyrefly type checker.
 
@@ -215,19 +229,27 @@ class ToolRunnerAdapter:
             Repository root directory.
         paths
             Optional paths to scope diagnostics (relative to repo_root or absolute).
+        context
+            Optional ingestion context supplying repo root defaults.
 
         Returns
         -------
         DiagnosticResult
             Type checking results with diagnostics.
         """
-        return await self._run_diagnostic_tool("pyrefly", repo_root, paths=paths)
+        return await self._run_diagnostic_tool(
+            "pyrefly",
+            repo_root,
+            paths=paths,
+            context=context,
+        )
 
     async def run_ruff(
         self,
-        repo_root: Path,
+        repo_root: Path | None = None,
         *,
         paths: Sequence[Path] | None = None,
+        context: IngestionContext | None = None,
     ) -> DiagnosticResult:
         """Run ruff linter.
 
@@ -237,13 +259,20 @@ class ToolRunnerAdapter:
             Repository root directory.
         paths
             Optional paths to scope diagnostics (relative to repo_root or absolute).
+        context
+            Optional ingestion context supplying repo root defaults.
 
         Returns
         -------
         DiagnosticResult
             Linting results with diagnostics.
         """
-        return await self._run_diagnostic_tool("ruff", repo_root, paths=paths)
+        return await self._run_diagnostic_tool(
+            "ruff",
+            repo_root,
+            paths=paths,
+            context=context,
+        )
 
     async def run_scip(self, request: ScipRunRequest) -> ScipResult:
         """Run SCIP indexing.

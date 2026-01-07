@@ -282,8 +282,9 @@ class ConfigIngestStep(BaseExtractStep):
         self,
         config_files: Sequence[ModuleRecord],
         *,
-        repo: str,
-        commit: str,
+        repo: str | None = None,
+        commit: str | None = None,
+        context: IngestionContext | None = None,
     ) -> ConfigIngestResult:
         """Execute configuration file ingestion.
 
@@ -295,12 +296,19 @@ class ConfigIngestStep(BaseExtractStep):
             Repository identifier.
         commit
             Commit identifier.
+        context
+            Optional ingestion context supplying repo/commit defaults.
 
         Returns
         -------
         ConfigIngestResult
             Result bundle with row tuples and execution status.
         """
+        resolved_repo, resolved_commit = resolve_repo_commit(
+            context=context,
+            repo=repo,
+            commit=commit,
+        )
         try:
             buffer = columnar_buffer_for_table_key(CONFIG_VALUES_TABLE_KEY)
         except (KeyError, RuntimeError) as exc:
@@ -322,8 +330,8 @@ class ConfigIngestStep(BaseExtractStep):
             for key, _value in kvs:
                 buffer.append(
                     {
-                        "repo": repo,
-                        "commit": commit,
+                        "repo": resolved_repo,
+                        "commit": resolved_commit,
                         "config_path": record.rel_path,
                         "format": config_format,
                         "key": key,
@@ -345,8 +353,8 @@ class ConfigIngestStep(BaseExtractStep):
 
         log.info(
             "Config ingest: repo=%s commit=%s files=%d values=%d",
-            repo,
-            commit,
+            resolved_repo,
+            resolved_commit,
             len(config_files),
             buffer.row_count,
         )

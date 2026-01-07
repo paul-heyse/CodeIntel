@@ -39,6 +39,7 @@ from codeintel.cli.services.storage import StorageService
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.errors.taxonomy import INVALID_FORMAT
+from codeintel.core.storage import StorageContext
 from codeintel.observability.cache_log_ingest import (
     CacheLogIngestConfigError,
     ingest_cache_log_jsonl,
@@ -242,7 +243,7 @@ def profile_storage_handler(
 
     views = ("docs.v_subsystem_profile",)
     if profile_gateway is not None:
-        Warehouse(profile_gateway).profile_views(
+        Warehouse(context=StorageContext(gateway=profile_gateway)).profile_views(
             views=views,
             output_dir=output_dir,
             analyze=include_views,
@@ -251,7 +252,7 @@ def profile_storage_handler(
     else:
         service = StorageService.from_path(db_path)
         with service.gateway_scope(read_only=True) as gateway:
-            Warehouse(gateway).profile_views(
+            Warehouse(context=StorageContext(gateway=gateway)).profile_views(
                 views=views,
                 output_dir=output_dir,
                 analyze=include_views,

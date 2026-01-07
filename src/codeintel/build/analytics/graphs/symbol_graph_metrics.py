@@ -15,7 +15,12 @@ from codeintel.build.analytics.graphs.symbol_orchestrator import (
     UndirectedMetricsConfig,
     build_undirected_symbol_metric_rows,
 )
-from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.build.graphs.builders import (
+    build_symbol_function_graph as _build_symbol_function_graph,
+)
+from codeintel.build.graphs.builders import (
+    build_symbol_module_graph as _build_symbol_module_graph,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -34,25 +39,7 @@ def build_symbol_module_graph(
     nx.Graph
         Undirected graph linking modules by symbol coupling.
     """
-    graph = nx.Graph()
-    for record in symbol_use_edges:
-        def_path = record.get("def_path")
-        use_path = record.get("use_path")
-        if def_path is None or use_path is None:
-            continue
-        def_module = module_by_path.get(str(def_path))
-        use_module = module_by_path.get(str(use_path))
-        if def_module is None or use_module is None:
-            continue
-        if def_module == use_module:
-            continue
-        if graph.has_edge(use_module, def_module):
-            attrs = graph[use_module][def_module]
-            weight = _parse_int_node(attrs.get("weight")) or 0
-            attrs["weight"] = weight + 1
-        else:
-            graph.add_edge(use_module, def_module, weight=1)
-    return graph
+    return _build_symbol_module_graph(symbol_use_edges, module_by_path)
 
 
 def build_symbol_function_graph(
@@ -65,19 +52,7 @@ def build_symbol_function_graph(
     nx.Graph
         Undirected graph linking functions by symbol coupling.
     """
-    graph = nx.Graph()
-    for record in symbol_use_edges:
-        def_goid = normalize_decimal_id(record.get("def_goid_h128"))
-        use_goid = normalize_decimal_id(record.get("use_goid_h128"))
-        if def_goid is None or use_goid is None or def_goid == use_goid:
-            continue
-        if graph.has_edge(use_goid, def_goid):
-            attrs = graph[use_goid][def_goid]
-            weight = _parse_int_node(attrs.get("weight")) or 0
-            attrs["weight"] = weight + 1
-        else:
-            graph.add_edge(use_goid, def_goid, weight=1)
-    return graph
+    return _build_symbol_function_graph(symbol_use_edges)
 
 
 def _parse_int_node(node: object) -> int | None:

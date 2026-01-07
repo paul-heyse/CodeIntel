@@ -18,6 +18,12 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
     table_for_columnar_rows,
 )
+from codeintel.ingestion.context import (
+    IngestionContext,
+    resolve_repo_commit,
+    resolve_repo_root,
+    resolve_scan_profile,
+)
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 
 if TYPE_CHECKING:
@@ -108,11 +114,12 @@ class RepoScanStep:
     def execute(
         self,
         *,
-        repo: str,
-        commit: str,
-        repo_root: Path,
-        profile: ScanProfile,
+        repo: str | None = None,
+        commit: str | None = None,
+        repo_root: Path | None = None,
+        profile: ScanProfile | None = None,
         full_rebuild: bool = False,
+        context: IngestionContext | None = None,
     ) -> RepoScanResult:
         """Execute repository scanning.
 
@@ -128,25 +135,35 @@ class RepoScanStep:
             Scan profile for module discovery.
         full_rebuild
             Whether to force a full rebuild.
+        context
+            Optional ingestion context for repo/commit/root resolution.
 
         Returns
         -------
         RepoScanResult
             Discovered modules, change set, and row tuples.
         """
-        modules = list(self._discovery.discover_modules(repo_root, profile))
+        resolved_repo, resolved_commit = resolve_repo_commit(
+            context=context,
+            repo=repo,
+            commit=commit,
+        )
+        resolved_root = resolve_repo_root(context=context, repo_root=repo_root)
+        resolved_profile = resolve_scan_profile(context=context, scan_profile=profile)
+
+        modules = list(self._discovery.discover_modules(resolved_root, resolved_profile))
         if self._module_filter is not None:
             modules = list(self._module_filter(modules))
         modules = _dedupe_modules(modules)
-        log.info("Discovered %d modules in %s", len(modules), repo_root)
+        log.info("Discovered %d modules in %s", len(modules), resolved_root)
 
         change_request = ChangeRequest(
-            repo=repo,
-            commit=commit,
-            repo_root=repo_root,
+            repo=resolved_repo,
+            commit=resolved_commit,
+            repo_root=resolved_root,
             language="python",
             full_rebuild=full_rebuild,
-            scan_profile=profile,
+            scan_profile=resolved_profile,
         )
         change_set = self._change_detection.compute_changes(change_request, modules)
 
@@ -155,8 +172,8 @@ class RepoScanStep:
             payload = {
                 "module": module.module_name,
                 "path": module.rel_path,
-                "repo": repo,
-                "commit": commit,
+                "repo": resolved_repo,
+                "commit": resolved_commit,
                 "language": "python",
                 "tags": [],
                 "owners": [],
@@ -165,8 +182,8 @@ class RepoScanStep:
             module_buffer.append(payload)
 
         repo_map_rows = self._build_repo_map_rows(
-            repo=repo,
-            commit=commit,
+            repo=resolved_repo,
+            commit=resolved_commit,
             modules=modules,
         )
         module_rows_reader, _ = table_for_columnar_rows(
@@ -187,8 +204,8 @@ class RepoScanStep:
 
         log.info(
             "Repo scan: repo=%s commit=%s modules=%d added=%d modified=%d deleted=%d",
-            repo,
-            commit,
+            resolved_repo,
+            resolved_commit,
             len(modules),
             len(change_set.added),
             len(change_set.modified),

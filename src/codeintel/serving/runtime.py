@@ -2,23 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+from codeintel.serving.context import ServingContext
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
-
-
-@dataclass(frozen=True, slots=True)
-class ServingRuntime:
-    """Constructed serving runtime dependencies shared across transports."""
-
-    settings: ServingSettings
-    db_manager: ServingDBManager
-    kernel: SemanticQueryKernel
-    ops: ServingOperations
 
 
 def build_db_manager(settings: ServingSettings) -> ServingDBManager:
@@ -60,7 +49,7 @@ def build_kernel(db_manager: ServingDBManager, settings: ServingSettings) -> Sem
     return SemanticQueryKernel(db=db_manager, settings=settings)
 
 
-def build_runtime(settings: ServingSettings) -> ServingRuntime:
+def build_runtime(settings: ServingSettings) -> ServingContext:
     """Build the shared runtime for serving transports.
 
     Parameters
@@ -70,13 +59,13 @@ def build_runtime(settings: ServingSettings) -> ServingRuntime:
 
     Returns
     -------
-    ServingRuntime
+    ServingContext
         Constructed runtime dependencies.
     """
     db_manager = build_db_manager(settings)
     kernel = build_kernel(db_manager, settings)
     ops = ServingOperations(kernel=kernel, settings=settings)
-    return ServingRuntime(settings=settings, db_manager=db_manager, kernel=kernel, ops=ops)
+    return ServingContext(settings=settings, db_manager=db_manager, kernel=kernel, ops=ops)
 
 
-__all__ = ["ServingRuntime", "build_db_manager", "build_kernel", "build_runtime"]
+__all__ = ["build_db_manager", "build_kernel", "build_runtime"]

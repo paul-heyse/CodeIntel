@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
     from codeintel.cli.config.model import CliConfig
     from codeintel.cli.resolution.types import ResolvedRuntime
-    from codeintel.observability.cli import RunContext
+    from codeintel.observability.cli import CliInvocationContext
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
@@ -103,7 +103,7 @@ class CommandContext:
     operation_id: str
     output_format: OutputFormat = OutputFormat.TEXT
     verbosity: int = 0
-    run_context: RunContext | None = None
+    run_context: CliInvocationContext | None = None
 
     _runtime: RuntimeService | None = field(default=None, repr=False)
     _storage: StorageService | None = field(default=None, repr=False)
@@ -233,7 +233,7 @@ class CommandContextBuilder:
         self._operation_id: str | None = None
         self._logger: logging.Logger | None = None
         self._injected_gateway: StorageGateway | None = None
-        self._run_context: RunContext | None = None
+        self._run_context: CliInvocationContext | None = None
 
     def with_runtime(self, *, project_root: Path | None = None) -> Self:
         """Enable runtime resolution.
@@ -354,13 +354,13 @@ class CommandContextBuilder:
         self._logger = logger
         return self
 
-    def with_run_context(self, run_context: RunContext | None) -> Self:
+    def with_run_context(self, run_context: CliInvocationContext | None) -> Self:
         """Set CLI invocation run context.
 
         Parameters
         ----------
         run_context
-            Optional RunContext for telemetry correlation.
+            Optional CLI invocation context for telemetry correlation.
 
         Returns
         -------

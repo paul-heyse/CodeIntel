@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 import logging
 from collections import deque
-from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
@@ -16,6 +15,7 @@ import pyarrow as pa
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.graphs.builders import EdgeWeightPolicy, build_call_graph_from_rows
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from codeintel.storage.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
+_EDGE_WEIGHT_POLICY = EdgeWeightPolicy()
 
 
 def _default_io_apis() -> dict[str, list[str]]:
@@ -417,21 +418,6 @@ def _unresolved_call_counts_from_frame(
     return counts
 
 
-def _edge_weight_value(value: object) -> int:
-    if value is None:
-        return 0
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(float(value))
-        except ValueError:
-            return 0
-    return 0
-
-
 def _filter_edges_rows(
     edges_frame: pa.Table | None,
     *,
@@ -447,35 +433,6 @@ def _filter_edges_rows(
     return list(iter_rows(filtered))
 
 
-def _add_call_edges(graph: nx.DiGraph, rows: Iterable[Mapping[str, object]]) -> None:
-    for row in rows:
-        caller = normalize_decimal_id(row.get("caller_goid_h128"))
-        callee = normalize_decimal_id(row.get("callee_goid_h128"))
-        if caller is None or callee is None:
-            continue
-        if graph.has_edge(caller, callee):
-            attrs = graph[caller][callee]
-            attrs["weight"] = _edge_weight_value(attrs.get("weight")) + 1
-        else:
-            graph.add_edge(caller, callee, weight=1)
-
-
-def _add_call_nodes(graph: nx.DiGraph, nodes_frame: pa.Table | None) -> None:
-    if nodes_frame is None or nodes_frame.num_rows == 0:
-        return
-    for row in iter_rows(nodes_frame):
-        goid = normalize_decimal_id(row.get("goid_h128"))
-        if goid is None:
-            continue
-        if goid in graph:
-            continue
-        attrs: dict[str, object] = {}
-        kind = row.get("kind")
-        if kind is not None:
-            attrs["kind"] = str(kind)
-        graph.add_node(goid, **attrs)
-
-
 def _call_graph_from_frames(
     edges_frame: pa.Table | None,
     nodes_frame: pa.Table | None,
@@ -483,13 +440,11 @@ def _call_graph_from_frames(
     repo: str,
     commit: str,
 ) -> nx.DiGraph:
-    graph = nx.DiGraph()
     rows = _filter_edges_rows(edges_frame, repo=repo, commit=commit)
     if not rows:
-        return graph
-    _add_call_edges(graph, rows)
-    _add_call_nodes(graph, nodes_frame)
-    return graph
+        return nx.DiGraph()
+    node_rows = iter_rows(nodes_frame) if nodes_frame is not None else None
+    return build_call_graph_from_rows(rows, node_rows, policy=_EDGE_WEIGHT_POLICY)
 
 
 def _purity_confidence(*, parsed: bool, unresolved_call_count: int) -> float:

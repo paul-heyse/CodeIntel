@@ -123,7 +123,7 @@ if TYPE_CHECKING:
     from codeintel.cli.services.params import ParamService
     from codeintel.core.build_manifest import BuildRunRecord
     from codeintel.core.hamilton.records import ArtifactRefProtocol
-    from codeintel.observability.cli import RunContext
+    from codeintel.observability.cli import CliInvocationContext
     from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
     from codeintel.storage.gateway import StorageGateway
 
@@ -149,7 +149,7 @@ class _BuildTeardownInputs:
     goals: list[str]
     result: CliResult[BuildRunResult] | None
     run_id: str | None
-    run_context: RunContext | None
+    run_context: CliInvocationContext | None
     duration_ms: float
     decision_trace_artifact: ArtifactSummary | None
     decision_trace_path: str | None
@@ -1837,7 +1837,7 @@ def _resolve_cli_error_type(result: CliResult[BuildRunResult] | None) -> str | N
     return result.error.type
 
 
-def _format_cli_command(run_context: RunContext | None) -> str | None:
+def _format_cli_command(run_context: CliInvocationContext | None) -> str | None:
     """Format CLI command chain for telemetry.
 
     Parameters

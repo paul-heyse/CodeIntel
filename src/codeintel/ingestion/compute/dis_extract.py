@@ -1565,8 +1565,9 @@ class DisExtractStep(BaseExtractStep):
         self,
         modules: Sequence[ModuleRecord],
         *,
-        repo: str,
-        commit: str,
+        repo: str | None = None,
+        commit: str | None = None,
+        context: IngestionContext | None = None,
     ) -> DisExtractResult:
         """Execute bytecode extraction for the provided modules.
 
@@ -1575,6 +1576,11 @@ class DisExtractStep(BaseExtractStep):
         DisExtractResult
             Result bundle with row payloads and execution status.
         """
+        resolved_repo, resolved_commit = resolve_repo_commit(
+            context=context,
+            repo=repo,
+            commit=commit,
+        )
         if not self._options.enable:
             return DisExtractResult(
                 result=ExecutionResult.skip("Bytecode extraction disabled by options")
@@ -1602,8 +1608,8 @@ class DisExtractStep(BaseExtractStep):
                             module=module,
                             source_text=source_text,
                             source_index=source_index,
-                            repo=repo,
-                            commit=commit,
+                            repo=resolved_repo,
+                            commit=resolved_commit,
                             options=options,
                             frontend=self._frontend,
                         ),
@@ -1622,8 +1628,8 @@ class DisExtractStep(BaseExtractStep):
                         module=module,
                         source_text=source_text,
                         source_index=source_index,
-                        repo=repo,
-                        commit=commit,
+                        repo=resolved_repo,
+                        commit=resolved_commit,
                         options=options,
                         frontend=self._frontend,
                     )
@@ -1633,8 +1639,8 @@ class DisExtractStep(BaseExtractStep):
 
         LOG.info(
             "Bytecode extraction: repo=%s commit=%s code_units=%d instr=%d",
-            repo,
-            commit,
+            resolved_repo,
+            resolved_commit,
             collectors.code_units.row_count,
             collectors.instructions.row_count,
         )

@@ -20,6 +20,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
     table_for_columnar_rows,
 )
+from codeintel.ingestion.context import IngestionContext
 from codeintel.ingestion.ports.tools import DiagnosticResult, ToolStatus
 
 DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
@@ -77,6 +78,29 @@ class TypingIngestContext:
     repo_root: str
     scope_paths: Sequence[Path] | None = None
     run_diagnostics: bool = True
+
+    @classmethod
+    def from_ingestion_context(
+        cls,
+        context: IngestionContext,
+        *,
+        scope_paths: Sequence[Path] | None = None,
+        run_diagnostics: bool = True,
+    ) -> TypingIngestContext:
+        """Build a typing context from the shared ingestion context.
+
+        Returns
+        -------
+        TypingIngestContext
+            Typed ingest context derived from the shared ingestion context.
+        """
+        return cls(
+            repo=context.repo,
+            commit=context.commit,
+            repo_root=str(context.repo_root),
+            scope_paths=scope_paths,
+            run_diagnostics=run_diagnostics,
+        )
 
 
 async def _collect_diagnostic_counts(
@@ -157,7 +181,9 @@ class TypingIngestStep:
         self,
         modules: Sequence[ModuleRecord],
         *,
-        context: TypingIngestContext,
+        context: TypingIngestContext | IngestionContext,
+        scope_paths: Sequence[Path] | None = None,
+        run_diagnostics: bool | None = None,
     ) -> TypingIngestResult:
         """Execute typing analysis on the provided modules.
 
@@ -167,31 +193,44 @@ class TypingIngestStep:
             Modules to process.
         context
             Typing ingestion context for repository metadata and scope.
+        scope_paths
+            Optional paths to scope diagnostics (relative to repo_root or absolute).
+        run_diagnostics
+            Whether to run external diagnostic tools.
 
         Returns
         -------
         TypingIngestResult
             Result bundle with row tuples and execution status.
         """
+        if isinstance(context, IngestionContext):
+            resolved_context = TypingIngestContext.from_ingestion_context(
+                context,
+                scope_paths=scope_paths,
+                run_diagnostics=run_diagnostics if run_diagnostics is not None else True,
+            )
+        else:
+            resolved_context = context
+
         diag_counts = DiagnosticCounts(pyright={}, pyrefly={}, ruff={})
-        if context.run_diagnostics and self._tools is not None:
+        if resolved_context.run_diagnostics and self._tools is not None:
             diag_counts = await _collect_diagnostic_counts(
-                Path(context.repo_root),
+                Path(resolved_context.repo_root),
                 self._tools,
-                scope_paths=context.scope_paths,
+                scope_paths=resolved_context.scope_paths,
             )
 
         diagnostic_buffer = self._process_modules(
             modules,
-            context.repo,
-            context.commit,
+            resolved_context.repo,
+            resolved_context.commit,
             diag_counts,
         )
 
         log.info(
             "Typing ingest: repo=%s commit=%s diagnostics=%d",
-            context.repo,
-            context.commit,
+            resolved_context.repo,
+            resolved_context.commit,
             diagnostic_buffer.row_count,
         )
 
@@ -262,7 +301,7 @@ class TypingIngestStep:
         self,
         modules: Sequence[ModuleRecord],
         *,
-        context: TypingIngestContext,
+        context: TypingIngestContext | IngestionContext,
     ) -> TypingIngestResult:
         """Execute typing analysis synchronously (without diagnostics).
 
@@ -281,12 +320,13 @@ class TypingIngestStep:
         return asyncio.run(
             self.execute_async(
                 modules,
-                context=TypingIngestContext(
-                    repo=context.repo,
-                    commit=context.commit,
-                    repo_root=context.repo_root,
-                    scope_paths=context.scope_paths,
-                    run_diagnostics=False,
+                context=(
+                    context
+                    if isinstance(context, TypingIngestContext)
+                    else TypingIngestContext.from_ingestion_context(
+                        context,
+                        run_diagnostics=False,
+                    )
                 ),
             )
         )

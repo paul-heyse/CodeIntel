@@ -21,6 +21,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstSpan,
     ast_node_id,
@@ -1044,8 +1045,9 @@ class SymtableExtractStep(BaseExtractStep):
         self,
         modules: Sequence[ModuleRecord],
         *,
-        repo: str,
-        commit: str,
+        repo: str | None = None,
+        commit: str | None = None,
+        context: IngestionContext | None = None,
     ) -> SymtableExtractResult:
         """Execute symtable extraction for the provided modules.
 
@@ -1054,6 +1056,11 @@ class SymtableExtractStep(BaseExtractStep):
         SymtableExtractResult
             Result bundle with row payloads and execution status.
         """
+        resolved_repo, resolved_commit = resolve_repo_commit(
+            context=context,
+            repo=repo,
+            commit=commit,
+        )
         options = self._options
         if not options.enable:
             return SymtableExtractResult(
@@ -1067,8 +1074,8 @@ class SymtableExtractStep(BaseExtractStep):
         warnings: list[str] = []
         for module, source_text, source_index, tree in self._iter_python_source_bundles(modules):
             context = _ModuleContext(
-                repo=repo,
-                commit=commit,
+                repo=resolved_repo,
+                commit=resolved_commit,
                 module=module,
                 source_text=source_text,
                 source_index=source_index,

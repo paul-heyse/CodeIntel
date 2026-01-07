@@ -8,7 +8,8 @@ Example
 -------
 >>> from codeintel.storage.repositories import RepositoryFactory
 >>>
->>> factory = RepositoryFactory(gateway, repo="org/repo", commit="abc123")
+>>> from codeintel.core.storage import StorageContext
+>>> factory = RepositoryFactory(StorageContext(gateway=gateway, snapshot=snapshot))
 >>> functions = factory.functions
 >>> modules = factory.modules
 """
@@ -18,6 +19,7 @@ from __future__ import annotations
 from functools import cached_property
 from typing import TYPE_CHECKING
 
+from codeintel.core.storage import StorageContext
 from codeintel.storage.repositories.data_models import DataModelsRepository
 from codeintel.storage.repositories.dataflow import DataflowRepository
 from codeintel.storage.repositories.functions import FunctionRepository
@@ -27,6 +29,7 @@ from codeintel.storage.repositories.subsystems import SubsystemRepository
 from codeintel.storage.repositories.tests import TestRepository
 
 if TYPE_CHECKING:
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway.protocol import StorageGateway
 
 __all__ = ["RepositoryFactory"]
@@ -40,49 +43,49 @@ class RepositoryFactory:
 
     Parameters
     ----------
-    gateway
-        Storage gateway providing database access.
-    repo
-        Repository identifier (e.g., "org/repo").
-    commit
-        Commit hash for the snapshot.
+    context
+        Storage context providing gateway access and snapshot identity.
 
     Examples
     --------
-    >>> factory = RepositoryFactory(gateway, repo="org/repo", commit="abc123")
+    >>> factory = RepositoryFactory(StorageContext(gateway=gateway, snapshot=snapshot))
     >>> architecture = factory.functions.get_function_architecture(goid)
     """
 
-    def __init__(self, gateway: StorageGateway, repo: str, commit: str) -> None:
+    def __init__(self, context: StorageContext) -> None:
         """Initialize the repository factory.
 
         Parameters
         ----------
-        gateway
-            Storage gateway providing database access.
-        repo
-            Repository identifier.
-        commit
-            Commit hash.
+        context
+            Storage context providing gateway access and snapshot identity.
         """
-        self._gateway = gateway
-        self._repo = repo
-        self._commit = commit
+        self._context = context
+
+    @property
+    def context(self) -> StorageContext:
+        """Return the underlying storage context."""
+        return self._context
 
     @property
     def gateway(self) -> StorageGateway:
         """Return the underlying storage gateway."""
-        return self._gateway
+        return self._context.gateway
+
+    @property
+    def snapshot(self) -> SnapshotRef:
+        """Return the snapshot reference."""
+        return self._context.require_snapshot()
 
     @property
     def repo(self) -> str:
         """Return the repository identifier."""
-        return self._repo
+        return self._context.repo
 
     @property
     def commit(self) -> str:
         """Return the commit hash."""
-        return self._commit
+        return self._context.commit
 
     @cached_property
     def functions(self) -> FunctionRepository:
@@ -93,7 +96,7 @@ class RepositoryFactory:
         FunctionRepository
             Repository for function-centric queries.
         """
-        return FunctionRepository(self._gateway, self._repo, self._commit)
+        return FunctionRepository(self._context)
 
     @cached_property
     def modules(self) -> ModuleRepository:
@@ -104,7 +107,7 @@ class RepositoryFactory:
         ModuleRepository
             Repository for module and file queries.
         """
-        return ModuleRepository(self._gateway, self._repo, self._commit)
+        return ModuleRepository(self._context)
 
     @cached_property
     def graphs(self) -> GraphRepository:
@@ -115,7 +118,7 @@ class RepositoryFactory:
         GraphRepository
             Repository for graph-related queries.
         """
-        return GraphRepository(self._gateway, self._repo, self._commit)
+        return GraphRepository(self._context)
 
     @cached_property
     def tests(self) -> TestRepository:
@@ -126,7 +129,7 @@ class RepositoryFactory:
         TestRepository
             Repository for test-related queries.
         """
-        return TestRepository(self._gateway, self._repo, self._commit)
+        return TestRepository(self._context)
 
     @cached_property
     def subsystems(self) -> SubsystemRepository:
@@ -137,7 +140,7 @@ class RepositoryFactory:
         SubsystemRepository
             Repository for subsystem queries.
         """
-        return SubsystemRepository(self._gateway, self._repo, self._commit)
+        return SubsystemRepository(self._context)
 
     @cached_property
     def dataflow(self) -> DataflowRepository:
@@ -148,7 +151,7 @@ class RepositoryFactory:
         DataflowRepository
             Repository for dataflow queries.
         """
-        return DataflowRepository(self._gateway, self._repo, self._commit)
+        return DataflowRepository(self._context)
 
     @cached_property
     def data_models(self) -> DataModelsRepository:
@@ -159,4 +162,4 @@ class RepositoryFactory:
         DataModelsRepository
             Repository for data model tables and normalized views.
         """
-        return DataModelsRepository(self._gateway, self._repo, self._commit)
+        return DataModelsRepository(self._context)

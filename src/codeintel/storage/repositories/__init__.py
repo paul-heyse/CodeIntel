@@ -8,7 +8,8 @@ Example
 -------
 >>> from codeintel.storage.repositories import RepositoryFactory
 >>>
->>> factory = RepositoryFactory(gateway, repo="org/repo", commit="abc123")
+>>> from codeintel.core.storage import StorageContext
+>>> factory = RepositoryFactory(StorageContext(gateway=gateway, snapshot=snapshot))
 >>> architecture = factory.functions.get_function_architecture(goid)
 """
 

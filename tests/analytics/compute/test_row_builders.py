@@ -14,6 +14,7 @@ from codeintel.build.analytics.compute import row_builders as row_builders_modul
 from codeintel.build.analytics.compute.graphs.types import ComponentBundle, NeighborStats
 from codeintel.build.analytics.compute.row_builders import (
     FunctionGraphMetricInputs,
+    RowBuildContext,
     SubsystemMetricInputs,
     SymbolModuleMetricInputs,
     build_function_graph_metric_rows,
@@ -137,14 +138,17 @@ class TestBuildFunctionGraphMetricRows:
             in_cycle={},
             layer={},
         )
+        row_context = RowBuildContext.from_repo_commit(
+            "test/repo",
+            "abc123",
+            created_at=datetime.now(UTC),
+        )
         inputs = FunctionGraphMetricInputs(
-            repo="test/repo",
-            commit="abc123",
+            row_context=row_context,
             stats=stats,
             centrality={"pagerank": {}, "betweenness": {}, "closeness": {}},
             components=components,
             graph_nodes=[],
-            created_at=datetime.now(UTC),
         )
 
         result = build_function_graph_metric_rows(inputs)
@@ -171,9 +175,13 @@ class TestBuildFunctionGraphMetricRows:
 
         created_at = datetime.now(UTC)
 
+        row_context = RowBuildContext.from_repo_commit(
+            "test/repo",
+            "abc123",
+            created_at=created_at,
+        )
         inputs = FunctionGraphMetricInputs(
-            repo="test/repo",
-            commit="abc123",
+            row_context=row_context,
             stats=stats,
             centrality={
                 "pagerank": {1: 0.5, 2: 0.3},
@@ -182,7 +190,6 @@ class TestBuildFunctionGraphMetricRows:
             },
             components=components,
             graph_nodes=[1, 2],
-            created_at=created_at,
         )
 
         result = build_function_graph_metric_rows(inputs)
@@ -261,9 +268,13 @@ class TestBuildSymbolRows:
         """Verify symbol module rows are built correctly."""
         created_at = datetime.now(UTC)
 
+        row_context = RowBuildContext.from_repo_commit(
+            "test/repo",
+            "abc123",
+            created_at=created_at,
+        )
         inputs = SymbolModuleMetricInputs(
-            repo="test/repo",
-            commit="abc123",
+            row_context=row_context,
             centrality={
                 "betweenness": {"mod_a": 0.1, "mod_b": 0.2},
                 "closeness": {"mod_a": 0.5, "mod_b": 0.6},
@@ -278,7 +289,6 @@ class TestBuildSymbolRows:
             },
             comp_id={"mod_a": 0, "mod_b": 0},
             comp_size={"mod_a": 2, "mod_b": 2},
-            created_at=created_at,
         )
 
         result = build_symbol_module_rows(inputs)

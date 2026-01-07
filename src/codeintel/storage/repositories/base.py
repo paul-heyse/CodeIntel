@@ -31,6 +31,7 @@ import pyarrow as pa
 
 from codeintel.core.repository import PagedResult
 from codeintel.core.schemas.resolution import resolve_table_schema
+from codeintel.core.storage import StorageContext
 from codeintel.core.validation.profiles import ValidationProfile
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import (
@@ -42,6 +43,7 @@ from codeintel.storage.query_results import (
     iter_records_from_arrow_reader,
     records_from_arrow_reader,
 )
+from codeintel.storage.snapshot_scoping import maybe_scope_by_snapshot
 from codeintel.storage.validation.columnar import (
     ColumnarValidationContext,
     validate_record_batch_reader,
@@ -50,7 +52,9 @@ from codeintel.storage.validation.columnar import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.storage.gateway import DuckDBConnection, DuckDBRelation, StorageGateway
+    from codeintel.config.primitives import SnapshotRef
+    from codeintel.storage.gateway import DuckDBConnection, DuckDBRelation
+    from codeintel.storage.gateway.protocol import StorageGateway
 
 RowDict = dict[str, object]
 
@@ -74,17 +78,35 @@ class BaseRepository:
 
     Parameters
     ----------
-    gateway
-        Storage gateway providing the DuckDB connection.
-    repo
-        Repository identifier (e.g., "org/repo").
-    commit
-        Commit hash for the snapshot.
+    context
+        Storage context providing gateway access and snapshot identity.
     """
 
-    gateway: StorageGateway
-    repo: str
-    commit: str
+    context: StorageContext
+
+    def __post_init__(self) -> None:
+        """Validate that the context includes a required snapshot."""
+        self.context.require_snapshot()
+
+    @property
+    def gateway(self) -> StorageGateway:
+        """Return the underlying storage gateway."""
+        return self.context.gateway
+
+    @property
+    def snapshot(self) -> SnapshotRef:
+        """Return the required snapshot reference."""
+        return self.context.require_snapshot()
+
+    @property
+    def repo(self) -> str:
+        """Return repository identifier from snapshot."""
+        return self.snapshot.repo
+
+    @property
+    def commit(self) -> str:
+        """Return commit identifier from snapshot."""
+        return self.snapshot.commit
 
     @property
     def con(self) -> DuckDBConnection:
@@ -106,13 +128,7 @@ class BaseRepository:
             Relation scoped to the repository snapshot when applicable.
         """
         relation = self.gateway.relation_from_table_key(table_key)
-        columns = set(relation.columns)
-        if "repo" in columns and "commit" in columns:
-            predicate = (ColumnExpression("repo") == ConstantExpression(self.repo)) & (
-                ColumnExpression("commit") == ConstantExpression(self.commit)
-            )
-            relation = relation.filter(predicate)
-        return relation
+        return maybe_scope_by_snapshot(relation, snapshot=self.snapshot)
 
     def _relation_to_dicts(
         self,
@@ -215,6 +231,7 @@ class BaseRepository:
         resolution = resolve_table_schema(
             table_key,
             observation_provider=self.gateway.schemas,
+            schema_provider=self.context.schema_provider,
         )
         context = ColumnarValidationContext(
             table_schema=resolution.table_schema,

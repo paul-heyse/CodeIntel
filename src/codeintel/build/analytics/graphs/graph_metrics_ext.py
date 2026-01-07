@@ -17,11 +17,11 @@ from codeintel.build.analytics.compute.row_builders import (
     RowBuildContext,
     build_function_metric_ext_rows,
 )
-from codeintel.build.analytics.graphs.context_helpers import GraphContextFactory
 from codeintel.build.analytics.graphs.constants import (
     CENTRALITY_SAMPLE_LIMIT,
     EIGEN_MAX_ITER,
 )
+from codeintel.build.analytics.graphs.context_helpers import GraphContextFactory
 from codeintel.build.analytics.graphs.orchestrator import (
     ExtendedMetricsConfig,
     ExtendedMetricsRequest,
@@ -40,7 +40,6 @@ if TYPE_CHECKING:
         GraphViews,
     )
     from codeintel.build.graphs.runtime import GraphRuntimeOptions
-    from codeintel.build.graphs.runtime.context import GraphContext
 
 
 @dataclass(frozen=True)
@@ -79,33 +78,12 @@ def _bridge_endpoint_counts(graph: nx.Graph) -> dict[int, int]:
 def _resolve_function_context(runtime: GraphRuntimeOptions, repo: str, commit: str) -> GraphContext:
     """Build graph context with function-specific constants.
 
-    Parameters
-    ----------
-    runtime
-        Runtime options including GPU and community detection settings.
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-
     Returns
     -------
     GraphContext
-        Resolved graph context for function metrics computation.
+        Graph context configured for function-level metrics.
     """
-    return resolve_graph_context(
-        GraphContextSpec(
-            repo=repo,
-            commit=commit,
-            use_gpu=runtime.use_gpu,
-            now=datetime.now(UTC),
-            betweenness_cap=CENTRALITY_SAMPLE_LIMIT,
-            eigen_cap=EIGEN_MAX_ITER,
-            pagerank_weight="weight",
-            betweenness_weight="weight",
-            community_detection_limit=runtime.features.community_detection_limit,
-        )
-    )
+    return _FUNCTION_CONTEXT_FACTORY.build(runtime, repo=repo, commit=commit)
 
 
 def _function_metric_slices(views: GraphViews, ctx: GraphContext) -> FunctionGraphSlices:
@@ -199,9 +177,13 @@ def _function_metric_rows(
         "scc_id": slices.components.scc_id,
         "scc_size": slices.components.scc_size,
     }
+    row_context = RowBuildContext.from_repo_commit(
+        repo,
+        commit,
+        created_at=ctx.resolved_now(),
+    )
     inputs = FunctionMetricExtInputs(
-        repo=repo,
-        commit=commit,
+        row_context=row_context,
         ctx=ctx,
         centralities=centralities,
         structure=structure,
@@ -213,6 +195,14 @@ def _function_metric_rows(
     )
     return build_function_metric_ext_rows(inputs)
 
+
+# Context factory for function-level extended metrics
+_FUNCTION_CONTEXT_FACTORY = GraphContextFactory(
+    betweenness_cap=CENTRALITY_SAMPLE_LIMIT,
+    eigen_cap=EIGEN_MAX_ITER,
+    pagerank_weight="weight",
+    betweenness_weight="weight",
+)
 
 # Configuration for function-level extended metrics
 _FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[FunctionGraphSlices, dict[str, object]] = (

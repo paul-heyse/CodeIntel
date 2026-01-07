@@ -23,6 +23,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstCollectContext,
     AstNodeRecord,
@@ -537,8 +538,9 @@ class AstExtractStep(BaseExtractStep):
         self,
         modules: Sequence[ModuleRecord],
         *,
-        repo: str,
-        commit: str,
+        repo: str | None = None,
+        commit: str | None = None,
+        context: IngestionContext | None = None,
     ) -> AstExtractResult:
         """Execute AST extraction on the provided modules.
 
@@ -550,12 +552,19 @@ class AstExtractStep(BaseExtractStep):
             Repository identifier.
         commit
             Commit identifier.
+        context
+            Optional ingestion context supplying repo/commit defaults.
 
         Returns
         -------
         AstExtractResult
             Result bundle with row tuples and execution status.
         """
+        resolved_repo, resolved_commit = resolve_repo_commit(
+            context=context,
+            repo=repo,
+            commit=commit,
+        )
         options = self._options
         try:
             collectors = _build_ast_collectors(options)
@@ -576,8 +585,8 @@ class AstExtractStep(BaseExtractStep):
 
         log.info(
             "AST extraction: repo=%s commit=%s ast_rows=%d metrics=%d",
-            repo,
-            commit,
+            resolved_repo,
+            resolved_commit,
             collectors.ast_nodes.row_count,
             collectors.metrics.row_count,
         )

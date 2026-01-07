@@ -36,7 +36,17 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_function_rows,
     build_symbol_graph_metrics_module_rows,
 )
-from codeintel.build.graphs.runtime import GraphRuntimeOptions
+from codeintel.build.graphs.builders import (
+    EdgeWeightPolicy,
+    add_call_graph_edges,
+    add_call_graph_nodes,
+    add_import_edges,
+    add_import_module_rows,
+    build_symbol_function_graph,
+    build_symbol_module_edges,
+    build_symbol_module_graph,
+)
+from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -180,17 +190,12 @@ class GraphMetricSupportFrames:
 
 
 _FUNCTION_KINDS: frozenset[str] = frozenset({"function", "method"})
+_EDGE_WEIGHT_POLICY = EdgeWeightPolicy()
 
 
 @cache(behavior="ignore")
 def _graph_runtime_options(env: BuildEnv) -> GraphRuntimeOptions:
-    if env.execution_context is None:
-        return GraphRuntimeOptions(snapshot=env.snapshot)
-    return GraphRuntimeOptions(
-        snapshot=env.snapshot,
-        backend=env.execution_context.graph_backend,
-        features=env.execution_context.graph_features,
-    )
+    return graph_runtime_options_from_env(env)
 
 
 def _allowed_modules_from_rows(
@@ -285,43 +290,9 @@ def _call_graph_from_rows(
     nodes: list[dict[str, object]],
 ) -> nx.DiGraph:
     graph = nx.DiGraph()
-    _add_call_graph_edges(graph, edges)
-    _add_call_graph_nodes(graph, nodes)
+    add_call_graph_edges(graph, edges, policy=_EDGE_WEIGHT_POLICY)
+    add_call_graph_nodes(graph, nodes)
     return graph
-
-
-def _increment_edge_weight(attrs: Mapping[str, object], *, ctx: str) -> int:
-    weight = coerce_optional_int(attrs.get("weight"), ctx=ctx)
-    return (weight if weight is not None else 0) + 1
-
-
-def _add_call_graph_edges(graph: nx.DiGraph, edges: list[dict[str, object]]) -> None:
-    if not edges:
-        return
-    for row in edges:
-        caller = normalize_decimal_id(row.get("caller_goid_h128"))
-        callee = normalize_decimal_id(row.get("callee_goid_h128"))
-        if caller is None or callee is None:
-            continue
-        if graph.has_edge(caller, callee):
-            attrs = graph[caller][callee]
-            attrs["weight"] = _increment_edge_weight(attrs, ctx="call_graph_edge_weight")
-        else:
-            graph.add_edge(caller, callee, weight=1)
-
-
-def _add_call_graph_nodes(graph: nx.DiGraph, nodes: list[dict[str, object]]) -> None:
-    if not nodes:
-        return
-    for row in nodes:
-        node_id = normalize_decimal_id(row.get("goid_h128"))
-        if node_id is None or node_id in graph:
-            continue
-        attrs: dict[str, object] = {}
-        kind = row.get("kind")
-        if kind is not None:
-            attrs["kind"] = str(kind)
-        graph.add_node(node_id, **attrs)
 
 
 def _import_graph_from_rows(
@@ -329,35 +300,18 @@ def _import_graph_from_rows(
     modules: list[dict[str, object]],
 ) -> tuple[nx.DiGraph, ComponentMeta | None]:
     graph = nx.DiGraph()
-    fallback_layer_by_module: dict[str, int] = {}
-    _add_import_edges(graph, edges, fallback_layer_by_module)
+    fallback_layer_by_module = add_import_edges(
+        graph,
+        edges,
+        policy=_EDGE_WEIGHT_POLICY,
+    )
     component_meta = _component_meta_from_import_rows(modules)
-    _apply_import_module_frame(graph, modules, fallback_layer_by_module)
+    add_import_module_rows(
+        graph,
+        modules,
+        fallback_layer_by_module=fallback_layer_by_module,
+    )
     return graph, component_meta
-
-
-def _add_import_edges(
-    graph: nx.DiGraph,
-    edges: list[dict[str, object]],
-    fallback_layer_by_module: dict[str, int],
-) -> None:
-    if not edges:
-        return
-    for row in edges:
-        source_raw = row.get("src_module")
-        target_raw = row.get("dst_module")
-        if source_raw is None or target_raw is None:
-            continue
-        source = str(source_raw)
-        target = str(target_raw)
-        layer = coerce_optional_int(row.get("module_layer"), ctx="module_layer")
-        if layer is not None:
-            fallback_layer_by_module[source] = layer
-        if graph.has_edge(source, target):
-            attrs = graph[source][target]
-            attrs["weight"] = _increment_edge_weight(attrs, ctx="import_graph_edge_weight")
-        else:
-            graph.add_edge(source, target, weight=1)
 
 
 def _component_meta_from_import_rows(
@@ -390,101 +344,6 @@ def _component_meta_from_import_rows(
     }
 
 
-def _apply_import_module_frame(
-    graph: nx.DiGraph,
-    rows: list[dict[str, object]],
-    fallback_layer_by_module: Mapping[str, int],
-) -> None:
-    if not rows:
-        return
-    for row in rows:
-        module = row.get("module")
-        if module is None:
-            continue
-        module_name = str(module)
-        attrs: dict[str, object] = {}
-        scc_value = coerce_optional_int(row.get("scc_id"), ctx="scc_id")
-        size_value = coerce_optional_int(row.get("component_size"), ctx="component_size")
-        layer_value = coerce_optional_int(row.get("layer"), ctx="layer")
-        attrs["scc_id"] = scc_value
-        attrs["component_size"] = size_value
-        attrs["layer"] = layer_value
-        if attrs.get("layer") is None and module_name in fallback_layer_by_module:
-            attrs["layer"] = fallback_layer_by_module[module_name]
-        graph.add_node(module_name, **{k: v for k, v in attrs.items() if v is not None})
-
-
-def _map_path_to_module(value: object, module_by_path: Mapping[str, str]) -> str | None:
-    if value is None:
-        return None
-    return module_by_path.get(str(value))
-
-
-def _symbol_module_edges_from_rows(
-    rows: list[dict[str, object]],
-    module_by_path: Mapping[str, str],
-) -> SymbolModuleEdges:
-    if not rows:
-        return set(), {}, {}
-    modules: set[str] = set()
-    inbound: dict[str, set[str]] = {}
-    outbound: dict[str, set[str]] = {}
-    for row in rows:
-        def_module = _map_path_to_module(row.get("def_path"), module_by_path)
-        use_module = _map_path_to_module(row.get("use_path"), module_by_path)
-        if def_module is None or use_module is None:
-            continue
-        if def_module == use_module:
-            continue
-        modules.update({def_module, use_module})
-        inbound.setdefault(def_module, set()).add(use_module)
-        outbound.setdefault(use_module, set()).add(def_module)
-    return modules, inbound, outbound
-
-
-def _symbol_module_graph_from_rows(
-    rows: list[dict[str, object]],
-    module_by_path: Mapping[str, str],
-) -> nx.Graph:
-    graph = nx.Graph()
-    if not rows:
-        return graph
-    edge_weights: dict[tuple[str, str], int] = {}
-    for row in rows:
-        def_module = _map_path_to_module(row.get("def_path"), module_by_path)
-        use_module = _map_path_to_module(row.get("use_path"), module_by_path)
-        if def_module is None or use_module is None:
-            continue
-        if def_module == use_module:
-            continue
-        key = (use_module, def_module)
-        edge_weights[key] = edge_weights.get(key, 0) + 1
-    for (use_module, def_module), weight in edge_weights.items():
-        graph.add_edge(use_module, def_module, weight=weight)
-    return graph
-
-
-def _symbol_function_graph_from_rows(
-    rows: list[dict[str, object]],
-) -> nx.Graph:
-    graph = nx.Graph()
-    if not rows:
-        return graph
-    edge_weights: dict[tuple[int, int], int] = {}
-    for row in rows:
-        def_goid = normalize_decimal_id(row.get("def_goid_h128"))
-        use_goid = normalize_decimal_id(row.get("use_goid_h128"))
-        if def_goid is None or use_goid is None:
-            continue
-        if def_goid == use_goid:
-            continue
-        key = (use_goid, def_goid)
-        edge_weights[key] = edge_weights.get(key, 0) + 1
-    for (use_goid, def_goid), weight in edge_weights.items():
-        graph.add_edge(use_goid, def_goid, weight=weight)
-    return graph
-
-
 def _load_symbol_graphs(
     module_by_path: Mapping[str, str],
     table: InferableTabularInput,
@@ -497,9 +356,16 @@ def _load_symbol_graphs(
         scope=scope,
         require_scope_columns=False,
     )
-    symbol_module_edges = _symbol_module_edges_from_rows(symbol_rows, module_by_path)
-    symbol_module_graph = _symbol_module_graph_from_rows(symbol_rows, module_by_path)
-    symbol_function_graph = _symbol_function_graph_from_rows(symbol_rows)
+    symbol_module_edges = build_symbol_module_edges(symbol_rows, module_by_path)
+    symbol_module_graph = build_symbol_module_graph(
+        symbol_rows,
+        module_by_path,
+        policy=_EDGE_WEIGHT_POLICY,
+    )
+    symbol_function_graph = build_symbol_function_graph(
+        symbol_rows,
+        policy=_EDGE_WEIGHT_POLICY,
+    )
     return symbol_module_edges, symbol_module_graph, symbol_function_graph
 
 

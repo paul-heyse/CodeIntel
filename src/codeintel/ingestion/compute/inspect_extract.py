@@ -34,6 +34,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -1538,8 +1539,9 @@ class InspectExtractStep(BaseExtractStep):
         self,
         modules: Sequence[ModuleRecord],
         *,
-        repo: str,
-        commit: str,
+        repo: str | None = None,
+        commit: str | None = None,
+        context: IngestionContext | None = None,
     ) -> InspectExtractResult:
         """Execute inspect extraction for the provided modules.
 
@@ -1548,6 +1550,11 @@ class InspectExtractStep(BaseExtractStep):
         InspectExtractResult
             Result bundle with row payloads and execution status.
         """
+        resolved_repo, resolved_commit = resolve_repo_commit(
+            context=context,
+            repo=repo,
+            commit=commit,
+        )
         if not self._options.enable:
             return InspectExtractResult(
                 result=ExecutionResult.skip("Inspect extraction disabled by options")
@@ -1567,16 +1574,16 @@ class InspectExtractStep(BaseExtractStep):
         if self._options.use_subprocess:
             return _run_inspect_subprocess(
                 modules=filtered_modules,
-                repo=repo,
-                commit=commit,
+                repo=resolved_repo,
+                commit=resolved_commit,
                 options=self._options,
                 seed_warnings=warnings,
             )
         try:
             payload = _run_inspect_modules(
                 filtered_modules,
-                repo=repo,
-                commit=commit,
+                repo=resolved_repo,
+                commit=resolved_commit,
                 options=self._options,
                 warnings=warnings,
             )
