@@ -30,6 +30,7 @@ from codeintel.build.tabular.arrow_ops import (
     arrow_join_tables,
     build_join_options,
     dedupe_table_for_table,
+    emit_alignment_report,
     group_list_or_polars,
     iter_array_values,
     normalize_table_for_compute,
@@ -854,7 +855,12 @@ def _reader_from_table(table_key: str, table: pa.Table) -> pa.Table:
     if table.num_rows == 0:
         return _empty_reader(table_key)
     try:
-        aligned = align_table_to_contract(table_key, table)
+        aligned = align_table_to_contract(
+            table_key,
+            table,
+            target_name=SYNTAX_AUGMENT_TARGET_NAME,
+            reporter=emit_alignment_report,
+        )
     except (KeyError, RuntimeError):
         aligned = table
     return dedupe_table_for_table(table_key, aligned)

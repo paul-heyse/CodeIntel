@@ -6,11 +6,11 @@ including path counting, shortest path lengths, and reachability.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import rustworkx as rx
 
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable
@@ -51,9 +51,10 @@ def count_simple_paths(
     >>> count_simple_paths(g, [1], [3], max_paths=10, cutoff=5)
     2
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return 0
+    directed_graph = cast("rx.PyDiGraph", store.graph)
     count = 0
     for source in sources:
         for target in targets:
@@ -65,7 +66,7 @@ def count_simple_paths(
                 continue
             try:
                 paths = rx.digraph_all_simple_paths(
-                    store.graph,
+                    directed_graph,
                     source_idx,
                     target_idx,
                     cutoff=cutoff,
@@ -104,15 +105,16 @@ def compute_avg_shortest_path_from_source(
     >>> round(compute_avg_shortest_path_from_source(g, 1), 2)
     1.0
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return 0.0
     source_idx = store.id_to_index.get(source)
     if source_idx is None:
         return 0.0
+    directed_graph = cast("rx.PyDiGraph", store.graph)
     try:
-        lengths = rx.dijkstra_shortest_path_lengths(
-            store.graph,
+        lengths = rx.digraph_dijkstra_shortest_path_lengths(
+            directed_graph,
             source_idx,
             lambda _payload: 1.0,
         )
@@ -146,12 +148,13 @@ def compute_reachable_nodes(
     >>> sorted(compute_reachable_nodes(g, 1))
     [1, 2, 3]
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     source_idx = store.id_to_index.get(source)
     if source_idx is None:
         return {source}
+    directed_graph = cast("rx.PyDiGraph", store.graph)
     try:
-        descendants = rx.descendants(store.graph, source_idx)
+        descendants = rx.descendants(directed_graph, source_idx)
     except (rx.InvalidNode, rx.NullGraph):
         descendants = set()
     nodes = {store.index_to_id[idx] for idx in descendants}

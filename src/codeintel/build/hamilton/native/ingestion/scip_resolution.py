@@ -26,6 +26,7 @@ from codeintel.build.tabular.arrow_ops import (
     arrow_join_tables,
     build_join_options,
     dedupe_table_for_table,
+    emit_alignment_report,
     iter_rows,
 )
 from codeintel.build.tabular.compute_columns import constant_array
@@ -507,7 +508,12 @@ def scip_resolution__symbol_goid_xref__base(
     )
     if table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
-    return align_table_to_contract(SCIP_SYMBOL_GOID_XREF_TABLE_KEY, table)
+    return align_table_to_contract(
+        SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
+        table,
+        target_name=SCIP_RESOLUTION_TARGET_NAME,
+        reporter=emit_alignment_report,
+    )
 
 
 def scip_resolution__occurrence_span_xref__base(
@@ -526,7 +532,12 @@ def scip_resolution__occurrence_span_xref__base(
     )
     if table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
-    return align_table_to_contract(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY, table)
+    return align_table_to_contract(
+        SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
+        table,
+        target_name=SCIP_RESOLUTION_TARGET_NAME,
+        reporter=emit_alignment_report,
+    )
 
 
 def scip_resolution__occurrence_syntax_xref__base(
@@ -547,7 +558,12 @@ def scip_resolution__occurrence_syntax_xref__base(
         return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
     table = pa.Table.from_pylist(rows)
     table = dedupe_table_for_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, table)
-    return align_table_to_contract(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, table)
+    return align_table_to_contract(
+        SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
+        table,
+        target_name=SCIP_RESOLUTION_TARGET_NAME,
+        reporter=emit_alignment_report,
+    )
 
 
 _MODULE = sys.modules[__name__]

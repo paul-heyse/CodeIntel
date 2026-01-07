@@ -40,6 +40,20 @@ def table_contract(
     Callable[[Callable[..., object]], Callable[..., object]]
         Decorator that applies cleaning and feature policies.
     """
+    return contract_pipeline(spec=spec)
+
+
+def contract_pipeline(
+    *,
+    spec: TableContractSpec,
+) -> Callable[[Callable[..., object]], Callable[..., object]]:
+    """Return a decorator that applies the canonical contract pipeline.
+
+    Returns
+    -------
+    Callable[[Callable[..., object]], Callable[..., object]]
+        Decorator that applies cleaning, feature, and canonicalization steps.
+    """
 
     def _decorator(fn: Callable[..., object]) -> Callable[..., object]:
         clean_namespace = f"prep__{sanitize_pipeline_component(spec.table_key)}"
@@ -64,4 +78,4 @@ def table_contract(
     return _decorator
 
 
-__all__ = ["TableContractSpec", "table_contract"]
+__all__ = ["TableContractSpec", "contract_pipeline", "table_contract"]

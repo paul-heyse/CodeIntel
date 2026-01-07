@@ -34,6 +34,7 @@ from codeintel.build.tabular.arrow_ops import (
     arrow_join_tables,
     build_join_options,
     dedupe_table_for_table,
+    emit_alignment_report,
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
 from codeintel.build.tabular.compute_helpers import cast_array
@@ -576,7 +577,13 @@ def _build_def_catalog(defs_rows: Sequence[Mapping[str, object]]) -> _DefCatalog
 
 
 def _table_to_reader(table_key: str, table: pa.Table) -> pa.Table:
-    return align_table_to_contract(table_key, table, extras_policy=None)
+    return align_table_to_contract(
+        table_key,
+        table,
+        target_name=CALL_WIRING_TARGET_NAME,
+        extras_policy=None,
+        reporter=emit_alignment_report,
+    )
 
 
 def _cast_table_column(

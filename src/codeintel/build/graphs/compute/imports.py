@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import Counter, deque
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import rustworkx as rx
 
@@ -118,7 +118,8 @@ def compute_scc(
     if store.graph.num_nodes() == 0:
         return {}
 
-    components = [set(component) for component in rx.strongly_connected_components(store.graph)]
+    directed_graph = cast("rx.PyDiGraph", store.graph)
+    components = [set(component) for component in rx.strongly_connected_components(directed_graph)]
     sorted_components = sorted(
         components,
         key=lambda comp: _component_sort_key(store, comp),

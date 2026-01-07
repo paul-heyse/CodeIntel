@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, cast
 
 import rustworkx as rx
 
@@ -114,7 +114,9 @@ def _bridge_split_components(
     node_order = sorted(neighbors.keys(), key=lambda idx: stable_key(store.index_to_id[idx]))
     removed_edges: set[tuple[int, int]] = set()
     total_nodes = len(node_order)
-    for src_idx, dst_idx in rx.bridges(store.graph):
+    undirected_graph = cast("rx.PyGraph", store.graph)
+    for edge in rx.bridges(undirected_graph):
+        src_idx, dst_idx = cast("tuple[int, int]", edge)
         size_left = _component_size_without_edge(src_idx, neighbors, (src_idx, dst_idx))
         size_right = total_nodes - size_left
         if size_left >= min_component_size and size_right >= min_component_size:

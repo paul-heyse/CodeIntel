@@ -13,6 +13,7 @@ import pyarrow as pa
 from codeintel.build.graphs.assembly import ensure_table_columns, tabular_to_table
 from codeintel.build.hamilton.diagnostics import diagnostics_dir
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.graphs.cpg.constants import CPG_TARGET_NAME
 from codeintel.build.hamilton.native.graphs.cpg2.planes.ast import cpg2_nodes__ast_nodes
 from codeintel.build.hamilton.native.graphs.cpg2.planes.bytecode import (
     cpg2_nodes__py_bc_blocks,
@@ -104,6 +105,7 @@ from codeintel.build.hamilton.native.graphs.cpg2.types import (
 from codeintel.build.tabular.arrow_ops import (
     align_table_to_contract,
     dedupe_table_for_table,
+    emit_alignment_report,
 )
 from codeintel.build.tabular.compute_helpers import scalar_from_compute
 from codeintel.build.tabular.compute_masks import (
@@ -186,7 +188,13 @@ def assemble_cpg_nodes(tables: Sequence[pa.Table]) -> pa.Table:
     combined = concat_tables_unified(tables)
     combined = _ensure_contract_columns(CPG_NODES_TABLE_KEY, combined)
     combined = dedupe_table_for_table(CPG_NODES_TABLE_KEY, combined)
-    return align_table_to_contract(CPG_NODES_TABLE_KEY, combined, extras_policy=None)
+    return align_table_to_contract(
+        CPG_NODES_TABLE_KEY,
+        combined,
+        target_name=CPG_TARGET_NAME,
+        extras_policy=None,
+        reporter=emit_alignment_report,
+    )
 
 
 def assemble_cpg_edges(tables: Sequence[pa.Table]) -> pa.Table:
@@ -203,7 +211,13 @@ def assemble_cpg_edges(tables: Sequence[pa.Table]) -> pa.Table:
     combined = concat_tables_unified(tables)
     combined = _ensure_contract_columns(CPG_EDGES_TABLE_KEY, combined)
     combined = dedupe_table_for_table(CPG_EDGES_TABLE_KEY, combined)
-    return align_table_to_contract(CPG_EDGES_TABLE_KEY, combined, extras_policy=None)
+    return align_table_to_contract(
+        CPG_EDGES_TABLE_KEY,
+        combined,
+        target_name=CPG_TARGET_NAME,
+        extras_policy=None,
+        reporter=emit_alignment_report,
+    )
 
 
 def edge_integrity_report(

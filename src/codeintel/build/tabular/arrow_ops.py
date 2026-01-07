@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, TypedDict, Unpack, cast
 
 import polars as pl
 import pyarrow as pa
@@ -46,12 +46,14 @@ from codeintel.core.columnar.normalization import (
     normalize_table_for_compute as _normalize_table_for_compute,
 )
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract as _align_reader
+from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.columnar.schema_ops import concat_tables_unified as _concat_tables_unified
 from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.schemas.arrow_gen import (
+    DEFAULT_EXTRAS_COLUMN,
     ArrowSchemaMetadata,
     ExtrasPolicy,
     arrow_contract_for_table_schema,
@@ -812,6 +814,142 @@ class ContractAlignmentPlan:
     extras_policy: ExtrasPolicy | None
 
 
+@dataclass(frozen=True, slots=True)
+class AlignmentReport:
+    """Diagnostics for contract alignment differences."""
+
+    table_key: str
+    target_name: str | None
+    missing_columns: tuple[str, ...]
+    extra_columns: tuple[str, ...]
+    coerced_columns: tuple[str, ...]
+    row_count: int | None
+
+
+AlignmentReporter = Callable[[AlignmentReport], None]
+
+
+class AlignmentOverrides(TypedDict, total=False):
+    """Keyword overrides for contract alignment helpers."""
+
+    target_name: str | None
+    policy: ContractPolicy | None
+    extras_policy: ExtrasPolicy | None
+    reporter: AlignmentReporter | None
+
+
+@dataclass(frozen=True, slots=True)
+class AlignmentOptions:
+    """Options for contract alignment helpers."""
+
+    target_name: str | None = None
+    policy: ContractPolicy | None = None
+    extras_policy: ExtrasPolicy | None = None
+    reporter: AlignmentReporter | None = None
+
+
+def _merge_alignment_options(
+    options: AlignmentOptions | None,
+    overrides: AlignmentOverrides,
+) -> AlignmentOptions:
+    resolved = options or AlignmentOptions()
+    if overrides:
+        return replace(resolved, **overrides)
+    return resolved
+
+
+def _normalize_schema_for_report(schema: pa.Schema) -> pa.Schema:
+    fields: list[pa.Field] = []
+    changed = False
+    for field in schema:
+        normalized_type = _binary_view_cast_type(_string_view_cast_type(field.type))
+        if normalized_type != field.type:
+            changed = True
+            normalized_field = field.with_type(normalized_type)
+        else:
+            normalized_field = field
+        fields.append(normalized_field)
+    if not changed:
+        return schema
+    return pa.schema(fields, metadata=schema.metadata)
+
+
+def _extras_column_name(contract_schema: pa.Schema) -> str:
+    metadata = decode_metadata(contract_schema.metadata)
+    raw = metadata.get("codeintel.extras_column")
+    if isinstance(raw, str) and raw:
+        return raw
+    return DEFAULT_EXTRAS_COLUMN
+
+
+def _coerced_columns(
+    contract_schema: pa.Schema,
+    incoming_schema: pa.Schema,
+) -> tuple[str, ...]:
+    mismatched: list[str] = []
+    incoming_names = set(incoming_schema.names)
+    for field in contract_schema:
+        if field.name not in incoming_names:
+            continue
+        incoming_field = incoming_schema.field(field.name)
+        if incoming_field.type != field.type:
+            mismatched.append(field.name)
+    return tuple(sorted(mismatched))
+
+
+def _build_alignment_report(
+    *,
+    table_key: str,
+    target_name: str | None,
+    contract_schema: pa.Schema,
+    incoming_schema: pa.Schema,
+    row_count: int | None,
+) -> AlignmentReport:
+    normalized_contract = _normalize_schema_for_report(contract_schema)
+    normalized_incoming = _normalize_schema_for_report(incoming_schema)
+    contract_names = {name for name in normalized_contract.names if isinstance(name, str)}
+    incoming_names = {name for name in normalized_incoming.names if isinstance(name, str)}
+    extras_column = _extras_column_name(normalized_contract)
+    missing_columns = tuple(sorted(contract_names - incoming_names))
+    extra_columns = tuple(
+        name
+        for name in sorted(incoming_names - contract_names)
+        if isinstance(name, str) and name != extras_column
+    )
+    coerced_columns = _coerced_columns(normalized_contract, normalized_incoming)
+    return AlignmentReport(
+        table_key=table_key,
+        target_name=target_name,
+        missing_columns=missing_columns,
+        extra_columns=extra_columns,
+        coerced_columns=coerced_columns,
+        row_count=row_count,
+    )
+
+
+_ALIGNMENT_REPORT_SEEN: set[tuple[str, str | None]] = set()
+
+
+def emit_alignment_report(report: AlignmentReport) -> None:
+    """Log alignment diagnostics once per table target."""
+    if not report.missing_columns and not report.extra_columns and not report.coerced_columns:
+        return
+    key = (report.table_key, report.target_name)
+    if key in _ALIGNMENT_REPORT_SEEN:
+        return
+    _ALIGNMENT_REPORT_SEEN.add(key)
+    LOG.warning(
+        "build.contract_alignment table_key=%s target=%s missing=%s extra=%s coerced=%s "
+        "row_count=%s",
+        report.table_key,
+        report.target_name,
+        report.missing_columns,
+        report.extra_columns,
+        report.coerced_columns,
+        report.row_count,
+    )
+
+
 @lru_cache(maxsize=512)
 def _contract_alignment_plan(
     table_key: str,
@@ -894,9 +1032,8 @@ def align_reader_to_contract(
     table_key: str,
     reader: pa.RecordBatchReader,
     *,
-    target_name: str | None = None,
-    policy: ContractPolicy | None = None,
-    extras_policy: ExtrasPolicy | None = None,
+    options: AlignmentOptions | None = None,
+    **overrides: Unpack[AlignmentOverrides],
 ) -> pa.RecordBatchReader:
     """Align an Arrow reader to the contract schema for a table.
 
@@ -905,17 +1042,27 @@ def align_reader_to_contract(
     pa.RecordBatchReader
         Reader aligned to the contract schema.
     """
+    resolved_options = _merge_alignment_options(options, overrides)
     resolved_policy = _resolve_alignment_policy(
         table_key=table_key,
-        target_name=target_name,
-        policy=policy,
-        extras_policy=extras_policy,
+        target_name=resolved_options.target_name,
+        policy=resolved_options.policy,
+        extras_policy=resolved_options.extras_policy,
     )
     plan = _contract_alignment_plan(
         table_key=table_key,
-        target_name=target_name,
+        target_name=resolved_options.target_name,
         extras_policy=resolved_policy.extras_policy,
     )
+    if resolved_options.reporter is not None:
+        report = _build_alignment_report(
+            table_key=table_key,
+            target_name=resolved_options.target_name,
+            contract_schema=plan.contract_schema,
+            incoming_schema=reader.schema,
+            row_count=None,
+        )
+        resolved_options.reporter(report)
     if not resolved_policy.coerce_types:
         _assert_schema_types_match(plan.contract_schema, reader.schema)
     return _align_reader(reader, plan.contract_schema, extras_policy=plan.extras_policy)
@@ -925,9 +1072,8 @@ def align_table_to_contract(
     table_key: str,
     table: pa.Table,
     *,
-    target_name: str | None = None,
-    policy: ContractPolicy | None = None,
-    extras_policy: ExtrasPolicy | None = None,
+    options: AlignmentOptions | None = None,
+    **overrides: Unpack[AlignmentOverrides],
 ) -> pa.Table:
     """Align an Arrow table to the contract schema for a table.
 
@@ -936,17 +1082,27 @@ def align_table_to_contract(
     pa.Table
         Arrow table aligned to the contract schema.
     """
+    resolved_options = _merge_alignment_options(options, overrides)
     resolved_policy = _resolve_alignment_policy(
         table_key=table_key,
-        target_name=target_name,
-        policy=policy,
-        extras_policy=extras_policy,
+        target_name=resolved_options.target_name,
+        policy=resolved_options.policy,
+        extras_policy=resolved_options.extras_policy,
     )
     plan = _contract_alignment_plan(
         table_key=table_key,
-        target_name=target_name,
+        target_name=resolved_options.target_name,
         extras_policy=resolved_policy.extras_policy,
     )
+    if resolved_options.reporter is not None:
+        report = _build_alignment_report(
+            table_key=table_key,
+            target_name=resolved_options.target_name,
+            contract_schema=plan.contract_schema,
+            incoming_schema=table.schema,
+            row_count=table.num_rows,
+        )
+        resolved_options.reporter(report)
     if table.schema.equals(plan.contract_schema, check_metadata=True):
         return table
     if table.schema.equals(plan.contract_schema, check_metadata=False):
@@ -1222,6 +1378,8 @@ def write_json_streaming_table(
 
 
 __all__ = [
+    "AlignmentReport",
+    "AlignmentReporter",
     "ArrowJoinOptions",
     "ArrowJoinSpec",
     "JoinFilterClause",
@@ -1237,6 +1395,7 @@ __all__ = [
     "concat_tables_unified",
     "dedupe_table_for_table",
     "dedupe_tabular",
+    "emit_alignment_report",
     "ensure_array",
     "group_list_or_polars",
     "index_in",

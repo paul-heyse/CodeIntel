@@ -10,9 +10,13 @@ from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, Schem
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
     DEFAULT_ARROW_BATCH_SIZE,
+    DEFAULT_ARROW_CACHE_METADATA,
     DEFAULT_ARROW_CPU_COUNT,
     DEFAULT_ARROW_FRAGMENT_READAHEAD,
     DEFAULT_ARROW_IO_THREAD_COUNT,
+    DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
+    DEFAULT_ARROW_PARQUET_PRE_BUFFER,
+    DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
     DEFAULT_ARROW_USE_THREADS,
 )
 
@@ -46,7 +50,11 @@ class ArrowScanSettings:
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE
     batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
     fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
+    cache_metadata: bool | None = DEFAULT_ARROW_CACHE_METADATA
     use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
+    parquet_pre_buffer: bool | None = DEFAULT_ARROW_PARQUET_PRE_BUFFER
+    parquet_use_buffered_stream: bool | None = DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM
+    parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
     cpu_count: int | None = DEFAULT_ARROW_CPU_COUNT
     io_thread_count: int | None = DEFAULT_ARROW_IO_THREAD_COUNT
 

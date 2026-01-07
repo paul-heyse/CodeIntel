@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Hashable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import networkx as nx
 import rustworkx as rx
@@ -77,6 +77,13 @@ def _ensure_directed_store(graph: GraphInput) -> RxGraphStore:
     return directed
 
 
+def _directed_graph(store: RxGraphStore) -> rx.PyDiGraph:
+    if not store.is_directed:
+        message = "Expected a directed graph store"
+        raise ValueError(message)
+    return cast("rx.PyDiGraph", store.graph)
+
+
 def _component_sort_key(store: RxGraphStore, component: set[int]) -> tuple[str, str]:
     if not component:
         return ("", "")
@@ -89,7 +96,8 @@ def _sorted_components(store: RxGraphStore, components: list[set[int]]) -> list[
 
 
 def _condensation_store(store: RxGraphStore) -> RxGraphStore:
-    components = [set(comp) for comp in rx.strongly_connected_components(store.graph)]
+    directed_graph = _directed_graph(store)
+    components = [set(comp) for comp in rx.strongly_connected_components(directed_graph)]
     if not components:
         return RxGraphStore.directed()
     sorted_components = _sorted_components(store, components)
@@ -133,8 +141,9 @@ def compute_dominator_tree(
     entry_idx = store.id_to_index.get(entry)
     if entry_idx is None:
         return {}
+    directed_graph = _directed_graph(store)
     try:
-        idoms = rx.immediate_dominators(store.graph, entry_idx)
+        idoms = rx.immediate_dominators(directed_graph, entry_idx)
     except (rx.InvalidNode, rx.NullGraph) as exc:
         log.warning("Dominator computation failed: %s", exc)
         return {}
@@ -176,8 +185,9 @@ def compute_dominance_frontier(
     entry_idx = store.id_to_index.get(entry)
     if entry_idx is None:
         return {}
+    directed_graph = _directed_graph(store)
     try:
-        frontiers = rx.dominance_frontiers(store.graph, entry_idx)
+        frontiers = rx.dominance_frontiers(directed_graph, entry_idx)
     except (rx.InvalidNode, rx.NullGraph) as exc:
         log.warning("Dominance frontier computation failed: %s", exc)
         return {}
@@ -294,17 +304,19 @@ def compute_cfg_longest_path(
     if store.graph.num_nodes() == 0:
         return 0
 
+    directed_graph = _directed_graph(store)
     try:
-        if rx.is_directed_acyclic_graph(store.graph):
-            return int(rx.dag_longest_path_length(store.graph))
+        if rx.is_directed_acyclic_graph(directed_graph):
+            return int(rx.dag_longest_path_length(directed_graph))
     except rx.NullGraph:
         return 0
 
     condensed = _condensation_store(store)
     if condensed.graph.num_nodes() == 0:
         return 0
+    condensed_graph = cast("rx.PyDiGraph", condensed.graph)
     try:
-        return int(rx.dag_longest_path_length(condensed.graph))
+        return int(rx.dag_longest_path_length(condensed_graph))
     except (rx.DAGHasCycle, rx.NullGraph):
         return 0
 
@@ -416,25 +428,27 @@ def cfg_longest_path_length(
     if entry_node is None:
         return 0
 
+    directed_graph = _directed_graph(store)
     if is_dag is None:
         try:
-            is_dag = rx.is_directed_acyclic_graph(store.graph)
+            is_dag = rx.is_directed_acyclic_graph(directed_graph)
         except rx.NullGraph:
             return 0
 
-    if is_dag:
-        try:
-            reachable = set(rx.descendants(store.graph, entry_node))
-        except (rx.InvalidNode, rx.NullGraph):
-            return 0
-        reachable.add(entry_node)
-        subgraph = store.graph.subgraph(sorted(reachable))
-        try:
-            return int(rx.dag_longest_path_length(subgraph))
-        except (rx.DAGHasCycle, rx.NullGraph):
-            return 0
+    if not is_dag:
+        return compute_cfg_longest_path(store)
 
-    return compute_cfg_longest_path(store)
+    try:
+        reachable = set(rx.descendants(directed_graph, entry_node))
+    except (rx.InvalidNode, rx.NullGraph):
+        return 0
+    reachable.add(entry_node)
+    subgraph = directed_graph.subgraph(sorted(reachable))
+    try:
+        longest = int(rx.dag_longest_path_length(subgraph))
+    except (rx.DAGHasCycle, rx.NullGraph):
+        longest = 0
+    return longest
 
 
 def cfg_avg_shortest_path_length(graph: GraphInput, entry_idx: int) -> float:

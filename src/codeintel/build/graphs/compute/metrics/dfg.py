@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import networkx as nx
 import rustworkx as rx
@@ -18,7 +18,7 @@ from codeintel.build.graphs.compute.metrics.components import (
     find_strongly_connected,
     find_weakly_connected,
 )
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 from codeintel.build.graphs.rx.normalize import stable_key
 
 if TYPE_CHECKING:
@@ -68,13 +68,14 @@ def compute_dfg_path_lengths(
     dict[Any, DFGPathStats]
         Node to path statistics mapping.
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return {}
 
     neighbors: dict[int, list[int]] = {}
-    for node_idx in store.graph.node_indices():
-        successor_indices = store.graph.successor_indices(node_idx)
+    directed_graph = cast("rx.PyDiGraph", store.graph)
+    for node_idx in directed_graph.node_indices():
+        successor_indices = directed_graph.successor_indices(node_idx)
         neighbors[node_idx] = sorted(
             successor_indices,
             key=lambda idx: stable_key(store.index_to_id[idx]),
@@ -129,7 +130,7 @@ def compute_dfg_components(
     tuple[list[ComponentInfo], list[ComponentInfo]]
         (strongly_connected, weakly_connected) component lists.
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return ([], [])
 
@@ -156,13 +157,14 @@ def compute_def_use_chains(
     dict[Any, list[Any]]
         Node to list of users mapping.
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return {}
     result: dict[Any, list[Any]] = {}
+    directed_graph = cast("rx.PyDiGraph", store.graph)
     for node_id in store.node_ids():
         node_idx = store.id_to_index[node_id]
-        successors = store.graph.successor_indices(node_idx)
+        successors = directed_graph.successor_indices(node_idx)
         result[node_id] = [
             store.index_to_id[idx]
             for idx in sorted(successors, key=lambda idx: stable_key(store.index_to_id[idx]))
@@ -187,13 +189,14 @@ def compute_use_def_chains(
     dict[Any, list[Any]]
         Node to list of definitions mapping.
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return {}
     result: dict[Any, list[Any]] = {}
+    directed_graph = cast("rx.PyDiGraph", store.graph)
     for node_id in store.node_ids():
         node_idx = store.id_to_index[node_id]
-        predecessors = store.graph.predecessor_indices(node_idx)
+        predecessors = directed_graph.predecessor_indices(node_idx)
         result[node_id] = [
             store.index_to_id[idx]
             for idx in sorted(predecessors, key=lambda idx: stable_key(store.index_to_id[idx]))
@@ -214,7 +217,7 @@ def compute_dfg_density(graph: GraphInput) -> float:
     float
         Edge density (0.0 to 1.0).
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     node_count = store.graph.num_nodes()
     if node_count <= 1:
         return 0.0
@@ -241,12 +244,13 @@ def find_dfg_cycles(
     list[list[Any]]
         List of cycles as node sequences.
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return []
 
+    directed_graph = cast("rx.PyDiGraph", store.graph)
     cycles: list[list[Any]] = []
-    for cycle in rx.simple_cycles(store.graph):
+    for cycle in rx.simple_cycles(directed_graph):
         cycles.append([store.index_to_id[idx] for idx in cycle])
         if len(cycles) >= limit:
             break
@@ -275,25 +279,26 @@ def dfg_path_lengths(graph: GraphInput) -> tuple[int, float]:
     tuple[int, float]
         Longest path length and average shortest path length.
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return 0, 0.0
-    longest = 0
-    total = 0
+    directed_graph = cast("rx.PyDiGraph", store.graph)
+    longest = 0.0
+    total = 0.0
     count = 0
     try:
-        lengths = rx.all_pairs_dijkstra_path_lengths(
-            store.graph,
+        lengths = rx.digraph_all_pairs_dijkstra_path_lengths(
+            directed_graph,
             lambda _payload: 1.0,
         )
     except rx.NullGraph:
         return 0, 0.0
     for targets in lengths.values():
         if targets:
-            longest = max(longest, max(targets.values(), default=0))
+            longest = max(longest, float(max(targets.values(), default=0)))
             total += sum(targets.values())
             count += len(targets)
-    avg = float(total) / count if count else 0.0
+    avg = total / count if count else 0.0
     return int(longest), avg
 
 
@@ -307,7 +312,7 @@ def dfg_centralities(
     tuple[dict[Any, float], dict[Any, float]]
         Betweenness and eigenvector centrality mappings.
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return {}, {}
     centrality = centrality_directed(

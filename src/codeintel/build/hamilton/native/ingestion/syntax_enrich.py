@@ -23,6 +23,7 @@ from codeintel.build.tabular.arrow_ops import (
     arrow_join_tables,
     build_join_options,
     dedupe_table_for_table,
+    emit_alignment_report,
 )
 from codeintel.build.tabular.compute_columns import constant_array
 from codeintel.build.tabular.compute_helpers import cast_array
@@ -231,7 +232,12 @@ def _resolve_facts(
     if resolved_columns:
         combined = combined.select(resolved_columns)
     combined = _dedupe_for_table(combined, table_key=table_key)
-    return align_table_to_contract(table_key, combined)
+    return align_table_to_contract(
+        table_key,
+        combined,
+        target_name=SYNTAX_ENRICH_TARGET_NAME,
+        reporter=emit_alignment_report,
+    )
 
 
 def _resolve_occurrence_joins(

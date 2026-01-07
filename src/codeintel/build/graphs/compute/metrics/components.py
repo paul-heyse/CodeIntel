@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+import networkx as nx
 import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.statistics import (
@@ -19,15 +20,18 @@ from codeintel.build.graphs.compute.metrics.statistics import (
 )
 from codeintel.build.graphs.compute.metrics.structural import compute_clustering_coefficient
 from codeintel.build.graphs.compute.metrics.types import ComponentBundle, GlobalGraphStats
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, to_undirected_store
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    ensure_directed_store,
+    ensure_store,
+    to_undirected_store,
+)
 from codeintel.build.graphs.rx.convert import rx_to_networkx
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-    import networkx as nx
 
 
 @dataclass(frozen=True)
@@ -92,6 +96,20 @@ def _sort_components(store: RxGraphStore, components: list[set[int]]) -> list[se
     )
 
 
+def _directed_graph(store: RxGraphStore) -> rx.PyDiGraph:
+    if not store.is_directed:
+        message = "Expected a directed graph store"
+        raise ValueError(message)
+    return cast("rx.PyDiGraph", store.graph)
+
+
+def _undirected_graph(store: RxGraphStore) -> rx.PyGraph:
+    if store.is_directed:
+        message = "Expected an undirected graph store"
+        raise ValueError(message)
+    return cast("rx.PyGraph", store.graph)
+
+
 def find_strongly_connected(
     graph: GraphInput,
     *,
@@ -118,11 +136,12 @@ def find_strongly_connected(
     >>> len(result.components) >= 2
     True
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return SCCResult(components=(), node_to_component={})
 
-    sccs = [set(component) for component in rx.strongly_connected_components(store.graph)]
+    directed_graph = _directed_graph(store)
+    sccs = [set(component) for component in rx.strongly_connected_components(directed_graph)]
     sorted_sccs = _sort_components(store, sccs)
     components: list[ComponentInfo] = []
     node_to_component: dict[Any, int] = {}
@@ -153,7 +172,7 @@ def find_strongly_connected(
             if src_comp is None or dst_comp is None or src_comp == dst_comp:
                 continue
             condensed_store.add_weighted_edge(src_comp, dst_comp, weight=1.0)
-        condensation = rx_to_networkx(condensed_store.graph)
+        condensation = cast("nx.DiGraph", rx_to_networkx(condensed_store.graph))
 
     return SCCResult(
         components=tuple(components),
@@ -180,9 +199,11 @@ def find_weakly_connected(graph: GraphInput) -> list[ComponentInfo]:
         return []
 
     if store.is_directed:
-        components = [set(comp) for comp in rx.weakly_connected_components(store.graph)]
+        directed_graph = _directed_graph(store)
+        components = [set(comp) for comp in rx.weakly_connected_components(directed_graph)]
     else:
-        components = [set(comp) for comp in rx.connected_components(store.graph)]
+        undirected_graph = _undirected_graph(store)
+        components = [set(comp) for comp in rx.connected_components(undirected_graph)]
     sorted_components = _sort_components(store, components)
     return [
         ComponentInfo(
@@ -212,7 +233,8 @@ def find_connected(graph: GraphInput) -> list[ComponentInfo]:
     if work_store.graph.num_nodes() == 0:
         return []
 
-    components = [set(comp) for comp in rx.connected_components(work_store.graph)]
+    undirected_graph = _undirected_graph(work_store)
+    components = [set(comp) for comp in rx.connected_components(undirected_graph)]
     sorted_components = _sort_components(work_store, components)
     return [
         ComponentInfo(
@@ -241,10 +263,11 @@ def find_bridges(graph: GraphInput) -> list[tuple[Any, Any]]:
     work_store = to_undirected_store(store)
     if work_store.graph.num_nodes() == 0:
         return []
-    bridges = [
-        (work_store.index_to_id[src], work_store.index_to_id[dst])
-        for src, dst in rx.bridges(work_store.graph)
-    ]
+    undirected_graph = _undirected_graph(work_store)
+    bridges = []
+    for edge in rx.bridges(undirected_graph):
+        src_idx, dst_idx = cast("tuple[int, int]", edge)
+        bridges.append((work_store.index_to_id[src_idx], work_store.index_to_id[dst_idx]))
     return sorted(bridges, key=stable_key)
 
 
@@ -265,7 +288,8 @@ def find_articulation_points(graph: GraphInput) -> list[Any]:
     work_store = to_undirected_store(store)
     if work_store.graph.num_nodes() == 0:
         return []
-    points = [work_store.index_to_id[idx] for idx in rx.articulation_points(work_store.graph)]
+    undirected_graph = _undirected_graph(work_store)
+    points = [work_store.index_to_id[idx] for idx in rx.articulation_points(undirected_graph)]
     return sorted(points, key=stable_key)
 
 
@@ -318,12 +342,13 @@ def find_cycles(graph: GraphInput, limit: int | None = 100) -> list[list[Any]]:
     list[list[Any]]
         List of cycles as node lists.
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return []
 
+    directed_graph = _directed_graph(store)
     cycles: list[list[Any]] = []
-    for cycle in rx.simple_cycles(store.graph):
+    for cycle in rx.simple_cycles(directed_graph):
         cycles.append([store.index_to_id[idx] for idx in cycle])
         if limit is not None and len(cycles) >= limit:
             break
@@ -347,17 +372,18 @@ def topological_layers(graph: GraphInput) -> dict[Any, int]:
     -----
     If the graph contains cycles, NetworkX will raise `nx.NetworkXUnfeasible`.
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return {}
+    directed_graph = _directed_graph(store)
     layers: dict[int, int] = {
         node_idx: 0
-        for node_idx in store.graph.node_indices()
-        if store.graph.in_degree(node_idx) == 0
+        for node_idx in directed_graph.node_indices()
+        if directed_graph.in_degree(node_idx) == 0
     }
-    for node_idx in rx.topological_sort(store.graph):
+    for node_idx in rx.topological_sort(directed_graph):
         base = layers.get(node_idx, 0)
-        for succ in store.graph.successor_indices(node_idx):
+        for succ in directed_graph.successor_indices(node_idx):
             layers[succ] = max(layers.get(succ, 0), base + 1)
     return {store.index_to_id[idx]: layer for idx, layer in layers.items()}
 

@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import rustworkx as rx
 
@@ -379,14 +379,24 @@ def compute_all_centralities(
         eigenvector = compute_eigenvector_centrality(store, max_iter=eigenvector_max_iter)
 
     result: dict[Any, CentralityMetrics] = {}
+    directed_graph: rx.PyDiGraph | None = None
+    undirected_graph: rx.PyGraph | None = None
+    if store.is_directed:
+        directed_graph = cast("rx.PyDiGraph", store.graph)
+    else:
+        undirected_graph = cast("rx.PyGraph", store.graph)
     for node_id in store.node_ids():
         node_idx = store.id_to_index[node_id]
         if store.is_directed:
-            in_degree = store.graph.in_degree(node_idx)
-            out_degree = store.graph.out_degree(node_idx)
+            if directed_graph is None:
+                directed_graph = cast("rx.PyDiGraph", store.graph)
+            in_degree = directed_graph.in_degree(node_idx)
+            out_degree = directed_graph.out_degree(node_idx)
             degree = in_degree + out_degree
         else:
-            degree = store.graph.degree(node_idx)
+            if undirected_graph is None:
+                undirected_graph = cast("rx.PyGraph", store.graph)
+            degree = undirected_graph.degree(node_idx)
             in_degree = degree
             out_degree = 0
         result[node_id] = CentralityMetrics(

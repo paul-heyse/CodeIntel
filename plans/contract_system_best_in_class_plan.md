@@ -137,6 +137,9 @@ class TableContractSpec:
 Avoid unnecessary table materialization when schemas already match and favor
 reader-based alignment for large data.
 
+### Status
+Completed.
+
 ### Implementation Steps
 - Add a schema-equality fast path in `align_table_to_contract`.
 - Introduce `ContractAlignmentPlan` cached per table to reduce repeated work.
@@ -163,10 +166,20 @@ def align_table_to_contract(
 - `src/codeintel/build/hamilton/transforms/ingestion_normalize.py`
 - `src/codeintel/build/graphs/assembly/contracts.py`
 
+### Completed Work
+- Added schema equality fast paths (including metadata-only updates) in
+  `src/codeintel/build/tabular/arrow_ops.py`.
+- Introduced cached `ContractAlignmentPlan` keyed by `table_key`, `target_name`,
+  and extras policy in `src/codeintel/build/tabular/arrow_ops.py`.
+- Routed table alignment through reader-first logic when schemas do not match.
+
 ## Scope 3.1: Target-Aware Contract Alignment (table_key + target_name)
 ### Overview
 Make alignment keyed to the target output so the same table key can be shaped
 slightly differently across targets without collisions or drift.
+
+### Status
+In progress (major call sites updated).
 
 ### Implementation Steps
 - Add a target-aware alignment helper that accepts `table_key` + `target_name`.
@@ -198,10 +211,28 @@ def align_table_to_contract(
 - `src/codeintel/build/hamilton/native/analytics/*`
 - `src/codeintel/build/hamilton/native/ingestion/*`
 
+### Completed Work
+- Added `target_name` support to alignment helpers in
+  `src/codeintel/build/tabular/arrow_ops.py`.
+- Threaded target-aware alignment through graph assembly helpers in
+  `src/codeintel/build/graphs/assembly/contracts.py`.
+- Added `target_name` parameter to ingestion normalization in
+  `src/codeintel/build/hamilton/transforms/ingestion_normalize.py`.
+- Passed `target_name` through primary ingestion and graph alignment call sites,
+  including `ingest_targets`, `scip_resolution`, `syntax_enrich`, `syntax_augment`,
+  `call_wiring`, `cdg`, `pdg`, and `cpg2` assembly.
+
+### Remaining Work
+- Confirm any remaining alignment call sites (if any) pass `target_name`
+  consistently and fold in diagnostics reporting.
+
 ## Scope 4: Contract Pipeline as a First-Class Stage
 ### Overview
 Ensure a consistent ordering for contract steps: clean, feature, align, validate,
 persist. This makes runtime behavior predictable and testable.
+
+### Status
+In progress.
 
 ### Implementation Steps
 - Create a `contract_pipeline` helper that composes the steps in a fixed order.
@@ -240,6 +271,14 @@ def contract_pipeline(
 - `src/codeintel/build/hamilton/transforms/table_contract.py`
 - `src/codeintel/build/hamilton/native/patterns/table_target.py`
 - `src/codeintel/build/hamilton/transforms/ingestion_normalize.py`
+
+### Completed Work
+- Added `contract_pipeline` helper and routed `table_contract` through it in
+  `src/codeintel/build/hamilton/transforms/table_contract.py`.
+
+### Remaining Work
+- Decide whether to extend the pipeline to include alignment/validation stages
+  (or keep those in saver layers) and update `table_target` accordingly.
 
 ## Scope 5: Contract Versioning + Migration Hooks
 ### Overview
@@ -280,6 +319,9 @@ def record_contract_metadata(
 Provide actionable diagnostics for missing/extra columns and type coercions.
 This helps debugging and enables observability at scale.
 
+### Status
+In progress.
+
 ### Implementation Steps
 - Add `AlignmentReport` with missing/extra/coerced columns and row counts.
 - Return the report from alignment helpers (or optional callback).
@@ -311,6 +353,21 @@ def align_table_to_contract(
 - `src/codeintel/build/hamilton/native/materialization_records.py`
 - `src/codeintel/build/hamilton/native/patterns/table_target.py`
 - `src/codeintel/build/graphs/assembly/contracts.py`
+
+### Completed Work
+- Added `AlignmentReport`, `AlignmentReporter`, and `emit_alignment_report` in
+  `src/codeintel/build/tabular/arrow_ops.py`.
+- Added reporter hooks to alignment helpers in
+  `src/codeintel/build/tabular/arrow_ops.py` and
+  `src/codeintel/build/graphs/assembly/contracts.py`.
+- Threaded reporter usage through ingestion and graph call sites (including
+  `ingest_targets`, `scip_resolution`, `syntax_enrich`, `syntax_augment`,
+  `call_wiring`, `cdg`, `pdg`, `cpg2` assembly, and `subsystem_cache`).
+
+### Remaining Work
+- Attach alignment reports to materialization metadata via
+  `src/codeintel/build/hamilton/native/materialization_records.py` and
+  `src/codeintel/build/hamilton/native/patterns/table_target.py`.
 
 ## Scope 7: Cross-Tabular Alignment (Arrow + Polars)
 ### Overview

@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Unpack
+
 import pyarrow as pa
 
-from codeintel.build.contracts.types import ContractPolicy
+from codeintel.build.tabular.arrow_ops import (
+    AlignmentOptions,
+    AlignmentOverrides,
+)
 from codeintel.build.tabular.arrow_ops import (
     align_reader_to_contract as _align_reader_to_contract,
 )
@@ -12,16 +17,14 @@ from codeintel.build.tabular.arrow_ops import (
     align_table_to_contract as _align_table_to_contract,
 )
 from codeintel.core.columnar.rows import empty_table_for_table
-from codeintel.core.schemas.arrow_gen import ExtrasPolicy
 
 
 def align_reader_to_contract(
     table_key: str,
     reader: pa.RecordBatchReader,
     *,
-    target_name: str | None = None,
-    policy: ContractPolicy | None = None,
-    extras_policy: ExtrasPolicy | None = None,
+    options: AlignmentOptions | None = None,
+    **overrides: Unpack[AlignmentOverrides],
 ) -> pa.RecordBatchReader:
     """Align a RecordBatchReader to the contract schema for the table key.
 
@@ -33,9 +36,8 @@ def align_reader_to_contract(
     return _align_reader_to_contract(
         table_key,
         reader,
-        target_name=target_name,
-        policy=policy,
-        extras_policy=extras_policy,
+        options=options,
+        **overrides,
     )
 
 
@@ -43,9 +45,8 @@ def align_table_to_contract(
     table_key: str,
     table: pa.Table,
     *,
-    target_name: str | None = None,
-    policy: ContractPolicy | None = None,
-    extras_policy: ExtrasPolicy | None = None,
+    options: AlignmentOptions | None = None,
+    **overrides: Unpack[AlignmentOverrides],
 ) -> pa.Table:
     """Align a Table to the contract schema for the table key.
 
@@ -57,9 +58,8 @@ def align_table_to_contract(
     return _align_table_to_contract(
         table_key,
         table,
-        target_name=target_name,
-        policy=policy,
-        extras_policy=extras_policy,
+        options=options,
+        **overrides,
     )
 
 

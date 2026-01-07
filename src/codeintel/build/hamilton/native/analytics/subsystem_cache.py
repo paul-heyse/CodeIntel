@@ -18,7 +18,7 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.arrow_ops import align_table_to_contract
+from codeintel.build.tabular.arrow_ops import align_table_to_contract, emit_alignment_report
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -62,6 +62,7 @@ def subsystem_profile_cache__base(
             SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
             table,
             target_name=SUBSYSTEM_CACHES_TARGET_NAME,
+            reporter=emit_alignment_report,
         )
     return table
 

@@ -70,7 +70,7 @@ from codeintel.build.hamilton.transforms.ingestion_normalize import normalize_in
 from codeintel.build.hamilton.transforms.registry_inject import inject_from_registry
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
-from codeintel.build.tabular.arrow_ops import dedupe_table_for_table
+from codeintel.build.tabular.arrow_ops import dedupe_table_for_table, emit_alignment_report
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import (
@@ -1610,6 +1610,7 @@ def _normalize_required_ingest_rows(
         rows,
         table_key=table_key,
         target_name=target_name,
+        reporter=emit_alignment_report,
     )
     if normalized is None:
         return empty_table_for_table(table_key)

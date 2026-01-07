@@ -100,9 +100,9 @@ def _override_default_optional(
 
 
 def _override_default_bool(
+    *,
     current: bool | None,
     override: bool | None,
-    *,
     default: bool | None,
 ) -> bool | None:
     if override is None:
@@ -134,8 +134,8 @@ def _merge_scan_options(
             default=DEFAULT_ARROW_FRAGMENT_READAHEAD,
         ),
         use_threads=_override_default_bool(
-            options.use_threads,
-            settings.use_threads,
+            current=options.use_threads,
+            override=settings.use_threads,
             default=DEFAULT_ARROW_USE_THREADS,
         ),
     )

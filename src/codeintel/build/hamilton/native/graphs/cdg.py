@@ -12,6 +12,7 @@ import pyarrow.compute as pc
 from codeintel.build.tabular.arrow_ops import (
     align_table_to_contract,
     dedupe_table_for_table,
+    emit_alignment_report,
     iter_rows,
 )
 from codeintel.build.tabular.compute_helpers import safe_filter
@@ -27,6 +28,7 @@ from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CDG_EDGES_TABLE_KEY = "graph.cdg_edges"
+CDG_TARGET_NAME = "cdg"
 
 _EXPR_TYPE = getattr(pc, "Expression", None)
 
@@ -367,7 +369,12 @@ def cdg_edges(
         ]
     )
     table = dedupe_table_for_table(CDG_EDGES_TABLE_KEY, table)
-    return align_table_to_contract(CDG_EDGES_TABLE_KEY, table)
+    return align_table_to_contract(
+        CDG_EDGES_TABLE_KEY,
+        table,
+        target_name=CDG_TARGET_NAME,
+        reporter=emit_alignment_report,
+    )
 
 
 __all__ = [

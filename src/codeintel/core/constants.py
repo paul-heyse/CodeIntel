@@ -5,8 +5,12 @@ from __future__ import annotations
 __all__ = [
     "DEFAULT_ARROW_BATCH_READAHEAD",
     "DEFAULT_ARROW_BATCH_SIZE",
+    "DEFAULT_ARROW_CACHE_METADATA",
     "DEFAULT_ARROW_CPU_COUNT",
     "DEFAULT_ARROW_FRAGMENT_READAHEAD",
+    "DEFAULT_ARROW_PARQUET_BUFFER_SIZE",
+    "DEFAULT_ARROW_PARQUET_PRE_BUFFER",
+    "DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM",
     "DEFAULT_ARROW_IO_THREAD_COUNT",
     "DEFAULT_ARROW_IO_THREAD_MULTIPLIER",
     "DEFAULT_ARROW_MIN_IO_THREADS",
@@ -21,17 +25,29 @@ DUCKDB_DIALECT = "duckdb"
 SCHEMAS = ("build", "core", "graph", "analytics", "docs")
 """Database schema names used in the CodeIntel data warehouse."""
 
-DEFAULT_ARROW_BATCH_SIZE = 10_000
+DEFAULT_ARROW_BATCH_SIZE = 131_072
 """Default rows per Arrow record batch for streaming exports."""
 
-DEFAULT_ARROW_BATCH_READAHEAD = 16
+DEFAULT_ARROW_BATCH_READAHEAD = 64
 """Default record batch readahead for Arrow dataset scans."""
 
-DEFAULT_ARROW_FRAGMENT_READAHEAD = 8
+DEFAULT_ARROW_FRAGMENT_READAHEAD = 16
 """Default fragment readahead for Arrow dataset scans."""
+
+DEFAULT_ARROW_CACHE_METADATA = True
+"""Default metadata caching toggle for Arrow dataset scans."""
 
 DEFAULT_ARROW_USE_THREADS = True
 """Default threading setting for Arrow dataset scans."""
+
+DEFAULT_ARROW_PARQUET_PRE_BUFFER = True
+"""Default pre-buffer toggle for Parquet fragment scans."""
+
+DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM = False
+"""Default buffered stream toggle for Parquet fragment scans."""
+
+DEFAULT_ARROW_PARQUET_BUFFER_SIZE = 8_388_608
+"""Default buffered stream size (bytes) for Parquet fragment scans."""
 
 DEFAULT_ARROW_CPU_COUNT: int | None = None
 """Default CPU thread count for Arrow compute (None uses detected CPU count)."""

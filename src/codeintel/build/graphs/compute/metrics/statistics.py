@@ -8,11 +8,16 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import rustworkx as rx
 
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, to_undirected_store
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    ensure_directed_store,
+    ensure_store,
+    to_undirected_store,
+)
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -51,6 +56,20 @@ class GraphStatistics:
     is_dag: bool
 
 
+def _directed_graph(store: RxGraphStore) -> rx.PyDiGraph:
+    if not store.is_directed:
+        message = "Expected a directed graph store"
+        raise ValueError(message)
+    return cast("rx.PyDiGraph", store.graph)
+
+
+def _undirected_graph(store: RxGraphStore) -> rx.PyGraph:
+    if store.is_directed:
+        message = "Expected an undirected graph store"
+        raise ValueError(message)
+    return cast("rx.PyGraph", store.graph)
+
+
 def get_in_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
     """Extract in-degree tuples from a directed graph.
 
@@ -70,9 +89,11 @@ def get_in_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
     >>> get_in_degrees(g)
     [(1, 0), (2, 1), (3, 2)]
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
+    directed_graph = _directed_graph(store)
     return [
-        (node_id, store.graph.in_degree(store.id_to_index[node_id])) for node_id in store.node_ids()
+        (node_id, directed_graph.in_degree(store.id_to_index[node_id]))
+        for node_id in store.node_ids()
     ]
 
 
@@ -95,9 +116,10 @@ def get_out_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
     >>> get_out_degrees(g)
     [(1, 2), (2, 1), (3, 0)]
     """
-    store = ensure_store(graph)
+    store = ensure_directed_store(graph)
+    directed_graph = _directed_graph(store)
     return [
-        (node_id, store.graph.out_degree(store.id_to_index[node_id]))
+        (node_id, directed_graph.out_degree(store.id_to_index[node_id]))
         for node_id in store.node_ids()
     ]
 
@@ -122,8 +144,11 @@ def get_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
     [(1, 2), (2, 2), (3, 2)]
     """
     store = ensure_store(graph)
+    work_store = to_undirected_store(store)
+    undirected_graph = _undirected_graph(work_store)
     return [
-        (node_id, store.graph.degree(store.id_to_index[node_id])) for node_id in store.node_ids()
+        (node_id, undirected_graph.degree(work_store.id_to_index[node_id]))
+        for node_id in work_store.node_ids()
     ]
 
 
@@ -186,7 +211,8 @@ def _component_sort_key(store: RxGraphStore, component: set[int]) -> tuple[int, 
 
 
 def _largest_component(store: RxGraphStore) -> set[int] | None:
-    components = [set(comp) for comp in rx.connected_components(store.graph)]
+    undirected_graph = _undirected_graph(store)
+    components = [set(comp) for comp in rx.connected_components(undirected_graph)]
     if not components:
         return None
     return max(components, key=lambda comp: _component_sort_key(store, comp))
@@ -220,9 +246,10 @@ def compute_diameter_estimate(graph: GraphInput) -> float | None:
         return None
     if len(largest) <= 1:
         return 0.0
-    subgraph = work_store.graph.subgraph(list(largest), preserve_attrs=True)
+    undirected_graph = _undirected_graph(work_store)
+    subgraph = undirected_graph.subgraph(list(largest), preserve_attrs=True)
     try:
-        lengths = rx.all_pairs_dijkstra_path_lengths(subgraph, lambda _payload: 1.0)
+        lengths = rx.graph_all_pairs_dijkstra_path_lengths(subgraph, lambda _payload: 1.0)
     except rx.NullGraph:
         return None
     diameter = 0.0
@@ -260,9 +287,10 @@ def compute_avg_shortest_path_length(graph: GraphInput) -> float | None:
         return None
     if len(largest) <= 1:
         return 0.0
-    subgraph = work_store.graph.subgraph(list(largest), preserve_attrs=True)
+    undirected_graph = _undirected_graph(work_store)
+    subgraph = undirected_graph.subgraph(list(largest), preserve_attrs=True)
     try:
-        lengths = rx.all_pairs_dijkstra_path_lengths(subgraph, lambda _payload: 1.0)
+        lengths = rx.graph_all_pairs_dijkstra_path_lengths(subgraph, lambda _payload: 1.0)
     except rx.NullGraph:
         return None
     total = 0.0
@@ -307,7 +335,8 @@ def compute_condensation_layer_count(graph: GraphInput) -> int | None:
 
 
 def _condensation_graph(store: RxGraphStore) -> rx.PyDiGraph:
-    sccs = [set(comp) for comp in rx.strongly_connected_components(store.graph)]
+    directed_graph = _directed_graph(store)
+    sccs = [set(comp) for comp in rx.strongly_connected_components(directed_graph)]
     if not sccs:
         return rx.PyDiGraph(multigraph=False)
     sorted_sccs = sorted(sccs, key=lambda comp: _component_sort_key(store, comp))
@@ -393,14 +422,16 @@ def compute_graph_statistics(graph: GraphInput) -> GraphStatistics:
     avg_in_degree = sum(in_degrees) / node_count if node_count else 0.0
     avg_out_degree = sum(out_degrees) / node_count if node_count else 0.0
 
-    strongly_connected = len(list(rx.strongly_connected_components(store.graph)))
-    weakly_connected = (
-        len(list(rx.weakly_connected_components(store.graph)))
-        if store.is_directed
-        else len(list(rx.connected_components(store.graph)))
-    )
-
-    is_dag = rx.is_directed_acyclic_graph(store.graph) if store.is_directed else True
+    if store.is_directed:
+        directed_graph = _directed_graph(store)
+        strongly_connected = len(list(rx.strongly_connected_components(directed_graph)))
+        weakly_connected = len(list(rx.weakly_connected_components(directed_graph)))
+        is_dag = rx.is_directed_acyclic_graph(directed_graph)
+    else:
+        undirected_graph = _undirected_graph(store)
+        strongly_connected = len(list(rx.connected_components(undirected_graph)))
+        weakly_connected = strongly_connected
+        is_dag = True
 
     return GraphStatistics(
         node_count=node_count,

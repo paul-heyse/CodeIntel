@@ -9,12 +9,13 @@ from codeintel.build.graphs.assembly import (
     empty_reader,
     tabular_to_table,
 )
-from codeintel.build.tabular.arrow_ops import dedupe_table_for_table
+from codeintel.build.tabular.arrow_ops import dedupe_table_for_table, emit_alignment_report
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 
 PDG_EDGES_TABLE_KEY = "graph.pdg_edges"
+PDG_TARGET_NAME = "pdg"
 
 
 def _dfg_edges_table(dfg_edges: pa.Table) -> pa.Table:
@@ -65,7 +66,12 @@ def pdg_edges(
         return empty_reader(PDG_EDGES_TABLE_KEY)
     combined = concat_tables_unified(tables)
     deduped = dedupe_table_for_table(PDG_EDGES_TABLE_KEY, combined)
-    return align_table_to_contract(PDG_EDGES_TABLE_KEY, deduped)
+    return align_table_to_contract(
+        PDG_EDGES_TABLE_KEY,
+        deduped,
+        target_name=PDG_TARGET_NAME,
+        reporter=emit_alignment_report,
+    )
 
 
 __all__ = [
