@@ -7,11 +7,20 @@ including degree centrality and weighted projections.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import networkx as nx
-from networkx.algorithms import bipartite as nx_bipartite
-from networkx.exception import NetworkXAlgorithmError
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    bipartite_degree_centrality_by_id,
+    ensure_store,
+    to_undirected_store,
+    weighted_projection_store,
+)
+from codeintel.build.graphs.rx.convert import rx_to_networkx
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, sorted_mapping
+
+if TYPE_CHECKING:
+    import networkx as nx
 
 
 @dataclass(frozen=True)
@@ -37,7 +46,7 @@ class BipartiteDegreeMetrics:
 
 
 def compute_bipartite_degrees(
-    graph: nx.Graph,
+    graph: GraphInput,
     primary: set[Any],
     secondary: set[Any],
     *,
@@ -69,38 +78,54 @@ def compute_bipartite_degrees(
     >>> result.degree[1]
     2
     """
-    degree: dict[Any, int] = {}
-    weighted_degree: dict[Any, float] = {}
-
-    unweighted_view = nx.degree(graph, weight=None)
-    weighted_view = nx.degree(graph, weight=weight)
-
-    for node, deg in unweighted_view:
-        degree[node] = int(deg)
-    for node, deg in weighted_view:
-        weighted_degree[node] = float(deg)
-
-    if not primary or not secondary:
+    store = ensure_store(graph, weight=weight)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
         return BipartiteDegreeMetrics(
-            degree=degree,
-            weighted_degree=weighted_degree,
+            degree={},
+            weighted_degree={},
             primary_degree_centrality={},
             secondary_degree_centrality={},
         )
 
-    primary_dc = nx_bipartite.degree_centrality(graph, secondary)
-    secondary_dc = nx_bipartite.degree_centrality(graph, primary)
+    degree: dict[Any, int] = dict.fromkeys(work_store.node_ids(), 0)
+    weighted_degree: dict[Any, float] = dict.fromkeys(work_store.node_ids(), 0.0)
+    for src_idx, dst_idx in work_store.graph.edge_list():
+        src_id = work_store.index_to_id[src_idx]
+        dst_id = work_store.index_to_id[dst_idx]
+        payload = work_store.graph.get_edge_data(src_idx, dst_idx)
+        weight_val = edge_weight_from_payload(payload)
+        if src_idx == dst_idx:
+            degree[src_id] += 2
+            weighted_degree[src_id] += weight_val * 2.0
+            continue
+        degree[src_id] += 1
+        degree[dst_id] += 1
+        weighted_degree[src_id] += weight_val
+        weighted_degree[dst_id] += weight_val
+
+    if not primary or not secondary:
+        return BipartiteDegreeMetrics(
+            degree=sorted_mapping(degree),
+            weighted_degree=sorted_mapping(weighted_degree),
+            primary_degree_centrality={},
+            secondary_degree_centrality={},
+        )
+
+    centrality = bipartite_degree_centrality_by_id(work_store, primary)
+    primary_dc = {node: centrality.get(node, 0.0) for node in primary}
+    secondary_dc = {node: centrality.get(node, 0.0) for node in secondary}
 
     return BipartiteDegreeMetrics(
-        degree=degree,
-        weighted_degree=weighted_degree,
-        primary_degree_centrality={node: float(val) for node, val in primary_dc.items()},
-        secondary_degree_centrality={node: float(val) for node, val in secondary_dc.items()},
+        degree=sorted_mapping(degree),
+        weighted_degree=sorted_mapping(weighted_degree),
+        primary_degree_centrality=sorted_mapping(primary_dc),
+        secondary_degree_centrality=sorted_mapping(secondary_dc),
     )
 
 
 def compute_weighted_projection(
-    bipartite_graph: nx.Graph,
+    bipartite_graph: GraphInput,
     nodes: set[Any],
 ) -> nx.Graph | None:
     """Build a weighted projection graph from a bipartite partition.
@@ -134,18 +159,20 @@ def compute_weighted_projection(
     >>> proj.number_of_nodes()
     2
     """
-    graph_nodes = bipartite_graph.number_of_nodes()
+    store = ensure_store(bipartite_graph)
+    node_count = store.graph.num_nodes()
     if not nodes:
         return None
-    graph_node_set = set(bipartite_graph)
+    graph_node_set = set(store.node_ids())
     if not nodes.issubset(graph_node_set):
         return None
-    if len(nodes) >= graph_nodes:
+    if len(nodes) >= node_count:
         return None
     try:
-        return nx_bipartite.weighted_projected_graph(bipartite_graph, nodes)
-    except NetworkXAlgorithmError:
+        projection_store = weighted_projection_store(store, nodes, ratio=False)
+    except ValueError:
         return None
+    return rx_to_networkx(projection_store.graph)
 
 
 __all__ = [

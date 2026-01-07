@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -21,50 +22,49 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def write_dataset_manifest(
-    output_dir: Path,
-    dataset_mapping: Mapping[str, str],
-    *,
-    jsonl_mapping: Mapping[str, str],
-    parquet_mapping: Mapping[str, str],
-    selected: list[str] | None = None,
-) -> Path:
+@dataclass(frozen=True, slots=True)
+class DatasetManifestSpec:
+    """Inputs required to build a dataset export manifest."""
+
+    output_dir: Path
+    dataset_mapping: Mapping[str, str]
+    jsonl_mapping: Mapping[str, str]
+    parquet_mapping: Mapping[str, str]
+    arrow_mapping: Mapping[str, str] | None = None
+    selected: list[str] | None = None
+
+
+def write_dataset_manifest(spec: DatasetManifestSpec) -> Path:
     """Write a manifest mapping dataset names to export filenames.
 
     Parameters
     ----------
-    output_dir
-        Document output directory where the manifest will be written.
-    dataset_mapping
-        Registry mapping dataset name -> fully qualified table/view name.
-    jsonl_mapping
-        Mapping of table -> JSONL filename for datasets with JSON exports.
-    parquet_mapping
-        Mapping of table -> Parquet filename for datasets with Parquet exports.
-    selected
-        Optional subset of dataset names requested for export.
+    spec
+        Manifest inputs describing datasets and export filenames.
 
     Returns
     -------
     Path
         Path to the written manifest file.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    selected_set = set(selected) if selected is not None else None
+    spec.output_dir.mkdir(parents=True, exist_ok=True)
+    selected_set = set(spec.selected) if spec.selected is not None else None
     entries: list[dict[str, object]] = []
 
-    for name, table in sorted(dataset_mapping.items()):
+    for name, table in sorted(spec.dataset_mapping.items()):
         entry: dict[str, object] = {"name": name, "table": table}
-        if table in jsonl_mapping:
-            entry["jsonl"] = jsonl_mapping[table]
-        if table in parquet_mapping:
-            entry["parquet"] = parquet_mapping[table]
+        if table in spec.jsonl_mapping:
+            entry["jsonl"] = spec.jsonl_mapping[table]
+        if table in spec.parquet_mapping:
+            entry["parquet"] = spec.parquet_mapping[table]
+        if spec.arrow_mapping is not None and table in spec.arrow_mapping:
+            entry["arrow"] = spec.arrow_mapping[table]
         if selected_set is not None:
             entry["selected"] = name in selected_set
         entries.append(entry)
 
     manifest = {"datasets": entries}
-    path = output_dir / "datasets_manifest.json"
+    path = spec.output_dir / "datasets_manifest.json"
     write_manifest_json(path, manifest)
     return path
 
@@ -190,6 +190,7 @@ def should_skip_export(
 
 
 __all__ = [
+    "DatasetManifestSpec",
     "ExportManifestData",
     "IncrementalMarker",
     "SkipCriteria",

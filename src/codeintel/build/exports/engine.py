@@ -1,4 +1,4 @@
-"""Export engine for JSONL/Parquet dataset exports.
+"""Export engine for Arrow/JSONL/Parquet dataset exports.
 
 This module centralizes the shared export control flow:
 
@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -36,6 +37,7 @@ from codeintel.build.exports.common import (
     write_audit_entry,
 )
 from codeintel.build.exports.manifest import (
+    DatasetManifestSpec,
     ExportManifestData,
     IncrementalMarker,
     SkipCriteria,
@@ -48,6 +50,7 @@ from codeintel.build.exports.manifest import (
 )
 from codeintel.build.exports.validation import validate_export_files
 from codeintel.build.exports.writers import (
+    write_arrow_reader,
     write_jsonl_reader,
     write_parquet_reader,
 )
@@ -59,7 +62,6 @@ from codeintel.core.exports.formats import normalize_export_format, suffix_for_e
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
-    from pathlib import Path
 
     from codeintel.build.meta.bundle import BuildMetadataBundleWriter
     from codeintel.core.gateway import BuildGateway, DatasetRegistryProtocol
@@ -67,8 +69,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-ExportFormat = Literal["jsonl", "parquet"]
-_BUILD_EXPORT_FORMATS = {"jsonl", "parquet"}
+ExportFormat = Literal["arrow", "jsonl", "parquet"]
+_BUILD_EXPORT_FORMATS = {"arrow", "jsonl", "parquet"}
 
 _EXPORT_RECORD_BATCH_SIZE = 10_000
 
@@ -268,6 +270,63 @@ def export_parquet_for_table(
     return rows_written
 
 
+def export_arrow_for_table(
+    gateway: BuildGateway,
+    table_key: str,
+    output_path: Path,
+    settings: ExportAuditSettings,
+    metadata_bundle: BuildMetadataBundleWriter | None = None,
+) -> int:
+    """Export a dataset snapshot to an Arrow IPC stream.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing dataset registry access.
+    table_key
+        Fully qualified table key to export (schema.table).
+    output_path
+        Output Arrow IPC path.
+    settings
+        Export audit settings.
+    metadata_bundle
+        Optional metadata bundle writer for build-first audit logging.
+
+    Returns
+    -------
+    int
+        Number of rows written.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    start = perf_counter()
+    reader = build_export_reader(
+        gateway,
+        table_key,
+        batch_size=_EXPORT_RECORD_BATCH_SIZE,
+    )
+    metadata = _ipc_metadata(table_key, snapshot_id=None)
+    rows_written = write_arrow_reader(
+        output_path,
+        reader=reader,
+        metadata=metadata,
+        batch_metadata=metadata,
+    )
+    duration = perf_counter() - start
+    write_audit_entry(
+        ExportAuditRecord(
+            table_name=table_key,
+            macro="arrow_stream",
+            rows=rows_written,
+            duration_s=duration,
+            output_path=output_path,
+        ),
+        gateway=gateway,
+        settings=settings,
+        metadata_bundle=metadata_bundle,
+    )
+    return rows_written
+
+
 def export_jsonl_for_table_from_snapshot(
     *,
     source: SnapshotExportSource,
@@ -371,6 +430,66 @@ def export_parquet_for_table_from_snapshot(
     return rows_written
 
 
+def export_arrow_for_table_from_snapshot(
+    *,
+    source: SnapshotExportSource,
+    target: ExportTarget,
+    context: _SnapshotRunContext,
+) -> int:
+    """Export a dataset snapshot to Arrow IPC without a storage gateway.
+
+    Parameters
+    ----------
+    source
+        Dataset snapshot location.
+    target
+        Export target describing the dataset and output path.
+    context
+        Snapshot export context including audit settings.
+
+    Returns
+    -------
+    int
+        Number of rows written.
+    """
+    target.output_path.parent.mkdir(parents=True, exist_ok=True)
+    start = perf_counter()
+    reader = build_export_reader_from_snapshot(
+        dataset_root_dir=source.dataset_root_dir,
+        snapshot_id=source.snapshot_id,
+        table_key=target.table_name,
+        batch_size=_EXPORT_RECORD_BATCH_SIZE,
+    )
+    metadata = _ipc_metadata(target.table_name, snapshot_id=source.snapshot_id)
+    rows_written = write_arrow_reader(
+        target.output_path,
+        reader=reader,
+        metadata=metadata,
+        batch_metadata=metadata,
+    )
+    duration = perf_counter() - start
+    write_audit_entry(
+        ExportAuditRecord(
+            table_name=target.table_name,
+            macro="arrow_snapshot",
+            rows=rows_written,
+            duration_s=duration,
+            output_path=target.output_path,
+        ),
+        gateway=None,
+        settings=context.settings,
+        metadata_bundle=context.metadata_bundle,
+    )
+    return rows_written
+
+
+def _ipc_metadata(table_key: str, *, snapshot_id: str | None) -> dict[str, object]:
+    payload: dict[str, object] = {"table_key": table_key}
+    if snapshot_id is not None:
+        payload["snapshot_id"] = snapshot_id
+    return payload
+
+
 def _dictionary_options_for_export(
     gateway: BuildGateway,
     table_key: str,
@@ -425,6 +544,25 @@ def _coerce_mapping(value: object) -> dict[str, object]:
     return {}
 
 
+def _with_export_suffix(filename: str, *, extension: str) -> str:
+    path = Path(filename)
+    try:
+        return str(path.with_suffix(extension))
+    except ValueError:
+        return f"{filename}{extension}"
+
+
+def _arrow_mapping_from_parquet(
+    parquet_mapping: Mapping[str, str],
+    *,
+    extension: str,
+) -> dict[str, str]:
+    return {
+        table_key: _with_export_suffix(filename, extension=extension)
+        for table_key, filename in parquet_mapping.items()
+    }
+
+
 def _format_spec(gateway: BuildGateway, fmt: ExportFormat) -> _ExportFormatSpec:
     if fmt == "jsonl":
         return _ExportFormatSpec(
@@ -433,6 +571,18 @@ def _format_spec(gateway: BuildGateway, fmt: ExportFormat) -> _ExportFormatSpec:
             can_export_capability_key="can_export_jsonl",
             extension=suffix_for_export_format(fmt),
             write_table=export_jsonl_for_table,
+        )
+    if fmt == "arrow":
+        extension = suffix_for_export_format(fmt)
+        return _ExportFormatSpec(
+            format="arrow",
+            mapping=_arrow_mapping_from_parquet(
+                gateway.datasets.parquet_datasets,
+                extension=extension,
+            ),
+            can_export_capability_key="can_export_parquet",
+            extension=extension,
+            write_table=export_arrow_for_table,
         )
     return _ExportFormatSpec(
         format="parquet",
@@ -559,9 +709,17 @@ def _format_mapping_for_contracts(
     extension = suffix_for_export_format(fmt)
     capability_key = "can_export_jsonl" if fmt == "jsonl" else "can_export_parquet"
     for contract in contracts:
-        filename = contract.jsonl_filename if fmt == "jsonl" else contract.parquet_filename
+        if fmt == "jsonl":
+            filename = contract.jsonl_filename
+        elif fmt == "arrow":
+            filename = contract.parquet_filename
+        else:
+            filename = contract.parquet_filename
         if isinstance(filename, str) and filename:
-            mapping[contract.table_key] = filename
+            if fmt == "arrow":
+                mapping[contract.table_key] = _with_export_suffix(filename, extension=extension)
+            else:
+                mapping[contract.table_key] = filename
     return mapping, extension, capability_key
 
 
@@ -902,6 +1060,12 @@ def _perform_export_write_from_snapshot(
             target=target,
             context=context,
         )
+    elif fmt == "arrow":
+        rows_written = export_arrow_for_table_from_snapshot(
+            source=source,
+            target=target,
+            context=context,
+        )
     else:
         rows_written = export_parquet_for_table_from_snapshot(
             source=source,
@@ -939,7 +1103,7 @@ def export_all_datasets(
     document_output_dir
         Root directory under which dataset artifacts are written.
     fmt
-        Export format ("jsonl" or "parquet").
+        Export format ("arrow", "jsonl", or "parquet").
     run_config
         Export settings, selection options, and optional metadata bundle.
 
@@ -971,12 +1135,19 @@ def export_all_datasets(
         if exported is not None:
             written.append(exported)
 
+    arrow_mapping = _arrow_mapping_from_parquet(
+        plan.registry.parquet_datasets,
+        extension=suffix_for_export_format("arrow"),
+    )
     manifest_path = write_dataset_manifest(
-        plan.output_dir,
-        plan.dataset_mapping,
-        jsonl_mapping=plan.registry.jsonl_datasets,
-        parquet_mapping=plan.registry.parquet_datasets,
-        selected=list(plan.selected.keys()),
+        DatasetManifestSpec(
+            output_dir=plan.output_dir,
+            dataset_mapping=plan.dataset_mapping,
+            jsonl_mapping=plan.registry.jsonl_datasets,
+            parquet_mapping=plan.registry.parquet_datasets,
+            arrow_mapping=arrow_mapping,
+            selected=list(plan.selected.keys()),
+        )
     )
     written.append(manifest_path)
 
@@ -1008,7 +1179,7 @@ def export_all_datasets_from_snapshot(
     document_output_dir
         Output directory for export artifacts.
     fmt
-        Export format ("jsonl" or "parquet").
+        Export format ("arrow", "jsonl", or "parquet").
     run_config
         Export settings, selection options, and optional metadata bundle.
     contracts
@@ -1055,12 +1226,16 @@ def export_all_datasets_from_snapshot(
         if exported is not None:
             written.append(exported)
 
+    arrow_mapping = _format_mapping_for_contracts(plan.contracts, "arrow")[0]
     manifest_path = write_dataset_manifest(
-        plan.output_dir,
-        plan.dataset_mapping,
-        jsonl_mapping=_format_mapping_for_contracts(plan.contracts, "jsonl")[0],
-        parquet_mapping=_format_mapping_for_contracts(plan.contracts, "parquet")[0],
-        selected=list(plan.selected.keys()),
+        DatasetManifestSpec(
+            output_dir=plan.output_dir,
+            dataset_mapping=plan.dataset_mapping,
+            jsonl_mapping=_format_mapping_for_contracts(plan.contracts, "jsonl")[0],
+            parquet_mapping=_format_mapping_for_contracts(plan.contracts, "parquet")[0],
+            arrow_mapping=arrow_mapping,
+            selected=list(plan.selected.keys()),
+        )
     )
     written.append(manifest_path)
     _validate_written_exports(written, plan.by_table_key, plan.context.opts, gateway=None)
@@ -1073,6 +1248,8 @@ __all__ = [
     "SnapshotExportSource",
     "export_all_datasets",
     "export_all_datasets_from_snapshot",
+    "export_arrow_for_table",
+    "export_arrow_for_table_from_snapshot",
     "export_jsonl_for_table",
     "export_jsonl_for_table_from_snapshot",
     "export_parquet_for_table",

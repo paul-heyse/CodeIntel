@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal, cast
 
@@ -20,6 +21,8 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.json as paj
 
+from codeintel.build.contracts.registry import require_contract_for_target
+from codeintel.build.contracts.types import ContractPolicy
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular import array_ops as _array_ops
 from codeintel.build.tabular.compute_helpers import cast_array, scalar_from_compute
@@ -799,10 +802,83 @@ def arrow_join_tables(
         return left.join(right, **join_kwargs)
 
 
+@dataclass(frozen=True, slots=True)
+class ContractAlignmentPlan:
+    """Cached alignment plan for contract-aware schema alignment."""
+
+    table_key: str
+    target_name: str | None
+    contract_schema: pa.Schema
+    extras_policy: ExtrasPolicy | None
+
+
+@lru_cache(maxsize=512)
+def _contract_alignment_plan(
+    table_key: str,
+    target_name: str | None,
+    extras_policy: ExtrasPolicy | None,
+) -> ContractAlignmentPlan:
+    contract_schema = _arrow_schema_for_table(table_key, extras_policy=extras_policy)
+    return ContractAlignmentPlan(
+        table_key=table_key,
+        target_name=target_name,
+        contract_schema=contract_schema,
+        extras_policy=extras_policy,
+    )
+
+
+def _resolve_alignment_policy(
+    *,
+    table_key: str,
+    target_name: str | None,
+    policy: ContractPolicy | None,
+    extras_policy: ExtrasPolicy | None,
+) -> ContractPolicy:
+    resolved_policy = policy
+    if resolved_policy is None and target_name is not None:
+        contract = require_contract_for_target(
+            table_key=table_key,
+            target_name=target_name,
+        )
+        resolved_policy = contract.policy
+    if resolved_policy is None:
+        resolved_policy = ContractPolicy()
+    if extras_policy is None:
+        return resolved_policy
+    if resolved_policy.extras_policy in {None, extras_policy}:
+        return replace(resolved_policy, extras_policy=extras_policy)
+    msg = (
+        "extras_policy conflicts with ContractPolicy extras_policy: "
+        f"{extras_policy!r} vs {resolved_policy.extras_policy!r}"
+    )
+    raise ValueError(msg)
+
+
+def _assert_schema_types_match(
+    contract_schema: pa.Schema,
+    incoming_schema: pa.Schema,
+) -> None:
+    mismatched: list[tuple[str, pa.DataType, pa.DataType]] = []
+    incoming_names = set(incoming_schema.names)
+    for field in contract_schema:
+        if field.name not in incoming_names:
+            continue
+        incoming_field = incoming_schema.field(field.name)
+        if incoming_field.type != field.type:
+            mismatched.append((field.name, incoming_field.type, field.type))
+    if not mismatched:
+        return
+    details = ", ".join(
+        f"{name} ({incoming} -> {expected})" for name, incoming, expected in mismatched
+    )
+    msg = f"Contract type coercion disabled; mismatched columns: {details}"
+    raise ValueError(msg)
+
+
 def _arrow_schema_for_table(
     table_key: str,
     *,
-    extras_policy: ExtrasPolicy | None,
+    extras_policy: ExtrasPolicy | None = None,
 ) -> pa.Schema:
     schema_service = get_schema_service()
     if extras_policy is None:
@@ -818,6 +894,8 @@ def align_reader_to_contract(
     table_key: str,
     reader: pa.RecordBatchReader,
     *,
+    target_name: str | None = None,
+    policy: ContractPolicy | None = None,
     extras_policy: ExtrasPolicy | None = None,
 ) -> pa.RecordBatchReader:
     """Align an Arrow reader to the contract schema for a table.
@@ -827,14 +905,28 @@ def align_reader_to_contract(
     pa.RecordBatchReader
         Reader aligned to the contract schema.
     """
-    contract_schema = _arrow_schema_for_table(table_key, extras_policy=extras_policy)
-    return _align_reader(reader, contract_schema, extras_policy=extras_policy)
+    resolved_policy = _resolve_alignment_policy(
+        table_key=table_key,
+        target_name=target_name,
+        policy=policy,
+        extras_policy=extras_policy,
+    )
+    plan = _contract_alignment_plan(
+        table_key=table_key,
+        target_name=target_name,
+        extras_policy=resolved_policy.extras_policy,
+    )
+    if not resolved_policy.coerce_types:
+        _assert_schema_types_match(plan.contract_schema, reader.schema)
+    return _align_reader(reader, plan.contract_schema, extras_policy=plan.extras_policy)
 
 
 def align_table_to_contract(
     table_key: str,
     table: pa.Table,
     *,
+    target_name: str | None = None,
+    policy: ContractPolicy | None = None,
     extras_policy: ExtrasPolicy | None = None,
 ) -> pa.Table:
     """Align an Arrow table to the contract schema for a table.
@@ -844,8 +936,25 @@ def align_table_to_contract(
     pa.Table
         Arrow table aligned to the contract schema.
     """
+    resolved_policy = _resolve_alignment_policy(
+        table_key=table_key,
+        target_name=target_name,
+        policy=policy,
+        extras_policy=extras_policy,
+    )
+    plan = _contract_alignment_plan(
+        table_key=table_key,
+        target_name=target_name,
+        extras_policy=resolved_policy.extras_policy,
+    )
+    if table.schema.equals(plan.contract_schema, check_metadata=True):
+        return table
+    if table.schema.equals(plan.contract_schema, check_metadata=False):
+        return table.replace_schema_metadata(plan.contract_schema.metadata)
+    if not resolved_policy.coerce_types:
+        _assert_schema_types_match(plan.contract_schema, table.schema)
     reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
-    aligned = align_reader_to_contract(table_key, reader, extras_policy=extras_policy)
+    aligned = _align_reader(reader, plan.contract_schema, extras_policy=plan.extras_policy)
     return reader_to_table(aligned)
 
 

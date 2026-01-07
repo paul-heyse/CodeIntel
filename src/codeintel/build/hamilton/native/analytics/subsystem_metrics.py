@@ -15,6 +15,8 @@ from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
     SubsystemGraphMetricInputs,
     build_subsystem_graph_metrics_rows,
 )
+from codeintel.build.contracts.registry import require_contract
+from codeintel.build.contracts.types import ContractOverrides
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -24,7 +26,6 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
@@ -34,15 +35,15 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 SUBSYSTEM_GRAPH_METRICS_TARGET_NAME = "subsystem_graph_metrics"
 SUBSYSTEM_GRAPH_METRICS_TABLE_KEY = "analytics.subsystem_graph_metrics"
-SUBSYSTEM_GRAPH_METRICS_CONTRACT = TableContractSpec(
+SUBSYSTEM_GRAPH_METRICS_CONTRACT = require_contract(
     table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
     domain="analytics",
     target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="subsystem_graph_metrics__base",
+    overrides=ContractOverrides(
+        input_name="subsystem_graph_metrics__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 

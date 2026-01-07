@@ -25,6 +25,7 @@ from codeintel.build.exports.jsonl import (
     export_repo_map_json,
 )
 from codeintel.build.exports.manifest import (
+    DatasetManifestSpec,
     ExportManifestData,
     IncrementalMarker,
     SkipCriteria,
@@ -50,6 +51,7 @@ from codeintel.build.exports.runner import (
 from codeintel.build.exports.validation import validate_export_files
 
 __all__ = [
+    "DatasetManifestSpec",
     "ExportAuditRecord",
     "ExportCallOptions",
     "ExportManifestData",

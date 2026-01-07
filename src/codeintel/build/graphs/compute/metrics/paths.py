@@ -8,15 +8,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import networkx as nx
-from networkx.exception import NetworkXException
+import rustworkx as rx
+
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable
 
 
 def count_simple_paths(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     sources: Iterable[Hashable],
     targets: Iterable[Hashable],
     *,
@@ -50,24 +51,36 @@ def count_simple_paths(
     >>> count_simple_paths(g, [1], [3], max_paths=10, cutoff=5)
     2
     """
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
+        return 0
     count = 0
     for source in sources:
         for target in targets:
             if count >= max_paths:
                 return count
+            source_idx = store.id_to_index.get(source)
+            target_idx = store.id_to_index.get(target)
+            if source_idx is None or target_idx is None:
+                continue
             try:
-                paths = nx.all_simple_paths(graph, source=source, target=target, cutoff=cutoff)
+                paths = rx.digraph_all_simple_paths(
+                    store.graph,
+                    source_idx,
+                    target_idx,
+                    cutoff=cutoff,
+                )
                 for _ in paths:
                     count += 1
                     if count >= max_paths:
                         return count
-            except NetworkXException:
+            except (rx.InvalidNode, rx.NoPathFound, rx.NullGraph):
                 continue
     return count
 
 
 def compute_avg_shortest_path_from_source(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     source: Hashable,
 ) -> float:
     """Compute average shortest path length from a single source.
@@ -91,15 +104,25 @@ def compute_avg_shortest_path_from_source(
     >>> round(compute_avg_shortest_path_from_source(g, 1), 2)
     1.0
     """
-    try:
-        lengths = nx.single_source_shortest_path_length(graph, source)
-        return sum(lengths.values()) / len(lengths) if lengths else 0.0
-    except NetworkXException:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return 0.0
+    source_idx = store.id_to_index.get(source)
+    if source_idx is None:
+        return 0.0
+    try:
+        lengths = rx.dijkstra_shortest_path_lengths(
+            store.graph,
+            source_idx,
+            lambda _payload: 1.0,
+        )
+    except (rx.InvalidNode, rx.NullGraph):
+        return 0.0
+    return sum(lengths.values()) / len(lengths) if lengths else 0.0
 
 
 def compute_reachable_nodes(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     source: Hashable,
 ) -> set[Hashable]:
     """Compute set of nodes reachable from source (including source).
@@ -123,10 +146,15 @@ def compute_reachable_nodes(
     >>> sorted(compute_reachable_nodes(g, 1))
     [1, 2, 3]
     """
+    store = ensure_store(graph)
+    source_idx = store.id_to_index.get(source)
+    if source_idx is None:
+        return {source}
     try:
-        nodes = nx.descendants(graph, source)
-    except NetworkXException:
-        nodes = set()
+        descendants = rx.descendants(store.graph, source_idx)
+    except (rx.InvalidNode, rx.NullGraph):
+        descendants = set()
+    nodes = {store.index_to_id[idx] for idx in descendants}
     nodes.add(source)
     return nodes
 

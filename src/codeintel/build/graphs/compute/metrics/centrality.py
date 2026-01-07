@@ -6,10 +6,16 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from networkx.algorithms import structuralholes
 from networkx.exception import NetworkXAlgorithmError
 
 from codeintel.build.graphs.compute.metrics.types import CentralityBundle, NeighborStats
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    constraint_by_id,
+    ensure_store,
+    graph_node_count,
+)
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 from codeintel.core.compute.centrality import (
     compute_betweenness,
     compute_closeness,
@@ -20,8 +26,6 @@ from codeintel.core.compute.centrality import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-    import networkx as nx
 
     from codeintel.build.graphs.runtime.context import GraphContext
 
@@ -36,7 +40,7 @@ class CentralityComputations:
     constraint_fn: Callable[..., Any] | None = None
 
 
-def _betweenness_sample(graph: nx.Graph, ctx: GraphContext) -> int | None:
+def _betweenness_sample(graph: GraphInput, ctx: GraphContext) -> int | None:
     """Determine betweenness sampling parameter.
 
     Returns
@@ -44,7 +48,7 @@ def _betweenness_sample(graph: nx.Graph, ctx: GraphContext) -> int | None:
     int | None
         Sample size for betweenness, or None for full computation.
     """
-    node_count = graph.number_of_nodes()
+    node_count = graph_node_count(graph)
     if node_count == 0:
         return None
     if node_count <= ctx.betweenness_sample:
@@ -53,21 +57,10 @@ def _betweenness_sample(graph: nx.Graph, ctx: GraphContext) -> int | None:
 
 
 def _coerce_edge_weight(value: object) -> int:
-    if value is None:
-        return 1
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(float(value))
-        except ValueError:
-            return 1
-    return 1
+    return int(edge_weight_from_payload(value))
 
 
-def neighbor_stats(graph: nx.DiGraph, *, weight: str | None = None) -> NeighborStats:
+def neighbor_stats(graph: GraphInput, *, weight: str | None = None) -> NeighborStats:
     """Accumulate neighbor sets and weighted edge counts.
 
     Returns
@@ -75,18 +68,21 @@ def neighbor_stats(graph: nx.DiGraph, *, weight: str | None = None) -> NeighborS
     NeighborStats
         Neighbor sets and weighted counts for each node.
     """
+    store = ensure_store(graph, weight=weight)
     in_neighbors: dict[Any, set[Any]] = {}
     out_neighbors: dict[Any, set[Any]] = {}
     in_counts: dict[Any, int] = {}
     out_counts: dict[Any, int] = {}
 
-    for src, dst, data in graph.edges(data=True):
-        key = "weight" if weight is None else weight
-        weight_val = _coerce_edge_weight(data.get(key, 1)) if key is not None else 1
-        out_neighbors.setdefault(src, set()).add(dst)
-        in_neighbors.setdefault(dst, set()).add(src)
-        out_counts[src] = out_counts.get(src, 0) + weight_val
-        in_counts[dst] = in_counts.get(dst, 0) + weight_val
+    for src_idx, dst_idx in store.graph.edge_list():
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        payload = store.graph.get_edge_data(src_idx, dst_idx)
+        weight_val = _coerce_edge_weight(payload)
+        out_neighbors.setdefault(src_id, set()).add(dst_id)
+        in_neighbors.setdefault(dst_id, set()).add(src_id)
+        out_counts[src_id] = out_counts.get(src_id, 0) + weight_val
+        in_counts[dst_id] = in_counts.get(dst_id, 0) + weight_val
     return NeighborStats(
         in_neighbors=in_neighbors,
         out_neighbors=out_neighbors,
@@ -96,7 +92,7 @@ def neighbor_stats(graph: nx.DiGraph, *, weight: str | None = None) -> NeighborS
 
 
 def centrality_directed(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     ctx: GraphContext,
     *,
     weight: str | None = None,
@@ -124,7 +120,7 @@ def centrality_directed(
     pagerank = compute_pagerank(graph, weight=pagerank_weight)
 
     eigenvector: dict[Any, float] = {}
-    if include_eigen and graph.number_of_nodes() > 0:
+    if include_eigen and graph_node_count(graph) > 0:
         overrides = compute_overrides or CentralityComputations()
         eigen_fn = overrides.eigen_fn or compute_eigenvector_centrality
         eigenvector = eigen_fn(
@@ -145,7 +141,7 @@ def centrality_directed(
 
 
 def centrality_undirected(
-    graph: nx.Graph,
+    graph: GraphInput,
     ctx: GraphContext,
     *,
     weight: str | None = None,
@@ -170,7 +166,7 @@ def centrality_undirected(
     pagerank = compute_pagerank(graph, weight=weight)
 
     eigenvector: dict[Any, float] = {}
-    if graph.number_of_nodes() > 0:
+    if graph_node_count(graph) > 0:
         overrides = compute_overrides or CentralityComputations()
         eigen_fn = overrides.eigen_fn or compute_eigenvector_centrality
         eigenvector = eigen_fn(
@@ -181,13 +177,13 @@ def centrality_undirected(
         if not eigenvector:
             log.warning("Eigenvector centrality did not converge for graph=%s", graph)
 
-    if include_structural and graph.number_of_nodes() > 0:
+    if include_structural and graph_node_count(graph) > 0:
         overrides = compute_overrides or CentralityComputations()
-        constraint_fn = overrides.constraint_fn or structuralholes.constraint
         try:
+            constraint_fn = overrides.constraint_fn or constraint_by_id
             constraint_fn(graph)
         except NetworkXAlgorithmError:
-            log.warning("Constraint computation failed for graph=%s", graph)
+            log.warning("Structural holes calculation failed for graph=%s", graph)
 
     return CentralityBundle(
         pagerank=pagerank,

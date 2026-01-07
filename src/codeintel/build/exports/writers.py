@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import SupportsInt, TypedDict, cast
 
@@ -15,6 +15,7 @@ import pyarrow.parquet as pq
 from codeintel.build.tabular.arrow_ops import json_writer_available, write_json_streaming
 from codeintel.build.tabular.conversion import record_batch_reader_from_iterable
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.exports.arrow_ipc import default_ipc_write_options, iter_ipc_stream
 from codeintel.core.exports.serialization import coerce_export_row, coerce_export_value
 from codeintel.core.ports.export import ExportRelation, RecordBatch, RecordBatchReader
 
@@ -308,6 +309,51 @@ def write_parquet_reader(
     return rows_written
 
 
+def write_arrow_reader(
+    output_path: Path,
+    *,
+    reader: RecordBatchReader,
+    metadata: Mapping[str, object] | None = None,
+    batch_metadata: Mapping[str, object] | None = None,
+) -> int:
+    """Write a RecordBatchReader to an Arrow IPC stream and return row count.
+
+    Parameters
+    ----------
+    output_path
+        Destination path for the Arrow IPC stream.
+    reader
+        Arrow record batch reader to export.
+    metadata
+        Optional schema metadata to attach to the IPC stream.
+    batch_metadata
+        Optional per-batch metadata to attach to record batches.
+
+    Returns
+    -------
+    int
+        Number of rows written to the IPC stream.
+    """
+    counting_iter = _CountingBatchIterator(_iter_batches(reader))
+    writer_reader = record_batch_reader_from_iterable(counting_iter, empty_policy="none")
+    if writer_reader is None:
+        empty_reader = pa.RecordBatchReader.from_batches(reader.schema, [])
+        _write_arrow_stream(
+            output_path,
+            reader=empty_reader,
+            metadata=metadata,
+            batch_metadata=batch_metadata,
+        )
+        return 0
+    _write_arrow_stream(
+        output_path,
+        reader=writer_reader,
+        metadata=metadata,
+        batch_metadata=batch_metadata,
+    )
+    return counting_iter.rows
+
+
 def _iter_batches(reader: Iterable[RecordBatch]) -> Iterable[RecordBatch]:
     """Yield record batches from a batch reader.
 
@@ -375,6 +421,24 @@ def _maybe_dictionary_encode_table(
     return pa.Table.from_arrays(arrays, schema=pa.schema(fields))
 
 
+def _write_arrow_stream(
+    output_path: Path,
+    *,
+    reader: RecordBatchReader,
+    metadata: Mapping[str, object] | None,
+    batch_metadata: Mapping[str, object] | None,
+) -> None:
+    options = default_ipc_write_options()
+    with output_path.open("wb") as handle:
+        for chunk in iter_ipc_stream(
+            reader,
+            metadata=metadata,
+            batch_metadata=batch_metadata,
+            options=options,
+        ):
+            handle.write(chunk)
+
+
 def _iter_json_rows_from_batch(
     batch: RecordBatch,
     *,
@@ -398,6 +462,7 @@ __all__ = [
     "RecordBatch",
     "RecordBatchReader",
     "default_json_serializer",
+    "write_arrow_reader",
     "write_json_array",
     "write_jsonl_reader",
     "write_jsonl_records",

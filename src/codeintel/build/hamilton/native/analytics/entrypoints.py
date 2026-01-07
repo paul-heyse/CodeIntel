@@ -19,6 +19,8 @@ from codeintel.build.analytics.entrypoints.core import (
 )
 from codeintel.build.analytics.entrypoints.runtime import load_entrypoint_module_sources
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.contracts.registry import require_contract
+from codeintel.build.contracts.types import ContractOverrides
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -28,7 +30,6 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
@@ -43,25 +44,25 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 ENTRYPOINTS_TARGET_NAME = "entrypoints"
 ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
 ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
-ENTRYPOINTS_CONTRACT = TableContractSpec(
+ENTRYPOINTS_CONTRACT = require_contract(
     table_key=ENTRYPOINTS_TABLE_KEY,
     domain="analytics",
     target=ENTRYPOINTS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="entrypoints__base",
+    overrides=ContractOverrides(
+        input_name="entrypoints__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
-ENTRYPOINT_TESTS_CONTRACT = TableContractSpec(
+ENTRYPOINT_TESTS_CONTRACT = require_contract(
     table_key=ENTRYPOINT_TESTS_TABLE_KEY,
     domain="analytics",
     target=ENTRYPOINTS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="entrypoint_tests__base",
+    overrides=ContractOverrides(
+        input_name="entrypoint_tests__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 

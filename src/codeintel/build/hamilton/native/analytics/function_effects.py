@@ -12,6 +12,8 @@ from codeintel.build.analytics.functions.function_effects import (
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.contracts.registry import require_contract
+from codeintel.build.contracts.types import ContractOverrides
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -20,7 +22,6 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import table_for_rows
@@ -29,15 +30,15 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FUNCTION_EFFECTS_TARGET_NAME = "function_effects"
 FUNCTION_EFFECTS_TABLE_KEY = "analytics.function_effects"
-FUNCTION_EFFECTS_CONTRACT = TableContractSpec(
+FUNCTION_EFFECTS_CONTRACT = require_contract(
     table_key=FUNCTION_EFFECTS_TABLE_KEY,
     domain="analytics",
     target=FUNCTION_EFFECTS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="function_effects__base",
+    overrides=ContractOverrides(
+        input_name="function_effects__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 

@@ -18,6 +18,8 @@ from codeintel.build.analytics.data_models.compute import (
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.contracts.registry import require_contract
+from codeintel.build.contracts.types import ContractOverrides
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -29,7 +31,6 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
@@ -42,46 +43,46 @@ DATA_MODELS_TABLE_KEY = "analytics.data_models"
 DATA_MODEL_FIELDS_TABLE_KEY = "analytics.data_model_fields"
 DATA_MODEL_RELATIONSHIPS_TABLE_KEY = "analytics.data_model_relationships"
 DATA_MODEL_USAGE_TABLE_KEY = "analytics.data_model_usage"
-DATA_MODELS_CONTRACT = TableContractSpec(
+DATA_MODELS_CONTRACT = require_contract(
     table_key=DATA_MODELS_TABLE_KEY,
     domain="analytics",
     target=DATA_MODELS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="data_models__base",
+    overrides=ContractOverrides(
+        input_name="data_models__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
-DATA_MODEL_FIELDS_CONTRACT = TableContractSpec(
+DATA_MODEL_FIELDS_CONTRACT = require_contract(
     table_key=DATA_MODEL_FIELDS_TABLE_KEY,
     domain="analytics",
     target=DATA_MODELS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="data_model_fields__base",
+    overrides=ContractOverrides(
+        input_name="data_model_fields__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
-DATA_MODEL_RELATIONSHIPS_CONTRACT = TableContractSpec(
+DATA_MODEL_RELATIONSHIPS_CONTRACT = require_contract(
     table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
     domain="analytics",
     target=DATA_MODELS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="data_model_relationships__base",
+    overrides=ContractOverrides(
+        input_name="data_model_relationships__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 DATA_MODEL_USAGE_TARGET_NAME = "data_model_usage"
-DATA_MODEL_USAGE_CONTRACT = TableContractSpec(
+DATA_MODEL_USAGE_CONTRACT = require_contract(
     table_key=DATA_MODEL_USAGE_TABLE_KEY,
     domain="analytics",
     target=DATA_MODEL_USAGE_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="data_model_usage__base",
+    overrides=ContractOverrides(
+        input_name="data_model_usage__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 

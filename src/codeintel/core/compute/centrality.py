@@ -34,8 +34,22 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-import networkx as nx
-from networkx.exception import PowerIterationFailedConvergence
+import rustworkx as rx
+
+from codeintel.build.graphs.rx.algos import (
+    BetweennessOptions,
+    GraphInput,
+    PagerankOptions,
+    betweenness_by_id,
+    closeness_by_id,
+    degree_centrality_by_id,
+    eigenvector_centrality_by_id,
+    ensure_store,
+    harmonic_centrality_by_id,
+    in_degree_centrality_by_id,
+    out_degree_centrality_by_id,
+    pagerank_by_id,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -78,7 +92,7 @@ class CentralityMetrics:
 
 
 def compute_pagerank(
-    graph: nx.DiGraph | nx.Graph,
+    graph: GraphInput,
     alpha: float = 0.85,
     max_iter: int = 100,
     tol: float = 1e-6,
@@ -111,22 +125,28 @@ def compute_pagerank(
     >>> len(pr)
     3
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph, weight=weight)
+    if store.graph.num_nodes() == 0:
         return {}
     try:
-        return {
-            node: float(val)
-            for node, val in nx.pagerank(
-                graph, alpha=alpha, max_iter=max_iter, tol=tol, weight=weight
-            ).items()
-        }
-    except PowerIterationFailedConvergence:
-        n = graph.number_of_nodes()
-        return dict.fromkeys(graph.nodes(), 1.0 / n)
+        return pagerank_by_id(
+            store,
+            options=PagerankOptions(
+                alpha=alpha,
+                max_iter=max_iter,
+                tol=tol,
+                weight=weight,
+            ),
+        )
+    except rx.FailedToConverge:
+        node_count = store.graph.num_nodes()
+        if node_count == 0:
+            return {}
+        return dict.fromkeys(store.node_ids(), 1.0 / node_count)
 
 
 def compute_betweenness(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
     *,
     normalized: bool = True,
     k: int | None = None,
@@ -153,18 +173,22 @@ def compute_betweenness(
     dict[Any, float]
         Node to betweenness centrality mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph, weight=weight)
+    if store.graph.num_nodes() == 0:
         return {}
-    return {
-        node: float(val)
-        for node, val in nx.betweenness_centrality(
-            graph, normalized=normalized, k=k, weight=weight, seed=seed
-        ).items()
-    }
+    return betweenness_by_id(
+        store,
+        options=BetweennessOptions(
+            normalized=normalized,
+            k=k,
+            weight=weight,
+            seed=seed,
+        ),
+    )
 
 
 def compute_closeness(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
     *,
     wf_improved: bool = True,
 ) -> dict[Any, float]:
@@ -182,13 +206,14 @@ def compute_closeness(
     dict[Any, float]
         Node to closeness centrality mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
-    return nx.closeness_centrality(graph, wf_improved=wf_improved)
+    return closeness_by_id(store, wf_improved=wf_improved)
 
 
 def compute_degree_centrality(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
 ) -> dict[Any, float]:
     """Compute degree centrality for all nodes.
 
@@ -202,12 +227,13 @@ def compute_degree_centrality(
     dict[Any, float]
         Node to degree centrality mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
-    return nx.degree_centrality(graph)
+    return degree_centrality_by_id(store)
 
 
-def compute_in_degree_centrality(graph: nx.DiGraph) -> dict[Any, float]:
+def compute_in_degree_centrality(graph: GraphInput) -> dict[Any, float]:
     """Compute in-degree centrality for all nodes.
 
     Parameters
@@ -220,12 +246,13 @@ def compute_in_degree_centrality(graph: nx.DiGraph) -> dict[Any, float]:
     dict[Any, float]
         Node to in-degree centrality mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
-    return nx.in_degree_centrality(graph)
+    return in_degree_centrality_by_id(store)
 
 
-def compute_out_degree_centrality(graph: nx.DiGraph) -> dict[Any, float]:
+def compute_out_degree_centrality(graph: GraphInput) -> dict[Any, float]:
     """Compute out-degree centrality for all nodes.
 
     Parameters
@@ -238,13 +265,14 @@ def compute_out_degree_centrality(graph: nx.DiGraph) -> dict[Any, float]:
     dict[Any, float]
         Node to out-degree centrality mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
-    return nx.out_degree_centrality(graph)
+    return out_degree_centrality_by_id(store)
 
 
 def compute_harmonic_centrality(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
 ) -> dict[Any, float]:
     """Compute harmonic centrality for all nodes.
 
@@ -261,13 +289,14 @@ def compute_harmonic_centrality(
     dict[Any, float]
         Node to harmonic centrality mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
-    return {node: float(val) for node, val in nx.harmonic_centrality(graph).items()}
+    return harmonic_centrality_by_id(store)
 
 
 def compute_eigenvector_centrality(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
     *,
     max_iter: int = 100,
     tol: float = 1e-6,
@@ -294,28 +323,23 @@ def compute_eigenvector_centrality(
     dict[Any, float]
         Node to eigenvector centrality mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph, weight=weight)
+    if store.graph.num_nodes() == 0:
         return {}
-
-    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-
     try:
-        return {
-            node: float(val)
-            for node, val in nx.eigenvector_centrality(
-                work_graph,
-                max_iter=max_iter,
-                tol=tol,
-                weight=weight,
-            ).items()
-        }
-    except PowerIterationFailedConvergence:
+        return eigenvector_centrality_by_id(
+            store,
+            max_iter=max_iter,
+            tol=tol,
+            weight=weight,
+        )
+    except rx.FailedToConverge:
         log.warning("Eigenvector centrality did not converge; returning zeros")
-        return dict.fromkeys(graph.nodes(), 0.0)
+        return dict.fromkeys(store.node_ids(), 0.0)
 
 
 def compute_all_centralities(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     *,
     alpha: float = 0.85,
     betweenness_k: int | None = None,
@@ -342,30 +366,38 @@ def compute_all_centralities(
     dict[Any, CentralityMetrics]
         Node to centrality metrics mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
 
-    pagerank = compute_pagerank(graph, alpha=alpha)
-    betweenness = compute_betweenness(graph, k=betweenness_k)
-    closeness = compute_closeness(graph)
-    harmonic = compute_harmonic_centrality(graph)
+    pagerank = compute_pagerank(store, alpha=alpha)
+    betweenness = compute_betweenness(store, k=betweenness_k)
+    closeness = compute_closeness(store)
+    harmonic = compute_harmonic_centrality(store)
     eigenvector: dict[Any, float] = {}
     if include_eigenvector:
-        eigenvector = compute_eigenvector_centrality(graph, max_iter=eigenvector_max_iter)
+        eigenvector = compute_eigenvector_centrality(store, max_iter=eigenvector_max_iter)
 
     result: dict[Any, CentralityMetrics] = {}
-    for node in graph.nodes():
-        in_degree = graph.in_degree(node)
-        out_degree = graph.out_degree(node)
-        result[node] = CentralityMetrics(
-            pagerank=pagerank.get(node, 0.0),
-            betweenness=betweenness.get(node, 0.0),
-            closeness=closeness.get(node, 0.0),
-            harmonic=harmonic.get(node, 0.0),
-            eigenvector=eigenvector.get(node, 0.0),
+    for node_id in store.node_ids():
+        node_idx = store.id_to_index[node_id]
+        if store.is_directed:
+            in_degree = store.graph.in_degree(node_idx)
+            out_degree = store.graph.out_degree(node_idx)
+            degree = in_degree + out_degree
+        else:
+            degree = store.graph.degree(node_idx)
+            in_degree = degree
+            out_degree = 0
+        result[node_id] = CentralityMetrics(
+            pagerank=pagerank.get(node_id, 0.0),
+            betweenness=betweenness.get(node_id, 0.0),
+            closeness=closeness.get(node_id, 0.0),
+            harmonic=harmonic.get(node_id, 0.0),
+            eigenvector=eigenvector.get(node_id, 0.0),
             in_degree=in_degree,
             out_degree=out_degree,
-            degree=in_degree + out_degree,
+            degree=degree,
         )
     return result
 

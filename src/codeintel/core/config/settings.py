@@ -7,7 +7,14 @@ from ipaddress import ip_address
 from pathlib import Path
 
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.constants import (
+    DEFAULT_ARROW_BATCH_READAHEAD,
+    DEFAULT_ARROW_BATCH_SIZE,
+    DEFAULT_ARROW_CPU_COUNT,
+    DEFAULT_ARROW_FRAGMENT_READAHEAD,
+    DEFAULT_ARROW_IO_THREAD_COUNT,
+    DEFAULT_ARROW_USE_THREADS,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,12 +40,25 @@ class ArrowDatasetSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ArrowScanSettings:
+    """Arrow dataset scan tuning settings."""
+
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
+    batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
+    fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
+    use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
+    cpu_count: int | None = DEFAULT_ARROW_CPU_COUNT
+    io_thread_count: int | None = DEFAULT_ARROW_IO_THREAD_COUNT
+
+
+@dataclass(frozen=True, slots=True)
 class BuildSettings:
     """Build runtime settings injected into build execution."""
 
     engine_version: str
     export_audit: ExportAuditSettings = field(default_factory=ExportAuditSettings)
     arrow_dataset: ArrowDatasetSettings = field(default_factory=ArrowDatasetSettings)
+    arrow_scan: ArrowScanSettings = field(default_factory=ArrowScanSettings)
     polars_profile: bool = False
     polars_inspect: bool = False
     polars_query_opt_flags: tuple[str, ...] = ()
@@ -397,6 +417,7 @@ def _is_unspecified_host(host: str) -> bool:
 
 __all__ = [
     "ArrowDatasetSettings",
+    "ArrowScanSettings",
     "BatchProcessorSettings",
     "BuildSettings",
     "CliSettings",

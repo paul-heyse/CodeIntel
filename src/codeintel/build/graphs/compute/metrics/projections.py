@@ -16,6 +16,8 @@ from codeintel.build.graphs.compute.metrics.community import detect_communities_
 from codeintel.build.graphs.compute.metrics.conversions import log_projection_skipped
 from codeintel.build.graphs.compute.metrics.structural import compute_clustering_coefficient
 from codeintel.build.graphs.compute.metrics.types import BipartiteDegrees, ProjectionMetrics
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, sorted_mapping
 from codeintel.core.compute.centrality import compute_betweenness, compute_closeness
 
 if TYPE_CHECKING:
@@ -30,7 +32,7 @@ _MAX_EDGES_FOR_FULL_METRICS = 50_000
 
 
 def build_projection_graph(
-    bipartite_graph: nx.Graph,
+    bipartite_graph: GraphInput,
     nodes: Iterable[Any],
     *,
     label: str,
@@ -43,13 +45,14 @@ def build_projection_graph(
         Weighted projection graph for the requested partition.
     """
     nodes_set = set(nodes)
-    graph_nodes = bipartite_graph.number_of_nodes()
+    store = ensure_store(bipartite_graph)
+    graph_nodes = store.graph.num_nodes()
 
-    result = compute_weighted_projection(bipartite_graph, nodes_set)
+    result = compute_weighted_projection(store, nodes_set)
     if result is None:
         if not nodes_set:
             reason = "empty partition"
-        elif not nodes_set.issubset(set(bipartite_graph)):
+        elif not nodes_set.issubset(set(store.node_ids())):
             reason = "nodes not in graph"
         elif len(nodes_set) >= graph_nodes:
             reason = "partition too large"
@@ -65,7 +68,7 @@ def build_projection_graph(
     return result
 
 
-def community_ids(graph: nx.Graph, *, weight: str | None = "weight") -> dict[Any, int]:
+def community_ids(graph: GraphInput, *, weight: str | None = "weight") -> dict[Any, int]:
     """Compute community ids using greedy modularity.
 
     Returns
@@ -77,11 +80,11 @@ def community_ids(graph: nx.Graph, *, weight: str | None = "weight") -> dict[Any
 
 
 def projection_metrics(
-    bipartite_graph: nx.Graph,
+    bipartite_graph: GraphInput,
     nodes: Iterable[Any],
     ctx: GraphContext,
     *,
-    projection: nx.Graph | None = None,
+    projection: GraphInput | None = None,
     label: str = "projection",
 ) -> ProjectionMetrics:
     """Compute weighted projection metrics for a bipartite partition.
@@ -92,12 +95,10 @@ def projection_metrics(
         Projection metric bundle.
     """
     weight_attr = ctx.pagerank_weight if ctx.pagerank_weight is not None else "weight"
-    proj = (
-        projection
-        if projection is not None
-        else build_projection_graph(bipartite_graph, nodes, label=label)
+    proj = projection if projection is not None else build_projection_graph(
+        bipartite_graph, nodes, label=label
     )
-    if proj.number_of_nodes() == 0:
+    if graph_node_count(proj) == 0:
         return ProjectionMetrics(
             degree={},
             weighted_degree={},
@@ -107,8 +108,9 @@ def projection_metrics(
             community_id={},
         )
 
-    node_count = proj.number_of_nodes()
-    edge_count = proj.number_of_edges()
+    proj_store = ensure_store(proj, weight=weight_attr)
+    node_count = proj_store.graph.num_nodes()
+    edge_count = proj_store.graph.num_edges()
     log.info(
         "projection_metrics.start label=%s nodes=%d edges=%d",
         label or "unnamed",
@@ -116,10 +118,21 @@ def projection_metrics(
         edge_count,
     )
 
-    degree_view = nx.degree(proj, weight=None)
-    weighted_view = nx.degree(proj, weight=weight_attr)
-    degree = {node: int(deg) for node, deg in degree_view}
-    weighted_degree = {node: float(deg) for node, deg in weighted_view}
+    degree: dict[Any, int] = dict.fromkeys(proj_store.node_ids(), 0)
+    weighted_degree: dict[Any, float] = dict.fromkeys(proj_store.node_ids(), 0.0)
+    for src_idx, dst_idx in proj_store.graph.edge_list():
+        src_id = proj_store.index_to_id[src_idx]
+        dst_id = proj_store.index_to_id[dst_idx]
+        payload = proj_store.graph.get_edge_data(src_idx, dst_idx)
+        weight_val = edge_weight_from_payload(payload)
+        if src_idx == dst_idx:
+            degree[src_id] += 2
+            weighted_degree[src_id] += weight_val * 2.0
+            continue
+        degree[src_id] += 1
+        degree[dst_id] += 1
+        weighted_degree[src_id] += weight_val
+        weighted_degree[dst_id] += weight_val
 
     if edge_count > _MAX_EDGES_FOR_FULL_METRICS:
         log.warning(
@@ -131,8 +144,8 @@ def projection_metrics(
             _MAX_EDGES_FOR_FULL_METRICS,
         )
         return ProjectionMetrics(
-            degree=degree,
-            weighted_degree=weighted_degree,
+            degree=sorted_mapping(degree),
+            weighted_degree=sorted_mapping(weighted_degree),
             clustering={},
             betweenness={},
             closeness={},
@@ -140,26 +153,26 @@ def projection_metrics(
         )
 
     log.debug("projection_metrics.clustering label=%s", label or "unnamed")
-    clustering = compute_clustering_coefficient(proj, weight=weight_attr)
+    clustering = compute_clustering_coefficient(proj_store, weight=weight_attr)
 
     log.debug("projection_metrics.betweenness label=%s", label or "unnamed")
     betweenness = compute_betweenness(
-        proj,
+        proj_store,
         k=_betweenness_sample(proj, ctx),
         weight=weight_attr,
         seed=ctx.seed,
     )
 
     log.debug("projection_metrics.closeness label=%s", label or "unnamed")
-    closeness = compute_closeness(proj)
+    closeness = compute_closeness(proj_store)
 
     log.debug("projection_metrics.community label=%s", label or "unnamed")
-    communities = community_ids(proj, weight=weight_attr)
+    communities = community_ids(proj_store, weight=weight_attr)
 
     log.info("projection_metrics.complete label=%s", label or "unnamed")
     return ProjectionMetrics(
-        degree=degree,
-        weighted_degree=weighted_degree,
+        degree=sorted_mapping(degree),
+        weighted_degree=sorted_mapping(weighted_degree),
         clustering=clustering,
         betweenness=betweenness,
         closeness=closeness,
@@ -168,7 +181,7 @@ def projection_metrics(
 
 
 def bipartite_degrees(
-    graph: nx.Graph,
+    graph: GraphInput,
     primary: set[Any],
     secondary: set[Any],
     *,

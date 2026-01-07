@@ -16,6 +16,9 @@ Centralize contract creation and retrieval so `TableContractSpec` is derived fro
 the schema registry plus target overrides. This eliminates duplicated contract
 definitions and keeps schema and contracts in sync.
 
+### Status
+Completed.
+
 ### Implementation Steps
 - Introduce a `ContractRegistry` interface with `get_contract` / `require_contract`.
 - Add a concrete `SchemaBackedContractRegistry` that uses the schema service to
@@ -65,14 +68,25 @@ def require_contract(
 ### Target Files
 - New: `src/codeintel/build/contracts/registry.py`
 - New: `src/codeintel/build/contracts/types.py`
-- `src/codeintel/build/schemas/*` (registry integration)
 - `src/codeintel/build/hamilton/transforms/table_contract.py`
 - `src/codeintel/build/hamilton/native/analytics/*` (replace contract constants)
+- `src/codeintel/build/contracts/__init__.py`
+
+### Completed Work
+- Added registry + resolver + overrides/policy types in `src/codeintel/build/contracts/registry.py`
+  and `src/codeintel/build/contracts/types.py`.
+- Wired policy-aware `TableContractSpec` defaulting in
+  `src/codeintel/build/hamilton/transforms/table_contract.py`.
+- Migrated analytics contracts to `require_contract(..., overrides=...)` across
+  `src/codeintel/build/hamilton/native/analytics/*`.
 
 ## Scope 2: Explicit Contract Policy Surface
 ### Overview
 Make alignment/validation behavior explicit via a policy object. This removes
 implicit behavior in alignment helpers and makes changes easy to reason about.
+
+### Status
+Completed.
 
 ### Implementation Steps
 - Define a `ContractPolicy` dataclass (extras policy, type coercion, null policy,
@@ -107,8 +121,16 @@ class TableContractSpec:
 ### Target Files
 - `src/codeintel/build/hamilton/transforms/table_contract.py`
 - `src/codeintel/build/tabular/arrow_ops.py`
-- `src/codeintel/build/schemas/arrow_gen.py`
 - `src/codeintel/build/contracts/registry.py` (default policy)
+- `src/codeintel/build/graphs/assembly/contracts.py`
+
+### Completed Work
+- Added `ContractPolicy` and attached it to `TableContractSpec` in
+  `src/codeintel/build/hamilton/transforms/table_contract.py`.
+- Made alignment policy-aware with explicit type-coercion control in
+  `src/codeintel/build/tabular/arrow_ops.py`.
+- Threaded policy support through graph assembly alignment in
+  `src/codeintel/build/graphs/assembly/contracts.py`.
 
 ## Scope 3: Fast-Path Alignment + Streaming First
 ### Overview

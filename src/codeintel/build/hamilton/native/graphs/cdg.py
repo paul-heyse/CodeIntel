@@ -272,7 +272,7 @@ def _prefilter_cdg_blocks(blocks_table: pa.Table) -> pa.Table:
                 & is_valid_expr("block_id")
                 & is_valid_expr("block_idx")
             )
-            return blocks_table.filter(expr)
+            return safe_filter(blocks_table, expr)
         goid_mask = is_valid_mask(blocks_table.column("function_goid_h128"))
         block_id_mask = is_valid_mask(blocks_table.column("block_id"))
         block_idx_mask = is_valid_mask(blocks_table.column("block_idx"))
@@ -292,7 +292,7 @@ def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
     try:
         if _EXPR_TYPE is not None:
             expr = is_valid_expr("function_goid_h128") & non_empty_string_expr("edge_kind")
-            return edges_table.filter(expr)
+            return safe_filter(edges_table, expr)
         goid_mask = is_valid_mask(edges_table.column("function_goid_h128"))
         kind_mask = non_empty_string_mask(edges_table.column("edge_kind"))
         mask = and_kleene(goid_mask, kind_mask)

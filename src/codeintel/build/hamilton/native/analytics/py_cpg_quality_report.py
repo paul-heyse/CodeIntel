@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 
 import pyarrow as pa
 
+from codeintel.build.contracts.registry import require_contract
+from codeintel.build.contracts.types import ContractOverrides
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -17,7 +19,6 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
@@ -31,15 +32,15 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 PY_CPG_QUALITY_REPORT_TARGET_NAME = "py_cpg_quality_report"
 PY_CPG_QUALITY_REPORT_TABLE_KEY = "analytics.py_cpg_quality_report"
 
-PY_CPG_QUALITY_REPORT_CONTRACT = TableContractSpec(
+PY_CPG_QUALITY_REPORT_CONTRACT = require_contract(
     table_key=PY_CPG_QUALITY_REPORT_TABLE_KEY,
     domain="analytics",
     target=PY_CPG_QUALITY_REPORT_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="py_cpg_quality_report__base",
+    overrides=ContractOverrides(
+        input_name="py_cpg_quality_report__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 

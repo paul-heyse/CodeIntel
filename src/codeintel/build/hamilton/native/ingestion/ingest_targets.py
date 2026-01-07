@@ -1554,16 +1554,41 @@ def t__typing(
 
 @tag_helper(domain="ingestion")
 @mutate_ingest_rows(
-    apply_to(modules__module_rows, table_key=value(MODULES_TABLE_KEY)),
-    apply_to(modules__file_state_rows, table_key=value(FILE_STATE_TABLE_KEY)),
-    apply_to(modules__repo_map_rows, table_key=value(REPO_MAP_TABLE_KEY)),
-    apply_to(config_ingest__rows, table_key=value(CONFIG_VALUES_TABLE_KEY)),
-    apply_to(tests__rows, table_key=value(TEST_CATALOG_TABLE_KEY)),
-    apply_to(typing__diagnostic_rows, table_key=value(STATIC_DIAGNOSTICS_TABLE_KEY)),
+    apply_to(
+        modules__module_rows,
+        table_key=value(MODULES_TABLE_KEY),
+        target_name=value(MODULES_TARGET_NAME),
+    ),
+    apply_to(
+        modules__file_state_rows,
+        table_key=value(FILE_STATE_TABLE_KEY),
+        target_name=value(MODULES_TARGET_NAME),
+    ),
+    apply_to(
+        modules__repo_map_rows,
+        table_key=value(REPO_MAP_TABLE_KEY),
+        target_name=value(MODULES_TARGET_NAME),
+    ),
+    apply_to(
+        config_ingest__rows,
+        table_key=value(CONFIG_VALUES_TABLE_KEY),
+        target_name=value(CONFIG_INGEST_TARGET_NAME),
+    ),
+    apply_to(
+        tests__rows,
+        table_key=value(TEST_CATALOG_TABLE_KEY),
+        target_name=value(TESTS_INGEST_TARGET_NAME),
+    ),
+    apply_to(
+        typing__diagnostic_rows,
+        table_key=value(STATIC_DIAGNOSTICS_TABLE_KEY),
+        target_name=value(TYPING_TARGET_NAME),
+    ),
 )
 def _normalize_required_ingest_rows(
     rows: InferableTabularInput,
     table_key: str,
+    target_name: str,
 ) -> pa.Table:
     """Normalize required ingestion outputs with shared alignment/dedupe logic.
 
@@ -1573,13 +1598,19 @@ def _normalize_required_ingest_rows(
         Ingestion rows to normalize.
     table_key
         Table key used for schema alignment.
+    target_name
+        Target name used for target-aware alignment.
 
     Returns
     -------
     pa.Table
         Normalized rows for the table.
     """
-    normalized = normalize_ingest_frame(rows, table_key=table_key)
+    normalized = normalize_ingest_frame(
+        rows,
+        table_key=table_key,
+        target_name=target_name,
+    )
     if normalized is None:
         return empty_table_for_table(table_key)
     return normalized

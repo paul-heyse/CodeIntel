@@ -12,6 +12,8 @@ from codeintel.build.analytics.subsystems.materialize import (
     SubsystemRows,
     build_subsystem_rows,
 )
+from codeintel.build.contracts.registry import require_contract
+from codeintel.build.contracts.types import ContractOverrides
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -21,7 +23,6 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -31,25 +32,25 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 SUBSYSTEMS_TARGET_NAME = "subsystems"
 SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
 SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
-SUBSYSTEMS_CONTRACT = TableContractSpec(
+SUBSYSTEMS_CONTRACT = require_contract(
     table_key=SUBSYSTEMS_TABLE_KEY,
     domain="analytics",
     target=SUBSYSTEMS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="subsystems__base",
+    overrides=ContractOverrides(
+        input_name="subsystems__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
-SUBSYSTEM_MODULES_CONTRACT = TableContractSpec(
+SUBSYSTEM_MODULES_CONTRACT = require_contract(
     table_key=SUBSYSTEM_MODULES_TABLE_KEY,
     domain="analytics",
     target=SUBSYSTEMS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="subsystem_modules__base",
+    overrides=ContractOverrides(
+        input_name="subsystem_modules__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 

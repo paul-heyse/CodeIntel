@@ -25,6 +25,13 @@ class UnsetType:
     """Sentinel type for optional override values."""
 
     def __repr__(self) -> str:
+        """Return a stable representation for the sentinel.
+
+        Returns
+        -------
+        str
+            String representation of the unset sentinel.
+        """
         return "UNSET"
 
 
@@ -36,16 +43,16 @@ class ContractOverrides:
     """Override inputs for building a table contract spec."""
 
     input_name: str | UnsetType = UNSET
-    ops_module: ModuleType | None | UnsetType = UNSET
+    ops_module: ModuleType | UnsetType | None = UNSET
     columns_to_pass: Sequence[str] | UnsetType = UNSET
     required_cols: Sequence[str] | UnsetType = UNSET
-    clip_column: str | None | UnsetType = UNSET
+    clip_column: str | UnsetType | None = UNSET
     policy: ContractPolicy | UnsetType = UNSET
 
 
 __all__ = [
+    "UNSET",
     "ContractOverrides",
     "ContractPolicy",
-    "UNSET",
     "UnsetType",
 ]

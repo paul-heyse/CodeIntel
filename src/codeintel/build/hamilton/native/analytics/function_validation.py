@@ -8,6 +8,8 @@ import pyarrow as pa
 
 from codeintel.build.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.build.analytics.parsing.compute import get_validation_rows
+from codeintel.build.contracts.registry import require_contract
+from codeintel.build.contracts.types import ContractOverrides
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -16,22 +18,21 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, FunctionAnalyticsResult)
 
 FUNCTION_VALIDATION_TARGET_NAME = "function_validation"
 FUNCTION_VALIDATION_TABLE_KEY = "analytics.function_validation"
-FUNCTION_VALIDATION_CONTRACT = TableContractSpec(
+FUNCTION_VALIDATION_CONTRACT = require_contract(
     table_key=FUNCTION_VALIDATION_TABLE_KEY,
     domain="analytics",
     target=FUNCTION_VALIDATION_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="function_validation__base",
+    overrides=ContractOverrides(
+        input_name="function_validation__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 

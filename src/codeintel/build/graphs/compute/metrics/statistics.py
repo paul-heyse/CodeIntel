@@ -6,17 +6,15 @@ for networkx graphs.
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterable
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, TypeVar, cast
+from typing import Any
 
-import networkx as nx
-from networkx.exception import NetworkXError
+import rustworkx as rx
 
-NodeT = TypeVar("NodeT", bound=Hashable)
-
-
-DegreeViewT = Iterable[tuple[Any, int]]
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, to_undirected_store
+from codeintel.build.graphs.rx.normalize import stable_key
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 
 @dataclass(frozen=True)
@@ -53,7 +51,7 @@ class GraphStatistics:
     is_dag: bool
 
 
-def get_in_degrees(graph: nx.DiGraph) -> list[tuple[Any, int]]:
+def get_in_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
     """Extract in-degree tuples from a directed graph.
 
     Parameters
@@ -72,11 +70,13 @@ def get_in_degrees(graph: nx.DiGraph) -> list[tuple[Any, int]]:
     >>> get_in_degrees(g)
     [(1, 0), (2, 1), (3, 2)]
     """
-    degrees = cast("DegreeViewT", graph.in_degree())
-    return [(node, degree) for node, degree in degrees]
+    store = ensure_store(graph)
+    return [
+        (node_id, store.graph.in_degree(store.id_to_index[node_id])) for node_id in store.node_ids()
+    ]
 
 
-def get_out_degrees(graph: nx.DiGraph) -> list[tuple[Any, int]]:
+def get_out_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
     """Extract out-degree tuples from a directed graph.
 
     Parameters
@@ -95,11 +95,14 @@ def get_out_degrees(graph: nx.DiGraph) -> list[tuple[Any, int]]:
     >>> get_out_degrees(g)
     [(1, 2), (2, 1), (3, 0)]
     """
-    degrees = cast("DegreeViewT", graph.out_degree())
-    return [(node, degree) for node, degree in degrees]
+    store = ensure_store(graph)
+    return [
+        (node_id, store.graph.out_degree(store.id_to_index[node_id]))
+        for node_id in store.node_ids()
+    ]
 
 
-def get_degrees(graph: nx.Graph) -> list[tuple[Any, int]]:
+def get_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
     """Extract degree tuples from an undirected graph.
 
     Parameters
@@ -118,11 +121,13 @@ def get_degrees(graph: nx.Graph) -> list[tuple[Any, int]]:
     >>> get_degrees(g)
     [(1, 2), (2, 2), (3, 2)]
     """
-    degrees = cast("DegreeViewT", graph.degree)
-    return [(node, degree) for node, degree in degrees]
+    store = ensure_store(graph)
+    return [
+        (node_id, store.graph.degree(store.id_to_index[node_id])) for node_id in store.node_ids()
+    ]
 
 
-def get_in_degree_values(graph: nx.DiGraph) -> list[int]:
+def get_in_degree_values(graph: GraphInput) -> list[int]:
     """Extract just the in-degree values from a directed graph.
 
     Parameters
@@ -135,11 +140,10 @@ def get_in_degree_values(graph: nx.DiGraph) -> list[int]:
     list[int]
         List of in-degree values for all nodes (in node iteration order).
     """
-    degrees = cast("DegreeViewT", graph.in_degree())
-    return [degree for _, degree in degrees]
+    return [degree for _, degree in get_in_degrees(graph)]
 
 
-def get_out_degree_values(graph: nx.DiGraph) -> list[int]:
+def get_out_degree_values(graph: GraphInput) -> list[int]:
     """Extract just the out-degree values from a directed graph.
 
     Parameters
@@ -152,11 +156,10 @@ def get_out_degree_values(graph: nx.DiGraph) -> list[int]:
     list[int]
         List of out-degree values for all nodes (in node iteration order).
     """
-    degrees = cast("DegreeViewT", graph.out_degree())
-    return [degree for _, degree in degrees]
+    return [degree for _, degree in get_out_degrees(graph)]
 
 
-def get_degree_values(graph: nx.Graph) -> list[int]:
+def get_degree_values(graph: GraphInput) -> list[int]:
     """Extract just the degree values from an undirected graph.
 
     Parameters
@@ -169,11 +172,27 @@ def get_degree_values(graph: nx.Graph) -> list[int]:
     list[int]
         List of degree values for all nodes (in node iteration order).
     """
-    degrees = cast("DegreeViewT", graph.degree)
-    return [degree for _, degree in degrees]
+    return [degree for _, degree in get_degrees(graph)]
 
 
-def compute_diameter_estimate(graph: nx.Graph) -> float | None:
+def _component_sort_key(store: RxGraphStore, component: set[int]) -> tuple[int, tuple[str, str]]:
+    if not component:
+        return (0, ("", ""))
+    smallest = min(
+        (store.index_to_id[idx] for idx in component),
+        key=stable_key,
+    )
+    return (len(component), stable_key(smallest))
+
+
+def _largest_component(store: RxGraphStore) -> set[int] | None:
+    components = [set(comp) for comp in rx.connected_components(store.graph)]
+    if not components:
+        return None
+    return max(components, key=lambda comp: _component_sort_key(store, comp))
+
+
+def compute_diameter_estimate(graph: GraphInput) -> float | None:
     """Compute approximate diameter of the largest connected component.
 
     Parameters
@@ -192,20 +211,28 @@ def compute_diameter_estimate(graph: nx.Graph) -> float | None:
     >>> compute_diameter_estimate(g)
     4.0
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return None
-    undirected = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-    components = list(nx.connected_components(undirected))
-    if not components:
+    work_store = to_undirected_store(store)
+    largest = _largest_component(work_store)
+    if largest is None:
         return None
-    largest = undirected.subgraph(max(components, key=len)).copy()
+    if len(largest) <= 1:
+        return 0.0
+    subgraph = work_store.graph.subgraph(list(largest), preserve_attrs=True)
     try:
-        return float(nx.approximation.diameter(largest))
-    except NetworkXError:
+        lengths = rx.all_pairs_dijkstra_path_lengths(subgraph, lambda _payload: 1.0)
+    except rx.NullGraph:
         return None
+    diameter = 0.0
+    for targets in lengths.values():
+        if targets:
+            diameter = max(diameter, max(targets.values(), default=0))
+    return float(diameter)
 
 
-def compute_avg_shortest_path_length(graph: nx.Graph) -> float | None:
+def compute_avg_shortest_path_length(graph: GraphInput) -> float | None:
     """Compute average shortest path length of the largest connected component.
 
     Parameters
@@ -224,20 +251,31 @@ def compute_avg_shortest_path_length(graph: nx.Graph) -> float | None:
     >>> round(compute_avg_shortest_path_length(g), 2)
     1.33
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return None
-    undirected = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-    components = list(nx.connected_components(undirected))
-    if not components:
+    work_store = to_undirected_store(store)
+    largest = _largest_component(work_store)
+    if largest is None:
         return None
-    largest = undirected.subgraph(max(components, key=len)).copy()
+    if len(largest) <= 1:
+        return 0.0
+    subgraph = work_store.graph.subgraph(list(largest), preserve_attrs=True)
     try:
-        return float(nx.average_shortest_path_length(largest))
-    except NetworkXError:
+        lengths = rx.all_pairs_dijkstra_path_lengths(subgraph, lambda _payload: 1.0)
+    except rx.NullGraph:
         return None
+    total = 0.0
+    count = 0
+    for targets in lengths.values():
+        total += sum(targets.values())
+        count += len(targets)
+    if count == 0:
+        return 0.0
+    return total / count
 
 
-def compute_condensation_layer_count(graph: nx.DiGraph) -> int | None:
+def compute_condensation_layer_count(graph: GraphInput) -> int | None:
     """Compute the number of layers in the SCC condensation DAG.
 
     The condensation DAG collapses each strongly connected component
@@ -261,25 +299,52 @@ def compute_condensation_layer_count(graph: nx.DiGraph) -> int | None:
     >>> compute_condensation_layer_count(g)
     4
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0 or not store.is_directed:
         return None
-    condensation = nx.condensation(graph)
-    if condensation.number_of_nodes() == 0:
-        return 0
+    condensed = _condensation_graph(store)
+    return _layer_count(condensed)
 
+
+def _condensation_graph(store: RxGraphStore) -> rx.PyDiGraph:
+    sccs = [set(comp) for comp in rx.strongly_connected_components(store.graph)]
+    if not sccs:
+        return rx.PyDiGraph(multigraph=False)
+    sorted_sccs = sorted(sccs, key=lambda comp: _component_sort_key(store, comp))
+    comp_map = _component_membership(sorted_sccs)
+    condensed = rx.PyDiGraph(multigraph=False)
+    condensed.add_nodes_from(range(len(sorted_sccs)))
+    for src_idx, dst_idx in store.graph.edge_list():
+        src_comp = comp_map.get(src_idx)
+        dst_comp = comp_map.get(dst_idx)
+        if src_comp is None or dst_comp is None or src_comp == dst_comp:
+            continue
+        condensed.add_edge(src_comp, dst_comp, 1)
+    return condensed
+
+
+def _component_membership(components: Sequence[set[int]]) -> dict[int, int]:
+    comp_map: dict[int, int] = {}
+    for comp_id, comp in enumerate(components):
+        for node_idx in comp:
+            comp_map[node_idx] = comp_id
+    return comp_map
+
+
+def _layer_count(graph: rx.PyDiGraph) -> int:
+    if graph.num_nodes() == 0:
+        return 0
     layers: dict[int, int] = {
-        int(str(node)): 0 for node in condensation.nodes if condensation.in_degree(node) == 0
+        node_idx: 0 for node_idx in graph.node_indices() if graph.in_degree(node_idx) == 0
     }
-    for node in nx.topological_sort(condensation):
-        node_idx = int(str(node))
+    for node_idx in rx.topological_sort(graph):
         base = layers.get(node_idx, 0)
-        for succ in condensation.successors(node):
-            succ_idx = int(str(succ))
-            layers[succ_idx] = max(layers.get(succ_idx, 0), base + 1)
+        for succ in graph.successor_indices(node_idx):
+            layers[succ] = max(layers.get(succ, 0), base + 1)
     return max(layers.values(), default=0) + 1
 
 
-def compute_graph_statistics(graph: nx.DiGraph) -> GraphStatistics:
+def compute_graph_statistics(graph: GraphInput) -> GraphStatistics:
     """Compute summary statistics for a directed graph.
 
     Parameters
@@ -305,8 +370,9 @@ def compute_graph_statistics(graph: nx.DiGraph) -> GraphStatistics:
     >>> stats.is_dag
     True
     """
-    node_count = graph.number_of_nodes()
-    edge_count = graph.number_of_edges()
+    store = ensure_store(graph)
+    node_count = store.graph.num_nodes()
+    edge_count = store.graph.num_edges()
 
     if node_count == 0:
         return GraphStatistics(
@@ -320,17 +386,21 @@ def compute_graph_statistics(graph: nx.DiGraph) -> GraphStatistics:
             is_dag=True,
         )
 
-    density = nx.density(graph)
+    density = edge_count / (node_count * (node_count - 1))
 
-    in_degrees = get_in_degree_values(graph)
-    out_degrees = get_out_degree_values(graph)
+    in_degrees = get_in_degree_values(store)
+    out_degrees = get_out_degree_values(store)
     avg_in_degree = sum(in_degrees) / node_count if node_count else 0.0
     avg_out_degree = sum(out_degrees) / node_count if node_count else 0.0
 
-    strongly_connected = nx.number_strongly_connected_components(graph)
-    weakly_connected = nx.number_weakly_connected_components(graph)
+    strongly_connected = len(list(rx.strongly_connected_components(store.graph)))
+    weakly_connected = (
+        len(list(rx.weakly_connected_components(store.graph)))
+        if store.is_directed
+        else len(list(rx.connected_components(store.graph)))
+    )
 
-    is_dag = nx.is_directed_acyclic_graph(graph)
+    is_dag = rx.is_directed_acyclic_graph(store.graph) if store.is_directed else True
 
     return GraphStatistics(
         node_count=node_count,
@@ -345,7 +415,6 @@ def compute_graph_statistics(graph: nx.DiGraph) -> GraphStatistics:
 
 
 __all__ = [
-    "DegreeViewT",
     "GraphStatistics",
     "compute_avg_shortest_path_length",
     "compute_condensation_layer_count",

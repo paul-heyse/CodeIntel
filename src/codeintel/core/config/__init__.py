@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from codeintel.core.config.settings import (
+    ArrowScanSettings,
     BuildSettings,
     ExportAuditSettings,
     HamiltonExecutionSettings,
@@ -10,6 +11,7 @@ from codeintel.core.config.settings import (
 )
 
 __all__ = [
+    "ArrowScanSettings",
     "BuildSettings",
     "ExportAuditSettings",
     "HamiltonExecutionSettings",

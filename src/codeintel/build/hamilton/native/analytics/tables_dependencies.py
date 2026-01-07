@@ -14,6 +14,8 @@ from codeintel.build.analytics.dependencies.compute import (
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.contracts.registry import require_contract
+from codeintel.build.contracts.types import ContractOverrides
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -23,7 +25,6 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
@@ -38,25 +39,25 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 EXTERNAL_DEPS_TARGET_NAME = "external_deps"
 EXTERNAL_DEPENDENCIES_TABLE_KEY = "analytics.external_dependencies"
 EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY = "analytics.external_dependency_calls"
-EXTERNAL_DEPENDENCIES_CONTRACT = TableContractSpec(
+EXTERNAL_DEPENDENCIES_CONTRACT = require_contract(
     table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
     domain="analytics",
     target=EXTERNAL_DEPS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="external_dependencies__base",
+    overrides=ContractOverrides(
+        input_name="external_dependencies__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
-EXTERNAL_DEPENDENCY_CALLS_CONTRACT = TableContractSpec(
+EXTERNAL_DEPENDENCY_CALLS_CONTRACT = require_contract(
     table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
     domain="analytics",
     target=EXTERNAL_DEPS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="external_dependency_calls__base",
+    overrides=ContractOverrides(
+        input_name="external_dependency_calls__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 

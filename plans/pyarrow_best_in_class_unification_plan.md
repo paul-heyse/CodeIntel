@@ -6,22 +6,100 @@
 - Enforce a consistent, expression-first Arrow methodology.
 
 ## Status Summary
-- 1) Expression-first filtering: **partial** (helpers added + key scan call sites updated;
-  remaining `table.filter` paths in `src/codeintel/build/hamilton/native/graphs/cdg.py`,
-  `src/codeintel/build/hamilton/native/graphs/cfg_dfg.py`, and
-  `src/codeintel/build/hamilton/native/graphs/cpg2/planes/{link,scip,symbol,goids}.py`).
+- 1) Expression-first filtering: **completed** (all remaining `table.filter` paths moved to
+  `safe_filter` + expression helpers).
 - 2) Scanner-first ingestion: **completed** (streaming defaults + shared scanner wiring).
 - 3) Fragment + row-group pruning: **completed** (helper exposed and used by scanner).
 - 4) Schema alignment helper: **completed** (shared align helper + concat cleanup).
 - 5) Join/sort normalization: **completed** (join normalization now unifies dictionaries + chunks).
-- 6) Dictionary encoding strategy: **partial** (manifest-based read dictionary + export encoding;
-  remaining direct `pq.read_table` in `src/codeintel/build/hamilton/materializers/arrow_parquet_cache.py`).
+- 6) Dictionary encoding strategy: **completed** (cache Parquet reads now apply dictionary
+  columns + dictionary unification).
 - 7) Compute options helpers: **completed** (centralized cast/sort/take helpers + call-site updates).
-- 8) IPC streaming + metadata: **partial** (shared IPC options used in hashing/artifacts;
-  export writers still bypass per-batch metadata and `iter_ipc_stream`).
+- 8) IPC streaming + metadata: **completed** (Arrow IPC export path uses shared IPC options
+  with per-batch metadata).
 - 9) Arrow C Data Interface: **completed** (stream/array adapter support in interop).
-- 10) Memory/threading policy: **partial** (central defaults + configure hook;
-  settings overrides still pending in runtime/build settings).
+- 10) Memory/threading policy: **completed** (runtime Arrow scan settings + threading overrides
+  wired into scan defaults).
+
+## Implementation Details (Completed)
+
+### A) Expression-first filtering (remaining table.filter paths)
+**Complete file target list**
+- `src/codeintel/build/hamilton/native/graphs/cdg.py`
+- `src/codeintel/build/hamilton/native/graphs/cfg_dfg.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/link.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/scip.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/symbol.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/goids.py`
+
+**Representative code pattern**
+```python
+from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_masks import is_valid_expr, non_empty_string_expr
+
+expr = is_valid_expr("function_goid_h128") & non_empty_string_expr("edge_kind")
+return safe_filter(table, expr)
+```
+
+## Remaining Scope
+- None.
+
+### B) Dictionary encoding for Hamilton Parquet cache reads
+**Complete file target list**
+- `src/codeintel/build/hamilton/materializers/arrow_parquet_cache.py`
+
+**Representative code pattern**
+```python
+dictionary_columns = _resolve_dictionary_columns(self.path)
+table = pq.read_table(
+    self.path,
+    read_dictionary=dictionary_columns if dictionary_columns else False,
+)
+if dictionary_columns:
+    table = table.unify_dictionaries()
+```
+
+### C) IPC streaming + per-batch metadata in export writers
+**Complete file target list**
+- `src/codeintel/build/exports/writers.py`
+- `src/codeintel/build/exports/engine.py`
+
+**Representative code pattern**
+```python
+from codeintel.core.exports.arrow_ipc import default_ipc_write_options, iter_ipc_stream
+
+options = default_ipc_write_options()
+for chunk in iter_ipc_stream(
+    reader,
+    metadata=metadata,
+    batch_metadata=batch_metadata,
+    options=options,
+):
+    sink.write(chunk)
+```
+
+### D) Arrow threading + scan defaults from runtime settings
+**Complete file target list**
+- `src/codeintel/core/config/settings.py`
+- `src/codeintel/core/runtime/loader.py`
+- `src/codeintel/build/settings.py`
+- `src/codeintel/core/columnar/streaming.py`
+
+**Representative code pattern**
+```python
+settings = get_build_settings()
+arrow = settings.arrow_scan
+configure_arrow_threading(
+    cpu_count=arrow.cpu_count,
+    io_thread_count=arrow.io_thread_count,
+)
+scan_options = DatasetScanOptions(
+    batch_size=arrow.batch_size,
+    batch_readahead=arrow.batch_readahead,
+    fragment_readahead=arrow.fragment_readahead,
+    use_threads=arrow.use_threads,
+)
+```
 
 ## Scope Items and Code Patterns
 

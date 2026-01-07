@@ -13,6 +13,7 @@ def normalize_ingest_frame(
     frame: InferableTabularInput | None,
     *,
     table_key: str,
+    target_name: str | None = None,
     add_missing: bool = True,
     keep_extras: bool | None = None,
 ) -> pa.Table | None:
@@ -24,6 +25,8 @@ def normalize_ingest_frame(
         Tabular input to normalize (None means skip).
     table_key
         Target table key for schema alignment.
+    target_name
+        Optional target name for target-aware alignment.
     add_missing
         Whether to add missing schema columns as nulls.
     keep_extras
@@ -46,7 +49,12 @@ def normalize_ingest_frame(
     elif keep_extras is False:
         extras_policy = "drop"
     aligned = (
-        align_table_to_contract(table_key, table, extras_policy=extras_policy)
+        align_table_to_contract(
+            table_key,
+            table,
+            target_name=target_name,
+            extras_policy=extras_policy,
+        )
         if add_missing or extras_policy is not None
         else table
     )

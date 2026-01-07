@@ -9,15 +9,21 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
-
-import networkx as nx
-from networkx.exception import NetworkXError
+from typing import TYPE_CHECKING, Any
 
 from codeintel.build.graphs.compute.metrics.community import detect_communities_greedy
 from codeintel.build.graphs.compute.metrics.paths import count_simple_paths
 from codeintel.build.graphs.compute.metrics.types import (
     StructuralMetrics as StructuralSummary,
+)
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    clustering_by_id,
+    constraint_by_id,
+    core_number_by_id,
+    effective_size_by_id,
+    ensure_store,
+    triangles_by_id,
 )
 
 if TYPE_CHECKING:
@@ -52,7 +58,7 @@ class StructuralMetrics:
 
 
 def compute_clustering_coefficient(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
     *,
     weight: str | None = None,
 ) -> dict[Any, float]:
@@ -72,16 +78,14 @@ def compute_clustering_coefficient(
     dict[Any, float]
         Node to clustering coefficient mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph, weight=weight)
+    if store.graph.num_nodes() == 0:
         return {}
-
-    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-    clustering_result = cast("dict[Any, float]", nx.clustering(work_graph, weight=weight))
-    return {node: float(val) for node, val in clustering_result.items()}
+    return clustering_by_id(store, weight=weight)
 
 
 def compute_triangles(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
 ) -> dict[Any, int]:
     """Compute triangle count for all nodes.
 
@@ -97,16 +101,14 @@ def compute_triangles(
     dict[Any, int]
         Node to triangle count mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
-
-    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-    triangles_result = cast("dict[Any, int]", nx.triangles(work_graph))
-    return {node: int(val) for node, val in triangles_result.items()}
+    return triangles_by_id(store)
 
 
 def compute_core_number(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
 ) -> dict[Any, int]:
     """Compute k-core number for all nodes.
 
@@ -122,16 +124,14 @@ def compute_core_number(
     dict[Any, int]
         Node to core number mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
-
-    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-    core_result: dict[Any, int] = nx.core_number(work_graph)
-    return {node: int(val) for node, val in core_result.items()}
+    return core_number_by_id(store)
 
 
 def compute_constraint(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
 ) -> dict[Any, float]:
     """Compute Burt's constraint for all nodes.
 
@@ -150,24 +150,21 @@ def compute_constraint(
     dict[Any, float]
         Node to constraint mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
-
-    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-
     try:
-        constraint_result: dict[Any, float] = nx.constraint(work_graph)
-
+        constraint_result = constraint_by_id(store)
         return {
             node: 0.0 if math.isnan(val) else float(val) for node, val in constraint_result.items()
         }
-    except NetworkXError:
+    except (TypeError, ValueError):
         log.warning("Cannot compute constraint; returning zeros")
-        return dict.fromkeys(graph.nodes(), 0.0)
+        return dict.fromkeys(store.node_ids(), 0.0)
 
 
 def compute_effective_size(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
 ) -> dict[Any, float]:
     """Compute effective size of ego network for all nodes.
 
@@ -186,21 +183,19 @@ def compute_effective_size(
     dict[Any, float]
         Node to effective size mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
-
-    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-
     try:
-        effective_size_result: dict[Any, float] = nx.effective_size(work_graph)
+        effective_size_result = effective_size_by_id(store)
         return {node: float(val) for node, val in effective_size_result.items()}
-    except NetworkXError:
+    except (TypeError, ValueError):
         log.warning("Cannot compute effective size; returning zeros")
-        return dict.fromkeys(graph.nodes(), 0.0)
+        return dict.fromkeys(store.node_ids(), 0.0)
 
 
 def compute_all_structural(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
 ) -> dict[Any, StructuralMetrics]:
     """Compute all structural metrics for all nodes.
 
@@ -214,14 +209,15 @@ def compute_all_structural(
     dict[Any, StructuralMetrics]
         Node to structural metrics mapping.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
 
-    clustering = compute_clustering_coefficient(graph)
-    triangles = compute_triangles(graph)
-    core_number = compute_core_number(graph)
-    constraint = compute_constraint(graph)
-    effective_size = compute_effective_size(graph)
+    clustering = compute_clustering_coefficient(store)
+    triangles = compute_triangles(store)
+    core_number = compute_core_number(store)
+    constraint = compute_constraint(store)
+    effective_size = compute_effective_size(store)
 
     return {
         node: StructuralMetrics(
@@ -231,12 +227,12 @@ def compute_all_structural(
             constraint=constraint.get(node, 0.0),
             effective_size=effective_size.get(node, 0.0),
         )
-        for node in graph.nodes()
+        for node in store.node_ids()
     }
 
 
 def structural_metrics(
-    graph: nx.Graph,
+    graph: GraphInput,
     *,
     weight: str | None = "weight",
     community_limit: int | None = None,
@@ -248,7 +244,8 @@ def structural_metrics(
     StructuralSummary
         Structural metric summary for the graph.
     """
-    node_count = graph.number_of_nodes()
+    store = ensure_store(graph, weight=weight)
+    node_count = store.graph.num_nodes()
     if node_count == 0:
         return StructuralSummary(
             clustering={},
@@ -259,15 +256,15 @@ def structural_metrics(
             community_id={},
         )
 
-    clustering = compute_clustering_coefficient(graph)
-    triangles = compute_triangles(graph)
-    core_number = compute_core_number(graph)
-    constraint_vals = compute_constraint(graph)
-    effective_size_vals = compute_effective_size(graph)
+    clustering = compute_clustering_coefficient(store, weight=weight)
+    triangles = compute_triangles(store)
+    core_number = compute_core_number(store)
+    constraint_vals = compute_constraint(store)
+    effective_size_vals = compute_effective_size(store)
 
     community_id_map: dict[Any, int] = {}
     if community_limit is None or node_count <= community_limit:
-        community_id_map = detect_communities_greedy(graph, weight=weight)
+        community_id_map = detect_communities_greedy(store, weight=weight)
 
     return StructuralSummary(
         clustering=clustering,
@@ -280,7 +277,7 @@ def structural_metrics(
 
 
 def bounded_simple_path_count(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     sources: Iterable[Any],
     targets: Iterable[Any],
     *,

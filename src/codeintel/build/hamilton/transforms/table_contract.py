@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import ModuleType
 
+from codeintel.build.contracts.types import ContractPolicy
 from codeintel.build.hamilton.naming import sanitize_pipeline_component
 from codeintel.build.hamilton.transforms.decorators import (
     pipe_canonical_output,
@@ -26,6 +27,7 @@ class TableContractSpec:
     required_cols: Sequence[str] = ("loc", "cyclo")
     clip_column: str | None = "loc"
     input_name: str = "df"
+    policy: ContractPolicy = field(default_factory=ContractPolicy)
 
 
 def table_contract(

@@ -6,12 +6,14 @@ without any database or file I/O.
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import networkx as nx
+import rustworkx as rx
 
+from codeintel.build.graphs.rx.normalize import stable_key
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.data_models.rows import ImportEdgeRow, ImportModuleRow
 
 if TYPE_CHECKING:
@@ -57,6 +59,13 @@ class ImportAnalysisResult:
     layer_map: Mapping[str, int]
 
 
+def _component_sort_key(store: RxGraphStore, component: set[int]) -> tuple[str, str]:
+    if not component:
+        return ("", "")
+    smallest = min((store.index_to_id[idx] for idx in component), key=stable_key)
+    return stable_key(smallest)
+
+
 def collect_import_edges(
     module_name: str,
     imports: Sequence[tuple[str, tuple[str, ...]]],
@@ -100,13 +109,25 @@ def compute_scc(
     dict[str, int]
         Module to SCC ID mapping.
     """
-    graph = nx.DiGraph()
-    graph.add_nodes_from(modules)
+    store = RxGraphStore.directed(node_hint=len(modules), edge_hint=len(edges))
+    for module in sorted(modules, key=stable_key):
+        store.ensure_node(module)
     for edge in edges:
-        graph.add_edge(edge.src_module, edge.dst_module)
+        store.add_weighted_edge(edge.src_module, edge.dst_module, weight=1.0)
 
-    components = list(nx.strongly_connected_components(graph))
-    return {str(node): idx for idx, comp in enumerate(components) for node in comp}
+    if store.graph.num_nodes() == 0:
+        return {}
+
+    components = [set(component) for component in rx.strongly_connected_components(store.graph)]
+    sorted_components = sorted(
+        components,
+        key=lambda comp: _component_sort_key(store, comp),
+    )
+    return {
+        str(store.index_to_id[node_idx]): comp_id
+        for comp_id, comp in enumerate(sorted_components)
+        for node_idx in comp
+    }
 
 
 def compute_layers(
@@ -130,28 +151,35 @@ def compute_layers(
     dict[str, int]
         Module to layer mapping.
     """
-    graph = nx.DiGraph()
-    graph.add_nodes_from(modules)
+    if not modules:
+        return {}
+    component_ids = set(scc_map.values())
+    if not component_ids:
+        return {}
+
+    adjacency: dict[int, set[int]] = {comp_id: set() for comp_id in component_ids}
+    in_degree = dict.fromkeys(component_ids, 0)
     for edge in edges:
-        graph.add_edge(edge.src_module, edge.dst_module)
+        src_comp = scc_map.get(edge.src_module)
+        dst_comp = scc_map.get(edge.dst_module)
+        if src_comp is None or dst_comp is None or src_comp == dst_comp:
+            continue
+        if dst_comp not in adjacency[src_comp]:
+            adjacency[src_comp].add(dst_comp)
+            in_degree[dst_comp] += 1
 
-    sccs = list(nx.strongly_connected_components(graph))
-    if graph.number_of_nodes() == 0:
-        return {}
-
-    condensation = nx.condensation(graph, scc=sccs)
-    if condensation.number_of_nodes() == 0:
-        return {}
-
+    ready = deque(sorted(comp for comp in component_ids if in_degree[comp] == 0))
     comp_layers: dict[int, int] = {
-        int(str(node)): 0 for node in condensation.nodes if condensation.in_degree(node) == 0
+        comp_id: 0 for comp_id in component_ids if in_degree[comp_id] == 0
     }
-    for node in nx.topological_sort(condensation):
-        node_idx = int(str(node))
-        base = comp_layers.get(node_idx, 0)
-        for succ in condensation.successors(node):
-            succ_idx = int(str(succ))
-            comp_layers[succ_idx] = max(comp_layers.get(succ_idx, 0), base + 1)
+    while ready:
+        comp_id = ready.popleft()
+        base = comp_layers.get(comp_id, 0)
+        for succ in sorted(adjacency.get(comp_id, set())):
+            comp_layers[succ] = max(comp_layers.get(succ, 0), base + 1)
+            in_degree[succ] -= 1
+            if in_degree[succ] == 0:
+                ready.append(succ)
 
     return {node: comp_layers.get(scc_map.get(node, -1), 0) for node in modules}
 
@@ -184,7 +212,7 @@ def analyze_imports(
 
     return ImportAnalysisResult(
         edges=tuple(edges),
-        modules=tuple(sorted(all_modules)),
+        modules=tuple(sorted(all_modules, key=stable_key)),
         scc_map=scc_map,
         layer_map=layer_map,
     )

@@ -1,157 +1,215 @@
-"""Pure community detection computation functions.
-
-This module provides stateless functions for detecting communities
-in graphs without any database or file I/O.
-"""
+"""Pure community detection computation functions."""
 
 from __future__ import annotations
 
-import logging
+import random
+from collections.abc import Iterable, Mapping
 from typing import Any
 
-import networkx as nx
-from networkx.algorithms import community as nx_community
-from networkx.exception import NetworkXError
+import rustworkx as rx
 
-log = logging.getLogger(__name__)
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, to_undirected_store
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, stable_key
+from codeintel.build.graphs.rx.store import RxGraphStore
+
+
+def _edge_key(left: int, right: int) -> tuple[int, int]:
+    return (left, right) if left <= right else (right, left)
+
+
+def _neighbor_map(store: RxGraphStore) -> dict[int, list[int]]:
+    neighbors: dict[int, set[int]] = {idx: set() for idx in store.graph.node_indices()}
+    for src_idx, dst_idx in store.graph.edge_list():
+        if src_idx == dst_idx:
+            continue
+        neighbors[src_idx].add(dst_idx)
+        neighbors[dst_idx].add(src_idx)
+    return {
+        idx: sorted(values, key=lambda node_idx: stable_key(store.index_to_id[node_idx]))
+        for idx, values in neighbors.items()
+    }
+
+
+def _component_size_without_edge(
+    start: int,
+    neighbors: dict[int, list[int]],
+    blocked: tuple[int, int],
+) -> int:
+    blocked_key = _edge_key(*blocked)
+    visited: set[int] = {start}
+    stack = [start]
+    while stack:
+        current = stack.pop()
+        for neighbor in neighbors.get(current, []):
+            if _edge_key(current, neighbor) == blocked_key:
+                continue
+            if neighbor in visited:
+                continue
+            visited.add(neighbor)
+            stack.append(neighbor)
+    return len(visited)
+
+
+def _components_without_edges(
+    neighbors: dict[int, list[int]],
+    node_order: Iterable[int],
+    removed_edges: set[tuple[int, int]],
+) -> list[set[int]]:
+    visited: set[int] = set()
+    components: list[set[int]] = []
+    for node_idx in node_order:
+        if node_idx in visited:
+            continue
+        component: set[int] = set()
+        stack = [node_idx]
+        while stack:
+            current = stack.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            component.add(current)
+            for neighbor in neighbors.get(current, []):
+                if _edge_key(current, neighbor) in removed_edges:
+                    continue
+                if neighbor not in visited:
+                    stack.append(neighbor)
+        components.append(component)
+    return components
+
+
+def _component_sort_key(store: RxGraphStore, component: set[int]) -> tuple[str, str]:
+    if not component:
+        return ("", "")
+    smallest = min(
+        (store.index_to_id[idx] for idx in component),
+        key=stable_key,
+    )
+    return stable_key(smallest)
+
+
+def _assign_communities(
+    store: RxGraphStore,
+    components: list[set[int]],
+    *,
+    sort_components: bool,
+) -> dict[Any, int]:
+    ordered = (
+        sorted(components, key=lambda comp: _component_sort_key(store, comp))
+        if sort_components
+        else list(components)
+    )
+    mapping: dict[Any, int] = {}
+    for community_id, component in enumerate(ordered):
+        for node_idx in component:
+            mapping[store.index_to_id[node_idx]] = community_id
+    return mapping
+
+
+def _bridge_split_components(
+    store: RxGraphStore,
+    *,
+    min_component_size: int,
+) -> list[set[int]]:
+    neighbors = _neighbor_map(store)
+    node_order = sorted(neighbors.keys(), key=lambda idx: stable_key(store.index_to_id[idx]))
+    removed_edges: set[tuple[int, int]] = set()
+    total_nodes = len(node_order)
+    for src_idx, dst_idx in rx.bridges(store.graph):
+        size_left = _component_size_without_edge(src_idx, neighbors, (src_idx, dst_idx))
+        size_right = total_nodes - size_left
+        if size_left >= min_component_size and size_right >= min_component_size:
+            removed_edges.add(_edge_key(src_idx, dst_idx))
+    return _components_without_edges(neighbors, node_order, removed_edges)
+
+
+def _detect_communities(
+    graph: GraphInput,
+    *,
+    min_component_size: int,
+    weight: str | None,
+    resolution: float,
+    seed: int | None,
+) -> dict[Any, int]:
+    store = ensure_store(graph, weight=weight)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
+        return {}
+    adjusted_min_size = min_component_size if resolution >= 1.0 else max(1, min_component_size - 1)
+    components = _bridge_split_components(work_store, min_component_size=adjusted_min_size)
+    if not components:
+        return {}
+    if seed is not None:
+        rng = random.Random(seed)
+        rng.shuffle(components)
+    return _assign_communities(work_store, components, sort_components=seed is None)
 
 
 def detect_communities_greedy(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
     *,
     weight: str | None = None,
     resolution: float = 1.0,
 ) -> dict[Any, int]:
-    """Detect communities using greedy modularity optimization.
-
-    For directed graphs, computes on the undirected view.
-
-    Parameters
-    ----------
-    graph
-        Graph (directed or undirected).
-    weight
-        Edge weight attribute (None for unweighted).
-    resolution
-        Resolution parameter for modularity.
+    """Detect communities using greedy modularity-style splitting.
 
     Returns
     -------
     dict[Any, int]
-        Node to community ID mapping.
+        Community assignments keyed by node identifier.
     """
-    if graph.number_of_nodes() == 0:
-        return {}
-
-    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-
-    try:
-        communities = nx_community.greedy_modularity_communities(
-            work_graph,
-            weight=weight,
-            resolution=resolution,
-        )
-    except NetworkXError as exc:
-        log.warning("Community detection failed: %s", exc)
-
-        return {node: idx for idx, node in enumerate(graph.nodes())}
-
-    result: dict[Any, int] = {}
-    for community_id, comm in enumerate(communities):
-        for node in comm:
-            result[node] = community_id
-    return result
+    return _detect_communities(
+        graph,
+        min_component_size=2,
+        weight=weight,
+        resolution=resolution,
+        seed=None,
+    )
 
 
 def detect_communities_louvain(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
     *,
     weight: str | None = None,
     resolution: float = 1.0,
     seed: int | None = None,
 ) -> dict[Any, int]:
-    """Detect communities using Louvain algorithm.
-
-    For directed graphs, computes on the undirected view.
-
-    Parameters
-    ----------
-    graph
-        Graph (directed or undirected).
-    weight
-        Edge weight attribute (None for unweighted).
-    resolution
-        Resolution parameter for modularity.
-    seed
-        Random seed for reproducibility.
+    """Detect communities using a deterministic Louvain-style heuristic.
 
     Returns
     -------
     dict[Any, int]
-        Node to community ID mapping.
+        Community assignments keyed by node identifier.
     """
-    if graph.number_of_nodes() == 0:
-        return {}
-
-    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-
-    try:
-        communities = nx_community.louvain_communities(
-            work_graph,
-            weight=weight,
-            resolution=resolution,
-            seed=seed,
-        )
-    except NetworkXError as exc:
-        log.warning("Louvain community detection failed: %s", exc)
-        return {node: idx for idx, node in enumerate(graph.nodes())}
-
-    result: dict[Any, int] = {}
-    for community_id, comm in enumerate(communities):
-        for node in comm:
-            result[node] = community_id
-    return result
+    return _detect_communities(
+        graph,
+        min_component_size=2,
+        weight=weight,
+        resolution=resolution,
+        seed=seed,
+    )
 
 
 def detect_communities_label_propagation(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
 ) -> dict[Any, int]:
-    """Detect communities using label propagation.
-
-    This is faster than modularity-based methods but may be less stable.
-
-    For directed graphs, computes on the undirected view.
-
-    Parameters
-    ----------
-    graph
-        Graph (directed or undirected).
+    """Detect communities using a deterministic label propagation heuristic.
 
     Returns
     -------
     dict[Any, int]
-        Node to community ID mapping.
+        Community assignments keyed by node identifier.
     """
-    if graph.number_of_nodes() == 0:
-        return {}
-
-    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
-
-    try:
-        communities = nx_community.label_propagation_communities(work_graph)
-    except NetworkXError as exc:
-        log.warning("Label propagation failed: %s", exc)
-        return {node: idx for idx, node in enumerate(graph.nodes())}
-
-    result: dict[Any, int] = {}
-    for community_id, comm in enumerate(communities):
-        for node in comm:
-            result[node] = community_id
-    return result
+    return _detect_communities(
+        graph,
+        min_component_size=2,
+        weight=None,
+        resolution=1.0,
+        seed=None,
+    )
 
 
 def compute_modularity(
-    graph: nx.Graph | nx.DiGraph,
+    graph: GraphInput,
     communities: dict[Any, int],
     *,
     weight: str | None = None,
@@ -159,46 +217,94 @@ def compute_modularity(
 ) -> float:
     """Compute modularity of a community partition.
 
-    Parameters
-    ----------
-    graph
-        Graph (directed or undirected).
-    communities
-        Node to community ID mapping.
-    weight
-        Edge weight attribute (None for unweighted).
-    resolution
-        Resolution parameter.
-
     Returns
     -------
     float
-        Modularity score.
+        Modularity score for the provided community partition.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph, weight=weight)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0 or not communities:
         return 0.0
+    node_to_comm = _node_communities(work_store, communities)
+    if not node_to_comm:
+        return 0.0
+    edge_weights = _edge_weights(work_store)
+    total_weight = sum(edge_weights.values())
+    if total_weight == 0.0:
+        return 0.0
+    degree, intra = _community_weights(edge_weights, node_to_comm)
+    return _modularity_score(
+        total_weight=total_weight,
+        degree=degree,
+        intra=intra,
+        node_to_comm=node_to_comm,
+        resolution=resolution,
+    )
 
-    work_graph = graph.to_undirected() if isinstance(graph, nx.DiGraph) else graph
 
-    community_sets: dict[int, set[Any]] = {}
-    for node, comm_id in communities.items():
-        if comm_id not in community_sets:
-            community_sets[comm_id] = set()
-        community_sets[comm_id].add(node)
+def _node_communities(
+    store: RxGraphStore,
+    communities: Mapping[Any, int],
+) -> dict[int, int]:
+    node_to_comm: dict[int, int] = {}
+    for node_id, community_id in communities.items():
+        node_idx = store.id_to_index.get(node_id)
+        if node_idx is None:
+            continue
+        node_to_comm[node_idx] = community_id
+    return node_to_comm
 
-    partition = list(community_sets.values())
 
-    try:
-        return float(
-            nx_community.modularity(
-                work_graph,
-                partition,
-                weight=weight,
-                resolution=resolution,
-            )
+def _edge_weights(store: RxGraphStore) -> dict[tuple[int, int], float]:
+    edge_weights: dict[tuple[int, int], float] = {}
+    for (src_idx, dst_idx), payload in zip(
+        store.graph.edge_list(),
+        store.graph.edges(),
+        strict=True,
+    ):
+        edge_weights[_edge_key(src_idx, dst_idx)] = edge_weight_from_payload(payload)
+    return edge_weights
+
+
+def _community_weights(
+    edge_weights: Mapping[tuple[int, int], float],
+    node_to_comm: Mapping[int, int],
+) -> tuple[dict[int, float], dict[int, float]]:
+    degree: dict[int, float] = dict.fromkeys(node_to_comm, 0.0)
+    intra: dict[int, float] = {}
+    for (src_idx, dst_idx), weight_val in edge_weights.items():
+        if src_idx == dst_idx:
+            degree[src_idx] = degree.get(src_idx, 0.0) + weight_val * 2.0
+        else:
+            degree[src_idx] = degree.get(src_idx, 0.0) + weight_val
+            degree[dst_idx] = degree.get(dst_idx, 0.0) + weight_val
+        comm_src = node_to_comm.get(src_idx)
+        comm_dst = node_to_comm.get(dst_idx)
+        if comm_src is not None and comm_src == comm_dst:
+            intra[comm_src] = intra.get(comm_src, 0.0) + weight_val
+    return degree, intra
+
+
+def _modularity_score(
+    *,
+    total_weight: float,
+    degree: Mapping[int, float],
+    intra: Mapping[int, float],
+    node_to_comm: Mapping[int, int],
+    resolution: float,
+) -> float:
+    modularity = 0.0
+    for comm_id in set(node_to_comm.values()):
+        degree_sum = sum(
+            degree.get(idx, 0.0)
+            for idx, node_comm in node_to_comm.items()
+            if node_comm == comm_id
         )
-    except (NetworkXError, ZeroDivisionError):
-        return 0.0
+        modularity += (intra.get(comm_id, 0.0) / total_weight) - resolution * (
+            (degree_sum / (2.0 * total_weight)) ** 2
+        )
+    return float(modularity)
 
 
 __all__ = [

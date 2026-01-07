@@ -6,10 +6,11 @@ and structural properties without any database or file I/O.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypedDict
 
-import networkx as nx
+import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.statistics import (
     compute_avg_shortest_path_length,
@@ -18,9 +19,15 @@ from codeintel.build.graphs.compute.metrics.statistics import (
 )
 from codeintel.build.graphs.compute.metrics.structural import compute_clustering_coefficient
 from codeintel.build.graphs.compute.metrics.types import ComponentBundle, GlobalGraphStats
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, to_undirected_store
+from codeintel.build.graphs.rx.convert import rx_to_networkx
+from codeintel.build.graphs.rx.normalize import stable_key
+from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    import networkx as nx
 
 
 @dataclass(frozen=True)
@@ -71,8 +78,22 @@ class ComponentStats(TypedDict):
     singleton_count: int
 
 
+def _component_sort_key(nodes: Iterable[Any]) -> tuple[str, str]:
+    if not nodes:
+        return ("", "")
+    smallest = min(nodes, key=stable_key)
+    return stable_key(smallest)
+
+
+def _sort_components(store: RxGraphStore, components: list[set[int]]) -> list[set[int]]:
+    return sorted(
+        components,
+        key=lambda comp: _component_sort_key({store.index_to_id[idx] for idx in comp}),
+    )
+
+
 def find_strongly_connected(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     *,
     compute_condensation: bool = False,
 ) -> SCCResult:
@@ -97,28 +118,42 @@ def find_strongly_connected(
     >>> len(result.components) >= 2
     True
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return SCCResult(components=(), node_to_component={})
 
-    sccs = list(nx.strongly_connected_components(graph))
+    sccs = [set(component) for component in rx.strongly_connected_components(store.graph)]
+    sorted_sccs = _sort_components(store, sccs)
     components: list[ComponentInfo] = []
     node_to_component: dict[Any, int] = {}
 
-    for idx, scc in enumerate(sccs):
-        nodes_frozen: frozenset[Any] = frozenset(scc)
+    index_to_component: dict[int, int] = {}
+    for comp_id, comp in enumerate(sorted_sccs):
+        nodes_frozen = frozenset(store.index_to_id[idx] for idx in comp)
         components.append(
             ComponentInfo(
-                component_id=idx,
-                size=len(scc),
+                component_id=comp_id,
+                size=len(comp),
                 nodes=nodes_frozen,
             )
         )
-        for node in scc:
-            node_to_component[node] = idx
+        for node_idx in comp:
+            node_id = store.index_to_id[node_idx]
+            node_to_component[node_id] = comp_id
+            index_to_component[node_idx] = comp_id
 
     condensation = None
     if compute_condensation:
-        condensation = nx.condensation(graph, scc=sccs)
+        condensed_store = RxGraphStore.directed()
+        for comp_id in range(len(sorted_sccs)):
+            condensed_store.ensure_node(comp_id)
+        for src_idx, dst_idx in store.graph.edge_list():
+            src_comp = index_to_component.get(src_idx)
+            dst_comp = index_to_component.get(dst_idx)
+            if src_comp is None or dst_comp is None or src_comp == dst_comp:
+                continue
+            condensed_store.add_weighted_edge(src_comp, dst_comp, weight=1.0)
+        condensation = rx_to_networkx(condensed_store.graph)
 
     return SCCResult(
         components=tuple(components),
@@ -127,7 +162,7 @@ def find_strongly_connected(
     )
 
 
-def find_weakly_connected(graph: nx.DiGraph) -> list[ComponentInfo]:
+def find_weakly_connected(graph: GraphInput) -> list[ComponentInfo]:
     """Find weakly connected components in a directed graph.
 
     Parameters
@@ -140,21 +175,26 @@ def find_weakly_connected(graph: nx.DiGraph) -> list[ComponentInfo]:
     list[ComponentInfo]
         Weakly connected components.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return []
 
-    wccs = list(nx.weakly_connected_components(graph))
+    if store.is_directed:
+        components = [set(comp) for comp in rx.weakly_connected_components(store.graph)]
+    else:
+        components = [set(comp) for comp in rx.connected_components(store.graph)]
+    sorted_components = _sort_components(store, components)
     return [
         ComponentInfo(
             component_id=idx,
-            size=len(wcc),
-            nodes=frozenset(wcc),
+            size=len(comp),
+            nodes=frozenset(store.index_to_id[node_idx] for node_idx in comp),
         )
-        for idx, wcc in enumerate(wccs)
+        for idx, comp in enumerate(sorted_components)
     ]
 
 
-def find_connected(graph: nx.Graph) -> list[ComponentInfo]:
+def find_connected(graph: GraphInput) -> list[ComponentInfo]:
     """Find connected components in an undirected graph.
 
     Parameters
@@ -167,21 +207,24 @@ def find_connected(graph: nx.Graph) -> list[ComponentInfo]:
     list[ComponentInfo]
         Connected components.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
         return []
 
-    ccs = list(nx.connected_components(graph))
+    components = [set(comp) for comp in rx.connected_components(work_store.graph)]
+    sorted_components = _sort_components(work_store, components)
     return [
         ComponentInfo(
             component_id=idx,
-            size=len(cc),
-            nodes=frozenset(cc),
+            size=len(comp),
+            nodes=frozenset(work_store.index_to_id[node_idx] for node_idx in comp),
         )
-        for idx, cc in enumerate(ccs)
+        for idx, comp in enumerate(sorted_components)
     ]
 
 
-def find_bridges(graph: nx.Graph) -> list[tuple[Any, Any]]:
+def find_bridges(graph: GraphInput) -> list[tuple[Any, Any]]:
     """Find bridge edges whose removal disconnects the graph.
 
     Parameters
@@ -194,12 +237,18 @@ def find_bridges(graph: nx.Graph) -> list[tuple[Any, Any]]:
     list[tuple[Any, Any]]
         Bridge edges.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
         return []
-    return list(nx.bridges(graph))
+    bridges = [
+        (work_store.index_to_id[src], work_store.index_to_id[dst])
+        for src, dst in rx.bridges(work_store.graph)
+    ]
+    return sorted(bridges, key=stable_key)
 
 
-def find_articulation_points(graph: nx.Graph) -> list[Any]:
+def find_articulation_points(graph: GraphInput) -> list[Any]:
     """Find articulation points whose removal disconnects the graph.
 
     Parameters
@@ -212,9 +261,12 @@ def find_articulation_points(graph: nx.Graph) -> list[Any]:
     list[Any]
         Articulation point nodes.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
         return []
-    return list(nx.articulation_points(graph))
+    points = [work_store.index_to_id[idx] for idx in rx.articulation_points(work_store.graph)]
+    return sorted(points, key=stable_key)
 
 
 def compute_component_stats(
@@ -251,7 +303,7 @@ def compute_component_stats(
     )
 
 
-def find_cycles(graph: nx.DiGraph, limit: int | None = 100) -> list[list[Any]]:
+def find_cycles(graph: GraphInput, limit: int | None = 100) -> list[list[Any]]:
     """Find simple cycles in a directed graph.
 
     Parameters
@@ -266,18 +318,19 @@ def find_cycles(graph: nx.DiGraph, limit: int | None = 100) -> list[list[Any]]:
     list[list[Any]]
         List of cycles as node lists.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return []
 
     cycles: list[list[Any]] = []
-    for cycle in nx.simple_cycles(graph):
-        cycles.append(cycle)
+    for cycle in rx.simple_cycles(store.graph):
+        cycles.append([store.index_to_id[idx] for idx in cycle])
         if limit is not None and len(cycles) >= limit:
             break
     return cycles
 
 
-def topological_layers(graph: nx.DiGraph) -> dict[Any, int]:
+def topological_layers(graph: GraphInput) -> dict[Any, int]:
     """Compute topological layer for each node in a DAG.
 
     Parameters
@@ -294,19 +347,23 @@ def topological_layers(graph: nx.DiGraph) -> dict[Any, int]:
     -----
     If the graph contains cycles, NetworkX will raise `nx.NetworkXUnfeasible`.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}
-
-    layers: dict[Any, int] = {node: 0 for node in graph.nodes() if graph.in_degree(node) == 0}
-    for node in nx.topological_sort(graph):
-        base = layers.get(node, 0)
-        for succ in graph.successors(node):
+    layers: dict[int, int] = {
+        node_idx: 0
+        for node_idx in store.graph.node_indices()
+        if store.graph.in_degree(node_idx) == 0
+    }
+    for node_idx in rx.topological_sort(store.graph):
+        base = layers.get(node_idx, 0)
+        for succ in store.graph.successor_indices(node_idx):
             layers[succ] = max(layers.get(succ, 0), base + 1)
-    return layers
+    return {store.index_to_id[idx]: layer for idx, layer in layers.items()}
 
 
 def condensation_layers(
-    graph: nx.DiGraph,
+    graph: GraphInput,
     scc_result: SCCResult,
 ) -> dict[Any, int]:
     """Compute layers based on SCC condensation.
@@ -325,19 +382,15 @@ def condensation_layers(
     """
     if scc_result.condensation is None:
         return {}
-
-    condensation = scc_result.condensation
-    if condensation.number_of_nodes() == 0:
-        return {}
-
-    comp_layers = topological_layers(condensation)
+    comp_layers = topological_layers(scc_result.condensation)
+    store = ensure_store(graph)
     return {
-        node: comp_layers.get(scc_result.node_to_component.get(node, -1), 0)
-        for node in graph.nodes()
+        node_id: comp_layers.get(scc_result.node_to_component.get(node_id, -1), 0)
+        for node_id in store.node_ids()
     }
 
 
-def component_metadata(graph: nx.DiGraph) -> ComponentBundle:
+def component_metadata(graph: GraphInput) -> ComponentBundle:
     """Return weak component, SCC, cycle, and layer metadata.
 
     Returns
@@ -345,7 +398,8 @@ def component_metadata(graph: nx.DiGraph) -> ComponentBundle:
     ComponentBundle
         Component metrics for each node in the graph.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return ComponentBundle(
             component_id={},
             component_size={},
@@ -355,7 +409,7 @@ def component_metadata(graph: nx.DiGraph) -> ComponentBundle:
             layer={},
         )
 
-    weak_infos = find_weakly_connected(graph)
+    weak_infos = find_weakly_connected(store)
     component_id: dict[Any, int] = {}
     component_size: dict[Any, int] = {}
     for info in weak_infos:
@@ -363,18 +417,20 @@ def component_metadata(graph: nx.DiGraph) -> ComponentBundle:
             component_id[node] = info.component_id
             component_size[node] = info.size
 
-    scc_result = find_strongly_connected(graph, compute_condensation=True)
+    scc_result = find_strongly_connected(store, compute_condensation=True)
     scc_id: dict[Any, int] = scc_result.node_to_component
     scc_size: dict[Any, int] = {}
     for comp in scc_result.components:
         for node in comp.nodes:
             scc_size[node] = comp.size
-    in_cycle = {node: scc_size.get(node, 1) > 1 for node in graph.nodes}
+    in_cycle = {node: scc_size.get(node, 1) > 1 for node in store.node_ids()}
 
     layer_map: dict[Any, int] = {}
     if scc_result.condensation is not None:
         condensation_layer = topological_layers(scc_result.condensation)
-        layer_map = {node: condensation_layer.get(scc_id.get(node, 0), 0) for node in graph.nodes}
+        layer_map = {
+            node: condensation_layer.get(scc_id.get(node, 0), 0) for node in store.node_ids()
+        }
 
     return ComponentBundle(
         component_id=component_id,
@@ -386,7 +442,7 @@ def component_metadata(graph: nx.DiGraph) -> ComponentBundle:
     )
 
 
-def component_ids_undirected(graph: nx.Graph) -> tuple[dict[Any, int], dict[Any, int]]:
+def component_ids_undirected(graph: GraphInput) -> tuple[dict[Any, int], dict[Any, int]]:
     """Return component ids and sizes for undirected graphs.
 
     Returns
@@ -394,10 +450,11 @@ def component_ids_undirected(graph: nx.Graph) -> tuple[dict[Any, int], dict[Any,
     tuple[dict[Any, int], dict[Any, int]]
         Component ids and component sizes keyed by node.
     """
-    if graph.number_of_nodes() == 0:
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
         return {}, {}
 
-    comp_infos = find_connected(graph)
+    comp_infos = find_connected(store)
     component_id: dict[Any, int] = {}
     component_size: dict[Any, int] = {}
     for info in comp_infos:
@@ -407,19 +464,20 @@ def component_ids_undirected(graph: nx.Graph) -> tuple[dict[Any, int], dict[Any,
     return component_id, component_size
 
 
-def _component_layers(graph: nx.Graph | nx.DiGraph) -> int | None:
-    if not isinstance(graph, nx.DiGraph):
+def _component_layers(graph: GraphInput) -> int | None:
+    store = ensure_store(graph)
+    if not store.is_directed:
         return None
-    return compute_condensation_layer_count(graph)
+    return compute_condensation_layer_count(store)
 
 
-def _diameter_and_spl(graph: nx.Graph | nx.DiGraph) -> tuple[float | None, float | None]:
+def _diameter_and_spl(graph: GraphInput) -> tuple[float | None, float | None]:
     diameter = compute_diameter_estimate(graph)
     avg_spl = compute_avg_shortest_path_length(graph)
     return diameter, avg_spl
 
 
-def global_graph_stats(graph: nx.Graph | nx.DiGraph) -> GlobalGraphStats:
+def global_graph_stats(graph: GraphInput) -> GlobalGraphStats:
     """Return global statistics for the provided graph.
 
     Returns
@@ -433,19 +491,20 @@ def global_graph_stats(graph: nx.Graph | nx.DiGraph) -> GlobalGraphStats:
     clustering_map = compute_clustering_coefficient(graph)
     avg_clustering = sum(clustering_map.values()) / len(clustering_map) if clustering_map else 0.0
 
-    if isinstance(graph, nx.DiGraph):
-        weak_infos = find_weakly_connected(graph)
+    store = ensure_store(graph)
+    if store.is_directed:
+        weak_infos = find_weakly_connected(store)
         weak_component_count = len(weak_infos)
-        scc_result = find_strongly_connected(graph)
+        scc_result = find_strongly_connected(store)
         scc_count = len(scc_result.components)
     else:
-        conn_infos = find_connected(graph)
+        conn_infos = find_connected(store)
         weak_component_count = len(conn_infos)
         scc_count = weak_component_count
 
     return GlobalGraphStats(
-        node_count=graph.number_of_nodes(),
-        edge_count=graph.number_of_edges(),
+        node_count=store.graph.num_nodes(),
+        edge_count=store.graph.num_edges(),
         weak_component_count=weak_component_count,
         scc_count=scc_count,
         component_layers=component_layers,

@@ -36,6 +36,8 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_function_rows,
     build_symbol_graph_metrics_module_rows,
 )
+from codeintel.build.contracts.registry import require_contract
+from codeintel.build.contracts.types import ContractOverrides
 from codeintel.build.graphs.builders import (
     EdgeWeightPolicy,
     build_call_graph_from_rows,
@@ -57,7 +59,6 @@ from codeintel.build.hamilton.native.patterns import (
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import TableContractSpec
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
@@ -71,86 +72,86 @@ GRAPH_METRICS_TARGET_NAME = "graph_metrics"
 GRAPH_METRICS_FUNCTIONS_TABLE_KEY = "analytics.graph_metrics_functions"
 GRAPH_METRICS_MODULES_TABLE_KEY = "analytics.graph_metrics_modules"
 GRAPH_METRICS_COLLECT_GROUP = "graph_metrics_core"
-GRAPH_METRICS_FUNCTIONS_CONTRACT = TableContractSpec(
+GRAPH_METRICS_FUNCTIONS_CONTRACT = require_contract(
     table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
     domain="analytics",
     target=GRAPH_METRICS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="graph_metrics_functions__base",
+    overrides=ContractOverrides(
+        input_name="graph_metrics_functions__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
-GRAPH_METRICS_MODULES_CONTRACT = TableContractSpec(
+GRAPH_METRICS_MODULES_CONTRACT = require_contract(
     table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
     domain="analytics",
     target=GRAPH_METRICS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="graph_metrics_modules__base",
+    overrides=ContractOverrides(
+        input_name="graph_metrics_modules__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 GRAPH_METRICS_EXT_TARGET_NAME = "graph_metrics_ext"
 GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY = "analytics.graph_metrics_functions_ext"
 GRAPH_METRICS_MODULES_EXT_TABLE_KEY = "analytics.graph_metrics_modules_ext"
-GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT = TableContractSpec(
+GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT = require_contract(
     table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
     domain="analytics",
     target=GRAPH_METRICS_EXT_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="graph_metrics_functions_ext__base",
+    overrides=ContractOverrides(
+        input_name="graph_metrics_functions_ext__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
-GRAPH_METRICS_MODULES_EXT_CONTRACT = TableContractSpec(
+GRAPH_METRICS_MODULES_EXT_CONTRACT = require_contract(
     table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
     domain="analytics",
     target=GRAPH_METRICS_EXT_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="graph_metrics_modules_ext__base",
+    overrides=ContractOverrides(
+        input_name="graph_metrics_modules_ext__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 SYMBOL_GRAPH_METRICS_TARGET_NAME = "symbol_graph_metrics"
 SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY = "analytics.symbol_graph_metrics_functions"
 SYMBOL_GRAPH_MODULES_TABLE_KEY = "analytics.symbol_graph_metrics_modules"
-SYMBOL_GRAPH_FUNCTIONS_CONTRACT = TableContractSpec(
+SYMBOL_GRAPH_FUNCTIONS_CONTRACT = require_contract(
     table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY,
     domain="analytics",
     target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="symbol_graph_metrics_functions__base",
+    overrides=ContractOverrides(
+        input_name="symbol_graph_metrics_functions__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
-SYMBOL_GRAPH_MODULES_CONTRACT = TableContractSpec(
+SYMBOL_GRAPH_MODULES_CONTRACT = require_contract(
     table_key=SYMBOL_GRAPH_MODULES_TABLE_KEY,
     domain="analytics",
     target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="symbol_graph_metrics_modules__base",
+    overrides=ContractOverrides(
+        input_name="symbol_graph_metrics_modules__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 GRAPH_STATS_TARGET_NAME = "graph_stats"
 GRAPH_STATS_TABLE_KEY = "analytics.graph_stats"
-GRAPH_STATS_CONTRACT = TableContractSpec(
+GRAPH_STATS_CONTRACT = require_contract(
     table_key=GRAPH_STATS_TABLE_KEY,
     domain="analytics",
     target=GRAPH_STATS_TARGET_NAME,
-    ops_module=None,
-    columns_to_pass=(),
-    required_cols=(),
-    clip_column=None,
-    input_name="graph_stats__base",
+    overrides=ContractOverrides(
+        input_name="graph_stats__base",
+        required_cols=(),
+        clip_column=None,
+    ),
 )
 
 

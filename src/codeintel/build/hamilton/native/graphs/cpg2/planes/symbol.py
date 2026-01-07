@@ -377,7 +377,7 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
     if _EXPR_TYPE is not None:
         try:
             expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-            return table.filter(expr)
+            return safe_filter(table, expr)
         except (
             pa.ArrowInvalid,
             pa.ArrowNotImplementedError,

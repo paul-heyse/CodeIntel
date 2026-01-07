@@ -126,7 +126,7 @@ def _filter_valid_nodes(table: pa.Table) -> pa.Table:
         return table
     if _EXPR_TYPE is not None:
         try:
-            return table.filter(is_valid_expr("cpg_node_id"))
+            return safe_filter(table, is_valid_expr("cpg_node_id"))
         except (
             pa.ArrowInvalid,
             pa.ArrowNotImplementedError,

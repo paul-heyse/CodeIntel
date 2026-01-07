@@ -57,6 +57,51 @@ class PyArrowParquetSaver(DataSaver):
         }
 
 
+_DICTIONARY_ENCODINGS = frozenset({"PLAIN_DICTIONARY", "RLE_DICTIONARY"})
+
+
+def _has_dictionary_encoding(column: pq.ColumnChunkMetaData) -> bool:
+    encodings = getattr(column, "encodings", None)
+    if not encodings:
+        return False
+    return any(str(encoding).upper() in _DICTIONARY_ENCODINGS for encoding in encodings)
+
+
+def _is_dictionary_candidate(data_type: pa.DataType) -> bool:
+    return pa.types.is_string(data_type) or pa.types.is_large_string(data_type)
+
+
+def _dictionary_columns_for_path(path: str) -> tuple[str, ...] | None:
+    try:
+        parquet_file = pq.ParquetFile(path)
+    except (OSError, ValueError, pa.ArrowInvalid):
+        return None
+    schema = parquet_file.schema_arrow
+    column_names = set(schema.names)
+    dictionary_columns: set[str] = set()
+    metadata = parquet_file.metadata
+    if metadata is not None:
+        for group_index in range(metadata.num_row_groups):
+            row_group = metadata.row_group(group_index)
+            for column_index in range(row_group.num_columns):
+                column = row_group.column(column_index)
+                if not _has_dictionary_encoding(column):
+                    continue
+                column_name = column.path_in_schema
+                if column_name not in column_names:
+                    continue
+                field = schema.field(column_name)
+                if _is_dictionary_candidate(field.type):
+                    dictionary_columns.add(column_name)
+    if not dictionary_columns:
+        dictionary_columns = {
+            field.name for field in schema if _is_dictionary_candidate(field.type)
+        }
+    if not dictionary_columns:
+        return None
+    return tuple(sorted(dictionary_columns))
+
+
 @dataclass(frozen=True, slots=True)
 class PyArrowParquetLoader(DataLoader):
     """Load a PyArrow table from a Parquet cache file."""
@@ -94,7 +139,11 @@ class PyArrowParquetLoader(DataLoader):
             Table and Parquet cache metadata payload.
         """
         _ = type_
-        table = pq.read_table(self.path)
+        dictionary_columns = _dictionary_columns_for_path(self.path)
+        read_dictionary = list(dictionary_columns) if dictionary_columns else False
+        table = pq.read_table(self.path, read_dictionary=read_dictionary)
+        if dictionary_columns:
+            table = table.unify_dictionaries()
         return (
             table,
             {

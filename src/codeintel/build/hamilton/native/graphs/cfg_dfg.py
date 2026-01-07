@@ -65,7 +65,7 @@ def _filter_non_empty_paths(table: pa.Table) -> pa.Table:
         return table
     try:
         if _EXPR_TYPE is not None:
-            return table.filter(non_empty_string_expr("path"))
+            return safe_filter(table, non_empty_string_expr("path"))
         path_mask = non_empty_string_mask(table.column("path"))
         return safe_filter(table, path_mask)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
