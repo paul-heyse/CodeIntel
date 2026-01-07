@@ -24,7 +24,7 @@ from codeintel.build.tabular.arrow_ops import (
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import safe_filter, safe_filter_expr
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.serialization.payload import encode_payload
@@ -195,21 +195,18 @@ def cpg2_edges__scip_symbol_goid_xref(
     if not required.issubset(set(symbol_goid.column_names)):
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
     goid_rows = _normalize_symbol_goid(symbol_goid)
-    if "goid_h128" in goid_rows.column_names and _EXPR_TYPE is not None:
-        try:
-            goid_rows = goid_rows.filter(is_valid_expr("goid_h128"))
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            mask = is_valid_mask(goid_rows.column("goid_h128"))
-            goid_rows = safe_filter(goid_rows, mask)
-    elif "goid_h128" in goid_rows.column_names:
-        mask = is_valid_mask(goid_rows.column("goid_h128"))
-        goid_rows = safe_filter(goid_rows, mask)
+    if "goid_h128" in goid_rows.column_names:
+        def _goid_mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
+            return is_valid_mask(table.column("goid_h128"))
+
+        if _EXPR_TYPE is not None:
+            goid_rows = safe_filter_expr(
+                goid_rows,
+                is_valid_expr("goid_h128"),
+                fallback_mask=_goid_mask,
+            )
+        else:
+            goid_rows = safe_filter(goid_rows, _goid_mask(goid_rows))
     symbol_anchors = rename_table_columns(
         _symbol_anchor_map(scip_symbols),
         {"symbol": "scip_symbol", "cpg_node_id": "src_cpg_node_id"},
@@ -374,23 +371,16 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
     required = {"src_cpg_node_id", "dst_cpg_node_id"}
     if not required.issubset(set(table.column_names)):
         return table
+    def _edge_mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
+        return and_kleene(
+            is_valid_mask(target.column("src_cpg_node_id")),
+            is_valid_mask(target.column("dst_cpg_node_id")),
+        )
+
     if _EXPR_TYPE is not None:
-        try:
-            expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-            return safe_filter(table, expr)
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            pass
-    mask = and_kleene(
-        is_valid_mask(table.column("src_cpg_node_id")),
-        is_valid_mask(table.column("dst_cpg_node_id")),
-    )
-    return safe_filter(table, mask)
+        expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+        return safe_filter_expr(table, expr, fallback_mask=_edge_mask)
+    return safe_filter(table, _edge_mask(table))
 
 
 def _encode_extras_payload(values: dict[str, object]) -> bytes | None:

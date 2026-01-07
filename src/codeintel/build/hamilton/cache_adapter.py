@@ -24,6 +24,7 @@ from hamilton.function_modifiers import cache as cache_decorator
 
 from codeintel.build.hamilton.arrow_hashing import register_arrow_hashing
 from codeintel.build.hamilton.cache_index import CacheIndex, CacheProbeResult
+from codeintel.build.hamilton.cache_policy import default_cache_policy, resolve_behavior
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.materializers.arrow_parquet_cache import (
     register_arrow_parquet_cache_adapters,
@@ -227,18 +228,6 @@ _ARROW_CACHE_BEHAVIORS = {
     CachingBehavior.RECOMPUTE,
     CachingBehavior.IGNORE,
 }
-_NON_CACHEABLE_NODE_NAMES: set[str] = {
-    "cache_index",
-    "cache_key_resolver",
-    "catalog",
-    "env",
-    "plan_context",
-    "plan_request",
-    "runtime_fingerprint",
-    "schema_index",
-    "semantic_registry",
-    "tag_query",
-}
 
 
 class ManifestBackedCacheAdapter(HamiltonCacheAdapter):
@@ -358,18 +347,14 @@ class ManifestBackedCacheAdapter(HamiltonCacheAdapter):
         graph = self._fn_graphs.get(run_id)
         if graph is None:
             return behaviors
+        policy = default_cache_policy()
         for node in graph.get_nodes():
-            if (
-                node.name in _NON_CACHEABLE_NODE_NAMES
-                or node.name.startswith("plan_")
-                or node.name == "plan"
-                or node.name.endswith("__finalize_context")
-            ):
-                behaviors[node.name] = CachingBehavior.DISABLE
-                continue
-            tags = node.tags if isinstance(node.tags, dict) else {}
-            if tags.get(ht.TAG_NODE_TYPE) == ht.NODE_TYPE_MATERIALIZE:
-                behaviors[node.name] = CachingBehavior.RECOMPUTE
+            default_behavior = behaviors.get(node.name, policy.default_behavior)
+            behaviors[node.name] = resolve_behavior(
+                node,
+                policy,
+                default_behavior=default_behavior,
+            )
         return behaviors
 
     def _should_materialize_arrow_result(self, *, run_id: str, node_name: str) -> bool:

@@ -14,6 +14,12 @@ from codeintel.build.analytics.compute.row_builders import (
     build_subsystem_graph_rows,
 )
 from codeintel.build.analytics.graphs.graph_metrics import build_graph_metric_filters_from_sets
+from codeintel.build.analytics.graphs.orchestrator import (
+    MetricsPipelineConfig,
+    MetricsPipelineRequest,
+    build_metrics_pipeline_rows,
+    build_store_views,
+)
 from codeintel.build.graphs.compute.metrics.components import (
     condensation_layers,
     find_strongly_connected,
@@ -26,6 +32,7 @@ from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.graphs.graph_metrics import GraphMetricFilters
+    from codeintel.build.analytics.graphs.orchestrator import GraphViews
     from codeintel.build.graphs.runtime.context import GraphContext
 
 
@@ -141,6 +148,19 @@ class SubsystemGraphMetricInputs:
     filters: GraphMetricFilters | None = None
 
 
+@dataclass(frozen=True)
+class SubsystemMetricSlices:
+    """Precomputed subsystem graph metrics slices."""
+
+    node_count: int
+    in_degree: dict[str, float]
+    out_degree: dict[str, float]
+    pagerank: dict[str, float]
+    betweenness: dict[str, float]
+    closeness: dict[str, float]
+    layer: dict[str, int]
+
+
 def build_subsystem_graph_metrics_rows(
     inputs: SubsystemGraphMetricInputs,
 ) -> list[SubsystemMetricRow]:
@@ -160,43 +180,93 @@ def build_subsystem_graph_metrics_rows(
     if not membership_list:
         return []
     active_filters = inputs.filters or _filters_from_memberships(membership_list)
-    graph_ctx = resolve_graph_context(
-        GraphContextSpec(
-            repo=inputs.repo,
-            commit=inputs.commit,
-            use_gpu=runtime_opts.use_gpu,
-            now=datetime.now(UTC),
-            community_detection_limit=runtime_opts.features.community_detection_limit,
-        )
-    )
     membership_list = active_filters.filter_subsystem_memberships(membership_list)
     if not membership_list:
         return []
+    now = datetime.now(UTC)
 
-    subsystem_graph = _build_subsystem_graph(
-        active_filters.filter_import_graph(inputs.import_graph),
-        membership_list,
-        graph_ctx,
-    )
-    subsystem_graph = active_filters.filter_subsystem_graph(subsystem_graph)
+    def _build_context(
+        _runtime_opts: GraphRuntimeOptions,
+        repo: str,
+        commit: str,
+    ) -> GraphContext:
+        return resolve_graph_context(
+            GraphContextSpec(
+                repo=repo,
+                commit=commit,
+                use_gpu=runtime_opts.use_gpu,
+                now=now,
+                community_detection_limit=runtime_opts.features.community_detection_limit,
+            )
+        )
 
-    if graph_node_count(subsystem_graph) == 0:
-        return []
-
-    centralities = _subsystem_centralities(subsystem_graph, graph_ctx)
-    layer_by_subsystem = _layer_by_subsystem(subsystem_graph)
-    degree_maps = _degree_maps(subsystem_graph, weight=graph_ctx.betweenness_weight)
-
-    return build_subsystem_graph_rows(
-        SubsystemMetricInputs(
-            repo=inputs.repo,
-            commit=inputs.commit,
+    def _subsystem_slices(views: GraphViews, ctx: GraphContext) -> SubsystemMetricSlices:
+        subsystem_graph = _build_subsystem_graph(
+            views.graph,
+            membership_list,
+            ctx,
+        )
+        subsystem_graph = active_filters.filter_subsystem_graph(subsystem_graph)
+        node_count = graph_node_count(subsystem_graph)
+        if node_count == 0:
+            return SubsystemMetricSlices(
+                node_count=0,
+                in_degree={},
+                out_degree={},
+                pagerank={},
+                betweenness={},
+                closeness={},
+                layer={},
+            )
+        centralities = _subsystem_centralities(subsystem_graph, ctx)
+        layer_by_subsystem = _layer_by_subsystem(subsystem_graph)
+        degree_maps = _degree_maps(subsystem_graph, weight=ctx.betweenness_weight)
+        return SubsystemMetricSlices(
+            node_count=node_count,
             in_degree=degree_maps[0],
             out_degree=degree_maps[1],
             pagerank=centralities[0],
             betweenness=centralities[1],
             closeness=centralities[2],
             layer=layer_by_subsystem,
-            created_at=graph_ctx.resolved_now(),
         )
+
+    def _subsystem_rows(
+        repo: str,
+        commit: str,
+        ctx: GraphContext,
+        _views: GraphViews,
+        slices: SubsystemMetricSlices,
+    ) -> list[SubsystemMetricRow]:
+        if slices.node_count == 0:
+            return []
+        return build_subsystem_graph_rows(
+            SubsystemMetricInputs(
+                repo=repo,
+                commit=commit,
+                in_degree=slices.in_degree,
+                out_degree=slices.out_degree,
+                pagerank=slices.pagerank,
+                betweenness=slices.betweenness,
+                closeness=slices.closeness,
+                layer=slices.layer,
+                created_at=ctx.resolved_now(),
+            )
+        )
+
+    config = MetricsPipelineConfig(
+        table_key="analytics.subsystem_graph_metrics",
+        filter_graph=lambda filters, graph: filters.filter_import_graph(graph),
+        build_context=_build_context,
+        build_views=build_store_views,
+        build_slices=_subsystem_slices,
+        build_rows=_subsystem_rows,
     )
+    request = MetricsPipelineRequest(
+        repo=inputs.repo,
+        commit=inputs.commit,
+        graph=inputs.import_graph,
+        runtime=runtime_opts,
+        filters=active_filters,
+    )
+    return build_metrics_pipeline_rows(config, request)

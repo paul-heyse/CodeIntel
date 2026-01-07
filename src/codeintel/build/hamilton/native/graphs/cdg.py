@@ -15,7 +15,7 @@ from codeintel.build.tabular.arrow_ops import (
     emit_alignment_report,
     iter_rows,
 )
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import safe_filter, safe_filter_expr
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     is_valid_expr,
@@ -267,22 +267,21 @@ def _prefilter_cdg_blocks(blocks_table: pa.Table) -> pa.Table:
     required = {"function_goid_h128", "block_id", "block_idx"}
     if not required.issubset(set(blocks_table.column_names)):
         return blocks_table
-    try:
-        if _EXPR_TYPE is not None:
-            expr = (
-                is_valid_expr("function_goid_h128")
-                & is_valid_expr("block_id")
-                & is_valid_expr("block_idx")
-            )
-            return safe_filter(blocks_table, expr)
-        goid_mask = is_valid_mask(blocks_table.column("function_goid_h128"))
-        block_id_mask = is_valid_mask(blocks_table.column("block_id"))
-        block_idx_mask = is_valid_mask(blocks_table.column("block_idx"))
-        mask = and_kleene(goid_mask, block_id_mask)
-        mask = and_kleene(mask, block_idx_mask)
-        return safe_filter(blocks_table, mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return blocks_table
+    def _mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
+        goid_mask = is_valid_mask(table.column("function_goid_h128"))
+        block_id_mask = is_valid_mask(table.column("block_id"))
+        block_idx_mask = is_valid_mask(table.column("block_idx"))
+        combined = and_kleene(goid_mask, block_id_mask)
+        return and_kleene(combined, block_idx_mask)
+
+    if _EXPR_TYPE is not None:
+        expr = (
+            is_valid_expr("function_goid_h128")
+            & is_valid_expr("block_id")
+            & is_valid_expr("block_idx")
+        )
+        return safe_filter_expr(blocks_table, expr, fallback_mask=_mask)
+    return safe_filter(blocks_table, _mask(blocks_table))
 
 
 def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
@@ -291,16 +290,15 @@ def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
     required = {"function_goid_h128", "edge_kind"}
     if not required.issubset(set(edges_table.column_names)):
         return edges_table
-    try:
-        if _EXPR_TYPE is not None:
-            expr = is_valid_expr("function_goid_h128") & non_empty_string_expr("edge_kind")
-            return safe_filter(edges_table, expr)
-        goid_mask = is_valid_mask(edges_table.column("function_goid_h128"))
-        kind_mask = non_empty_string_mask(edges_table.column("edge_kind"))
-        mask = and_kleene(goid_mask, kind_mask)
-        return safe_filter(edges_table, mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return edges_table
+    def _mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
+        goid_mask = is_valid_mask(table.column("function_goid_h128"))
+        kind_mask = non_empty_string_mask(table.column("edge_kind"))
+        return and_kleene(goid_mask, kind_mask)
+
+    if _EXPR_TYPE is not None:
+        expr = is_valid_expr("function_goid_h128") & non_empty_string_expr("edge_kind")
+        return safe_filter_expr(edges_table, expr, fallback_mask=_mask)
+    return safe_filter(edges_table, _mask(edges_table))
 
 
 def cdg_edges(

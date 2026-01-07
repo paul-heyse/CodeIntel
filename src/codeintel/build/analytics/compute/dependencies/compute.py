@@ -23,7 +23,9 @@ from codeintel.build.analytics.compute.dependencies.detection import (
 )
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
+from codeintel.build.analytics.utilities.ast import RowDecoder
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_models import columns_for_table_key
@@ -397,9 +399,11 @@ def _config_keys_from_frame(
     if frame is None or frame.num_rows == 0:
         return mapping
     filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
+    decoder = RowDecoder(columns=("reference_modules",))
     for row in filtered:
-        ref_modules = row.get("reference_modules")
-        key = row.get("key")
+        decoded = decoder.decode(row)
+        ref_modules = decoded.get("reference_modules")
+        key = decoded.get("key")
         if key is None or ref_modules is None:
             continue
         modules = _ensure_str_list(ref_modules)
@@ -414,15 +418,9 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = list(iter_rows(frame))
-    has_repo = "repo" in frame.column_names
-    has_commit = "commit" in frame.column_names
-    return [
-        row
-        for row in rows
-        if (repo == row.get("repo") if has_repo else True)
-        and (commit == row.get("commit") if has_commit else True)
-    ]
+    context = FilterExprContext(repo=repo, commit=commit)
+    filtered = context.apply(frame)
+    return list(iter_rows(filtered))
 
 
 def load_config_key_map(

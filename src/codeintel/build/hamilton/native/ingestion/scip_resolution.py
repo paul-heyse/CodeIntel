@@ -31,7 +31,7 @@ from codeintel.build.tabular.arrow_ops import (
     iter_rows,
 )
 from codeintel.build.tabular.compute_columns import constant_array
-from codeintel.build.tabular.compute_helpers import cast_array
+from codeintel.build.tabular.compute_helpers import cast_array, safe_filter
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     bit_wise_and,
@@ -150,7 +150,7 @@ def _goids_table(goids: InferableTabularInput) -> pa.Table:
         is_valid_mask(table["start_line"]),
         is_valid_mask(table["end_line"]),
     )
-    return table.filter(mask)
+    return safe_filter(table, mask)
 
 
 def _occurrences_table(occurrences: InferableTabularInput) -> pa.Table:
@@ -179,7 +179,7 @@ def _symbol_goid_xref_table(
         bit_wise_and(roles, pa.scalar(_ROLE_DEFINITION, type=roles.type)),
         pa.scalar(0, type=roles.type),
     )
-    definitions = occurrences.filter(def_mask)
+    definitions = safe_filter(occurrences, def_mask)
     join_spec = ArrowJoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1")
     join_options = build_join_options(definitions, goids)
     joined = arrow_join_tables(definitions, goids, spec=join_spec, options=join_options)

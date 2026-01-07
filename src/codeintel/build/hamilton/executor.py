@@ -39,7 +39,6 @@ from hamilton.lifecycle import base as lifecycle_base
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.execution_policy import effective_max_workers_for_graph
-from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.build_log import (
     drain_build_log,
     record_build_event,
@@ -64,6 +63,11 @@ from codeintel.build.hamilton.diagnostics import (
 from codeintel.build.hamilton.driver_factory import target_to_node_name
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
+from codeintel.build.hamilton.execution_profiles import (
+    apply_dynamic_execution_config,
+    build_execution_profile,
+    build_parallel_adapter,
+)
 from codeintel.build.hamilton.hooks import (
     LifecycleEventStreamHook,
     NodeTelemetryHook,
@@ -165,27 +169,6 @@ _EXECUTOR_OVERRIDE_MAP: tuple[tuple[str, str], ...] = (
     ("allow_workspace_modules", "allow_workspace_modules"),
 )
 
-_EXECUTOR_ALIASES: dict[str, str] = {
-    "synchronous": "sync",
-    "sync": "sync",
-    "local": "sync",
-    "thread": "thread",
-    "threads": "thread",
-    "threading": "thread",
-    "process": "process",
-    "processes": "process",
-    "multiprocessing": "process",
-    "mp": "process",
-    "none": "none",
-    "off": "none",
-    "disabled": "none",
-}
-
-_EXECUTOR_CLASS_NAMES: dict[str, str] = {
-    "sync": "SynchronousLocalTaskExecutor",
-    "thread": "MultiThreadingExecutor",
-    "process": "MultiProcessingExecutor",
-}
 _INTRINSIC_TARGETS: tuple[str, ...] = ("scip",)
 
 
@@ -1047,104 +1030,6 @@ def _run_preflight(
     return False, report.summary()
 
 
-def _normalize_executor_name(value: str | None, *, default: str) -> str:
-    if value is None:
-        return default
-    normalized = value.strip().lower()
-    if not normalized:
-        return default
-    return _EXECUTOR_ALIASES.get(normalized, normalized)
-
-
-def _executor_kwargs(executor_cls: type[object], *, max_tasks: int | None) -> dict[str, object]:
-    if max_tasks is None:
-        return {}
-    params = inspect.signature(executor_cls).parameters
-    if "max_tasks" in params:
-        return {"max_tasks": max_tasks}
-    if "max_workers" in params:
-        return {"max_workers": max_tasks}
-    if "max_concurrent_tasks" in params:
-        return {"max_concurrent_tasks": max_tasks}
-    return {}
-
-
-def _instantiate_task_executor(
-    executor_cls: type[object],
-    *,
-    max_tasks: int | None,
-    label: str,
-) -> object | None:
-    kwargs = _executor_kwargs(executor_cls, max_tasks=max_tasks)
-    try:
-        return executor_cls(**kwargs)
-    except (TypeError, ValueError) as exc:
-        log.warning("Failed to instantiate %s executor: %s", label, exc)
-        return None
-
-
-def _resolve_task_executor(
-    *,
-    name: str | None,
-    default: str,
-    max_tasks: int | None,
-) -> object | None:
-    normalized = _normalize_executor_name(name, default=default)
-    if normalized == "none":
-        return None
-    class_name = _EXECUTOR_CLASS_NAMES.get(normalized)
-    if class_name is None:
-        log.warning("Unknown dynamic executor '%s', defaulting to %s", normalized, default)
-        class_name = _EXECUTOR_CLASS_NAMES.get(default)
-        if class_name is None:
-            return None
-    try:
-        executors = importlib.import_module("hamilton.execution.executors")
-    except ModuleNotFoundError as exc:
-        log.warning("Dynamic execution requested but executors module missing: %s", exc)
-        return None
-    executor_cls = getattr(executors, class_name, None)
-    if executor_cls is None:
-        log.warning("Dynamic executor class %s is unavailable", class_name)
-        return None
-    return _instantiate_task_executor(
-        executor_cls,
-        max_tasks=max_tasks,
-        label=normalized,
-    )
-
-
-def _resolve_dynamic_executors(
-    *,
-    enabled: bool,
-    local_name: str | None,
-    remote_name: str | None,
-    max_tasks: int | None,
-) -> tuple[bool, object | None, object | None]:
-    if not enabled:
-        return False, None, None
-    local_executor = _resolve_task_executor(
-        name=local_name,
-        default="sync",
-        max_tasks=None,
-    )
-    remote_executor = _resolve_task_executor(
-        name=remote_name,
-        default="thread",
-        max_tasks=max_tasks,
-    )
-    if local_executor is None and remote_executor is None:
-        log.warning("Dynamic execution enabled but no executors resolved; disabling")
-        return False, None, None
-    if local_executor is None:
-        local_executor = _resolve_task_executor(
-            name="sync",
-            default="sync",
-            max_tasks=None,
-        )
-    return True, local_executor, remote_executor
-
-
 def _materializer_import_path(raw: str) -> tuple[str, str]:
     module_name, sep, attr = raw.partition(":")
     if not sep:
@@ -1223,30 +1108,6 @@ def _base_hamilton_config(
     config["ci_validate_outputs"] = bool(env.validate_outputs)
     config["ci_validation_mode"] = env.validation_mode.value
     return config
-
-
-def _apply_dynamic_execution_config(
-    *,
-    config: dict[str, Any],
-    env: BuildEnv,
-    options: BuildExecutionOptions,
-) -> tuple[bool, object | None, object | None]:
-    dynamic_enabled, local_executor, remote_executor = _resolve_dynamic_executors(
-        enabled=bool(env.execution_settings.dynamic_execution),
-        local_name=env.execution_settings.dynamic_local_executor,
-        remote_name=env.execution_settings.dynamic_remote_executor,
-        max_tasks=env.execution_settings.dynamic_remote_max_tasks
-        or options.max_workers
-        or env.execution_settings.max_workers,
-    )
-    config["ci.dynamic_execution"] = dynamic_enabled
-    config["ci_dynamic_module_records"] = dynamic_enabled
-    if dynamic_enabled:
-        if local_executor is not None:
-            config["ci.dynamic_execution.local_executor"] = local_executor
-        if remote_executor is not None:
-            config["ci.dynamic_execution.remote_executor"] = remote_executor
-    return dynamic_enabled, local_executor, remote_executor
 
 
 def _build_cache_adapter(
@@ -2670,10 +2531,16 @@ class HamiltonBuildExecutor:
             Configured runtime bundle with driver and catalog.
         """
         config = _base_hamilton_config(env=setup.env, options=self._options)
-        dynamic_enabled, _, _ = _apply_dynamic_execution_config(
-            config=config,
+        thread_name_prefix = "codeintel-build"
+        execution_profile = build_execution_profile(
             env=setup.env,
             options=self._options,
+            max_workers=self._options.max_workers,
+            thread_name_prefix=thread_name_prefix,
+        )
+        dynamic_config = apply_dynamic_execution_config(
+            config=config,
+            profile=execution_profile,
         )
         materializers = _resolve_materializers(setup.env.execution_settings.materializers)
         telemetry_hook: NodeTelemetryHook | None = None
@@ -2703,17 +2570,20 @@ class HamiltonBuildExecutor:
             nonlocal telemetry_hook
             adapters: list[LifecycleAdapter] = []
             effective_max_workers = self._effective_max_workers(catalog)
+            adapter_profile = build_execution_profile(
+                env=setup.env,
+                options=self._options,
+                max_workers=effective_max_workers,
+                thread_name_prefix=thread_name_prefix,
+            )
             result_builder = BuildResultBuilder(
                 allowed_nodes=tuple(catalog.target_nodes.values()),
             )
-            parallel_adapter = None
-            if not dynamic_enabled:
-                parallel_adapter = create_parallel_adapter(
-                    self._options.parallel_backend,
-                    max_workers=effective_max_workers,
-                    thread_name_prefix="codeintel-build",
-                    result_builder=result_builder,
-                )
+            parallel_adapter = build_parallel_adapter(
+                adapter_profile,
+                result_builder=result_builder,
+                dynamic_enabled=dynamic_config.enabled,
+            )
             if parallel_adapter is not None:
                 adapters.append(parallel_adapter)
             else:

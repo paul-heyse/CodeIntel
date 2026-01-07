@@ -11,6 +11,7 @@ from hamilton.function_modifiers import pipe_input, resolve_from_config, step, v
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.tabular.compute_helpers import safe_filter_batch
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
@@ -43,7 +44,7 @@ def _drop_null_rows(
         if mask is None:
             batches.append(batch)
             continue
-        filtered = batch.filter(mask)
+        filtered = safe_filter_batch(batch, mask)
         if filtered.num_rows:
             batches.append(filtered)
     if not batches:

@@ -24,7 +24,7 @@ from codeintel.build.tabular.arrow_ops import (
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import safe_filter, safe_filter_expr
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.serialization.payload import encode_payload
@@ -429,41 +429,28 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
     required = {"src_cpg_node_id", "dst_cpg_node_id"}
     if not required.issubset(set(table.column_names)):
         return table
+    def _edge_mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
+        return and_kleene(
+            is_valid_mask(target.column("src_cpg_node_id")),
+            is_valid_mask(target.column("dst_cpg_node_id")),
+        )
+
     if _EXPR_TYPE is not None:
-        try:
-            expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-            return safe_filter(table, expr)
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            pass
-    mask = and_kleene(
-        is_valid_mask(table.column("src_cpg_node_id")),
-        is_valid_mask(table.column("dst_cpg_node_id")),
-    )
-    return safe_filter(table, mask)
+        expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+        return safe_filter_expr(table, expr, fallback_mask=_edge_mask)
+    return safe_filter(table, _edge_mask(table))
 
 
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     if "cpg_node_id" not in table.column_names:
         return table
     if _EXPR_TYPE is not None:
-        try:
-            return safe_filter(table, is_valid_expr("cpg_node_id"))
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            pass
-    mask = is_valid_mask(table.column("cpg_node_id"))
-    return safe_filter(table, mask)
+        return safe_filter_expr(
+            table,
+            is_valid_expr("cpg_node_id"),
+            fallback_mask=lambda target: is_valid_mask(target.column("cpg_node_id")),
+        )
+    return safe_filter(table, is_valid_mask(table.column("cpg_node_id")))
 
 
 def _payload_bytes(values: dict[str, object]) -> bytes:

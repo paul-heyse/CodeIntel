@@ -25,7 +25,11 @@ from codeintel.build.tabular.arrow_ops import (
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter, scalar_from_compute
+from codeintel.build.tabular.compute_helpers import (
+    safe_filter,
+    safe_filter_expr,
+    scalar_from_compute,
+)
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.serialization.payload import encode_payload
@@ -215,28 +219,17 @@ def cpg2_edges__syntax_edges(
         ),
     )
     selected = rename_table_columns(selected, {"child_ordinal": "ordinal"})
-    if _EXPR_TYPE is not None:
-        try:
-            expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-            filtered = selected.filter(expr)
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            mask = and_kleene(
-                is_valid_mask(selected.column("src_cpg_node_id")),
-                is_valid_mask(selected.column("dst_cpg_node_id")),
-            )
-            filtered = safe_filter(selected, mask)
-    else:
-        mask = and_kleene(
-            is_valid_mask(selected.column("src_cpg_node_id")),
-            is_valid_mask(selected.column("dst_cpg_node_id")),
+    def _edge_mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
+        return and_kleene(
+            is_valid_mask(table.column("src_cpg_node_id")),
+            is_valid_mask(table.column("dst_cpg_node_id")),
         )
-        filtered = safe_filter(selected, mask)
+
+    if _EXPR_TYPE is not None:
+        expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+        filtered = safe_filter_expr(selected, expr, fallback_mask=_edge_mask)
+    else:
+        filtered = safe_filter(selected, _edge_mask(selected))
     if diagnostics is not None:
         resolved = filtered.num_rows
         diagnostics["syntax_edges"] = SyntaxEdgeDiagnostics(

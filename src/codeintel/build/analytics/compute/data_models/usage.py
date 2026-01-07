@@ -19,8 +19,9 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
-from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.analytics.utilities.ast import RowDecoder, call_name, snippet_from_lines
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
@@ -165,6 +166,27 @@ def _parse_param_types(raw: str | dict[str, object] | None) -> dict[str, str]:
             continue
         result[str(key)] = str(value)
     return result
+
+
+def _param_types_from_frame(
+    frame: pa.Table | None,
+    *,
+    repo: str,
+    commit: str,
+) -> dict[int, dict[str, str]]:
+    if frame is None or frame.num_rows == 0:
+        return {}
+    decoder = RowDecoder(columns=("param_types",))
+    param_types: dict[int, dict[str, str]] = {}
+    for row in _rows_for_snapshot(frame, repo=repo, commit=commit):
+        decoded = decoder.decode(row)
+        goid_int = normalize_decimal_id(decoded.get("function_goid_h128"))
+        if goid_int is None:
+            continue
+        raw_param_types = decoded.get("param_types")
+        parsed_input = raw_param_types if isinstance(raw_param_types, (str, dict)) else None
+        param_types[goid_int] = _parse_param_types(parsed_input)
+    return param_types
 
 
 def _build_model_index(
@@ -563,20 +585,11 @@ def build_data_model_usage_rows(
             len(missing),
         )
 
-    param_types: dict[int, dict[str, str]] = {}
-    if inputs.function_types_frame is not None and inputs.function_types_frame.num_rows > 0:
-        filtered = _rows_for_snapshot(
-            inputs.function_types_frame,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-        )
-        for row in filtered:
-            goid_int = normalize_decimal_id(row.get("function_goid_h128"))
-            if goid_int is None:
-                continue
-            raw_param_types = row.get("param_types")
-            parsed_input = raw_param_types if isinstance(raw_param_types, (str, dict)) else None
-            param_types[goid_int] = _parse_param_types(parsed_input)
+    param_types = _param_types_from_frame(
+        inputs.function_types_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
     artifacts = ModelUsageArtifacts(
         ast_by_goid=inputs.ast_by_goid,
         module_map=inputs.module_map,
@@ -605,15 +618,9 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = list(iter_rows(frame))
-    has_repo = "repo" in frame.column_names
-    has_commit = "commit" in frame.column_names
-    return [
-        row
-        for row in rows
-        if (repo == row.get("repo") if has_repo else True)
-        and (commit == row.get("commit") if has_commit else True)
-    ]
+    context = FilterExprContext(repo=repo, commit=commit)
+    filtered = context.apply(frame)
+    return list(iter_rows(filtered))
 
 
 def _build_usage_rows(

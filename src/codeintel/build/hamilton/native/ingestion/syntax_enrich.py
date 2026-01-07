@@ -27,7 +27,7 @@ from codeintel.build.tabular.arrow_ops import (
     emit_alignment_report,
 )
 from codeintel.build.tabular.compute_columns import constant_array
-from codeintel.build.tabular.compute_helpers import cast_array
+from codeintel.build.tabular.compute_helpers import cast_array, safe_filter
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     invert_mask,
@@ -289,7 +289,7 @@ def _null_mask(table: pa.Table, start_col: str, end_col: str) -> pa.Array | pa.C
 def _filter_table(table: pa.Table, mask: pa.Array | pa.ChunkedArray) -> pa.Table:
     if table.num_rows == 0:
         return table
-    return table.filter(mask)
+    return safe_filter(table, mask)
 
 
 def _line_join_occurrences(left: pa.Table, occurrences: pa.Table) -> pa.Table:

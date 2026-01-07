@@ -10,6 +10,7 @@ from hamilton.caching.adapter import HamiltonCacheAdapter
 from hamilton.caching.cache_key import create_cache_key
 
 from codeintel.build.hamilton.cache_adapter import CacheStore
+from codeintel.build.hamilton.cache_policy import CACHE_SALT_DEP_NAME
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +28,8 @@ class CacheKeyResolver:
     code_versions: Mapping[str, str] = field(default_factory=dict)
     node_dependencies: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     cache_store: CacheStore | None = None
+    cache_salt: str | None = None
+    salted_nodes: frozenset[str] = field(default_factory=frozenset)
 
     @staticmethod
     def resolve(
@@ -75,11 +78,15 @@ class CacheKeyResolver:
             input_values=input_values,
             input_versions=input_versions,
         )
+        salt_version = _cache_salt_version(self.cache_salt)
         for node in _topo_sort_nodes(node_set, self.node_dependencies):
             dep_versions = _resolve_dependency_versions(node, context=context)
             if dep_versions is None:
                 data_versions[node] = None
                 continue
+
+            if salt_version is not None and node in self.salted_nodes:
+                dep_versions = {**dep_versions, CACHE_SALT_DEP_NAME: salt_version}
 
             code_version = self.code_versions.get(node)
             if not code_version:
@@ -178,6 +185,15 @@ def _input_version(
         input_versions[name] = None
         return None
     input_versions[name] = version
+    return version
+
+
+def _cache_salt_version(cache_salt: str | None) -> str | None:
+    if cache_salt is None:
+        return None
+    version = fingerprinting.hash_value(cache_salt)
+    if version == fingerprinting.UNHASHABLE:
+        return None
     return version
 
 

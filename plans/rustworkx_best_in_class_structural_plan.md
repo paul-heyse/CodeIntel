@@ -73,6 +73,17 @@ class RxGraphStore:
 - `src/codeintel/build/graphs/rx/store.py`
 - `tests/graphs/test_rx_store.py`
 
+**Status**
+Completed.
+
+**Implementation notes**
+- Added guarded mutation methods (`add_node`, `remove_node`, `remove_edge`, `set_edge_weight`) plus
+  versioned cache invalidation in `src/codeintel/build/graphs/rx/store.py`.
+- Exposed `graph_view` accessor and `_view_cache`; underlying field remains `graph` (no `_graph`
+  rename) to avoid a broad refactor.
+- Updated fixtures and tests to use the guarded setters in
+  `tests/_helpers/fixtures/graphs.py` and `tests/graphs/test_rx_store.py`.
+
 ### 2) Per-graph weight aggregation policy
 **Intent**
 Make edge aggregation behavior explicit per `GraphKind` (sum, max, replace),
@@ -129,6 +140,17 @@ def add_weighted_edge(
 - `src/codeintel/build/graphs/runtime/runtime.py`
 - `tests/graphs/test_rx_store.py`
 
+**Status**
+Completed.
+
+**Implementation notes**
+- Introduced `GraphWeightPolicy` and `GraphNumericPolicy` in
+  `src/codeintel/build/graphs/rx/policies.py`, with per-kind policy resolution.
+- `weight_policy_for_kind` resolves by GraphKind name tokens (string mapping) to avoid a
+  module import cycle.
+- Builders/views now construct stores with the per-kind policy; runtime validates cached
+  graphs against the policy name.
+
 ### 3) Graph metadata in `graph.attrs` + cache version bump
 **Intent**
 Embed cache metadata into rustworkx graphs and reject incompatible cache payloads.
@@ -169,6 +191,16 @@ def apply_graph_metadata(store: RxGraphStore, metadata: GraphMetadata) -> None:
 - `src/codeintel/build/graphs/engine/cache.py`
 - `tests/graphs/test_rx_serialization.py`
 
+**Status**
+Completed (engine cache file unchanged; runtime cache path now enforces metadata).
+
+**Implementation notes**
+- Added `GraphMetadata` and `GraphAttrs` protocol in `src/codeintel/build/graphs/rx/metadata.py`.
+- Runtime now writes metadata into `graph.attrs`, bumps `GRAPH_CACHE_VERSION` to `v4`,
+  and validates on read in `src/codeintel/build/graphs/runtime/runtime.py`.
+- Serialization now requires metadata for cache writes and is covered by
+  `tests/graphs/test_rx_serialization.py`.
+
 ### 4) Unify rustworkx graph conversion
 **Intent**
 Avoid duplicated conversion logic and ensure node payload decoding is consistent.
@@ -194,6 +226,13 @@ def ensure_store(graph: GraphInput) -> RxGraphStore:
 **Target files**
 - `src/codeintel/build/graphs/rx/algos.py`
 - `src/codeintel/build/graphs/rx/convert.py`
+
+**Status**
+Completed.
+
+**Implementation notes**
+- Removed ad-hoc conversion in algorithms and routed all conversions through
+  `store_from_rx` in `src/codeintel/build/graphs/rx/convert.py`.
 
 ### 5) BFS visitor for DFG path lengths
 **Intent**
@@ -242,6 +281,13 @@ def compute_dfg_path_lengths(graph: GraphInput, *, max_depth: int = 100) -> dict
 - `src/codeintel/build/graphs/compute/metrics/dfg.py`
 - `tests/graphs/test_compute_metrics_dfg.py`
 
+**Status**
+Completed.
+
+**Implementation notes**
+- Implemented BFS visitor traversal with depth pruning and preserved the
+  `max_depth + 1` semantics in `src/codeintel/build/graphs/compute/metrics/dfg.py`.
+
 ### 6) Cached derived graph views
 **Intent**
 Avoid repeated `to_undirected()`/`to_directed()` conversions across metrics.
@@ -273,6 +319,14 @@ class RxGraphStore:
 - `src/codeintel/build/graphs/compute/metrics/components.py`
 - `src/codeintel/build/graphs/compute/metrics/structural.py`
 
+**Status**
+Completed.
+
+**Implementation notes**
+- Added versioned derived-view caching in `src/codeintel/build/graphs/rx/store.py`.
+- All helper conversions now route through `store.as_undirected()` / `store.as_directed()`
+  via the rustworkx algorithm wrappers.
+
 ### 7) Policy consolidation for numeric normalization
 **Intent**
 Centralize NaN policy and tolerance handling so metrics can share configuration
@@ -297,9 +351,24 @@ class GraphNumericPolicy:
 - `src/codeintel/build/graphs/rx/algos.py`
 - `src/codeintel/build/graphs/compute/metrics/*`
 
+**Status**
+Completed.
+
+**Implementation notes**
+- `GraphNumericPolicy` now drives NaN handling and tolerances in
+  `src/codeintel/build/graphs/rx/algos.py`.
+- Projection stores carry the numeric + weight policy from their source store for
+  consistent normalization.
+
 ## Acceptance Criteria
-- Node/edge mutations only occur through `RxGraphStore` methods.
-- Edge aggregation behavior is explicit per `GraphKind`.
-- Cache payloads include metadata and reject mismatches.
-- DFG path lengths match existing tests under BFS visitor traversal.
-- Derived graph views are cached and invalidated on mutation.
+- Node/edge mutations only occur through `RxGraphStore` methods. (Implemented.)
+- Edge aggregation behavior is explicit per `GraphKind`. (Implemented.)
+- Cache payloads include metadata and reject mismatches. (Implemented.)
+- DFG path lengths match existing tests under BFS visitor traversal. (Implemented.)
+- Derived graph views are cached and invalidated on mutation. (Implemented.)
+
+## Validation Notes
+- `uv run python -m tools.quality_report --output build/quality-results/quality_report.json`
+  runs successfully for guardrails and types, but still reports unrelated Ruff/Pyrefly
+  issues in Hamilton modules.
+- Targeted pytest run is currently blocked by a missing SchemaService configuration.

@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, cast
 import pyarrow as pa
 from hamilton.function_modifiers import (
     apply_to,
-    cache,
     parameterize,
     resolve_from_config,
     source,
@@ -32,6 +31,7 @@ from hamilton.function_modifiers.base import NodeTransformLifecycle
 from hamilton.htypes import Collect, Parallelizable
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.cache_policy import CACHE_BEHAVIOR_TAG
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
@@ -66,7 +66,7 @@ from codeintel.build.hamilton.native.target_decorators import (
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
+from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_helper, tag_tool
 from codeintel.build.hamilton.transforms.ingestion_normalize import normalize_ingest_frame
 from codeintel.build.hamilton.transforms.registry_inject import inject_from_registry
 from codeintel.build.hashing import compute_options_hash
@@ -110,6 +110,10 @@ _HAMILTON_TYPE_HINTS = (
     TargetRunRecord,
     ModuleRecord,
 )
+
+_CACHE_IGNORE_TAGS: dict[TagKey, TagValue] = {
+    cast("TagKey", CACHE_BEHAVIOR_TAG): "ignore",
+}
 
 MODULES_TARGET_NAME = "modules"
 CONFIG_INGEST_TARGET_NAME = "config_ingest"
@@ -698,8 +702,7 @@ modules__repo_map_rows = _MODULE.modules__repo_map_rows
 modules__table_materializations = _MODULE.modules__table_materializations
 
 
-@cache(behavior="ignore")
-@tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
+@tag_helper(domain="ingestion", target=MODULES_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
 def modules__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -1048,8 +1051,7 @@ config_ingest__rows = _MODULE.config_ingest__rows
 config_ingest__table_materializations = _MODULE.config_ingest__table_materializations
 
 
-@cache(behavior="ignore")
-@tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
+@tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
 def config_ingest__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -1276,8 +1278,7 @@ tests__rows = _MODULE.tests__rows
 tests_ingest__table_materializations = _MODULE.tests_ingest__table_materializations
 
 
-@cache(behavior="ignore")
-@tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
+@tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
 def tests_ingest__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
@@ -1500,8 +1501,7 @@ typing__diagnostic_rows = _MODULE.typing__diagnostic_rows
 typing__table_materializations = _MODULE.typing__table_materializations
 
 
-@cache(behavior="ignore")
-@tag_helper(domain="ingestion", target=TYPING_TARGET_NAME)
+@tag_helper(domain="ingestion", target=TYPING_TARGET_NAME, extra_tags=_CACHE_IGNORE_TAGS)
 def typing__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,

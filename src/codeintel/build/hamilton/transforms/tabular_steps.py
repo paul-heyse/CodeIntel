@@ -19,6 +19,7 @@ from codeintel.build.tabular.arrow_ops import (
     align_tabular_to_contract_context,
     emit_alignment_report,
 )
+from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import TabularInput
@@ -245,7 +246,7 @@ def _scalar_for_type(value: float, dtype: pa.DataType) -> pa.Scalar:
 
 def _filter_table(table: pa.Table, indices: Sequence[int]) -> pa.Table:
     mask = _valid_mask(table, indices)
-    return table.filter(mask)
+    return safe_filter(table, mask)
 
 
 def _valid_mask(table: pa.Table, indices: Sequence[int]) -> pa.Array:

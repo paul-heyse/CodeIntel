@@ -18,6 +18,7 @@ from codeintel.build.graphs.assembly.ids import payload_bytes, stable_decimal_id
 from codeintel.build.graphs.assembly.readers import (
     drop_table_columns,
     ensure_table_columns,
+    iter_normalized_tuples,
     reader_to_table,
     rename_table_columns,
     select_table_columns,
@@ -36,6 +37,7 @@ __all__ = [
     "empty_contract_reader",
     "empty_reader",
     "ensure_table_columns",
+    "iter_normalized_tuples",
     "payload_bytes",
     "reader_for_columnar_rows",
     "reader_for_rows",

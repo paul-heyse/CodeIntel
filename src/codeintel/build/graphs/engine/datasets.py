@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -10,9 +11,11 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.build.graphs.assembly import iter_normalized_tuples
 from codeintel.build.scopes.snapshot import SnapshotScanContext
 from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.core.datasets.arrow_store import scan_dataset
+from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.runtime.loader import load_runtime_settings
@@ -42,6 +45,106 @@ class SnapshotScanRequest:
     parquet_use_buffered_stream: bool | None = None
     parquet_buffer_size: int | None = None
     unify_schemas: bool = True
+    scan_context: SnapshotScanContext | None = None
+    apply_filter: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class GraphViewFactory:
+    """Factory for graph views backed by snapshot datasets."""
+
+    dataset_root: Path
+    snapshot_id: str
+    scan_context: SnapshotScanContext
+
+    @classmethod
+    def for_snapshot(
+        cls,
+        dataset_root: Path,
+        *,
+        repo: str | None,
+        commit: str,
+    ) -> GraphViewFactory:
+        """Build a graph view factory aligned to a snapshot.
+
+        Parameters
+        ----------
+        dataset_root
+            Root directory for Parquet dataset snapshots.
+        repo
+            Repository identifier anchoring the view.
+        commit
+            Commit hash anchoring the snapshot.
+
+        Returns
+        -------
+        GraphViewFactory
+            Factory configured for the snapshot.
+        """
+        scan_context = SnapshotScanContext(
+            repo=repo,
+            commit=commit,
+            settings=load_runtime_settings().build.arrow_scan,
+        )
+        return cls(dataset_root=dataset_root, snapshot_id=commit, scan_context=scan_context)
+
+    def load_reader(
+        self,
+        *,
+        table_key: str,
+        columns: Sequence[str] | None = None,
+        apply_filter: bool = True,
+    ) -> pa.RecordBatchReader | None:
+        """Return a record batch reader for a snapshot table.
+
+        Parameters
+        ----------
+        table_key
+            Dataset table key.
+        columns
+            Optional column selection for the scan.
+        apply_filter
+            Whether to apply the snapshot filter expression.
+
+        Returns
+        -------
+        pyarrow.RecordBatchReader | None
+            Reader for the dataset snapshot or None when missing.
+        """
+        resolved_columns = tuple(columns) if columns is not None else None
+        request = SnapshotScanRequest(
+            dataset_root=self.dataset_root,
+            table_key=table_key,
+            snapshot_id=self.snapshot_id,
+            columns=resolved_columns,
+            repo=self.scan_context.repo,
+            commit=self.scan_context.commit,
+            scan_context=self.scan_context,
+            apply_filter=apply_filter,
+        )
+        return scan_snapshot_reader(request)
+
+    @staticmethod
+    def iter_tuples(
+        reader: pa.RecordBatchReader,
+        *,
+        columns: Sequence[str] | None = None,
+    ) -> Iterable[tuple[object, ...]]:
+        """Yield normalized row tuples from a record batch reader.
+
+        Parameters
+        ----------
+        reader
+            Reader supplying record batches.
+        columns
+            Optional column selection for tuple materialization.
+
+        Yields
+        ------
+        tuple[object, ...]
+            Row tuples in column order after normalization.
+        """
+        yield from iter_normalized_tuples(reader, columns=columns)
 
 
 def resolve_dataset_root(
@@ -103,6 +206,23 @@ def dataset_snapshot_exists(
     return snapshot_dir.is_dir()
 
 
+def _metadata_schema_for_request(request: SnapshotScanRequest) -> pa.Schema | None:
+    try:
+        snapshot_dir = dataset_snapshot_dir(
+            request.dataset_root,
+            table_key=request.table_key,
+            snapshot_id=request.snapshot_id,
+        )
+    except SnapshotIdError as exc:
+        LOG.warning("Invalid snapshot_id for %s: %s", request.table_key, exc)
+        return None
+    metadata_ctx = DatasetMetadataContext(
+        dataset_root=snapshot_dir,
+        table_key=request.table_key,
+    )
+    return metadata_ctx.read_schema()
+
+
 def scan_snapshot_reader(
     request: SnapshotScanRequest,
 ) -> pa.RecordBatchReader | None:
@@ -121,12 +241,12 @@ def scan_snapshot_reader(
     dataset = _scan_dataset(request.dataset_root, request.table_key, request.snapshot_id)
     if dataset is None:
         return None
-    scan_ctx = SnapshotScanContext(
+    scan_ctx = request.scan_context or SnapshotScanContext(
         repo=request.repo,
         commit=request.commit,
         settings=load_runtime_settings().build.arrow_scan,
     )
-    filter_expression = scan_ctx.filter_expr(dataset.schema)
+    filter_expression = scan_ctx.filter_expr(dataset.schema) if request.apply_filter else None
     resolved_columns = _resolve_columns(dataset, request.columns)
     if resolved_columns is None and request.columns is not None:
         return None
@@ -134,6 +254,7 @@ def scan_snapshot_reader(
         columns=resolved_columns,
         batch_size=request.batch_size,
     )
+    metadata_schema = _metadata_schema_for_request(request)
     options = replace(
         options,
         batch_readahead=request.batch_readahead
@@ -159,6 +280,7 @@ def scan_snapshot_reader(
         if request.parquet_buffer_size is not None
         else options.parquet_buffer_size,
         columns=resolved_columns,
+        schema=metadata_schema if metadata_schema is not None else options.schema,
         unify_schemas=request.unify_schemas,
     )
     scanner = build_scanner(dataset, options=options)
@@ -231,6 +353,7 @@ def _resolve_columns(
 
 
 __all__ = [
+    "GraphViewFactory",
     "SnapshotScanRequest",
     "dataset_snapshot_exists",
     "resolve_dataset_root",

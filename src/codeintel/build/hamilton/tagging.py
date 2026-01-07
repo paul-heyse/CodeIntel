@@ -108,6 +108,8 @@ _TAG_SCHEMA_KEYS: tuple[str, ...] = (
     ht.TAG_TARGET_PARAMETERS,
     ht.TAG_TARGET_ESTIMATED_DURATION_MS,
     ht.TAG_TARGET_SPEC_VERSION,
+    "ci.cache_behavior",
+    "ci.cache_salt",
     "ci.data_node",
 )
 
@@ -134,6 +136,7 @@ _ALLOWED_TAG_VALUES: dict[str, tuple[str, ...]] = {
         ht.OUTPUT_KIND_VIEW,
         ht.OUTPUT_KIND_SEMANTIC_VIEW,
     ),
+    "ci.cache_behavior": ("default", "disable", "ignore", "recompute"),
 }
 
 

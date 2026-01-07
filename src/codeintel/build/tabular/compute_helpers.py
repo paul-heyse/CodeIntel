@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
@@ -29,6 +29,44 @@ def safe_filter(
         return table.filter(mask)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return table
+
+
+def safe_filter_expr(
+    table: pa.Table,
+    expr: ComputeExpression,
+    *,
+    fallback_mask: Callable[[pa.Table], pa.Array | pa.ChunkedArray] | None = None,
+) -> pa.Table:
+    """Return a filtered table using an expression with optional mask fallback.
+
+    Returns
+    -------
+    pa.Table
+        Filtered table, or the input when filtering fails.
+    """
+    try:
+        return table.filter(expr)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        if fallback_mask is None:
+            return table
+        return safe_filter(table, fallback_mask(table))
+
+
+def safe_filter_batch(
+    batch: pa.RecordBatch,
+    mask: pa.Array | pa.ChunkedArray,
+) -> pa.RecordBatch:
+    """Return a filtered RecordBatch, falling back to input on Arrow errors.
+
+    Returns
+    -------
+    pa.RecordBatch
+        Filtered batch or the original on failure.
+    """
+    try:
+        return batch.filter(mask)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return batch
 
 
 def call_compute(
@@ -192,6 +230,8 @@ __all__ = [
     "cast_array",
     "cast_options",
     "safe_filter",
+    "safe_filter_batch",
+    "safe_filter_expr",
     "scalar_from_compute",
     "sort_options",
     "take_array",

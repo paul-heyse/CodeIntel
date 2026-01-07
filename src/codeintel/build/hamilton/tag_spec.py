@@ -48,6 +48,8 @@ TagKey = Literal[
     "target_parameters",
     "target_estimated_duration_ms",
     "target_spec_version",
+    "ci.cache_behavior",
+    "ci.cache_salt",
     "ci.data_node",
 ]
 
@@ -435,6 +437,8 @@ def _tag_key_set() -> set[str]:
         ht.TAG_TARGET_PARAMETERS,
         ht.TAG_TARGET_ESTIMATED_DURATION_MS,
         ht.TAG_TARGET_SPEC_VERSION,
+        "ci.cache_behavior",
+        "ci.cache_salt",
         "ci.data_node",
     }
 

@@ -27,6 +27,7 @@ from codeintel.build.analytics.utilities.ast import (
     snippet_from_lines,
 )
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.hashing import sha256_short
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.paths import normalize_path, path_to_module
@@ -736,15 +737,9 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = list(iter_rows(frame))
-    has_repo = "repo" in frame.column_names
-    has_commit = "commit" in frame.column_names
-    return [
-        row
-        for row in rows
-        if (repo == row.get("repo") if has_repo else True)
-        and (commit == row.get("commit") if has_commit else True)
-    ]
+    context = FilterExprContext(repo=repo, commit=commit)
+    filtered = context.apply(frame)
+    return list(iter_rows(filtered))
 
 
 def _class_decorators(node: ast.ClassDef) -> list[str]:

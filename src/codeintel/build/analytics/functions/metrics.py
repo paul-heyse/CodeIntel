@@ -22,8 +22,9 @@ from codeintel.build.analytics.functions.config import (
 )
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 from codeintel.core.serialization.payload import encode_payload
@@ -39,6 +40,19 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 FunctionTypesRow = dict[str, object]
+
+GOIDS_REQUIRED_COLUMNS: tuple[str, ...] = (
+    "goid_h128",
+    "urn",
+    "repo",
+    "commit",
+    "rel_path",
+    "language",
+    "kind",
+    "qualname",
+    "start_line",
+    "end_line",
+)
 
 
 @dataclass(frozen=True)
@@ -285,24 +299,13 @@ def _load_goids_from_frame(
     dict[str, list[GoidRow]]
         GOIDs grouped by relative file path.
     """
-    required = {
-        "goid_h128",
-        "urn",
-        "repo",
-        "commit",
-        "rel_path",
-        "language",
-        "kind",
-        "qualname",
-        "start_line",
-        "end_line",
-    }
+    required = set(GOIDS_REQUIRED_COLUMNS)
     missing = required.difference(goids_table.column_names)
     if missing:
         log.warning("core.goids is missing columns: %s", ", ".join(sorted(missing)))
         return {}
 
-    selected = goids_table.select(list(required))
+    selected = goids_table.select(list(GOIDS_REQUIRED_COLUMNS))
     rows = [
         row
         for row in iter_rows(selected)
@@ -440,7 +443,12 @@ def compute_function_analytics_result_from_tabular(
     FunctionAnalyticsResult
         Container with types_rows and validation reporter.
     """
-    goids_table = tabular_to_arrow_table(goids_input)
+    goids_table = tabular_to_scoped_table(
+        goids_input,
+        columns=GOIDS_REQUIRED_COLUMNS,
+        scope=SnapshotScope.from_snapshot(snapshot),
+        require_scope_columns=True,
+    )
     goids_by_file = _load_goids_from_frame(goids_table, snapshot)
     return _compute_from_goids(goids_by_file, snapshot, options=options)
 

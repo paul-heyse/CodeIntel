@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
@@ -12,6 +13,7 @@ from hamilton import registry
 from hamilton.io.data_adapters import DataLoader, DataSaver
 
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.datasets.parquet_metadata import read_parquet_metadata, read_parquet_schema
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,15 +75,13 @@ def _is_dictionary_candidate(data_type: pa.DataType) -> bool:
     return pa.types.is_string(data_type) or pa.types.is_large_string(data_type)
 
 
-def _dictionary_columns_for_path(path: str) -> tuple[str, ...] | None:
-    try:
-        parquet_file = pq.ParquetFile(path)
-    except (OSError, ValueError, pa.ArrowInvalid):
+def _dictionary_columns_for_path(path: Path) -> tuple[str, ...] | None:
+    schema = read_parquet_schema(path)
+    if schema is None:
         return None
-    schema = parquet_file.schema_arrow
     column_names = set(schema.names)
     dictionary_columns: set[str] = set()
-    metadata = parquet_file.metadata
+    metadata = read_parquet_metadata(path)
     if metadata is not None:
         for group_index in range(metadata.num_row_groups):
             row_group = metadata.row_group(group_index)
@@ -141,7 +141,7 @@ class PyArrowParquetLoader(DataLoader):
             Table and Parquet cache metadata payload.
         """
         _ = type_
-        dictionary_columns = _dictionary_columns_for_path(self.path)
+        dictionary_columns = _dictionary_columns_for_path(Path(self.path))
         read_dictionary = list(dictionary_columns) if dictionary_columns else None
         try:
             parquet_file = pq.ParquetFile(

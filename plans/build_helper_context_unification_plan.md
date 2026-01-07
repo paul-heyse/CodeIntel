@@ -94,10 +94,11 @@ def normalize_reader(reader: pa.RecordBatchReader) -> Iterator[pa.RecordBatch]:
 
 Goal: unify `tabular_to_arrow_table(...).select(...)` and scoped filtering into a single helper.
 
-Status: Partial (adopted in `tabular/scoping.py`,
-`hamilton/native/graphs/cfg_dfg.py`, `hamilton/native/graphs/goids.py`,
-`hamilton/native/graphs/cdg.py`, `hamilton/native/ingestion/syntax_enrich.py`,
-`hamilton/native/ingestion/scip_resolution.py`; remaining: ingestion/graphs modules).
+Status: Completed (rolled through hamilton native analytics/ingestion/graphs modules,
+including `semantic_roles.py`, `entrypoints.py`, `data_models.py`, `function_ast_features.py`,
+`function_contracts.py`, `subsystem_cache.py`, `subsystems.py`, `py_cpg_quality_report.py`,
+`tables_dependencies.py`, `cfg_dfg_metrics.py`, `file_line_index.py`, `syntax_augment.py`,
+`syntax_enrich.py`, `scip_resolution.py`, and `call_graph.py`).
 
 Targets:
 - `src/codeintel/build/tabular/conversion.py`
@@ -173,9 +174,12 @@ def graph_to_store(graph: GraphInput) -> RxGraphStore:
 
 ## Scope Item 6: Graph view factory
 
-Goal: standardize dataset scan -> normalized batches -> graph store -> NetworkX conversion.
+Goal: standardize dataset scan -> normalized batches -> graph store construction
+(rustworkx-only).
 
-Status: Pending.
+Status: Completed (GraphViewFactory added in `graphs/engine/datasets.py`,
+adopted in `graphs/engine/views.py`; normalized tuple iteration centralized in
+`graphs/assembly/readers.py`).
 
 Targets:
 - `src/codeintel/build/graphs/engine/views.py`
@@ -186,31 +190,59 @@ Pattern:
 ```python
 @dataclass(frozen=True, slots=True)
 class GraphViewFactory:
-    scan_ctx: SnapshotScanContext
+    dataset_root: Path
+    snapshot_id: str
+    scan_context: SnapshotScanContext
 
-    def load_edges(
+    @classmethod
+    def for_snapshot(
+        cls,
+        dataset_root: Path,
+        *,
+        repo: str | None,
+        commit: str,
+    ) -> GraphViewFactory:
+        scan_context = SnapshotScanContext(
+            repo=repo,
+            commit=commit,
+            settings=load_runtime_settings().build.arrow_scan,
+        )
+        return cls(dataset_root=dataset_root, snapshot_id=commit, scan_context=scan_context)
+
+    def load_reader(
         self,
         *,
-        dataset_root: Path,
         table_key: str,
-        columns: Sequence[str],
+        columns: Sequence[str] | None = None,
+        apply_filter: bool = True,
     ) -> pa.RecordBatchReader | None:
         request = SnapshotScanRequest(
-            dataset_root=dataset_root,
+            dataset_root=self.dataset_root,
             table_key=table_key,
-            snapshot_id=self.scan_ctx.commit,
-            columns=columns,
-            repo=self.scan_ctx.repo,
-            commit=self.scan_ctx.commit,
+            snapshot_id=self.snapshot_id,
+            columns=tuple(columns) if columns is not None else None,
+            repo=self.scan_context.repo,
+            commit=self.scan_context.commit,
+            scan_context=self.scan_context,
+            apply_filter=apply_filter,
         )
         return scan_snapshot_reader(request)
+
+    @staticmethod
+    def iter_tuples(
+        reader: pa.RecordBatchReader,
+        *,
+        columns: Sequence[str] | None = None,
+    ) -> Iterable[tuple[object, ...]]:
+        yield from iter_normalized_tuples(reader, columns=columns)
 ```
 
 ## Scope Item 7: Unified graph metrics orchestration
 
 Goal: route all graph metrics computation through a single config-driven pipeline.
 
-Status: Pending.
+Status: Completed (MetricsPipelineConfig + build_metrics_pipeline_rows adopted across
+graph_metrics, graph_stats, symbol_graph_metrics, and subsystem_graph_metrics).
 
 Targets:
 - `src/codeintel/build/analytics/graphs/orchestrator.py`
@@ -235,8 +267,10 @@ class MetricsPipelineConfig[TSlices, TRow: Mapping[str, object]]:
 
 Goal: consolidate repeated `MultiTableTargetContext.build_*_spec` patterns into a factory.
 
-Status: Partial (factory and context-based wiring used in semantic_roles/subsystems/graph_metrics;
-remaining: ingestion/graphs/analytics modules).
+Status: Completed (factory wiring extended across native analytics/ingestion/graphs modules
+including `data_models.py`, `entrypoints.py`, `config_graphs.py`, `tables_dependencies.py`,
+`ingest_targets.py`, `syntax_enrich.py`, `scip_resolution.py`, `graph_targets.py`, and
+`goids.py`).
 
 Targets:
 - `src/codeintel/build/hamilton/native/patterns/table_target.py`
@@ -301,8 +335,9 @@ class ContractedTableContext:
 
 Goal: centralize per-row decoding, null handling, and json/payload parsing.
 
-Status: Partial (RowDecoder used in `analytics/semantic_roles/core.py` and
-`analytics/functions/*`; remaining: analytics graphs/entrypoints utilities).
+Status: Completed (RowDecoder now used in analytics graphs and entrypoints utilities, including
+`analytics/graphs/config_graph_metrics.py`, `analytics/graphs/config_data_flow.py`, and
+`analytics/entrypoints/core.py`).
 
 Targets:
 - `src/codeintel/build/analytics/utilities/ast.py`
@@ -328,7 +363,8 @@ class RowDecoder:
 
 Goal: ensure semantic role scoring logic lives in one canonical classification module.
 
-Status: Pending.
+Status: Completed (semantic_roles/core now delegates classification to
+compute.semantic_roles modules).
 
 Targets:
 - `src/codeintel/build/analytics/semantic_roles/core.py`
@@ -346,9 +382,8 @@ def classify_function_role(
 
 Goal: standardize `safe_filter`, boolean mask logic, and expression building across build code.
 
-Status: Partial (FilterExprContext adopted in `graphs/validation/checks/database.py`,
-`analytics/functions/function_effects.py`, `analytics/semantic_roles/core.py`; remaining:
-analytics/graphs and graphs/validation follow-ups).
+Status: Completed (FilterExprContext adopted in analytics graphs/entrypoints and
+safe_filter normalized in `graphs/validation/runner.py`).
 
 Targets:
 - `src/codeintel/build/tabular/compute_masks.py`
@@ -378,8 +413,8 @@ class FilterExprContext:
 
 Goal: unify metadata reading, row-group pruning, and caching behavior for dataset scans.
 
-Status: Partial (DatasetMetadataContext added; remaining: integrate in streaming/datasets and
-analytics/hamilton utilities).
+Status: Completed (DatasetMetadataContext integrated in streaming, graphs engine datasets,
+analytics dataset writes, and Hamilton parquet cache reads).
 
 Targets:
 - `src/codeintel/build/analytics/utilities/datasets.py`

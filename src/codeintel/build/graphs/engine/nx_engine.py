@@ -13,14 +13,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
-import pyarrow.dataset as ds
-
 from codeintel.build.graphs.engine import views
 from codeintel.build.graphs.engine.cache import GraphCache, GraphCacheMetadata
 from codeintel.build.graphs.engine.protocol import GraphKind
 from codeintel.build.graphs.rx.store import RxGraphStore
-from codeintel.core.datasets.parquet_metadata import metadata_from_schema
+from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext, metadata_from_schema
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.hashing.fingerprint import stable_hash
 
@@ -283,12 +280,12 @@ class NxGraphEngine:
         if not snapshot_dir.exists():
             log.debug("Parquet snapshot missing for %s at %s", table_key, snapshot_dir)
             return None
-        try:
-            dataset = ds.dataset(str(snapshot_dir), format="parquet", partitioning="hive")
-        except (OSError, ValueError, pa.ArrowInvalid) as exc:
-            log.debug("Failed to read Parquet metadata for %s: %s", table_key, exc)
+        metadata_ctx = DatasetMetadataContext(dataset_root=snapshot_dir, table_key=table_key)
+        schema = metadata_ctx.read_schema()
+        if schema is None:
+            log.debug("Parquet metadata missing for %s", table_key)
             return None
-        metadata = metadata_from_schema(dataset.schema)
+        metadata = metadata_from_schema(schema)
         if not metadata:
             log.debug("Parquet metadata empty for %s", table_key)
         return metadata

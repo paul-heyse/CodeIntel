@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 import pyarrow.dataset as ds
-import pyarrow.parquet as pq
 
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_ops import unify_schemas
@@ -32,6 +31,7 @@ from codeintel.core.constants import (
     DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
     DEFAULT_ARROW_USE_THREADS,
 )
+from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.core.runtime.loader import load_runtime_settings
 
@@ -79,8 +79,6 @@ class QueryPlanSpec:
     filter_expression: ds.Expression | None
 
 
-_METADATA_FILENAME = "_metadata"
-_COMMON_METADATA_FILENAME = "_common_metadata"
 _ARROW_THREADING_CONFIGURED = threading.Event()
 
 
@@ -263,9 +261,13 @@ def dataset_for_manifest(
         Dataset built from the manifest metadata.
     """
     dataset_dir = manifest_path.parent.resolve()
-    metadata_path = _dataset_metadata_path(dataset_dir)
-    common_metadata_path = _common_metadata_path(dataset_dir)
-    schema = _schema_from_common_metadata(dataset_dir)
+    metadata_ctx = DatasetMetadataContext(
+        dataset_root=dataset_dir,
+        table_key=manifest.table_key,
+    )
+    metadata_path = metadata_ctx.metadata_path()
+    common_metadata_path = metadata_ctx.common_metadata_path()
+    schema = metadata_ctx.read_schema()
     parquet_format = _parquet_format_for_manifest(manifest.extras, schema=schema)
     partitioning = resolve_partitioning(manifest=manifest, schema=schema)
     metadata_source = metadata_path or common_metadata_path
@@ -647,27 +649,6 @@ def _fragments_for_filter(
     if fragments is None:
         return None
     return apply_row_group_pruning(fragments, filter_expression)
-
-
-def _dataset_metadata_path(dataset_dir: Path) -> Path | None:
-    metadata_path = dataset_dir / _METADATA_FILENAME
-    return metadata_path if metadata_path.is_file() else None
-
-
-def _common_metadata_path(dataset_dir: Path) -> Path | None:
-    metadata_path = dataset_dir / _COMMON_METADATA_FILENAME
-    return metadata_path if metadata_path.is_file() else None
-
-
-def _schema_from_common_metadata(dataset_dir: Path) -> pa.Schema | None:
-    common_metadata_path = _common_metadata_path(dataset_dir)
-    if common_metadata_path is None:
-        return None
-    try:
-        parquet_file = pq.ParquetFile(common_metadata_path)
-    except (OSError, ValueError, pa.ArrowInvalid):
-        return None
-    return parquet_file.schema_arrow
 
 
 def _parquet_format_for_manifest(

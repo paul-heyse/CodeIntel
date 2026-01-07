@@ -6,6 +6,7 @@ providers, plus convenience helpers for validating and inserting rows.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -34,11 +35,15 @@ from codeintel.build.validation.columnar import ColumnarValidationContext, valid
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
+from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
+from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.validation.profiles import ValidationProfile
+
+LOG = logging.getLogger(__name__)
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
 
@@ -194,6 +199,41 @@ def _resolve_parquet_context(
     return dataset_root_dir, snapshot_id, repo, commit
 
 
+def _metadata_context_for_snapshot(
+    *,
+    dataset_root: Path,
+    table_key: str,
+    snapshot_id: str,
+) -> DatasetMetadataContext | None:
+    try:
+        snapshot_dir = dataset_snapshot_dir(
+            dataset_root,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+        )
+    except SnapshotIdError as exc:
+        LOG.warning("Invalid snapshot_id for %s: %s", table_key, exc)
+        return None
+    return DatasetMetadataContext(dataset_root=snapshot_dir, table_key=table_key)
+
+
+def _log_missing_metadata(
+    *,
+    dataset_root: Path,
+    table_key: str,
+    snapshot_id: str,
+) -> None:
+    metadata_ctx = _metadata_context_for_snapshot(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+    )
+    if metadata_ctx is None:
+        return
+    if metadata_ctx.read_schema() is None:
+        LOG.debug("Parquet metadata missing for %s@%s", table_key, snapshot_id)
+
+
 def _write_parquet_dataset(
     *,
     gateway: BuildGateway,
@@ -249,6 +289,11 @@ def _write_parquet_dataset(
         snapshot_id=snapshot_id,
         data=reader,
         options=options,
+    )
+    _log_missing_metadata(
+        dataset_root=dataset_root_dir,
+        table_key=contract.table_key,
+        snapshot_id=snapshot_id,
     )
     return len(normalized)
 

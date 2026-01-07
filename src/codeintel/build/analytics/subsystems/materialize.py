@@ -27,6 +27,7 @@ from codeintel.build.analytics.subsystems.edge_stats import (
 from codeintel.build.graphs.rx.algos import GraphInput
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_masks import FilterExprContext
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.subsystems.affinity import (
@@ -278,15 +279,9 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = list(iter_rows(frame))
-    has_repo = "repo" in frame.column_names
-    has_commit = "commit" in frame.column_names
-    return [
-        row
-        for row in rows
-        if (repo == row.get("repo") if has_repo else True)
-        and (commit == row.get("commit") if has_commit else True)
-    ]
+    context = FilterExprContext(repo=repo, commit=commit)
+    filtered = context.apply(frame)
+    return list(iter_rows(filtered))
 
 
 def _derive_name(modules: list[str], subsystem_id: str, dominant_role: str | None) -> str:

@@ -14,6 +14,46 @@ from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema, normalize_column_type
 from codeintel.core.table_key import split_table_key
 
+_METADATA_FILENAME = "_metadata"
+_COMMON_METADATA_FILENAME = "_common_metadata"
+
+
+def _read_parquet_file(path: Path) -> pq.ParquetFile | None:
+    if not path.is_file():
+        return None
+    try:
+        return pq.ParquetFile(path)
+    except (OSError, ValueError, pa.ArrowInvalid):
+        return None
+
+
+def read_parquet_metadata(path: Path) -> pq.FileMetaData | None:
+    """Return Parquet metadata for a file when available.
+
+    Returns
+    -------
+    pyarrow.parquet.FileMetaData | None
+        Parquet metadata when present, otherwise None.
+    """
+    parquet_file = _read_parquet_file(path)
+    if parquet_file is None:
+        return None
+    return parquet_file.metadata
+
+
+def read_parquet_schema(path: Path) -> pa.Schema | None:
+    """Return Arrow schema for a Parquet file when available.
+
+    Returns
+    -------
+    pyarrow.Schema | None
+        Arrow schema when present, otherwise None.
+    """
+    parquet_file = _read_parquet_file(path)
+    if parquet_file is None:
+        return None
+    return parquet_file.schema_arrow
+
 
 def metadata_from_schema(schema: pa.Schema) -> dict[str, object]:
     """Return decoded metadata from a Parquet-backed Arrow schema.
@@ -91,6 +131,28 @@ class DatasetMetadataContext:
     dataset_root: Path
     table_key: str
 
+    def metadata_path(self) -> Path | None:
+        """Return the dataset-level metadata path when present.
+
+        Returns
+        -------
+        pathlib.Path | None
+            Metadata path when the dataset metadata file exists.
+        """
+        metadata_path = self.dataset_root / _METADATA_FILENAME
+        return metadata_path if metadata_path.is_file() else None
+
+    def common_metadata_path(self) -> Path | None:
+        """Return the dataset-level common metadata path when present.
+
+        Returns
+        -------
+        pathlib.Path | None
+            Common metadata path when the dataset common metadata file exists.
+        """
+        metadata_path = self.dataset_root / _COMMON_METADATA_FILENAME
+        return metadata_path if metadata_path.is_file() else None
+
     def read_metadata(self) -> pq.FileMetaData | None:
         """Return Parquet metadata for the dataset when available.
 
@@ -99,14 +161,36 @@ class DatasetMetadataContext:
         pyarrow.parquet.FileMetaData | None
             Parquet metadata when present, otherwise None.
         """
-        metadata_path = self.dataset_root / "_metadata"
-        if not metadata_path.is_file():
+        metadata_path = self.metadata_path()
+        if metadata_path is None:
             return None
-        try:
-            parquet_file = pq.ParquetFile(metadata_path)
-        except (OSError, ValueError, pa.ArrowInvalid):
+        return read_parquet_metadata(metadata_path)
+
+    def read_common_metadata(self) -> pq.FileMetaData | None:
+        """Return Parquet common metadata for the dataset when available.
+
+        Returns
+        -------
+        pyarrow.parquet.FileMetaData | None
+            Parquet metadata when present, otherwise None.
+        """
+        metadata_path = self.common_metadata_path()
+        if metadata_path is None:
             return None
-        return parquet_file.metadata
+        return read_parquet_metadata(metadata_path)
+
+    def read_schema(self) -> pa.Schema | None:
+        """Return Arrow schema for the dataset when available.
+
+        Returns
+        -------
+        pyarrow.Schema | None
+            Arrow schema when present, otherwise None.
+        """
+        metadata_path = self.common_metadata_path()
+        if metadata_path is None:
+            return None
+        return read_parquet_schema(metadata_path)
 
 
 def _columns_from_mapping(
@@ -136,6 +220,8 @@ __all__ = [
     "DatasetMetadataContext",
     "column_types_from_metadata",
     "metadata_from_schema",
+    "read_parquet_metadata",
+    "read_parquet_schema",
     "table_schema_from_dataset",
     "table_schema_from_parquet_metadata",
 ]

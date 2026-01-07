@@ -9,22 +9,17 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow as pa
 
 from codeintel.build.graphs.builders import add_weighted_edge
-from codeintel.build.graphs.engine.datasets import (
-    SnapshotScanRequest,
-    scan_snapshot_reader,
-)
+from codeintel.build.graphs.engine.datasets import GraphViewFactory
 from codeintel.build.graphs.engine.protocol import GraphKind
 from codeintel.build.graphs.rx.policies import weight_policy_for_kind
 from codeintel.build.graphs.rx.store import RxGraphStore
-from codeintel.core.columnar.iter import iter_tuples as iter_arrow_tuples
-from codeintel.core.columnar.type_normalization import normalize_reader
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
 
@@ -38,8 +33,13 @@ def _ensure_dataset_root(dataset_root: Path | None, table_key: str) -> Path | No
     return dataset_root
 
 
-def _scan_snapshot_reader(request: SnapshotScanRequest) -> pa.RecordBatchReader | None:
-    return scan_snapshot_reader(request)
+def _view_factory(
+    dataset_root: Path,
+    *,
+    repo: str | None,
+    commit: str,
+) -> GraphViewFactory:
+    return GraphViewFactory.for_snapshot(dataset_root, repo=repo, commit=commit)
 
 
 def _column_index(names: list[str], column: str) -> int | None:
@@ -50,33 +50,24 @@ def _column_index(names: list[str], column: str) -> int | None:
 
 
 def _iter_scoped_rows(
+    factory: GraphViewFactory,
     reader: pa.RecordBatchReader,
-    *,
-    repo: str,
-    commit: str,
 ) -> Iterable[tuple[object, ...]]:
     names = list(reader.schema.names)
     repo_idx = _column_index(names, "repo")
     commit_idx = _column_index(names, "commit")
-    for row in _iter_tuples(reader):
-        if repo_idx is not None:
+    repo = factory.scan_context.repo
+    commit = factory.scan_context.commit
+    for row in factory.iter_tuples(reader):
+        if repo_idx is not None and repo is not None:
             row_repo = row[repo_idx]
             if row_repo is not None and str(row_repo) != repo:
                 continue
-        if commit_idx is not None:
+        if commit_idx is not None and commit is not None:
             row_commit = row[commit_idx]
             if row_commit is not None and str(row_commit) != commit:
                 continue
         yield row
-
-
-def _iter_tuples(
-    reader: pa.RecordBatchReader,
-    *,
-    columns: Sequence[str] | None = None,
-) -> Iterable[tuple[object, ...]]:
-    for batch in normalize_reader(reader):
-        yield from iter_arrow_tuples(batch, columns=columns)
 
 
 def _empty_graph(*, directed: bool, kind: GraphKind) -> RxGraphStore:
@@ -89,19 +80,19 @@ def _empty_graph(*, directed: bool, kind: GraphKind) -> RxGraphStore:
 
 
 def _module_name_map(
+    factory: GraphViewFactory,
     reader: pa.RecordBatchReader,
-    *,
-    repo: str,
-    commit: str,
 ) -> dict[str, str]:
     module_by_path: dict[str, str] = {}
     specificity_by_path: dict[str, int] = {}
-    for path, module, row_repo, row_commit in _iter_tuples(reader):
+    repo = factory.scan_context.repo
+    commit = factory.scan_context.commit
+    for path, module, row_repo, row_commit in factory.iter_tuples(reader):
         if path is None or module is None:
             continue
-        if row_repo is not None and str(row_repo) != repo:
+        if repo is not None and row_repo is not None and str(row_repo) != repo:
             continue
-        if row_commit is not None and str(row_commit) != commit:
+        if commit is not None and row_commit is not None and str(row_commit) != commit:
             continue
         specificity = int(row_repo is not None) + int(row_commit is not None)
         key = str(path)
@@ -112,8 +103,11 @@ def _module_name_map(
     return module_by_path
 
 
-def _add_call_edges(store: RxGraphStore, reader: pa.RecordBatchReader) -> None:
-    for caller_raw, callee_raw in _iter_tuples(reader):
+def _add_call_edges(
+    store: RxGraphStore,
+    rows: Iterable[tuple[object, ...]],
+) -> None:
+    for caller_raw, callee_raw in rows:
         caller = normalize_decimal(caller_raw)
         callee = normalize_decimal(callee_raw)
         if caller is None or callee is None:
@@ -121,8 +115,11 @@ def _add_call_edges(store: RxGraphStore, reader: pa.RecordBatchReader) -> None:
         add_weighted_edge(store, caller, callee)
 
 
-def _add_call_nodes(store: RxGraphStore, reader: pa.RecordBatchReader) -> None:
-    for node_raw, kind in _iter_tuples(reader):
+def _add_call_nodes(
+    store: RxGraphStore,
+    rows: Iterable[tuple[object, ...]],
+) -> None:
+    for node_raw, kind in rows:
         node = normalize_decimal(node_raw)
         if node is None:
             continue
@@ -223,34 +220,23 @@ def load_call_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.call_graph_edges")
     if dataset_root is None:
         return _empty_graph(directed=True, kind=GraphKind.CALL_GRAPH)
-    edge_reader = scan_snapshot_reader(
-        SnapshotScanRequest(
-            dataset_root=dataset_root,
-            table_key="graph.call_graph_edges",
-            snapshot_id=commit,
-            columns=("caller_goid_h128", "callee_goid_h128"),
-            repo=repo,
-            commit=commit,
-        )
+    factory = _view_factory(dataset_root, repo=repo, commit=commit)
+    edge_reader = factory.load_reader(
+        table_key="graph.call_graph_edges",
+        columns=("caller_goid_h128", "callee_goid_h128"),
     )
     if edge_reader is None:
         return _empty_graph(directed=True, kind=GraphKind.CALL_GRAPH)
 
     store = RxGraphStore.directed(weight_policy=weight_policy_for_kind(GraphKind.CALL_GRAPH))
-    _add_call_edges(store, edge_reader)
+    _add_call_edges(store, factory.iter_tuples(edge_reader))
 
-    node_reader = scan_snapshot_reader(
-        SnapshotScanRequest(
-            dataset_root=dataset_root,
-            table_key="graph.call_graph_nodes",
-            snapshot_id=commit,
-            columns=("goid_h128", "kind"),
-            repo=repo,
-            commit=commit,
-        )
+    node_reader = factory.load_reader(
+        table_key="graph.call_graph_nodes",
+        columns=("goid_h128", "kind"),
     )
     if node_reader is not None:
-        _add_call_nodes(store, node_reader)
+        _add_call_nodes(store, factory.iter_tuples(node_reader))
 
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
@@ -286,22 +272,17 @@ def load_import_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.import_graph_edges")
     if dataset_root is None:
         return _empty_graph(directed=True, kind=GraphKind.IMPORT_GRAPH)
-    edge_reader = scan_snapshot_reader(
-        SnapshotScanRequest(
-            dataset_root=dataset_root,
-            table_key="graph.import_graph_edges",
-            snapshot_id=commit,
-            columns=("src_module", "dst_module", "module_layer"),
-            repo=repo,
-            commit=commit,
-        )
+    factory = _view_factory(dataset_root, repo=repo, commit=commit)
+    edge_reader = factory.load_reader(
+        table_key="graph.import_graph_edges",
+        columns=("src_module", "dst_module", "module_layer"),
     )
     if edge_reader is None:
         return _empty_graph(directed=True, kind=GraphKind.IMPORT_GRAPH)
 
     store = RxGraphStore.directed(weight_policy=weight_policy_for_kind(GraphKind.IMPORT_GRAPH))
     fallback_layer_by_module: dict[str, int] = {}
-    for src, dst, layer in _iter_tuples(edge_reader):
+    for src, dst, layer in factory.iter_tuples(edge_reader):
         if src is None or dst is None:
             continue
         source = str(src)
@@ -311,18 +292,12 @@ def load_import_graph(
             fallback_layer_by_module[source] = layer_value
         add_weighted_edge(store, source, target)
 
-    module_reader = scan_snapshot_reader(
-        SnapshotScanRequest(
-            dataset_root=dataset_root,
-            table_key="graph.import_modules",
-            snapshot_id=commit,
-            columns=("module", "scc_id", "component_size", "layer"),
-            repo=repo,
-            commit=commit,
-        )
+    module_reader = factory.load_reader(
+        table_key="graph.import_modules",
+        columns=("module", "scc_id", "component_size", "layer"),
     )
     if module_reader is not None:
-        for module_row in _iter_tuples(module_reader):
+        for module_row in factory.iter_tuples(module_reader):
             module_name, attrs = module_attrs_from_row(*module_row)
             store.set_node_attrs(module_name, attrs)
     elif fallback_layer_by_module:
@@ -364,17 +339,15 @@ class ConfigGraphStats:
 
 
 def _allowed_modules_from_reader(
+    factory: GraphViewFactory,
     modules_reader: pa.RecordBatchReader,
-    *,
-    repo: str,
-    commit: str,
 ) -> set[str]:
     names = list(modules_reader.schema.names)
     module_idx = _column_index(names, "module")
     if module_idx is None:
         return set()
     allowed: set[str] = set()
-    for row in _iter_scoped_rows(modules_reader, repo=repo, commit=commit):
+    for row in _iter_scoped_rows(factory, modules_reader):
         value = row[module_idx]
         if value is None:
             continue
@@ -384,10 +357,9 @@ def _allowed_modules_from_reader(
 
 def _populate_config_graph(
     store: RxGraphStore,
+    factory: GraphViewFactory,
     config_reader: pa.RecordBatchReader,
     *,
-    repo: str,
-    commit: str,
     allowed_modules: set[str],
 ) -> ConfigGraphStats:
     stats = ConfigGraphStats()
@@ -396,7 +368,7 @@ def _populate_config_graph(
     ref_idx = _column_index(names, "reference_modules")
     if key_idx is None or ref_idx is None:
         return stats
-    for row in _iter_scoped_rows(config_reader, repo=repo, commit=commit):
+    for row in _iter_scoped_rows(factory, config_reader):
         stats.total_rows += 1
         key = row[key_idx]
         ref_modules = row[ref_idx]
@@ -457,25 +429,20 @@ def load_config_module_bipartite(
     dataset_root = _ensure_dataset_root(dataset_root, "analytics.config_values")
     if dataset_root is None:
         return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
-    modules_reader = _scan_snapshot_reader(
-        SnapshotScanRequest(
-            dataset_root=dataset_root,
-            table_key="core.modules",
-            snapshot_id=commit,
-            columns=("module", "repo", "commit"),
-        )
+    factory = _view_factory(dataset_root, repo=repo, commit=commit)
+    modules_reader = factory.load_reader(
+        table_key="core.modules",
+        columns=("module", "repo", "commit"),
+        apply_filter=False,
     )
     if modules_reader is None:
         return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
-    allowed_modules = _allowed_modules_from_reader(modules_reader, repo=repo, commit=commit)
+    allowed_modules = _allowed_modules_from_reader(factory, modules_reader)
 
-    config_reader = _scan_snapshot_reader(
-        SnapshotScanRequest(
-            dataset_root=dataset_root,
-            table_key="analytics.config_values",
-            snapshot_id=commit,
-            columns=("key", "reference_modules", "repo", "commit"),
-        )
+    config_reader = factory.load_reader(
+        table_key="analytics.config_values",
+        columns=("key", "reference_modules", "repo", "commit"),
+        apply_filter=False,
     )
     if config_reader is None:
         return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
@@ -485,9 +452,8 @@ def load_config_module_bipartite(
     )
     stats = _populate_config_graph(
         store,
+        factory,
         config_reader,
-        repo=repo,
-        commit=commit,
         allowed_modules=allowed_modules,
     )
     graph = store.graph
@@ -537,35 +503,25 @@ def load_symbol_module_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
         return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
-    edge_reader = scan_snapshot_reader(
-        SnapshotScanRequest(
-            dataset_root=dataset_root,
-            table_key="graph.symbol_use_edges",
-            snapshot_id=commit,
-            columns=("def_path", "use_path"),
-        )
+    factory = _view_factory(dataset_root, repo=repo, commit=commit)
+    edge_reader = factory.load_reader(
+        table_key="graph.symbol_use_edges",
+        columns=("def_path", "use_path"),
     )
     if edge_reader is None:
         return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
-    module_reader = scan_snapshot_reader(
-        SnapshotScanRequest(
-            dataset_root=dataset_root,
-            table_key="core.modules",
-            snapshot_id=commit,
-            columns=("path", "module", "repo", "commit"),
-        )
+    module_reader = factory.load_reader(
+        table_key="core.modules",
+        columns=("path", "module", "repo", "commit"),
+        apply_filter=False,
     )
     if module_reader is None:
         return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
-    module_by_path = _module_name_map(
-        module_reader,
-        repo=repo,
-        commit=commit,
-    )
+    module_by_path = _module_name_map(factory, module_reader)
     store = RxGraphStore.undirected(
         weight_policy=weight_policy_for_kind(GraphKind.SYMBOL_MODULE_GRAPH)
     )
-    for def_path, use_path in _iter_tuples(edge_reader):
+    for def_path, use_path in factory.iter_tuples(edge_reader):
         if def_path is None or use_path is None:
             continue
         def_module = module_by_path.get(str(def_path))
@@ -606,13 +562,10 @@ def load_symbol_function_graph(
     dataset_root = _ensure_dataset_root(dataset_root, "graph.symbol_use_edges")
     if dataset_root is None:
         return _empty_graph(directed=False, kind=GraphKind.SYMBOL_FUNCTION_GRAPH)
-    edge_reader = scan_snapshot_reader(
-        SnapshotScanRequest(
-            dataset_root=dataset_root,
-            table_key="graph.symbol_use_edges",
-            snapshot_id=commit,
-            columns=("def_goid_h128", "use_goid_h128"),
-        )
+    factory = _view_factory(dataset_root, repo=None, commit=commit)
+    edge_reader = factory.load_reader(
+        table_key="graph.symbol_use_edges",
+        columns=("def_goid_h128", "use_goid_h128"),
     )
     if edge_reader is None:
         return _empty_graph(directed=False, kind=GraphKind.SYMBOL_FUNCTION_GRAPH)
@@ -620,7 +573,7 @@ def load_symbol_function_graph(
     store = RxGraphStore.undirected(
         weight_policy=weight_policy_for_kind(GraphKind.SYMBOL_FUNCTION_GRAPH)
     )
-    for def_goid, use_goid in _iter_tuples(edge_reader):
+    for def_goid, use_goid in factory.iter_tuples(edge_reader):
         if def_goid is None or use_goid is None:
             continue
         left = normalize_decimal(def_goid)

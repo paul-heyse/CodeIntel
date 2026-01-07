@@ -10,10 +10,12 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.build.analytics.utilities.ast import RowDecoder
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.compute_masks import FilterExprContext
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -71,15 +73,17 @@ def load_modules_from_frame(
     if modules_frame is None or modules_frame.num_rows == 0:
         return set(), {}
     filtered = _rows_for_snapshot(modules_frame, repo=repo, commit=commit)
+    decoder = RowDecoder(columns=("tags",))
     modules: set[str] = set()
     tags_by_module: dict[str, list[str]] = {}
     for row in filtered:
-        module = row.get("module")
+        decoded = decoder.decode(row)
+        module = decoded.get("module")
         if module is None:
             continue
         module_name = str(module)
         modules.add(module_name)
-        parsed_tags = parse_tags(row.get("tags"))
+        parsed_tags = parse_tags(decoded.get("tags"))
         if parsed_tags:
             tags_by_module[module_name] = parsed_tags
     return modules, tags_by_module
@@ -178,8 +182,10 @@ def _add_config_edges(
         repo=ctx.repo,
         commit=ctx.commit,
     )
+    decoder = RowDecoder(columns=("reference_modules",))
     for row in config_filtered:
-        modules_list = parse_tags(row.get("reference_modules"))
+        decoded = decoder.decode(row)
+        modules_list = parse_tags(decoded.get("reference_modules"))
         filtered = [module for module in modules_list if module in ctx.modules]
         if len(filtered) < MIN_SHARED_MODULES:
             continue
@@ -264,15 +270,9 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    rows = list(iter_rows(frame))
-    has_repo = "repo" in frame.column_names
-    has_commit = "commit" in frame.column_names
-    return [
-        row
-        for row in rows
-        if (repo == row.get("repo") if has_repo else True)
-        and (commit == row.get("commit") if has_commit else True)
-    ]
+    context = FilterExprContext(repo=repo, commit=commit)
+    filtered = context.apply(frame)
+    return list(iter_rows(filtered))
 
 
 def add_graph_weight(graph: RxGraphStore, left: str, right: str, weight: float) -> None:

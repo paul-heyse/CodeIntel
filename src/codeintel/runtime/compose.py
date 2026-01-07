@@ -24,6 +24,11 @@ from codeintel.build.hamilton.cache_adapter import (
     ManifestBackedCacheAdapter,
 )
 from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
+from codeintel.build.hamilton.cache_policy import (
+    cache_salt,
+    default_cache_policy,
+    is_salt_sensitive,
+)
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
@@ -706,11 +711,17 @@ def _build_runtime_bundle(
     tag_query = TagQuery(driver)
     cache_index = cache_store
     cache_key_resolver = None
+    runtime_fingerprint = _runtime_fingerprint(
+        env=identity.env,
+        config=identity.config,
+        modules_fingerprint=identity.modules_fingerprint,
+    )
     if cache_store is not None:
         cache_key_resolver = _build_cache_key_resolver(
             driver=driver,
             cache_store=cache_store,
             modules_fingerprint=identity.modules_fingerprint,
+            runtime_fingerprint=runtime_fingerprint,
         )
 
     schema_index = _build_schema_index(driver=driver, catalog=catalog, env=identity.env)
@@ -733,11 +744,7 @@ def _build_runtime_bundle(
         packs=resolved_modules.packs,
         module_provenance=resolved_modules.provenance,
         modules_fingerprint=identity.modules_fingerprint,
-        fingerprint=_runtime_fingerprint(
-            env=identity.env,
-            config=identity.config,
-            modules_fingerprint=identity.modules_fingerprint,
-        ),
+        fingerprint=runtime_fingerprint,
         created_at_utc=created_at_utc,
     )
 
@@ -872,9 +879,12 @@ def _build_cache_key_resolver(
     driver: h_driver.Driver,
     cache_store: CacheStore,
     modules_fingerprint: str,
+    runtime_fingerprint: str,
 ) -> CacheKeyResolver:
     code_versions: dict[str, str] = {}
     node_dependencies: dict[str, tuple[str, ...]] = {}
+    policy = default_cache_policy()
+    salted_nodes: set[str] = set()
 
     for name, node in driver.graph.nodes.items():
         h_node = graph_types.HamiltonNode.from_node(node)
@@ -884,11 +894,15 @@ def _build_cache_key_resolver(
         elif h_node.version is not None:
             code_versions[name] = f"{version_prefix}{h_node.version}"
         node_dependencies[name] = tuple(dep.name for dep in node.dependencies)
+        if is_salt_sensitive(node, policy):
+            salted_nodes.add(name)
 
     return CacheKeyResolver(
         code_versions=code_versions,
         node_dependencies=node_dependencies,
         cache_store=cache_store,
+        cache_salt=cache_salt(runtime_fingerprint) if salted_nodes else None,
+        salted_nodes=frozenset(salted_nodes),
     )
 
 
