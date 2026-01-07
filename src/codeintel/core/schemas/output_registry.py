@@ -1872,6 +1872,8 @@ SCIP_RESOLUTION_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("def_end_col", "INTEGER"),
             Column("position_encoding", "INTEGER"),
             Column("text_document_encoding", "VARCHAR"),
+            Column("match_kind", "VARCHAR"),
+            Column("match_confidence", "DOUBLE"),
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "scip_symbol"),
@@ -2250,6 +2252,7 @@ CDG_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         schema="graph",
         name="cdg_edges",
         columns=[
+            *REPO_COMMIT_COLS,
             Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
             Column("src_block_id", "VARCHAR", nullable=False),
             Column("dst_block_id", "VARCHAR", nullable=False),
@@ -2257,7 +2260,10 @@ CDG_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("edge_kind", "VARCHAR", nullable=False),
             Column("via_edge_kind", "VARCHAR"),
         ],
-        indexes=(Index("idx_graph_cdg_edges_fn", ("function_goid_h128",)),),
+        indexes=(
+            Index("idx_graph_cdg_edges_repo_commit", ("repo", "commit")),
+            Index("idx_graph_cdg_edges_fn", ("function_goid_h128",)),
+        ),
         description="Control dependence edges derived from CFG postdominators.",
     ),
 )
@@ -2267,6 +2273,7 @@ PDG_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         schema="graph",
         name="pdg_edges",
         columns=[
+            *REPO_COMMIT_COLS,
             Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
             Column("src_block_id", "VARCHAR", nullable=False),
             Column("dst_block_id", "VARCHAR", nullable=False),
@@ -2278,7 +2285,10 @@ PDG_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("via_succ_block_id", "VARCHAR"),
             Column("via_edge_kind", "VARCHAR"),
         ],
-        indexes=(Index("idx_graph_pdg_edges_fn", ("function_goid_h128",)),),
+        indexes=(
+            Index("idx_graph_pdg_edges_repo_commit", ("repo", "commit")),
+            Index("idx_graph_pdg_edges_fn", ("function_goid_h128",)),
+        ),
         description="Program dependence edges (union of DFG and CDG).",
     ),
 )

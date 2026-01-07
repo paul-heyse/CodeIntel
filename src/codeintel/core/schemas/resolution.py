@@ -294,7 +294,7 @@ def resolve_arrow_schema(
         observation_provider=observation_provider,
         schema_provider=schema_provider,
     )
-    if result.observation is not None:
+    if result.source == SchemaResolutionSource.OBSERVED and result.observation is not None:
         observed_schema = _arrow_schema_from_observation(result.observation)
         if observed_schema is not None:
             return observed_schema

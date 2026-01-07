@@ -540,6 +540,10 @@ class ScipSymbolGoidXrefRow:
         Encoding enum for interpreting column offsets.
     text_document_encoding
         Text encoding for source files on disk.
+    match_kind
+        Resolution strategy used to associate the SCIP symbol with a GOID.
+    match_confidence
+        Confidence score for the match strategy.
     created_at
         Row creation timestamp.
     """
@@ -555,6 +559,8 @@ class ScipSymbolGoidXrefRow:
     def_end_col: int | None
     position_encoding: int | None
     text_document_encoding: str | None
+    match_kind: str | None
+    match_confidence: float | None
     created_at: datetime
 
     def to_tuple(self) -> tuple[object, ...]:

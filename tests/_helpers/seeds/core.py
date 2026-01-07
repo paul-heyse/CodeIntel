@@ -30,7 +30,7 @@ from tests._helpers.fixtures.repos import (
     MOD_UTIL_FQN,
     MOD_UTIL_PATH,
 )
-from tests._helpers.fixtures.rows import GoidRow, ModuleRow, RepoMapRow, dataclass_row, insert_rows
+from tests._helpers.fixtures.rows import GoidRow, ModuleRow, dataclass_row, insert_rows
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
@@ -133,18 +133,16 @@ class CorePack:
         """
         modules_dict = dict(selected_modules)
 
-        insert_rows(
-            ctx.gateway,
-            [
-                dataclass_row(
-                    RepoMapRow,
-                    repo=ctx.repo,
-                    commit=ctx.commit,
-                    modules=modules_dict,
-                    overlays={},
-                    generated_at=now,
-                ),
-            ],
+        ctx.gateway.con.execute(
+            """
+            INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (repo, commit) DO UPDATE SET
+                modules = excluded.modules,
+                overlays = excluded.overlays,
+                generated_at = excluded.generated_at
+            """,
+            [ctx.repo, ctx.commit, modules_dict, {}, now],
         )
 
     @staticmethod

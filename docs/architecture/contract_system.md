@@ -473,3 +473,10 @@ The general strategy is:
 - Table target templates/contexts: `src/codeintel/build/hamilton/native/patterns/table_target.py`
 - Loader migrations + validation: `src/codeintel/build/hamilton/native/patterns/loaders.py`
 - Materialization metadata: `src/codeintel/build/hamilton/native/materialization_records.py`
+
+## Deprecations
+
+- `tools/generate_accessor_inserts.py` and its generated registry
+  (`src/codeintel/storage/gateway/registry_generated.py`) are decommissioned.
+- Schema propagation relies on dynamic row bindings in
+  `src/codeintel/core/data_models/rows.py` and contract-driven schemas via the registry.

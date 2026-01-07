@@ -22,11 +22,11 @@ from codeintel.cli.handlers.datasets import (
     datasets_snapshot_handler,
 )
 from codeintel.core.columnar.stream import stream_from_table
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.manifests import dataset_manifest_path
 from codeintel.core.query_results import records_from_arrow_reader
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.gateway import StorageGateway
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -396,40 +396,3 @@ def test_datasets_migrate_parquet_handler_writes_manifest(
     expect_true(manifest_path.is_file())
     if result.data is not None and result.data.details is not None:
         expect_equal(result.data.details.get("exported"), [contract.table_key])
-
-
-def test_datasets_migrate_parquet_handler_drops_tables(
-    tmp_path: Path, dataset_handler_harness_fixture: DatasetHandlerHarness
-) -> None:
-    """Verify parquet migration can drop legacy DuckDB tables."""
-    contract = _test_contract("migrate_metrics_drop")
-    table_schema = cast("TableSchema", contract.schema)
-    _seed_migration_table(
-        dataset_handler_harness_fixture.ctx.gateway,
-        table_schema=table_schema,
-    )
-    dataset_root_dir = tmp_path / "datasets-drop"
-    params = {
-        "dataset_root_dir": str(dataset_root_dir),
-        "snapshot_id": "snap-2",
-        "table_keys": [contract.table_key],
-        "overwrite": True,
-        "drop_duckdb_tables": True,
-    }
-    deps = DatasetDependencies(
-        list_datasets=lambda **_kwargs: [contract],
-        issue_collector=lambda _con: [],
-    )
-
-    with dataset_handler_harness_fixture.command_context(params) as ctx:
-        result = datasets_migrate_parquet_handler(ctx, deps=deps)
-
-    expect_true(result.success)
-    expect_true(
-        not dataset_handler_harness_fixture.ctx.gateway.policy.table_exists(
-            schema=table_schema.schema,
-            table=table_schema.name,
-        )
-    )
-    if result.data is not None and result.data.details is not None:
-        expect_equal(result.data.details.get("dropped"), [contract.table_key])

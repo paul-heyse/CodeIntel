@@ -22,12 +22,6 @@ from tests._helpers.orchestration.gateway import (
     GatewayFactory,
     seed_tables,
 )
-from tests._helpers.orchestration.graph_orchestration import (
-    build_seeded_graph_engine,
-    build_span_graph_components,
-    collect_span_snapshot,
-    create_span_test_env,
-)
 from tests._helpers.orchestration.seeding import (
     seed_call_graph_scoping,
     seed_callgraph_goids,
@@ -41,15 +35,6 @@ from tests._helpers.orchestration.seeding_docs import (
     seed_docs_export_minimal,
     seed_mcp_backend,
     seed_profile_data,
-)
-from tests._helpers.orchestration.tooling import (
-    GitRepoContext,
-    ToolingContext,
-    ToolingOutputs,
-    build_tooling_context,
-    init_git_repo_with_history,
-    make_tools_config,
-    run_static_tooling,
 )
 
 __all__ = [
@@ -96,6 +81,12 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
+    from tests._helpers.orchestration.graph_orchestration import (
+        build_seeded_graph_engine,
+        build_span_graph_components,
+        collect_span_snapshot,
+        create_span_test_env,
+    )
     from tests._helpers.orchestration.provisioning import (
         build_callgraph_fixture_repo,
         docs_views_ready_gateway,
@@ -108,6 +99,15 @@ if TYPE_CHECKING:
         provision_hamilton_repo,
         provision_ingested_repo,
         provisioned_gateway,
+    )
+    from tests._helpers.orchestration.tooling import (
+        GitRepoContext,
+        ToolingContext,
+        ToolingOutputs,
+        build_tooling_context,
+        init_git_repo_with_history,
+        make_tools_config,
+        run_static_tooling,
     )
 
 _LAZY_PROVISIONING = {
@@ -122,6 +122,23 @@ _LAZY_PROVISIONING = {
     "provision_hamilton_repo": "tests._helpers.orchestration.provisioning",
     "provision_ingested_repo": "tests._helpers.orchestration.provisioning",
     "provisioned_gateway": "tests._helpers.orchestration.provisioning",
+}
+
+_LAZY_GRAPH = {
+    "build_seeded_graph_engine": "tests._helpers.orchestration.graph_orchestration",
+    "build_span_graph_components": "tests._helpers.orchestration.graph_orchestration",
+    "collect_span_snapshot": "tests._helpers.orchestration.graph_orchestration",
+    "create_span_test_env": "tests._helpers.orchestration.graph_orchestration",
+}
+
+_LAZY_TOOLING = {
+    "GitRepoContext": "tests._helpers.orchestration.tooling",
+    "ToolingContext": "tests._helpers.orchestration.tooling",
+    "ToolingOutputs": "tests._helpers.orchestration.tooling",
+    "build_tooling_context": "tests._helpers.orchestration.tooling",
+    "init_git_repo_with_history": "tests._helpers.orchestration.tooling",
+    "make_tools_config": "tests._helpers.orchestration.tooling",
+    "run_static_tooling": "tests._helpers.orchestration.tooling",
 }
 
 if TYPE_CHECKING:
@@ -143,6 +160,14 @@ if TYPE_CHECKING:
 def __getattr__(name: str) -> object:
     if name in _LAZY_PROVISIONING:
         module_name = _LAZY_PROVISIONING[name]
+        module = __import__(module_name, fromlist=[name])
+        return getattr(module, name)
+    if name in _LAZY_GRAPH:
+        module_name = _LAZY_GRAPH[name]
+        module = __import__(module_name, fromlist=[name])
+        return getattr(module, name)
+    if name in _LAZY_TOOLING:
+        module_name = _LAZY_TOOLING[name]
         module = __import__(module_name, fromlist=[name])
         return getattr(module, name)
     message = f"module {__name__} has no attribute {name}"

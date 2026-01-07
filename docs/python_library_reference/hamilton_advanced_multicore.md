@@ -1889,3 +1889,629 @@ python bench_ray_modes.py --kind cpu --n-items 200 --cpu-iters 300000 --workers 
 [6]: https://docs.ray.io/en/latest/ray-core/api/doc/ray.remote.html?utm_source=chatgpt.com "ray.remote — Ray 2.53.0 - Ray Docs"
 [7]: https://docs.ray.io/en/latest/ray-core/scheduling/memory-management.html?utm_source=chatgpt.com "Memory Management — Ray 2.53.0"
 [8]: https://docs.ray.io/en/latest/ray-core/objects/serialization.html?utm_source=chatgpt.com "Serialization — Ray 2.53.0 - Ray Docs"
+
+## Deep dive: Hamilton’s **Dask GraphAdapter** (`h_dask.DaskGraphAdapter`)
+
+This is the **“adapter approach”** where Hamilton **walks the DAG** and delegates node execution to Dask, rather than using `Parallelizable[]/Collect[]` dynamic execution. The adapter is explicitly described as: “Runs the entire Hamilton DAG on dask… walks the graph and translates it to run onto Dask.” ([Hamilton][1])
+
+Hamilton’s own docs emphasize that for this adapter, the **central design choice** is whether you run your DAG via **`dask.delayed`** or via **native Dask collection types** (DataFrame/Array/Bag). ([Hamilton][1])
+
+---
+
+# 1) What you get (and what you don’t)
+
+### What it’s good for
+
+Hamilton lists the intended scaling modes:
+
+* **Multi-core single machine ✅**
+* **Distributed on a Dask cluster ✅**
+* Scales to “any size supported by Dask” *if you load data appropriately via Dask loaders* ([Hamilton][1])
+
+And it “works best with Pandas 2.0+ and pyarrow backend.” ([Hamilton][1])
+
+### What the adapter *actually* does with your `Client`
+
+A critical line that’s easy to miss:
+
+> `dask_client – the dask client – **we don’t do anything with it**, but thought that it would be useful to wire through here.` ([Hamilton][1])
+
+So in practice, **you** create the `Client()` largely to:
+
+* establish the scheduler (distributed vs local),
+* control workers/threads/memory,
+* access the dashboard/logs.
+
+Dask confirms that instantiating a `Client()` “creates a scheduler … with workers and threads” and **overrides whatever default scheduler was previously set**. ([Dask][2])
+
+---
+
+# 2) The control plane: `use_delayed` and `compute_at_end`
+
+Hamilton documents these knobs directly:
+
+* `use_delayed` (default `True`): wraps every node function with `dask.delayed` (backwards-compatible behavior). Hamilton notes it’s “probably not necessary” when you’re already using Dask DataFrames/Series because those are already lazy; “use delayed if you want to farm out computation.” ([Hamilton][1])
+* `compute_at_end` (default `True`): whether Hamilton calls `.compute()` in the result builder to kick off computation. ([Hamilton][1])
+
+### The behavior matrix (Hamilton’s own semantics)
+
+Hamilton documents `build_result()` behavior as a set of cases: ([Hamilton][1])
+
+| `use_delayed` | `compute_at_end` | What `dr.execute()` gives you                                                                   |
+| ------------- | ---------------- | ----------------------------------------------------------------------------------------------- |
+| True          | True             | A **materialized** result shaped by the `result_builder`                                        |
+| True          | False            | A **delayed object** (you must compute later)                                                   |
+| False         | False            | Whatever the `result_builder` returns (often a **Dask collection**)                             |
+| False         | True             | Works only if `result_builder` returns a **Dask type**, because Hamilton will try to compute it |
+
+---
+
+# 3) The two “right” ways to use DaskGraphAdapter
+
+Hamilton basically supports two sane archetypes:
+
+## Archetype A — **Delayed-first** (generic Python objects, per-node task scheduling)
+
+Use when:
+
+* nodes are *not* operating on Dask DataFrames/Arrays,
+* you want Dask to parallelize *node execution*.
+
+But: Hamilton explicitly warns that with `use_delayed=True` “serialization costs can outweigh the benefits,” and that the adapter can “naively wrap all your functions with delayed,” scheduling them across workers—useful when computation is slow or the graph is highly parallelizable. ([Hamilton][1])
+
+### Minimal implementation (local multi-core)
+
+```python
+from dask.distributed import Client, LocalCluster
+from hamilton import driver
+from hamilton.plugins.h_dask import DaskGraphAdapter
+
+import my_flow  # your Hamilton module
+
+cluster = LocalCluster(n_workers=4, threads_per_worker=1, processes=True)
+client = Client(cluster)  # sets Dask scheduler + dashboard, etc. :contentReference[oaicite:10]{index=10}
+
+adapter = DaskGraphAdapter(
+    client,
+    use_delayed=True,
+    compute_at_end=True,
+)
+
+dr = driver.Builder().with_modules(my_flow).with_adapter(adapter).build()
+out = dr.execute(["final_output"], inputs={})
+```
+
+### Watchouts unique to delayed-first
+
+**1) “Too many tasks” is your main footgun.**
+Dask delayed has per-task overhead (“a few hundred microseconds”), which becomes a problem if you apply `dask.delayed` too finely. Dask’s best practice is to batch or use Dask collections instead. ([Dask][3])
+This matters because Hamilton may wrap **every** node when `use_delayed=True`. ([Hamilton][1])
+
+**Mitigations**
+
+* Prefer **coarser nodes** (do more work per node).
+* If your DAG is “wide but tiny nodes,” switch to **Dask collections mode** (next section).
+* Consider returning fewer intermediate objects (especially large ones) between nodes.
+
+**2) Avoid global state / side effects / mutation.**
+Dask’s delayed best practices explicitly warn:
+
+* avoid global state (distributed/multiprocessing yields confusing errors), ([Dask][3])
+* don’t mutate inputs, ([Dask][3])
+* don’t rely on side effects (work only happens when you compute). ([Dask][3])
+
+This maps cleanly to Hamilton node hygiene: **pure-ish, deterministic functions**.
+
+**3) Don’t pass large concrete objects repeatedly into delayed tasks.**
+Dask warns that repeatedly passing concrete large inputs causes hashing/overhead; it recommends “delay your data once.” ([Dask][3])
+Hamilton implication: avoid huge Python objects as `inputs={...}` that feed many nodes; prefer loading via Dask (below) or wrapping the object once in a single upstream node.
+
+---
+
+## Archetype B — **Dask-collections-first** (Dask DataFrame/Array/Bag inside nodes)
+
+Use when:
+
+* you want true “pandas-like” scale-out (bigger-than-memory),
+* you’re operating on Dask DataFrame/Array APIs.
+
+Hamilton explicitly recommends that if you’re on a cluster and using Dask object types, set:
+
+* `use_delayed=False`
+* `compute_at_end=False` ([Hamilton][1])
+
+And reiterates that mixing delayed with Dask objects is “probably not necessary.” ([Hamilton][1])
+
+### Minimal implementation (return a Dask DataFrame result)
+
+```python
+from dask.distributed import Client
+from hamilton import driver
+from hamilton.plugins import h_dask
+
+import features_flow  # nodes return dd.Series / dd.DataFrame pieces
+
+client = Client()  # local cluster shorthand; sets scheduler/workers :contentReference[oaicite:19]{index=19}
+
+adapter = h_dask.DaskGraphAdapter(
+    client,
+    result_builder=h_dask.DaskDataFrameResult(),
+    use_delayed=False,
+    compute_at_end=False,  # return dask collection, compute later
+)
+
+dr = driver.Builder().with_modules(features_flow).with_adapter(adapter).build()
+
+ddf = dr.execute(["col_a", "col_b"], inputs={})
+# ddf is a Dask DataFrame; call ddf.compute() when you *actually* want pandas
+```
+
+### The killer watchout: **never wrap Dask collections in delayed**
+
+Dask’s own guidance is blunt:
+
+> When you place a Dask array or Dask DataFrame into a delayed call, the function will receive the NumPy or Pandas equivalent… this might crash your workers. ([Dask][3])
+
+So if your pipeline is Dask-collections-first, leaving Hamilton’s default `use_delayed=True` can accidentally force conversions to pandas/numpy in the wrong places. That’s why Hamilton recommends `use_delayed=False` for this mode. ([Hamilton][1])
+
+### Dask DataFrame operational watchouts (that will surface in Hamilton nodes)
+
+If your Hamilton nodes do heavy joins/shuffles/indexing, Dask’s DataFrame best practices become “Hamilton best practices” too:
+
+* Dask itself says if data fits in RAM, pandas is often faster/easier. ([Dask][4])
+* Setting an index and shuffling are expensive; do them infrequently. ([Dask][4])
+* Persisting can be useful on distributed systems, but can block optimizer behaviors and should be used sparingly. ([Dask][4])
+
+---
+
+# 4) Result shaping: `result_builder` and the Dask-specific builder
+
+### Default result builder
+
+Hamilton says `result_builder` is optional and “defaults to pandas dataframe.” ([Hamilton][1])
+This is often *not* what you want for large Dask workloads (because it brings results back into the driver process).
+
+### `DaskDataFrameResult` (what it does + its sharp edges)
+
+Hamilton’s Dask result builder builds a Dask DataFrame from outputs, but with assumptions: ([Hamilton][5])
+
+1. output order mirrors join order,
+2. it “massages” types into Dask types where it can,
+3. otherwise duplicates scalars/objects using a template input and **assumes a single partition**.
+
+**Practical implications**
+
+* The list you pass to `execute([...])` becomes part of the semantics (ordering matters).
+* “Assumes a single partition” can surprise you if you’re building multi-partition outputs and expect broadcasting behavior.
+
+---
+
+# 5) Cluster setup: what matters for Hamilton + DaskGraphAdapter
+
+### Create a `Client` intentionally
+
+Dask docs:
+
+* `Client()` sets up a scheduler + workers/threads based on machine cores. ([Dask][2])
+* `Client(processes=False)` keeps workers in-process; preferable when computations release the GIL (common for NumPy/Dask Array) and to avoid inter-worker communication. ([Dask][2])
+* `Client()` is shorthand for `LocalCluster()` + `Client(cluster)`. ([Dask][2])
+
+### Memory limits (and why they may “not work”)
+
+LocalCluster docs note:
+
+* `memory_limit` is only enforced when `processes=True`, and even then it’s “best-effort” (workers can still exceed it). ([Dask][2])
+
+### Dashboard and ops hooks
+
+Dask docs point to the local dashboard at `http://localhost:8787/status`. ([Dask][2])
+That’s where you’ll quickly see if Hamilton created:
+
+* a million tiny delayed tasks (overhead / scheduler saturation),
+* a small high-level graph (healthy Dask collection pipeline),
+* repeated recomputation because you didn’t persist where needed.
+
+---
+
+# 6) Visualization: DaskGraphAdapter vs Dask’s own graph views
+
+### `visualize_kwargs` in the adapter
+
+Hamilton exposes `visualize_kwargs` for “visualizing the graph using dask’s internals.” ([Hamilton][1])
+
+### Graphviz can choke on large graphs
+
+Dask warns Graphviz “takes a while on graphs larger than about 100 nodes,” and you may need to simplify computations for visualization. ([Dask][6])
+This matters particularly for `use_delayed=True` because Hamilton may wrap every node and produce a large low-level task graph. ([Hamilton][1])
+
+### Prefer high-level graph visualization for Dask collections
+
+Dask recommends looking at the **high level graph** and visualizing via `.dask.visualize()`. ([Dask][6])
+If you’re Dask-collections-first, this is often dramatically more readable than the low-level task graph.
+
+---
+
+# 7) A “do this / avoid this” checklist
+
+### Do this
+
+* **Decide your mode up front**:
+
+  * generic python + per-node parallelism → `use_delayed=True`
+  * Dask DataFrame/Array pipeline → `use_delayed=False, compute_at_end=False` ([Hamilton][1])
+* Create a `Client()` early to set the scheduler and observe with the dashboard. ([Dask][2])
+* Keep node functions pure: avoid global state, mutation, and side effects. ([Dask][3])
+* Watch task granularity: delayed tasks have overhead; batch or use Dask collections when tasks get tiny. ([Dask][3])
+
+### Avoid this
+
+* **Don’t leave `use_delayed=True`** if upstream nodes return Dask DataFrames/Arrays (it can coerce them to pandas/numpy inside delayed calls). ([Dask][3])
+* Don’t build a pipeline that returns a pandas dataframe by default if the dataset is genuinely larger-than-memory (default result builder is pandas). ([Hamilton][1])
+* Don’t expect Graphviz visualization to work well on huge graphs. ([Dask][6])
+
+---
+
+If you tell me which of these two target shapes you’re after—**(A) node-parallel delayed** vs **(B) Dask-collections-first (dd.DataFrame)**—I can give you a “golden” implementation template (including recommended `LocalCluster` settings, a safe `result_builder` choice, and a set of anti-pattern tests you can add to CI).
+
+[1]: https://hamilton.apache.org/reference/graph-adapters/DaskGraphAdapter/ "h_dask.DaskGraphAdapter - Hamilton"
+[2]: https://docs.dask.org/en/stable/deploying-python.html "Python API — Dask  documentation"
+[3]: https://docs.dask.org/en/latest/delayed-best-practices.html "Best Practices — Dask  documentation"
+[4]: https://docs.dask.org/en/stable/dataframe-best-practices.html "Dask DataFrames Best Practices — Dask  documentation"
+[5]: https://hamilton.apache.org/reference/result-builders/Dask/ "Dask - Hamilton"
+[6]: https://docs.dask.org/en/stable/graphviz.html "Visualize task graphs — Dask  documentation"
+
+Below is a “golden” **node-parallel / delayed-first** (`use_delayed=True`) template for **Hamilton + `h_dask.DaskGraphAdapter`**, plus **recommended `LocalCluster` presets**, a **safe `result_builder`**, and **CI anti-pattern tests** that directly target the failure modes Hamilton and Dask warn about.
+
+---
+
+# 1) Golden implementation template (delayed-first / node-parallel)
+
+## 1.1 Recommended runtime wiring
+
+Key facts from Hamilton’s DaskGraphAdapter docs:
+
+* It “walks the graph and translates it to run onto Dask.” ([Hamilton][1])
+* With `use_delayed=True`, it can “naively wrap all your functions with delayed” and warns serialization costs may outweigh parallelism—**benchmark**. ([Hamilton][1])
+* `result_builder` is optional but **defaults to pandas dataframe** (usually not what you want for generic workflows). ([Hamilton][1])
+* `execute_node()` “returns a dask delayed object.” ([Hamilton][1])
+* The adapter wires through a `Client`, but “we don’t do anything with it” (so cluster config is on you). ([Hamilton][1])
+
+### File: `runtime/hamilton_dask_delayed_driver.py`
+
+```python
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from typing import Iterable
+
+from dask.distributed import Client, LocalCluster
+from hamilton import base, driver
+from hamilton.plugins.h_dask import DaskGraphAdapter
+
+
+@dataclass(frozen=True)
+class DaskLocalProfile:
+    """
+    Golden default for delayed-first Hamilton graphs on a single machine.
+
+    Two presets:
+      - "cpu": more processes, 1 thread each (avoid thread oversubscription)
+      - "io": fewer processes, more threads per worker (good for I/O-ish work)
+    """
+    kind: str = "cpu"  # "cpu" | "io"
+    n_workers: int | None = None
+    threads_per_worker: int | None = None
+    processes: bool | None = None
+    memory_limit: str | int | None = None
+    dashboard_address: str = ":8787"
+
+
+def _default_workers() -> int:
+    # keep 1 core for the scheduler / OS
+    return max(1, (os.cpu_count() or 2) - 1)
+
+
+def make_local_client(profile: DaskLocalProfile) -> Client:
+    if profile.kind == "cpu":
+        n_workers = profile.n_workers or _default_workers()
+        threads_per_worker = profile.threads_per_worker or 1
+        processes = True if profile.processes is None else profile.processes
+    elif profile.kind == "io":
+        n_workers = profile.n_workers or max(1, _default_workers() // 2)
+        threads_per_worker = profile.threads_per_worker or 8
+        # Dask docs: processes=False can be preferable when computations release the GIL
+        # and you want to avoid inter-worker communication. :contentReference[oaicite:5]{index=5}
+        processes = False if profile.processes is None else profile.processes
+    else:
+        raise ValueError(f"Unknown profile.kind={profile.kind!r}")
+
+    cluster = LocalCluster(
+        n_workers=n_workers,
+        threads_per_worker=threads_per_worker,
+        processes=processes,
+        memory_limit=profile.memory_limit,
+        dashboard_address=profile.dashboard_address,
+    )
+    return Client(cluster)
+
+
+def build_driver(*, modules: Iterable[object], client: Client) -> driver.Driver:
+    adapter = DaskGraphAdapter(
+        dask_client=client,
+        # SAFE default for delayed-first: return a dict, not a pandas dataframe.
+        # Hamilton default is pandas dataframe if you don't specify. :contentReference[oaicite:6]{index=6}
+        result_builder=base.DictResult(),
+        use_delayed=True,
+        compute_at_end=True,
+        # Optional: pass visualize kwargs through to dask.visualize() if you want.
+        # visualize_kwargs={"filename": "hamilton_dask_graph.svg"}
+    )
+    return driver.Builder().with_modules(*modules).with_adapter(adapter).build()
+
+
+def run_flow(dr: driver.Driver, outputs: list[str], inputs: dict) -> dict:
+    """
+    compute_at_end=True => execute() returns materialized results
+    as shaped by result_builder. :contentReference[oaicite:7]{index=7}
+    """
+    return dr.execute(outputs, inputs=inputs)
+```
+
+### Why those `LocalCluster` defaults?
+
+* Creating a `Client()` starts a local scheduler and workers/threads based on your machine cores. ([Dask][2])
+* `Client(processes=False)` / `LocalCluster(processes=False)` is sometimes preferable when computations release the GIL (common in NumPy/Dask Array) and avoids inter-worker communication overhead. ([Dask][2])
+* For **pure-Python CPU work**, you usually want **processes=True** + **threads_per_worker=1** to avoid oversubscription and to use multiple cores effectively.
+
+---
+
+## 1.2 Example Hamilton flow (designed to parallelize well)
+
+### File: `flows/example_delayed_flow.py`
+
+```python
+from __future__ import annotations
+
+import time
+
+
+def sleep_s() -> float:
+    return 0.05
+
+
+def fetch_a(sleep_s: float) -> str:
+    time.sleep(sleep_s)
+    return "A"
+
+
+def fetch_b(sleep_s: float) -> str:
+    time.sleep(sleep_s)
+    return "B"
+
+
+def combined(fetch_a: str, fetch_b: str) -> str:
+    return fetch_a + fetch_b
+```
+
+This creates two independent branches (`fetch_a`, `fetch_b`) that Dask can schedule concurrently once `sleep_s` is available.
+
+---
+
+# 2) “Safe” `result_builder` choice (delayed-first)
+
+For delayed-first you typically want outputs that are:
+
+* **small** and easy to serialize back to the driver process, and
+* not automatically coerced into a big dataframe.
+
+**Recommended default:** `base.DictResult()`
+Because Hamilton notes the adapter defaults to a **pandas dataframe** if you don’t override `result_builder`. ([Hamilton][1])
+
+When would you *not* use `DictResult()`?
+
+* If your end output is naturally a dataframe and you *know* it fits in memory.
+* If you explicitly want a Dask dataframe result you’d typically switch to the Dask-collections-first shape (different mode).
+
+---
+
+# 3) Operational considerations & watchouts (delayed-first)
+
+These are the ones that *actually bite* in production.
+
+## 3.1 Task granularity: avoid “too many tasks”
+
+Dask warns: “Every delayed task has an overhead of a few hundred microseconds… can become a problem if you apply `dask.delayed` too finely.” ([Dask][3])
+
+Hamilton’s adapter can “wrap all your functions with delayed,” so if your DAG has hundreds/thousands of micro-nodes, scheduler overhead can dominate. ([Hamilton][1])
+
+**Rule of thumb**
+
+* If the median node runtime is sub-millisecond, you’re likely in “too many tasks” land.
+* Merge tiny nodes into fewer coarse nodes (or batch inside a node).
+
+## 3.2 Never wrap Dask collections inside delayed nodes (anti-pattern)
+
+Dask explicitly warns: putting a Dask DataFrame/Array into a delayed call causes the function to receive the **pandas/numpy** equivalent, which can crash workers if large. ([Dask][3])
+
+For delayed-first mode, your safest policy is:
+
+* **Don’t return Dask collections from Hamilton nodes**
+* **Don’t accept Dask collections as inputs** unless you really know you want them materialized
+
+## 3.3 Avoid repeated large concrete inputs across many nodes
+
+Dask notes that each time you pass a concrete (non-delayed) large input, Dask hashes it for task naming; doing that repeatedly can be slow and can send data repeatedly to workers. ([Dask][3])
+
+**Hamilton implication**
+
+* Don’t feed a huge Python object through `inputs={...}` that many nodes depend on.
+* Prefer: load inside a single upstream node, or delay the data once, or store in shared storage and pass references.
+
+## 3.4 Dashboard-driven validation (the fastest way to catch real problems)
+
+* The dashboard starts when you create a `Client`, and locally it’s served at `http://localhost:8787/status` by default (unless the port is taken). ([Dask][2])
+  Use it to confirm:
+* you’re actually parallel,
+* you don’t have a million tiny tasks,
+* memory per worker isn’t spiking unexpectedly.
+
+---
+
+# 4) Anti-pattern tests you can add to CI
+
+These are **purpose-built for delayed-first** and directly reference Dask’s documented pitfalls.
+
+## 4.1 Test: no nested/local functions (a common “can’t pickle” root cause)
+
+### File: `tests/test_no_locals_in_node_functions.py`
+
+```python
+from __future__ import annotations
+
+import inspect
+from types import ModuleType
+from typing import Iterable
+
+
+def iter_module_functions(mods: Iterable[ModuleType]):
+    for m in mods:
+        for name, obj in vars(m).items():
+            if name.startswith("_"):
+                continue
+            if inspect.isfunction(obj) and obj.__module__ == m.__name__:
+                yield m.__name__, name, obj
+
+
+def test_no_local_functions_in_hamilton_modules():
+    import flows.example_delayed_flow as flow
+
+    bad = []
+    for modname, fnname, fn in iter_module_functions([flow]):
+        # Nested functions usually show "<locals>" in qualname and often break serialization.
+        if "<locals>" in fn.__qualname__:
+            bad.append(f"{modname}.{fnname} is nested: {fn.__qualname__}")
+
+    assert not bad, "Found nested/local functions:\n" + "\n".join(bad)
+```
+
+## 4.2 Test: task-graph size budget (catches “micro-node explosion”)
+
+This uses Hamilton’s documented behavior that with `use_delayed=True`, node execution returns delayed objects. ([Hamilton][1])
+Dask delayed best practices warn about too many tasks. ([Dask][3])
+
+### File: `tests/test_task_graph_budget.py`
+
+```python
+from __future__ import annotations
+
+from dask.distributed import Client, LocalCluster
+from hamilton import base, driver
+from hamilton.plugins.h_dask import DaskGraphAdapter
+
+
+def test_task_graph_not_exploding():
+    import flows.example_delayed_flow as flow
+
+    cluster = LocalCluster(n_workers=2, threads_per_worker=2, processes=False)
+    client = Client(cluster)
+
+    # compute_at_end=False lets us inspect the delayed graph instead of executing it.
+    adapter = DaskGraphAdapter(
+        dask_client=client,
+        result_builder=base.DictResult(),
+        use_delayed=True,
+        compute_at_end=False,
+    )
+    dr = driver.Builder().with_modules(flow).with_adapter(adapter).build()
+
+    # Execute returns a delayed object when use_delayed=True. :contentReference[oaicite:18]{index=18}
+    delayed_result = dr.execute(["combined"], inputs={})
+
+    # delayed_result is typically a dask.delayed.Delayed (or a structure containing them).
+    # We handle both conservatively.
+    def count_tasks(x) -> int:
+        if hasattr(x, "dask"):
+            return len(x.dask)
+        if isinstance(x, dict):
+            return sum(count_tasks(v) for v in x.values())
+        if isinstance(x, (list, tuple)):
+            return sum(count_tasks(v) for v in x)
+        return 0
+
+    tasks = count_tasks(delayed_result)
+
+    # Budget: adjust to your repo. This is tiny for the example flow.
+    assert tasks <= 200, f"Task graph too large: {tasks}"
+
+    client.close()
+    cluster.close()
+```
+
+## 4.3 Test: forbid Dask collections inside delayed-first graphs
+
+Dask explicitly warns against calling delayed on Dask collections (df/array become pandas/numpy). ([Dask][3])
+
+### File: `tests/test_no_dask_collections_in_delayed_mode.py`
+
+```python
+from __future__ import annotations
+
+import inspect
+from types import ModuleType
+from typing import Iterable
+
+
+def iter_module_functions(mods: Iterable[ModuleType]):
+    for m in mods:
+        for name, obj in vars(m).items():
+            if name.startswith("_"):
+                continue
+            if inspect.isfunction(obj) and obj.__module__ == m.__name__:
+                yield obj
+
+
+def test_flow_does_not_return_dask_collections():
+    # Optional dependency: only applies if your repo uses dask.dataframe/array.
+    try:
+        import dask.dataframe as dd
+        import dask.array as da
+    except Exception:
+        return
+
+    import flows.example_delayed_flow as flow
+
+    # Heuristic static check: type annotations should not mention dd.DataFrame/da.Array in delayed-first flows.
+    offenders = []
+    for fn in iter_module_functions([flow]):
+        ann = getattr(fn, "__annotations__", {})
+        if any(t in (dd.DataFrame, dd.Series, da.Array) for t in ann.values() if isinstance(t, type)):
+            offenders.append(fn.__name__)
+
+    assert not offenders, f"Dask collections returned/accepted in delayed-first flow: {offenders}"
+```
+
+## 4.4 (Optional but strong) “no global state” and “no side effects” lint gates
+
+Dask delayed best practices explicitly list “Avoid global state” and “Don’t rely on side effects.” ([Dask][3])
+You can enforce a lightweight heuristic in CI (AST scan for `global`, file I/O calls, or mutation of module-level variables). I didn’t hard-code that here because repos vary, but it’s usually worth adding once you know your acceptable side effects policy.
+
+---
+
+# 5) A “golden defaults” checklist for delayed-first
+
+* **Set `use_delayed=True`**, accept that Hamilton may wrap every node; keep nodes coarse enough to amortize overhead. ([Hamilton][1])
+* **Use `base.DictResult()`** (override the adapter’s pandas-default result builder). ([Hamilton][1])
+* **Use `LocalCluster(processes=True, threads_per_worker=1)`** for CPU-bound pure Python; consider `processes=False` for GIL-releasing workloads. ([Dask][2])
+* Use the dashboard to validate concurrency and memory (`Client()` starts it). ([Dask][4])
+* Add CI tests for:
+
+  * nested/local functions (serialization pain),
+  * task graph budget (scheduler overload),
+  * no Dask collections in delayed-first mode (avoids accidental pandas/numpy materialization). ([Dask][3])
+
+
+[1]: https://hamilton.apache.org/reference/graph-adapters/DaskGraphAdapter/ "h_dask.DaskGraphAdapter - Hamilton"
+[2]: https://docs.dask.org/en/stable/deploying-python.html "Python API — Dask  documentation"
+[3]: https://docs.dask.org/en/latest/delayed-best-practices.html "Best Practices — Dask  documentation"
+[4]: https://docs.dask.org/en/latest/dashboard.html "Dashboard Diagnostics — Dask  documentation"

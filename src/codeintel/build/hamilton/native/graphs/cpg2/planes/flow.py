@@ -186,8 +186,8 @@ def cpg2_edges__cfg_edges(
     joined = joined.append_column("rel_path", rel_path)
     repo = _coalesce_rel_path(joined, "src_repo", "dst_repo", result_type=pa.string())
     commit = _coalesce_rel_path(joined, "src_commit", "dst_commit", result_type=pa.string())
-    joined = joined.append_column("repo", repo)
-    joined = joined.append_column("commit", commit)
+    joined = _upsert_column(joined, "repo", repo)
+    joined = _upsert_column(joined, "commit", commit)
     joined = append_constant_columns(
         joined,
         {"edge_kind": "CFG", "edge_layer": "FLOW", "extras_json": None},
@@ -260,8 +260,8 @@ def cpg2_edges__dfg_edges(
     joined = joined.append_column("rel_path", rel_path)
     repo = _coalesce_rel_path(joined, "src_repo", "dst_repo", result_type=pa.string())
     commit = _coalesce_rel_path(joined, "src_commit", "dst_commit", result_type=pa.string())
-    joined = joined.append_column("repo", repo)
-    joined = joined.append_column("commit", commit)
+    joined = _upsert_column(joined, "repo", repo)
+    joined = _upsert_column(joined, "commit", commit)
     joined = append_constant_columns(
         joined,
         {"edge_kind": "DFG", "edge_layer": "FLOW", "extras_json": None},
@@ -338,8 +338,8 @@ def cpg2_edges__cdg_edges(
     joined = joined.append_column("rel_path", rel_path)
     repo = _coalesce_rel_path(joined, "src_repo", "dst_repo", result_type=pa.string())
     commit = _coalesce_rel_path(joined, "src_commit", "dst_commit", result_type=pa.string())
-    joined = joined.append_column("repo", repo)
-    joined = joined.append_column("commit", commit)
+    joined = _upsert_column(joined, "repo", repo)
+    joined = _upsert_column(joined, "commit", commit)
     joined = append_constant_columns(
         joined,
         {"edge_kind": "CDG", "edge_layer": "FLOW", "extras_json": None},
@@ -588,6 +588,13 @@ def _coalesce_rel_path(
     if result_type is None:
         return result
     return cast_array(result, result_type, safe=False)
+
+
+def _upsert_column(table: pa.Table, name: str, values: pa.Array) -> pa.Table:
+    index = table.schema.get_field_index(name)
+    if index == -1:
+        return table.append_column(name, values)
+    return table.set_column(index, name, values)
 
 
 def _rename_if_present(table: pa.Table, mapping: dict[str, str]) -> pa.Table:

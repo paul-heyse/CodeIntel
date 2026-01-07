@@ -1078,7 +1078,8 @@ def _override_schema_provider(*, env: BuildEnv) -> SchemaProvider:
     bundle_root = _bundle_root_for_schema_cache(env)
     if bundle_root is not None:
         _, bundle_overrides = _bundle_schema_cache(bundle_root)
-        override_schemas.update(bundle_overrides)
+        for table_key, table_schema in bundle_overrides.items():
+            override_schemas.setdefault(table_key, table_schema)
         return MappingSchemaProvider(override_schemas)
     if env.gateway is not None:
         try:

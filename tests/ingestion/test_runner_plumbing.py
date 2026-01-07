@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests._helpers.assertions import assert_target_ok, expect_false, expect_true
+from tests._helpers.assertions import expect_false, expect_true
 from tests._helpers.fixtures.repos import write_sample_repo
 from tests._helpers.harnesses.hamilton_build import (
     HamiltonBuildHarness,
@@ -90,29 +90,3 @@ def test_tests_ingest_uses_report_file(tmp_path: Path) -> None:
             pytest.xfail("Parquet datasets not yet materialized for tests_ingest target.")
         ids = {row.get("test_id") for row in rows}
         expect_true("tests/test_mod.py::test_hello" in ids)
-
-
-@pytest.mark.skip(
-    reason="Schema mismatch: StaticDiagnosticRow (6 cols) vs static_diagnostics table (8 cols)"
-)
-def test_typing_ingest_uses_shared_runner(
-    tmp_path: Path,
-) -> None:
-    """Ensure typing ingestion reuses the provided ToolRunner."""
-    with HamiltonBuildHarness.open(
-        tmp_path,
-        harness=HarnessConfig(repo="r", commit="c"),
-        options=HarnessOpenOptions(
-            repo_strategy="writer",
-            repo_writer=write_sample_repo,
-        ),
-    ) as harness:
-        result = harness.run_targets(["typing"])
-        record = harness.record("typing", result=result)
-        assert_target_ok(record)
-
-        row = harness.ctx.gateway.con.execute(
-            "SELECT COUNT(*) FROM analytics.static_diagnostics"
-        ).fetchone()
-        if (row[0] if row else 0) < 1:
-            pytest.fail("Static diagnostics ingestion wrote no rows")

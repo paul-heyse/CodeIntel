@@ -656,7 +656,7 @@ class TestManifestDiffFormatSummary:
             removed_tables=(),
             view_diffs=(),
             added_views=("docs.v_new_view",),
-            removed_views=("docs.v_old_view",),
+            removed_views=("docs.v_removed_view",),
             added_artifacts=(),
             removed_artifacts=(),
         )
@@ -664,7 +664,7 @@ class TestManifestDiffFormatSummary:
 
         expect_in("docs.v_new_view (view)", summary)
         expect_in("View added", summary)
-        expect_in("docs.v_old_view (view)", summary)
+        expect_in("docs.v_removed_view (view)", summary)
         expect_in("[BREAKING] View removed", summary)
 
     @staticmethod

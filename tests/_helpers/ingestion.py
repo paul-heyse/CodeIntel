@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeGuard, cast
 
 import pyarrow as pa
 
@@ -33,6 +33,7 @@ from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet, FileDigest
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
+from tests._helpers import lazy_imports
 from tests._helpers.assertions.modules import ModulesAssertions
 from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.catalog import make_target_descriptor
@@ -40,7 +41,6 @@ from tests._helpers.columnar_streams import materialize_table_from_rows
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fixtures.repos import write_tree
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 from tests._helpers.modules_expectations import (
     module_paths_expected_from_repo_tree,
     modules_expected_from_env,
@@ -255,8 +255,9 @@ def build_target_context_for_target(
 
     providers = cfg.providers or create_default_providers(ToolsConfig.default())
 
-    return build_test_env(
-        BuildEnvSpec(
+    harness_module = lazy_imports.get_hamilton_build_module()
+    return harness_module.build_test_env(
+        harness_module.BuildEnvSpec(
             gateway=gateway,
             snapshot=snapshot_ref,
             paths=build_paths,
@@ -419,24 +420,58 @@ def build_ingestion_context_bundle(
 def materialize_rows_for_snapshot(
     gateway: StorageGateway,
     table_key: str,
-    rows: Sequence[tuple[object, ...]] | Sequence[Mapping[str, object]] | ColumnarRows,
+    rows: Sequence[Mapping[str, object]] | Sequence[Sequence[object]] | ColumnarRows,
     *,
     snapshot: SnapshotRef,
 ) -> None:
-    """Materialize rows into a snapshot-scoped table."""
+    """Materialize rows into a snapshot-scoped table.
+
+    Raises
+    ------
+    ValueError
+        If tuple rows are provided without a schema or row lengths mismatch.
+    """
     warehouse = Warehouse(context=StorageContext(gateway=gateway))
     schema = get_schema_service().get_table_schema(table_key)
     columns = tuple(schema.column_names()) if schema is not None else ()
+    resolved_rows: Sequence[Mapping[str, object]] | ColumnarRows
+    if not rows:
+        resolved_rows = []
+    elif isinstance(rows, Mapping):
+        resolved_rows = cast("ColumnarRows", rows)
+    else:
+        row_sequence = rows
+        if _is_mapping_rows(row_sequence):
+            resolved_rows = row_sequence
+        else:
+            if not columns:
+                message = f"Schema required to map tuple rows for {table_key}"
+                raise ValueError(message)
+            tuple_rows = cast("Sequence[Sequence[object]]", row_sequence)
+            resolved_rows = [_row_mapping(columns, row) for row in tuple_rows]
     materialize_table_from_rows(
         warehouse,
         table_key,
-        rows,
+        resolved_rows,
         columns=columns if columns else None,
         options=MaterializeOptions(
             mode="replace",
             snapshot=snapshot,
         ),
     )
+
+
+def _is_mapping_rows(
+    rows: Sequence[Sequence[object] | Mapping[str, object]],
+) -> TypeGuard[Sequence[Mapping[str, object]]]:
+    return all(isinstance(row, Mapping) for row in rows)
+
+
+def _row_mapping(columns: Sequence[str], row: Sequence[object]) -> dict[str, object]:
+    if len(row) != len(columns):
+        msg = f"Row length does not match columns: {len(row)} != {len(columns)}"
+        raise ValueError(msg)
+    return dict(zip(columns, row, strict=True))
 
 
 def materialize_repo_scan_result(

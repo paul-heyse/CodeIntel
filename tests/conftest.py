@@ -20,14 +20,7 @@ from codeintel.build.schemas import configure_contract_service, configure_schema
 from codeintel.build.settings import DEFAULT_PROFILE_NAME
 from codeintel.config.models import ToolsConfig
 from codeintel.observability.runtime import shutdown_observability
-from codeintel.runtime.compose import compose_runtime
-from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
-from tests._helpers import (
-    GatewayOptions,
-    ProvisioningConfig,
-    TestScenario,
-    provisioned_gateway,
-)
+from tests._helpers import lazy_imports
 from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.columnar_streams import (
     contract_schema_for_table_key as contract_schema_for_table_key_fn,
@@ -35,21 +28,9 @@ from tests._helpers.columnar_streams import (
 from tests._helpers.columnar_streams import (
     reader_for_rows as reader_for_rows_fn,
 )
-from tests._helpers.env import create_provisioned_test_env
 from tests._helpers.fixtures.rows import columnar_rows_for as columnar_rows_for_fn
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
-from tests._helpers.harnesses.graph_harness import GraphTargetHarness
-from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness, HarnessConfig
-from tests._helpers.harnesses.serving_harness import ServingTargetHarness
-from tests._helpers.orchestration.graph_orchestration import (
-    create_span_test_env,
-)
-from tests._helpers.orchestration.provisioning import (
-    provision_docs_export_ready,
-    provision_graph_ready_repo,
-)
 from tests._helpers.pytest_options import apply_pytest_options, register_pytest_options
 from tests._helpers.schemas import ensure_schema_service, ensure_storage_contract_catalog
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
@@ -71,9 +52,14 @@ if TYPE_CHECKING:
 
     from codeintel.core.columnar.rows import ColumnarRows
     from codeintel.core.schemas import SchemaService
+    from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs import ProvisionedGateway, SpanTestEnv
     from tests._helpers.context import TestContext
+    from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
+    from tests._helpers.harnesses.graph_harness import GraphTargetHarness
+    from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness, HarnessConfig
+    from tests._helpers.harnesses.serving_harness import ServingTargetHarness
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -109,7 +95,8 @@ def parity_harness_config() -> HarnessConfig:
     HarnessConfig
         Default harness configuration for parity tests.
     """
-    return HarnessConfig(repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit)
+    harness_module = lazy_imports.get_hamilton_build_module()
+    return harness_module.HarnessConfig(repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit)
 
 
 @pytest.fixture
@@ -198,7 +185,8 @@ def test_ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context with an initialized gateway and filesystem roots.
     """
-    ctx = TestScenario().build(tmp_path)
+    scenarios_module = lazy_imports.get_scenarios_module()
+    ctx = scenarios_module.TestScenario().build(tmp_path)
     try:
         yield ctx
     finally:
@@ -214,7 +202,8 @@ def core_ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context seeded with the core pack and closed after the test.
     """
-    ctx = TestScenario.minimal().build(tmp_path)
+    scenarios_module = lazy_imports.get_scenarios_module()
+    ctx = scenarios_module.TestScenario.minimal().build(tmp_path)
     try:
         yield ctx
     finally:
@@ -230,7 +219,8 @@ def graph_ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context seeded with the core and graph packs, then closed after the test.
     """
-    ctx = TestScenario.with_graph().build(tmp_path)
+    scenarios_module = lazy_imports.get_scenarios_module()
+    ctx = scenarios_module.TestScenario.with_graph().build(tmp_path)
     try:
         yield ctx
     finally:
@@ -246,7 +236,8 @@ def metrics_ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context seeded with the core and metrics packs, then closed after the test.
     """
-    ctx = TestScenario.with_metrics().build(tmp_path)
+    scenarios_module = lazy_imports.get_scenarios_module()
+    ctx = scenarios_module.TestScenario.with_metrics().build(tmp_path)
     try:
         yield ctx
     finally:
@@ -262,7 +253,8 @@ def runtime_env(tmp_path_factory: pytest.TempPathFactory) -> Iterator[BuildEnv]:
     BuildEnv
         Build environment for runtime composition.
     """
-    ctx = TestScenario.minimal().build(tmp_path_factory.mktemp("hamilton-runtime"))
+    scenarios_module = lazy_imports.get_scenarios_module()
+    ctx = scenarios_module.TestScenario.minimal().build(tmp_path_factory.mktemp("hamilton-runtime"))
     providers = create_default_providers(ToolsConfig.default())
     env = BuildEnv(
         gateway=ctx.gateway,
@@ -293,7 +285,9 @@ def hamilton_runtime(runtime_env: BuildEnv) -> HamiltonRuntimeBundle:
         config["profile"] = runtime_env.profile
     config.update(runtime_env.variants.as_hamilton_config())
     config["variant_fingerprint"] = runtime_env.variants.variant_fingerprint
-    return compose_runtime(env=runtime_env, config=config).bundle
+
+    runtime_module = lazy_imports.get_compose_runtime_module()
+    return runtime_module.compose_runtime(env=runtime_env, config=config).bundle
 
 
 def _should_skip_session_services(request: pytest.FixtureRequest) -> bool:
@@ -380,7 +374,8 @@ def build_harness(tmp_path: Path) -> Iterator[HamiltonBuildHarness]:
     HamiltonBuildHarness
         Harness instance that is closed after the test.
     """
-    with HamiltonBuildHarness.open(tmp_path) as harness:
+    harness_module = lazy_imports.get_hamilton_build_module()
+    with harness_module.HamiltonBuildHarness.open(tmp_path) as harness:
         yield harness
 
 
@@ -393,7 +388,8 @@ def graph_target_harness(tmp_path: Path) -> Iterator[GraphTargetHarness]:
     GraphTargetHarness
         Harness wrapper for graph targets.
     """
-    with GraphTargetHarness.open(tmp_path) as harness:
+    harness_module = lazy_imports.get_graph_harness_module()
+    with harness_module.GraphTargetHarness.open(tmp_path) as harness:
         yield harness
 
 
@@ -406,7 +402,8 @@ def analytics_target_harness(tmp_path: Path) -> Iterator[AnalyticsTargetHarness]
     AnalyticsTargetHarness
         Harness wrapper for analytics targets.
     """
-    with AnalyticsTargetHarness.open(tmp_path) as harness:
+    harness_module = lazy_imports.get_analytics_harness_module()
+    with harness_module.AnalyticsTargetHarness.open(tmp_path) as harness:
         yield harness
 
 
@@ -419,7 +416,8 @@ def serving_target_harness(tmp_path: Path) -> Iterator[ServingTargetHarness]:
     ServingTargetHarness
         Harness wrapper for serving targets.
     """
-    with ServingTargetHarness.open(tmp_path) as harness:
+    harness_module = lazy_imports.get_serving_harness_module()
+    with harness_module.ServingTargetHarness.open(tmp_path) as harness:
         yield harness
 
 
@@ -471,9 +469,10 @@ def span_env(tmp_path: Path) -> Iterator[SpanTestEnv]:
     SpanTestEnv
         Span test context built from a snapshot-backed gateway; gateway closed after the test.
     """
+    orchestration_module = lazy_imports.get_orchestration_graph_module()
     gateway = GatewayFactory().with_snapshot(DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit).open()
     try:
-        yield create_span_test_env(tmp_path, gateway)
+        yield orchestration_module.create_span_test_env(tmp_path, gateway)
     finally:
         gateway.close()
 
@@ -488,7 +487,8 @@ def provisioned_repo(tmp_path_factory: pytest.TempPathFactory) -> Iterator[TestC
         Provisioned context reused across tests; closed after the session.
     """
     repo_root = tmp_path_factory.mktemp("provisioned-repo")
-    ctx = create_provisioned_test_env(repo_root)
+    env_module = lazy_imports.get_env_module()
+    ctx = env_module.create_provisioned_test_env(repo_root)
     try:
         yield ctx
     finally:
@@ -522,7 +522,8 @@ def docs_export_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
     ProvisionedGateway
         Gateway prepared for docs export flows; closed after the test.
     """
-    ctx = provision_docs_export_ready(tmp_path, file_backed=False)
+    provisioning_module = lazy_imports.get_orchestration_provisioning_module()
+    ctx = provisioning_module.provision_docs_export_ready(tmp_path, file_backed=False)
     try:
         yield ctx
     finally:
@@ -538,7 +539,8 @@ def graph_ready_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
     ProvisionedGateway
         Gateway prepared for graph tests; closed after the test.
     """
-    ctx = provision_graph_ready_repo(
+    provisioning_module = lazy_imports.get_orchestration_provisioning_module()
+    ctx = provisioning_module.provision_graph_ready_repo(
         tmp_path / "repo", repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit
     )
     try:
@@ -556,8 +558,9 @@ def loose_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
     ProvisionedGateway
         Gateway configured with relaxed schema validation; closed after the test.
     """
-    config = ProvisioningConfig(
-        gateway_options=GatewayOptions(
+    helpers_module = lazy_imports.get_helpers_module()
+    config = helpers_module.ProvisioningConfig(
+        gateway_options=helpers_module.GatewayOptions(
             apply_schema=True,
             ensure_views=True,
             validate_schema=False,
@@ -566,5 +569,5 @@ def loose_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
         ),
         run_ingestion=False,
     )
-    with provisioned_gateway(tmp_path / "repo", config=config) as ctx:
+    with helpers_module.provisioned_gateway(tmp_path / "repo", config=config) as ctx:
         yield ctx

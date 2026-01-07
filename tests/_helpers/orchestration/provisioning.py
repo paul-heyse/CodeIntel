@@ -1332,7 +1332,7 @@ def build_callgraph_fixture_repo(
         commit=opts.commit,
         repo_root=repo_root,
     )
-    build_dir = repo_root / ".build"
+    build_dir = repo_root / "build"
     build_dir.mkdir(parents=True, exist_ok=True)
     paths = BuildPaths.from_repo_root(repo_root, build_dir=build_dir)
     providers = create_default_providers(make_tools_config())

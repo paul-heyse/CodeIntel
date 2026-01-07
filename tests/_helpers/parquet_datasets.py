@@ -8,8 +8,8 @@ from pathlib import Path
 import pyarrow as pa
 
 from codeintel.core.columnar.rows import ColumnarRows, columnar_row_count
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import scan_dataset_reader, write_dataset
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.datasets.scanning import DatasetScanOptions
 from tests._helpers.columnar_streams import table_for_rows
 

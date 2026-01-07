@@ -36,12 +36,14 @@ from codeintel.build.tabular.compute_masks import (
     and_kleene,
     bit_wise_and,
     equal_mask,
+    invert_mask,
     is_valid_mask,
     not_equal_mask,
 )
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
+from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
@@ -62,6 +64,11 @@ _ROLE_DEFINITION = 0x1
 _ROLE_IMPORT = 0x2
 _ROLE_WRITE = 0x4
 _ROLE_READ = 0x8
+
+_MATCH_KIND_LINE_SPAN = "line_span"
+_MATCH_KIND_LINE_START = "line_start"
+_MATCH_CONFIDENCE_LINE_SPAN = 1.0
+_MATCH_CONFIDENCE_LINE_START = 0.6
 
 
 @dataclass(frozen=True)
@@ -164,6 +171,93 @@ def _occurrences_table(occurrences: InferableTabularInput) -> pa.Table:
     return _cast_int32(table, ["start_line", "end_line"])
 
 
+def _goids_by_start_line(goids: pa.Table) -> pa.Table:
+    required = {"rel_path", "start_line", "goid_h128"}
+    if goids.num_rows == 0 or not required.issubset(set(goids.column_names)):
+        return goids
+    grouped = goids.group_by(["rel_path", "start_line"]).aggregate([("goid_h128", "min")])
+    return grouped.rename_columns(["rel_path", "start_line", "goid_h128"])
+
+
+def _attach_match_metadata(
+    table: pa.Table,
+    *,
+    kind: str | None,
+    confidence: float | None,
+) -> pa.Table:
+    if table.num_rows == 0:
+        return table
+    match_kind = constant_array(kind, table.num_rows)
+    match_confidence = constant_array(confidence, table.num_rows)
+    table = table.append_column("match_kind", match_kind)
+    return table.append_column("match_confidence", match_confidence)
+
+
+def _definition_occurrences(occurrences: pa.Table) -> pa.Table:
+    roles = occurrences["roles"] if "roles" in occurrences.column_names else None
+    if roles is None:
+        return occurrences.slice(0, 0)
+    def_mask = not_equal_mask(
+        bit_wise_and(roles, pa.scalar(_ROLE_DEFINITION, type=roles.type)),
+        pa.scalar(0, type=roles.type),
+    )
+    return safe_filter(occurrences, def_mask)
+
+
+def _strict_goid_matches(
+    definitions: pa.Table,
+    goids: pa.Table,
+) -> tuple[pa.Table, pa.Table]:
+    join_spec = ArrowJoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1")
+    strict_join = arrow_join_tables(
+        definitions,
+        goids,
+        spec=join_spec,
+        options=build_join_options(definitions, goids),
+    )
+    strict_mask = is_valid_mask(strict_join["goid_h128"])
+    strict_matched = safe_filter(strict_join, strict_mask)
+    strict_matched = _attach_match_metadata(
+        strict_matched,
+        kind=_MATCH_KIND_LINE_SPAN,
+        confidence=_MATCH_CONFIDENCE_LINE_SPAN,
+    )
+    strict_missing = safe_filter(strict_join, invert_mask(strict_mask))
+    return strict_matched, strict_missing
+
+
+def _fallback_goid_matches(definitions: pa.Table, goids: pa.Table) -> list[pa.Table]:
+    if definitions.num_rows == 0:
+        return []
+    fallback_left = definitions.drop_columns(["goid_h128"])
+    goids_by_line = _goids_by_start_line(goids)
+    fallback_spec = ArrowJoinSpec(
+        on=["rel_path", "start_line"],
+        how="left",
+        validate="m:1",
+    )
+    fallback_join = arrow_join_tables(
+        fallback_left,
+        goids_by_line,
+        spec=fallback_spec,
+        options=build_join_options(fallback_left, goids_by_line),
+    )
+    fallback_mask = is_valid_mask(fallback_join["goid_h128"])
+    fallback_matched = safe_filter(fallback_join, fallback_mask)
+    fallback_unmatched = safe_filter(fallback_join, invert_mask(fallback_mask))
+    fallback_matched = _attach_match_metadata(
+        fallback_matched,
+        kind=_MATCH_KIND_LINE_START,
+        confidence=_MATCH_CONFIDENCE_LINE_START,
+    )
+    fallback_unmatched = _attach_match_metadata(
+        fallback_unmatched,
+        kind=None,
+        confidence=None,
+    )
+    return [fallback_matched, fallback_unmatched]
+
+
 def _symbol_goid_xref_table(
     *,
     occurrences: pa.Table,
@@ -172,17 +266,13 @@ def _symbol_goid_xref_table(
 ) -> pa.Table:
     if occurrences.num_rows == 0 or goids.num_rows == 0:
         return _empty_table_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
-    roles = occurrences["roles"] if "roles" in occurrences.column_names else None
-    if roles is None:
+    definitions = _definition_occurrences(occurrences)
+    if definitions.num_rows == 0:
         return _empty_table_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
-    def_mask = not_equal_mask(
-        bit_wise_and(roles, pa.scalar(_ROLE_DEFINITION, type=roles.type)),
-        pa.scalar(0, type=roles.type),
-    )
-    definitions = safe_filter(occurrences, def_mask)
-    join_spec = ArrowJoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1")
-    join_options = build_join_options(definitions, goids)
-    joined = arrow_join_tables(definitions, goids, spec=join_spec, options=join_options)
+
+    strict_matched, strict_missing = _strict_goid_matches(definitions, goids)
+    fallback_tables = _fallback_goid_matches(strict_missing, goids)
+    joined = concat_tables_unified([strict_matched, *fallback_tables])
     joined = joined.select(
         [
             "repo",
@@ -196,6 +286,8 @@ def _symbol_goid_xref_table(
             "end_col",
             "position_encoding",
             "text_document_encoding",
+            "match_kind",
+            "match_confidence",
         ]
     )
     joined = _rename_columns(

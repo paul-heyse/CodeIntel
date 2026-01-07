@@ -339,7 +339,7 @@ class HamiltonTestBuilder:
         resolved.mkdir(parents=True, exist_ok=True)
         return resolved
 
-    def _resolve_build_dir(self) -> Path:
+    def _resolve_build_dir(self, repo_root: Path) -> Path:
         """Resolve the build output directory.
 
         Returns
@@ -349,7 +349,7 @@ class HamiltonTestBuilder:
         """
         if self.build_dir is not None:
             return self.build_dir
-        resolved = self.tmp_path / "build"
+        resolved = repo_root / "build"
         resolved.mkdir(parents=True, exist_ok=True)
         return resolved
 
@@ -420,9 +420,9 @@ class HamiltonTestBuilder:
             Harness configured for Hamilton execution.
         """
         repo_root = self._resolve_repo_root()
-        build_dir = self._resolve_build_dir()
+        build_dir = self._resolve_build_dir(repo_root)
         snapshot = self.snapshot_variant.to_snapshot(repo_root=repo_root)
-        paths = BuildPaths.from_explicit(build_dir=build_dir)
+        paths = BuildPaths.from_repo_root(repo_root, build_dir=build_dir)
         ctx = TestContext(snapshot=snapshot, gateway=self.gateway, build_paths=paths)
         harness = HamiltonBuildHarness.wrap(
             ctx,

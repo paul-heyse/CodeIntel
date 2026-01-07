@@ -117,9 +117,9 @@ def build_span_graph_components(env: SpanTestEnv) -> None:
     RuntimeError
         If graph computation fails execution.
     """
-    build_dir = env.repo_root / ".build"
+    build_dir = env.repo_root / "build"
     build_dir.mkdir(parents=True, exist_ok=True)
-    paths = BuildPaths.from_explicit(build_dir=build_dir)
+    paths = BuildPaths.from_repo_root(env.repo_root, build_dir=build_dir)
 
     snapshot = SnapshotRef(
         repo=REPO,

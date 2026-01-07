@@ -17,8 +17,8 @@ from codeintel.cli.handlers.jobs import (
 from codeintel.cli.jobs import JobInfo as JobModel
 from codeintel.cli.jobs import JobStatus
 from codeintel.cli.services.jobs import JobService
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.query_results import records_from_arrow_reader
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_in,

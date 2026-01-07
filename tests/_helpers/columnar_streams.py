@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, TypeGuard, cast
-from warnings import warn
 
 import pyarrow as pa
 
@@ -31,7 +31,7 @@ else:
     except ImportError:  # pragma: no cover
         pl = None
 
-RowsInput = Sequence[tuple[object, ...]] | Sequence[Mapping[str, object]] | ColumnarRows
+RowsInput = Sequence[Mapping[str, object]] | ColumnarRows
 
 
 class PolarsUnavailableError(RuntimeError):
@@ -70,7 +70,7 @@ def reader_for_rows(
     table_key
         Fully qualified table key (schema.table).
     rows
-        Row data as tuples, mappings, or columnar rows.
+        Row data as mappings or columnar rows.
     columns
         Optional column selection used to align row data.
     extras_policy
@@ -85,9 +85,9 @@ def reader_for_rows(
     """
     table_schema = _table_schema_for_key(table_key)
     buffer = _buffer_for_rows(table_schema, rows, columns=columns)
-    table = pa.table(buffer.data)
-    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
     contract_schema = arrow_contract_for_table_schema(table_schema=table_schema)
+    table = _table_for_buffer(buffer, contract_schema)
+    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
     resolved_policy = extras_policy or extras_policy_from_schema(contract_schema)
     aligned = align_reader_to_contract(
         reader,
@@ -104,6 +104,44 @@ def reader_for_rows(
     return aligned
 
 
+def _table_for_buffer(buffer: ColumnarRowBuffer, contract_schema: pa.Schema) -> pa.Table:
+    if buffer.row_count == 0:
+        return pa.Table.from_batches([], schema=contract_schema)
+    arrays: list[pa.Array] = []
+    fields: list[pa.Field] = []
+    for name in buffer.columns:
+        values = buffer.data[name]
+        if name in contract_schema.names:
+            field = contract_schema.field(name)
+            coerced_values = _coerce_values_for_arrow_type(values, field.type)
+            arrays.append(pa.array(coerced_values, type=field.type))
+            fields.append(field)
+            continue
+        array = pa.array(values)
+        arrays.append(array)
+        fields.append(pa.field(name, array.type))
+    batch = pa.record_batch(arrays, schema=pa.schema(fields))
+    return pa.Table.from_batches([batch], schema=batch.schema)
+
+
+def _coerce_values_for_arrow_type(
+    values: Sequence[object],
+    field_type: pa.DataType,
+) -> Sequence[object]:
+    if pa.types.is_timestamp(field_type):
+        return [_coerce_timestamp_value(value) for value in values]
+    return values
+
+
+def _coerce_timestamp_value(value: object) -> object:
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return value
+    return value
+
+
 def table_for_rows(
     table_key: str,
     rows: RowsInput,
@@ -118,7 +156,7 @@ def table_for_rows(
     table_key
         Fully qualified table key (schema.table).
     rows
-        Row data as tuples, mappings, or columnar rows.
+        Row data as mappings or columnar rows.
     columns
         Optional column selection used to align row data.
     extras_policy
@@ -156,7 +194,7 @@ def materialize_table_from_rows(
     table_key
         Fully qualified table key (schema.table).
     rows
-        Row data as tuples, mappings, or columnar rows.
+        Row data as mappings or columnar rows.
     columns
         Optional column selection used to align row data.
     options
@@ -185,7 +223,7 @@ def lazyframe_for_rows(
     table_key
         Fully qualified table key (schema.table).
     rows
-        Row data as tuples, mappings, or columnar rows.
+        Row data as mappings or columnar rows.
     columns
         Optional column selection used to align row data.
     extras_policy
@@ -232,13 +270,12 @@ def _buffer_for_rows(
     if _is_columnar_rows(rows):
         return _buffer_from_columnar_rows(buffer, rows, json_columns=json_columns)
     row_sequence = cast("Sequence[object]", rows)
+    if not row_sequence:
+        return buffer
     if _is_mapping_sequence(row_sequence):
         return _buffer_from_mappings(buffer, row_sequence, json_columns=json_columns)
-    return _buffer_from_tuples(
-        buffer,
-        cast("Sequence[tuple[object, ...]]", row_sequence),
-        json_columns=json_columns,
-    )
+    message = "Row inputs must be mappings or ColumnarRows."
+    raise TypeError(message)
 
 
 def _buffer_for_columns(
@@ -285,29 +322,6 @@ def _buffer_from_mappings(
 ) -> ColumnarRowBuffer:
     for row in rows:
         row_map = {name: row.get(name) for name in buffer.columns}
-        _guard_json_stringification(row_map, json_columns=json_columns)
-        buffer.append(row_map)
-    return buffer
-
-
-def _buffer_from_tuples(
-    buffer: ColumnarRowBuffer,
-    rows: Sequence[tuple[object, ...]],
-    *,
-    json_columns: set[str],
-) -> ColumnarRowBuffer:
-    if rows:
-        warn(
-            "Tuple-based row helpers are deprecated; use mapping/columnar rows instead.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
-    column_index = {name: idx for idx, name in enumerate(buffer.columns)}
-    for row in rows:
-        if len(row) != len(buffer.columns):
-            msg = f"Row length does not match columns: {len(row)} != {len(buffer.columns)}"
-            raise ValueError(msg)
-        row_map = {name: row[column_index[name]] for name in buffer.columns}
         _guard_json_stringification(row_map, json_columns=json_columns)
         buffer.append(row_map)
     return buffer

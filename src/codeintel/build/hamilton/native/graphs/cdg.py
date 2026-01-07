@@ -25,7 +25,8 @@ from codeintel.build.tabular.compute_masks import (
 )
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.data_models.ids import normalize_decimal_id
 
 CDG_EDGES_TABLE_KEY = "graph.cdg_edges"
 CDG_TARGET_NAME = "cdg"
@@ -35,6 +36,8 @@ _EXPR_TYPE = getattr(pc, "Expression", None)
 
 @dataclass(frozen=True)
 class _CdgEdgeRow:
+    repo: str
+    commit: str
     function_goid_h128: int
     src_block_id: str
     dst_block_id: str
@@ -45,6 +48,8 @@ class _CdgEdgeRow:
 
 @dataclass(frozen=True, slots=True)
 class _CdgEdgeContext:
+    repo: str
+    commit: str
     function_goid: int
     post: dict[int, int]
     inv_idx: dict[int, int]
@@ -111,6 +116,16 @@ def _coerce_int(value: object) -> int | None:
     return None
 
 
+def _coerce_goid(value: object) -> int | None:
+    return normalize_decimal_id(value)
+
+
+def _coerce_str(value: object) -> str | None:
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
 def _block_indexes(blocks: Sequence[Mapping[str, object]]) -> tuple[dict[str, int], dict[int, str]]:
     block_idx_by_id: dict[str, int] = {}
     block_id_by_idx: dict[int, str] = {}
@@ -149,6 +164,23 @@ def _edge_indexes(
             edge_kind_raw if isinstance(edge_kind_raw, str) else None
         )
     return edges_idx, edge_kind_by_pair
+
+
+def _resolve_repo_commit(
+    edges: Sequence[Mapping[str, object]],
+    blocks: Sequence[Mapping[str, object]],
+) -> tuple[str, str] | None:
+    for row in edges:
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        if repo is not None and commit is not None:
+            return repo, commit
+    for row in blocks:
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        if repo is not None and commit is not None:
+            return repo, commit
+    return None
 
 
 def _build_successors(
@@ -206,6 +238,8 @@ def _cdg_edge_rows_for_pair(
             continue
         rows.append(
             _CdgEdgeRow(
+                repo=context.repo,
+                commit=context.commit,
                 function_goid_h128=context.function_goid,
                 src_block_id=src_block_id,
                 dst_block_id=dst_block_id,
@@ -244,11 +278,15 @@ def _cdg_edges_for_function(
         edge_kind_by_pair,
     )
     post, idx = _compute_postdom_bitsets(node_ids, succ, exit_id)
-    inv_idx = {value: key for key, value in idx.items()}
+    repo_commit = _resolve_repo_commit(edges, blocks)
+    if repo_commit is None:
+        return []
     context = _CdgEdgeContext(
+        repo=repo_commit[0],
+        commit=repo_commit[1],
         function_goid=function_goid,
         post=post,
-        inv_idx=inv_idx,
+        inv_idx={value: key for key, value in idx.items()},
         block_id_by_idx=block_id_by_idx,
         edge_kind_by_pair=edge_kind_by_pair,
         exit_id=exit_id,
@@ -316,13 +354,20 @@ def cdg_edges(
     """
     blocks_table = tabular_to_scoped_table(
         q__graph__cfg_blocks,
-        columns=["function_goid_h128", "block_id", "block_idx"],
+        columns=["repo", "commit", "function_goid_h128", "block_id", "block_idx"],
         scope=None,
         require_scope_columns=False,
     )
     edges_table = tabular_to_scoped_table(
         q__graph__cfg_edges,
-        columns=["function_goid_h128", "src_block_id", "dst_block_id", "edge_kind"],
+        columns=[
+            "repo",
+            "commit",
+            "function_goid_h128",
+            "src_block_id",
+            "dst_block_id",
+            "edge_kind",
+        ],
         scope=None,
         require_scope_columns=False,
     )
@@ -333,13 +378,13 @@ def cdg_edges(
 
     blocks_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
     for row in iter_rows(blocks_table):
-        function_goid = _coerce_int(row.get("function_goid_h128"))
+        function_goid = _coerce_goid(row.get("function_goid_h128"))
         if function_goid is None:
             continue
         blocks_by_goid[function_goid].append(row)
     edges_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
     for row in iter_rows(edges_table):
-        function_goid = _coerce_int(row.get("function_goid_h128"))
+        function_goid = _coerce_goid(row.get("function_goid_h128"))
         if function_goid is None:
             continue
         edges_by_goid[function_goid].append(row)
@@ -351,6 +396,8 @@ def cdg_edges(
             continue
         rows.extend(
             {
+                "repo": row.repo,
+                "commit": row.commit,
                 "function_goid_h128": row.function_goid_h128,
                 "src_block_id": row.src_block_id,
                 "dst_block_id": row.dst_block_id,
@@ -364,16 +411,7 @@ def cdg_edges(
     if not rows:
         return empty_table_for_table(CDG_EDGES_TABLE_KEY)
 
-    table = pa.Table.from_pylist(rows).select(
-        [
-            "function_goid_h128",
-            "src_block_id",
-            "dst_block_id",
-            "via_succ_block_id",
-            "edge_kind",
-            "via_edge_kind",
-        ]
-    )
+    table, _ = table_for_rows(CDG_EDGES_TABLE_KEY, rows)
     table = dedupe_table_for_table(CDG_EDGES_TABLE_KEY, table)
     return align_table_to_contract(
         CDG_EDGES_TABLE_KEY,

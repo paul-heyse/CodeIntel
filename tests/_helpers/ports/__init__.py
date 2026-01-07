@@ -11,22 +11,14 @@ The ports follow the hexagonal architecture pattern:
 
 Available Ports
 ---------------
-GatewayPort
-    Protocol for storage gateway operations (database access).
-RepoPort
-    Protocol for filesystem repository operations.
 ToolingPort
     Protocol for external tool runners (type checkers, linters).
 """
 
 from __future__ import annotations
 
-from tests._helpers.ports.gateway import GatewayPort
-from tests._helpers.ports.repo import RepoPort
 from tests._helpers.ports.tooling import ToolingPort
 
 __all__ = [
-    "GatewayPort",
-    "RepoPort",
     "ToolingPort",
 ]

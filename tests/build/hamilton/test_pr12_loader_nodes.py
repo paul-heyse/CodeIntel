@@ -5,18 +5,12 @@ Validates that generated modules include query loader nodes.
 
 from __future__ import annotations
 
-import importlib
-import importlib.util
-
 import pytest
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import query_node
-from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.cli.commands.build import BuildRunCommand
 from codeintel.runtime.compose import compose_runtime
 from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
-from tests._helpers.assertions import assert_target_ok
 
 
 class TestLoaderNodeNaming:
@@ -56,92 +50,3 @@ class TestDriverLoaderNodes:
         query_name = query_node("analytics.function_types")
         if query_name in node_names:
             pytest.fail("Query nodes should be disabled when include_loader_nodes=False")
-
-
-class TestBuildEnvValidateOutputsFlag:
-    """Tests for validate_outputs flag in BuildEnv."""
-
-    @staticmethod
-    def test_build_env_has_validate_outputs_field() -> None:
-        """Verify BuildEnv has validate_outputs field."""
-        fields = getattr(BuildEnv, "__dataclass_fields__", {})
-        if "validate_outputs" not in fields:
-            pytest.skip("validate_outputs field not yet implemented")
-
-        field_info = fields["validate_outputs"]
-        if field_info.default is not False:
-            pytest.fail("validate_outputs should default to False")
-
-
-class TestValidateOutputsBehavior:
-    """Tests for --validate-outputs behavior and blocking semantics."""
-
-    @staticmethod
-    def test_validate_outputs_flag_exists_in_build_run_command() -> None:
-        """Verify BuildRunCommand has validate_outputs option."""
-        fields = getattr(BuildRunCommand, "__dataclass_fields__", {})
-        if "validate_outputs" not in fields:
-            pytest.skip("validate_outputs option not yet implemented")
-
-    @staticmethod
-    def test_validation_result_dataclass_exists() -> None:
-        """Verify ValidationResult type exists for tracking validation status.
-
-        When --validate-outputs is used, targets should report validation
-        results that can block downstream if validation fails.
-
-        This test checks for the existence of the ValidationResult type
-        which is part of the optional --validate-outputs feature.
-        """
-        spec = importlib.util.find_spec("codeintel.build.hamilton.validation")
-        if spec is None:
-            pytest.skip("ValidationResult not yet implemented")
-
-        try:
-            validation_mod = importlib.import_module("codeintel.build.hamilton.validation")
-        except ImportError:
-            pytest.skip("ValidationResult not yet implemented")
-
-        validation_result_cls = getattr(validation_mod, "ValidationResult", None)
-        if validation_result_cls is None:
-            pytest.skip("ValidationResult class not found")
-
-        result = validation_result_cls(
-            table_key="analytics.function_types",
-            valid=False,
-            errors=("Column 'loc' has wrong type",),
-        )
-        if result.valid:
-            pytest.fail("Constructed result should be invalid")
-        if not result.errors:
-            pytest.fail("Invalid result should have errors")
-
-    @staticmethod
-    def test_validation_failure_blocks_downstream_conceptually() -> None:
-        """Verify validation failure would block downstream targets.
-
-        The validation semantics should prevent downstream targets from
-        running if upstream validation fails. This test verifies the
-        conceptual model rather than full integration.
-        """
-        record = TargetRunRecord(
-            target="function_types",
-            impl_kind="native",
-            status="failed",
-            input_hash="hash123",
-            error="Validation failed: Column 'loc' has wrong type",
-        )
-
-        assert_target_ok(record, expected_status="failed")
-
-    @staticmethod
-    def test_target_run_record_has_validation_fields() -> None:
-        """Verify TargetRunRecord can capture validation state."""
-        record = TargetRunRecord(
-            target="function_types",
-            impl_kind="native",
-            status="succeeded",
-            input_hash="hash123",
-        )
-
-        assert_target_ok(record)

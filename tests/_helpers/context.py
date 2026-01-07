@@ -555,7 +555,7 @@ def _prepare_paths(
         Resolved repo_root, build_dir, and optional database path.
     """
     repo_root_path = env_opts.repo_root or (tmp_path / "repo")
-    build_dir_path = env_opts.build_dir or (tmp_path / "build")
+    build_dir_path = env_opts.build_dir or (repo_root_path / "build")
     repo_root_path.mkdir(parents=True, exist_ok=True)
     build_dir_path.mkdir(parents=True, exist_ok=True)
     db_path = env_opts.db_path

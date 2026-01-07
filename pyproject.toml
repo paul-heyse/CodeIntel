@@ -130,6 +130,7 @@ dependencies = [
     "pathspec>=0.12.1",
     "pyre-check>=0.9.25",
     "rustworkx>=0.17.1",
+    "pip>=25.3",
 ]
 
 [project.scripts]

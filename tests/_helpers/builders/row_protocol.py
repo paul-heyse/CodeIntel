@@ -16,11 +16,9 @@ Design Notes
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
-from codeintel.core.storage import StorageContext
-from codeintel.storage.warehouse import MaterializeOptions, UpsertConfig, Warehouse
-from tests._helpers.columnar_streams import materialize_table_from_rows
 from tests._helpers.sql import validate_identifier
 
 if TYPE_CHECKING:
@@ -107,8 +105,6 @@ def insert_rows(
     if not row_list:
         return 0
 
-    warehouse = Warehouse(context=StorageContext(gateway=gateway))
-
     grouped: dict[tuple[str, tuple[str, ...]], list[InsertableRow]] = {}
     for row in row_list:
         row_type = type(row)
@@ -121,37 +117,60 @@ def insert_rows(
         validate_identifier(table, kind="table")
         for col in columns:
             validate_identifier(col, kind="column")
-        options = MaterializeOptions(mode="append")
-        if table == "core.repo_map":
-            options = MaterializeOptions(
-                mode="upsert",
-                upsert=UpsertConfig(
-                    conflict_columns=("repo", "commit"),
-                    update_columns=("modules", "overlays", "generated_at"),
-                ),
-            )
-        elif table == "core.modules":
-            options = MaterializeOptions(
-                mode="upsert",
-                upsert=UpsertConfig(
-                    conflict_columns=("module", "path"),
-                    update_columns=("repo", "commit", "language", "tags", "owners", "row_hash"),
-                ),
-            )
         row_mappings = [_row_to_mapping(row, columns) for row in group_rows]
-        result = materialize_table_from_rows(
-            warehouse,
-            table,
-            row_mappings,
-            columns=columns,
-            options=options,
-        )
-        inserted += result.rows_written or 0
+        inserted += _execute_inserts(gateway, table, columns, row_mappings)
     return inserted
 
 
 def _row_to_mapping(row: InsertableRow, columns: Sequence[str]) -> dict[str, object]:
     return dict(zip(columns, row.to_tuple(), strict=True))
+
+
+def _execute_inserts(
+    gateway: StorageGateway,
+    table: str,
+    columns: Sequence[str],
+    rows: Sequence[dict[str, object]],
+) -> int:
+    if not rows:
+        return 0
+    values = [tuple(row[col] for col in columns) for row in rows]
+    columns_sql = ", ".join(columns)
+    placeholders = ", ".join(["?"] * len(columns))
+    upsert = _upsert_spec_for_table(table)
+    if upsert is None:
+        sql = f"INSERT INTO {table} ({columns_sql}) VALUES ({placeholders})"
+    else:
+        conflict_cols = ", ".join(upsert.conflict_columns)
+        update_clause = ", ".join(
+            f"{column} = excluded.{column}" for column in upsert.update_columns
+        )
+        sql = (
+            f"INSERT INTO {table} ({columns_sql}) VALUES ({placeholders}) "
+            f"ON CONFLICT ({conflict_cols}) DO UPDATE SET {update_clause}"
+        )
+    gateway.con.executemany(sql, values)
+    return len(values)
+
+
+def _upsert_spec_for_table(table: str) -> _UpsertSpec | None:
+    if table == "core.repo_map":
+        return _UpsertSpec(
+            conflict_columns=("repo", "commit"),
+            update_columns=("modules", "overlays", "generated_at"),
+        )
+    if table == "core.modules":
+        return _UpsertSpec(
+            conflict_columns=("module", "path"),
+            update_columns=("repo", "commit", "language", "tags", "owners", "row_hash"),
+        )
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class _UpsertSpec:
+    conflict_columns: tuple[str, ...]
+    update_columns: tuple[str, ...]
 
 
 __all__ = ["InsertableRow", "insert_rows"]

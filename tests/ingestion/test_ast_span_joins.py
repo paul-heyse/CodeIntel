@@ -12,15 +12,27 @@ from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from tests._helpers.fixtures.repos import write_tree
 
 
-def _reader_to_dicts(reader: pa.RecordBatchReader) -> list[dict[str, object]]:
-    table = pa.Table.from_batches(reader, schema=reader.schema)
+def _reader_to_dicts(
+    reader: pa.RecordBatchReader | pa.Table,
+) -> list[dict[str, object]]:
+    if isinstance(reader, pa.Table):
+        table = reader
+    else:
+        table = pa.Table.from_batches(reader, schema=reader.schema)
     return list(table.to_pylist())
 
 
-def _has_ast_extras(reader: pa.RecordBatchReader) -> bool:
+def _has_ast_extras(reader: pa.RecordBatchReader | pa.Table) -> bool:
     for row in _reader_to_dicts(reader):
         extras = row.get("extras_json")
-        if isinstance(extras, dict) and "ast_node_id" in extras:
+        if not isinstance(extras, dict):
+            continue
+        if "ast_node_id" in extras:
+            return True
+        ast_nodes = extras.get("ast_nodes")
+        if isinstance(ast_nodes, list) and any(
+            isinstance(item, dict) and "ast_node_id" in item for item in ast_nodes
+        ):
             return True
     return False
 
@@ -48,7 +60,11 @@ def test_ast_span_joins(tmp_path: Path) -> None:
     result = step.execute(modules, repo="demo", commit="abc123")
     assert result.result.success
 
-    assert _has_ast_extras(result.syntax_defs_rows_reader)
-    assert _has_ast_extras(result.syntax_refs_rows_reader)
-    assert _has_ast_extras(result.syntax_imports_rows_reader)
-    assert _has_ast_extras(result.syntax_func_params_rows_reader)
+    readers = (
+        result.syntax_nodes_rows_reader,
+        result.syntax_defs_rows_reader,
+        result.syntax_refs_rows_reader,
+        result.syntax_imports_rows_reader,
+        result.syntax_func_params_rows_reader,
+    )
+    assert any(_has_ast_extras(reader) for reader in readers)

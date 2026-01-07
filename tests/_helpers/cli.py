@@ -98,7 +98,7 @@ def temp_repo_context(
         Context containing repo/build paths and prefilled env vars.
     """
     repo_root = base_dir / "repo"
-    build_dir = repo_root / "build" if write_project else base_dir / "build"
+    build_dir = repo_root / "build"
     repo_root.mkdir(parents=True, exist_ok=True)
     build_dir.mkdir(parents=True, exist_ok=True)
 

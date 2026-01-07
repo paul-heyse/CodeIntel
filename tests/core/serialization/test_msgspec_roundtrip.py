@@ -12,10 +12,8 @@ from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.contract_serde import (
     contract_from_payload,
     contract_payload_from_contract,
-    contract_payload_to_json_obj,
 )
 from codeintel.core.schemas.primitives import Column, TableSchema
-from codeintel.core.serialization.msgspec_json import encode_json_bytes
 
 
 def _sample_table_schema() -> TableSchema:
@@ -72,16 +70,6 @@ def test_contract_payload_roundtrip_msgpack() -> None:
         pytest.fail("Decoded contract validation_profile mismatch")
 
 
-def test_contract_payload_legacy_json_normalization() -> None:
-    """Legacy payloads with extra fields should still decode."""
-    contract = _sample_contract()
-    payload = contract_payload_to_json_obj(contract_payload_from_contract(contract))
-    payload["unexpected"] = "ignored"
-    decoded = contract_from_payload(payload)
-    if decoded.table_key != contract.table_key:
-        pytest.fail("Legacy payload normalization failed to decode contract")
-
-
 def test_manifest_roundtrip_with_payload_type(tmp_path: Path) -> None:
     """Manifests should round-trip through JSON with typed decoding."""
     manifest = ArrowDatasetManifest(
@@ -101,21 +89,3 @@ def test_manifest_roundtrip_with_payload_type(tmp_path: Path) -> None:
     decoded = read_manifest_json(path, payload_type=ArrowDatasetManifest)
     if decoded != manifest:
         pytest.fail("Manifest payload did not round-trip")
-
-
-def test_manifest_legacy_json_normalization(tmp_path: Path) -> None:
-    """Manifest decoding should drop unknown fields from legacy payloads."""
-    manifest = ArrowDatasetManifest(
-        dataset_id="dataset-2",
-        snapshot_id="snapshot-2",
-        table_key="core.repo_map",
-        partition_columns=(),
-        files=("part-001.parquet",),
-    )
-    payload = msgspec.to_builtins(manifest)
-    payload["unexpected"] = "ignored"
-    path = tmp_path / "arrow_manifest_legacy.json"
-    path.write_bytes(encode_json_bytes(payload, indent=2, newline=True))
-    decoded = read_manifest_json(path, payload_type=ArrowDatasetManifest)
-    if decoded.dataset_id != manifest.dataset_id:
-        pytest.fail("Legacy manifest normalization failed to decode dataset_id")

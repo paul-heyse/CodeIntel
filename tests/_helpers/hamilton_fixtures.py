@@ -74,7 +74,7 @@ def make_build_harness(
 
     snapshot = variant.to_snapshot(repo_root=repo_root)
 
-    paths = BuildPaths.from_explicit(build_dir=resolved_build)
+    paths = BuildPaths.from_repo_root(repo_root, build_dir=resolved_build)
 
     resolved_tools = resolved_options.tools_config or ToolsConfig.default()
     resolved_providers = resolved_options.providers or create_default_providers(resolved_tools)
@@ -150,7 +150,7 @@ def hamilton_env(
     """
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
-    build_dir = tmp_path / "build"
+    build_dir = repo_root / "build"
     build_dir.mkdir(parents=True, exist_ok=True)
 
     return make_build_env(
@@ -184,7 +184,7 @@ def seeded_hamilton_env(
     """
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
-    build_dir = tmp_path / "build"
+    build_dir = repo_root / "build"
     build_dir.mkdir(parents=True, exist_ok=True)
 
     return make_build_env(

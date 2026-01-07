@@ -7,17 +7,14 @@ that need deterministic storage behavior without a real database.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from tests._helpers.columnar_streams import contract_schema_for_table_key, table_for_rows
 from tests._helpers.records import CallRecorder, StorageOpCall
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 
 @dataclass
@@ -93,7 +90,8 @@ class FakeIngestStorage:
         """
         if table_key not in self.data:
             self.data[table_key] = _empty_table(table_key)
-        normalized_rows = [tuple(row) for row in rows]
+        column_names = contract_schema_for_table_key(table_key).names
+        normalized_rows = [_row_mapping(column_names, row) for row in rows]
         table = table_for_rows(table_key, normalized_rows)
         existing = self.data[table_key]
         self.data[table_key] = pa.concat_tables([existing, table])
@@ -105,7 +103,7 @@ class FakeIngestStorage:
         return BatchResult.ok(table_key, len(rows), duration_s=0.0)
 
     def delete_by_params(
-        self,
+        self: FakeIngestStorage,
         table_key: str,
         params: Sequence[object],
     ) -> int:
@@ -113,6 +111,8 @@ class FakeIngestStorage:
 
         Parameters
         ----------
+        self
+            Storage instance receiving the delete request.
         table_key
             Registry table key.
         params
@@ -129,7 +129,7 @@ class FakeIngestStorage:
         return 0
 
     def delete_by_paths(
-        self,
+        self: FakeIngestStorage,
         table_key: str,
         paths: Sequence[str],
         *,
@@ -139,6 +139,8 @@ class FakeIngestStorage:
 
         Parameters
         ----------
+        self
+            Storage instance receiving the delete request.
         table_key
             Registry table key.
         paths
@@ -161,7 +163,7 @@ class FakeIngestStorage:
         return 0
 
     def execute_query(
-        self,
+        self: FakeIngestStorage,
         sql: str,
         params: Sequence[object] | None = None,
     ) -> QueryResult:
@@ -169,6 +171,8 @@ class FakeIngestStorage:
 
         Parameters
         ----------
+        self
+            Storage instance executing the query.
         sql
             SQL query string.
         params
@@ -185,7 +189,7 @@ class FakeIngestStorage:
         return QueryResult.empty()
 
     def fetch_arrow_reader(
-        self,
+        self: FakeIngestStorage,
         sql: str,
         params: Sequence[object] | None = None,
         *,
@@ -228,6 +232,13 @@ def _table_key_from_sql(sql: str) -> str | None:
 def _empty_table(table_key: str) -> pa.Table:
     schema = contract_schema_for_table_key(table_key)
     return pa.Table.from_batches([], schema=schema)
+
+
+def _row_mapping(columns: Sequence[str], row: Sequence[object]) -> dict[str, object]:
+    if len(row) != len(columns):
+        msg = f"Row length does not match columns: {len(row)} != {len(columns)}"
+        raise ValueError(msg)
+    return dict(zip(columns, row, strict=True))
 
 
 __all__ = ["FakeIngestStorage"]

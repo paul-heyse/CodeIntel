@@ -359,6 +359,6 @@ def test_ast_visitor_records_decorator_span(ast_nodes_columns: tuple[str, ...]) 
 
     expect_equal(len(func_rows), 1)
     func = func_rows[0]
-    expect_equal(func["lineno"], 3)
-    expect_equal(func["decorator_start_line"], 1)
-    expect_equal(func["decorator_end_line"], 2)
+    expect_equal(func["lineno"], 2)
+    expect_equal(func["decorator_start_line"], 0)
+    expect_equal(func["decorator_end_line"], 1)

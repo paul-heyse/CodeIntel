@@ -1630,7 +1630,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "78d84997772e8dd2e1d14f5e01b524b73354c0d28df3d61671b8ca5d49fcb03d"
+          "7317bc608c565e3b035ee6c4ac0d401e22f5bab6b12e52b120a2d70a172613b6"
         ],
         "source_table_keys": [
           "graph.cdg_edges"
@@ -1643,7 +1643,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "a3b1ef27eedcd1b082b7c34cb17f1d45266278dc2966d4a285d041952ac5ee38"
+          "abecc514a78d18d64032a4c4fa248e83523ea823025b52156196c9e7dba6df99"
         ],
         "source_table_keys": [
           "graph.cfg_blocks"
@@ -1656,7 +1656,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "83f5e12505cbd2278102ea256ddf06c702f5d54ba0639f6444d5fc963877a3e3"
+          "0e52410c92dee9584d60c4cc653825421464ad7952e0718dba11e2c352b4b740"
         ],
         "source_table_keys": [
           "graph.cfg_edges"
@@ -1747,7 +1747,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "9c6f5586e18ca6c4980b407238c55fb30a39d63a8de53735985814a8b7a724ba"
+          "9f733851f41be18dea6e2e525945453d522094b80efb409ab65f2792e5aac4f1"
         ],
         "source_table_keys": [
           "graph.dfg_edges"
@@ -1773,7 +1773,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "a55d7c4087eda80c1444ad651b1002c5469f1586044e774a3fec80f36699a762"
+          "7b7f317716176e91271856a2225d0b0f37a220ec51143b6699eb43bf20c6aebe"
         ],
         "source_table_keys": [
           "graph.pdg_edges"
@@ -1786,7 +1786,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "9169c05ed8d7a35ae1a06d6bb49f33fa0d6e60ad4180dae265754d99a6e39a92"
+          "5cfad5a236d61bf5ca497b5c0b817704a46ed169482c5fd8a05420cdf10007f3"
         ],
         "source_table_keys": [
           "graph.symbol_use_edges"
@@ -3424,7 +3424,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "78d84997772e8dd2e1d14f5e01b524b73354c0d28df3d61671b8ca5d49fcb03d"
+          "7317bc608c565e3b035ee6c4ac0d401e22f5bab6b12e52b120a2d70a172613b6"
         ],
         "source_table_keys": [
           "graph.cdg_edges"
@@ -3437,7 +3437,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "a3b1ef27eedcd1b082b7c34cb17f1d45266278dc2966d4a285d041952ac5ee38"
+          "abecc514a78d18d64032a4c4fa248e83523ea823025b52156196c9e7dba6df99"
         ],
         "source_table_keys": [
           "graph.cfg_blocks"
@@ -3450,7 +3450,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "83f5e12505cbd2278102ea256ddf06c702f5d54ba0639f6444d5fc963877a3e3"
+          "0e52410c92dee9584d60c4cc653825421464ad7952e0718dba11e2c352b4b740"
         ],
         "source_table_keys": [
           "graph.cfg_edges"
@@ -3541,7 +3541,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "9c6f5586e18ca6c4980b407238c55fb30a39d63a8de53735985814a8b7a724ba"
+          "9f733851f41be18dea6e2e525945453d522094b80efb409ab65f2792e5aac4f1"
         ],
         "source_table_keys": [
           "graph.dfg_edges"
@@ -3567,7 +3567,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "a55d7c4087eda80c1444ad651b1002c5469f1586044e774a3fec80f36699a762"
+          "7b7f317716176e91271856a2225d0b0f37a220ec51143b6699eb43bf20c6aebe"
         ],
         "source_table_keys": [
           "graph.pdg_edges"
@@ -3580,7 +3580,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "9169c05ed8d7a35ae1a06d6bb49f33fa0d6e60ad4180dae265754d99a6e39a92"
+          "5cfad5a236d61bf5ca497b5c0b817704a46ed169482c5fd8a05420cdf10007f3"
         ],
         "source_table_keys": [
           "graph.symbol_use_edges"
@@ -18368,6 +18368,18 @@
       "columns": [
         {
           "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "function_goid_h128",
           "nullable": false,
           "type": "DECIMAL(38,0)"
@@ -18409,6 +18421,14 @@
       "indexes": [
         {
           "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_graph_cdg_edges_repo_commit",
+          "unique": false
+        },
+        {
+          "columns": [
             "function_goid_h128"
           ],
           "name": "idx_graph_cdg_edges_fn",
@@ -18422,11 +18442,23 @@
       "producer_target": "cdg",
       "producer_version": "1",
       "schema": "graph",
-      "schema_hash": "78d84997772e8dd2e1d14f5e01b524b73354c0d28df3d61671b8ca5d49fcb03d",
+      "schema_hash": "7317bc608c565e3b035ee6c4ac0d401e22f5bab6b12e52b120a2d70a172613b6",
       "table_key": "graph.cdg_edges"
     },
     {
       "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
         {
           "description": null,
           "name": "function_goid_h128",
@@ -18500,6 +18532,14 @@
       "indexes": [
         {
           "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_graph_cfg_blocks_repo_commit",
+          "unique": false
+        },
+        {
+          "columns": [
             "function_goid_h128"
           ],
           "name": "idx_graph_cfg_blocks_fn",
@@ -18509,6 +18549,8 @@
       "inference_status": "override",
       "name": "cfg_blocks",
       "primary_key": [
+        "repo",
+        "commit",
         "function_goid_h128",
         "block_idx"
       ],
@@ -18516,11 +18558,23 @@
       "producer_target": "cfg",
       "producer_version": "1",
       "schema": "graph",
-      "schema_hash": "a3b1ef27eedcd1b082b7c34cb17f1d45266278dc2966d4a285d041952ac5ee38",
+      "schema_hash": "abecc514a78d18d64032a4c4fa248e83523ea823025b52156196c9e7dba6df99",
       "table_key": "graph.cfg_blocks"
     },
     {
       "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
         {
           "description": null,
           "name": "function_goid_h128",
@@ -18552,6 +18606,14 @@
       "indexes": [
         {
           "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_graph_cfg_edges_repo_commit",
+          "unique": false
+        },
+        {
+          "columns": [
             "function_goid_h128"
           ],
           "name": "idx_graph_cfg_edges_fn",
@@ -18565,7 +18627,7 @@
       "producer_target": "cfg",
       "producer_version": "1",
       "schema": "graph",
-      "schema_hash": "83f5e12505cbd2278102ea256ddf06c702f5d54ba0639f6444d5fc963877a3e3",
+      "schema_hash": "0e52410c92dee9584d60c4cc653825421464ad7952e0718dba11e2c352b4b740",
       "table_key": "graph.cfg_edges"
     },
     {
@@ -19197,6 +19259,18 @@
       "columns": [
         {
           "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "function_goid_h128",
           "nullable": false,
           "type": "DECIMAL(38,0)"
@@ -19250,6 +19324,14 @@
       "indexes": [
         {
           "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_graph_dfg_edges_repo_commit",
+          "unique": false
+        },
+        {
+          "columns": [
             "function_goid_h128"
           ],
           "name": "idx_graph_dfg_edges_fn",
@@ -19263,7 +19345,7 @@
       "producer_target": "dfg",
       "producer_version": "1",
       "schema": "graph",
-      "schema_hash": "9c6f5586e18ca6c4980b407238c55fb30a39d63a8de53735985814a8b7a724ba",
+      "schema_hash": "9f733851f41be18dea6e2e525945453d522094b80efb409ab65f2792e5aac4f1",
       "table_key": "graph.dfg_edges"
     },
     {
@@ -19433,6 +19515,18 @@
       "columns": [
         {
           "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "function_goid_h128",
           "nullable": false,
           "type": "DECIMAL(38,0)"
@@ -19498,6 +19592,14 @@
       "indexes": [
         {
           "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_graph_pdg_edges_repo_commit",
+          "unique": false
+        },
+        {
+          "columns": [
             "function_goid_h128"
           ],
           "name": "idx_graph_pdg_edges_fn",
@@ -19511,11 +19613,23 @@
       "producer_target": "pdg",
       "producer_version": "1",
       "schema": "graph",
-      "schema_hash": "a55d7c4087eda80c1444ad651b1002c5469f1586044e774a3fec80f36699a762",
+      "schema_hash": "7b7f317716176e91271856a2225d0b0f37a220ec51143b6699eb43bf20c6aebe",
       "table_key": "graph.pdg_edges"
     },
     {
       "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
         {
           "description": null,
           "name": "symbol",
@@ -19565,6 +19679,14 @@
       "indexes": [
         {
           "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_graph_symbol_use_repo_commit",
+          "unique": false
+        },
+        {
+          "columns": [
             "symbol"
           ],
           "name": "idx_graph_symbol_use_symbol",
@@ -19574,6 +19696,8 @@
       "inference_status": "override",
       "name": "symbol_use_edges",
       "primary_key": [
+        "repo",
+        "commit",
         "symbol",
         "def_path",
         "use_path"
@@ -19582,7 +19706,7 @@
       "producer_target": "symbol_uses",
       "producer_version": "1",
       "schema": "graph",
-      "schema_hash": "9169c05ed8d7a35ae1a06d6bb49f33fa0d6e60ad4180dae265754d99a6e39a92",
+      "schema_hash": "5cfad5a236d61bf5ca497b5c0b817704a46ed169482c5fd8a05420cdf10007f3",
       "table_key": "graph.symbol_use_edges"
     },
     {

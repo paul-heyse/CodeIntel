@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.core.schemas.contract_primitives import DatasetContract
-from codeintel.storage.contracts.schema_provider import get_schema_provider
+from codeintel.storage.contracts.provider import get_contract_for_table_key
 from codeintel.storage.datasets.registry import DatasetRegistry
 from tests._helpers.schemas import ensure_storage_contract_catalog
 
@@ -23,40 +22,19 @@ def sample_dataset_registry(tmp_path: Path | None = None) -> DatasetRegistry:
     -------
     DatasetRegistry
         Registry containing a single ast_nodes dataset with file bindings.
-
-    Raises
-    ------
-    ValueError
-        If the schema registry is missing the requested table schema.
     """
     base_path = tmp_path if tmp_path is not None else Path.cwd()
     table_key = "core.ast_nodes"
     ensure_storage_contract_catalog()
-    provider = get_schema_provider()
-    table_schema = provider.get_table_schema(table_key)
-    if table_schema is None:
-        msg = f"Missing schema for {table_key}"
-        raise ValueError(msg)
-    contract = DatasetContract(
-        table_key=table_key,
-        name="ast_nodes",
-        schema=table_schema,
-        json_schema_id="ast_nodes",
-        jsonl_filename="ast_nodes.jsonl",
-        parquet_filename="ast_nodes.parquet",
-        owner="team-data",
-        freshness_sla="daily",
-        retention_policy="90d",
-        schema_version="1",
-        stable_id="ast_nodes",
-        upstream_dependencies=("core.modules",),
-        validation_profile="strict",
-    )
+    contract = get_contract_for_table_key(table_key)
+    jsonl_name = contract.jsonl_filename or f"{contract.name}.jsonl"
+    parquet_name = contract.parquet_filename or f"{contract.name}.parquet"
     return DatasetRegistry(
-        by_name={"ast_nodes": contract},
+        by_name={contract.name: contract},
         by_table_key={table_key: contract},
-        jsonl_datasets={table_key: str(base_path / "ast_nodes.jsonl")},
-        parquet_datasets={table_key: str(base_path / "ast_nodes.parquet")},
+        jsonl_datasets={table_key: str(base_path / jsonl_name)},
+        parquet_datasets={table_key: str(base_path / parquet_name)},
+        dataset_root_dir=base_path,
     )
 
 

@@ -363,7 +363,7 @@ def _ensure_search_documents(con: duckdb.DuckDBPyConnection, *, repo: str, commi
 def _write_registry(path: Path, *, views: list[dict[str, object]]) -> None:
     artifacts = HarnessArtifacts(
         repo_root=path.parent,
-        paths=BuildPaths.from_explicit(build_dir=path.parent),
+        paths=BuildPaths.from_repo_root(path.parent, build_dir=path.parent),
     )
     artifacts.write_semantic_registry(path=path, views=views)
 
@@ -371,7 +371,7 @@ def _write_registry(path: Path, *, views: list[dict[str, object]]) -> None:
 def _write_schema_manifest(path: Path, *, tables: list[dict[str, object]]) -> None:
     artifacts = HarnessArtifacts(
         repo_root=path.parent,
-        paths=BuildPaths.from_explicit(build_dir=path.parent),
+        paths=BuildPaths.from_repo_root(path.parent, build_dir=path.parent),
     )
     enriched = [_ensure_table_schema_hash(dict(table)) for table in tables]
     artifacts.write_schema_manifest(path=path, tables=enriched)
@@ -380,7 +380,7 @@ def _write_schema_manifest(path: Path, *, tables: list[dict[str, object]]) -> No
 def _write_buildspec(path: Path, *, tables: Iterable[dict[str, object]]) -> None:
     artifacts = HarnessArtifacts(
         repo_root=path.parent,
-        paths=BuildPaths.from_explicit(build_dir=path.parent),
+        paths=BuildPaths.from_repo_root(path.parent, build_dir=path.parent),
     )
     datasets = []
     for table in tables:
