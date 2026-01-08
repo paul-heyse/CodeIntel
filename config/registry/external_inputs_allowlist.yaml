@@ -1,2 +1,17 @@
 version: 1
-external_inputs: []
+external_inputs:
+  - table_key: "analytics.graph_validation"
+    reason: "Post-run dataset emitted outside the Hamilton DAG."
+    owner: "build"
+  - table_key: "analytics.py_cpg_quality_report"
+    reason: "Post-run dataset emitted outside the Hamilton DAG."
+    owner: "build"
+  - table_key: "analytics.scip_diagnostics_summary"
+    reason: "Post-run dataset emitted outside the Hamilton DAG."
+    owner: "build"
+  - table_key: "analytics.scip_diagnostics_by_file"
+    reason: "Post-run dataset emitted outside the Hamilton DAG."
+    owner: "build"
+  - table_key: "analytics.scip_diagnostics_top_messages"
+    reason: "Post-run dataset emitted outside the Hamilton DAG."
+    owner: "build"

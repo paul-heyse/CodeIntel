@@ -34,15 +34,22 @@ from codeintel.build.hamilton.observability import (
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.settings import get_arrow_scan_settings
 from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.core.datasets.arrow_store import scan_dataset
+from codeintel.core.datasets.arrow_store import (
+    ArrowDatasetWriteOptions,
+    scan_dataset,
+    write_dataset,
+)
 from codeintel.core.datasets.manifests import load_dataset_manifest
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.query_results import coerce_optional_int
+from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
@@ -51,6 +58,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 CACHE_LOG_KEY_TUPLE_LEN = 2
+CONTRACT_ALIGNMENT_SUMMARY_TABLE_KEY = "analytics.contract_alignment_summary"
 
 
 @dataclass(frozen=True)
@@ -272,6 +280,68 @@ def _write_contract_alignment_summary(
     _write_json(diag_dir / "contract_alignment_summary.json", payload)
 
 
+def persist_contract_alignment_summary(
+    *,
+    env: BuildEnv,
+    run_id: str,
+) -> bool:
+    """Persist the contract alignment summary as a dataset.
+
+    Returns
+    -------
+    bool
+        True when the dataset was written, otherwise False.
+    """
+    dataset_root = env.paths.dataset_root_dir
+    if dataset_root is None:
+        log.info("Contract alignment summary skipped; dataset_root_dir unavailable.")
+        return False
+    snapshot_id = env.commit.strip()
+    if not snapshot_id:
+        log.warning("Contract alignment summary skipped; snapshot_id missing.")
+        return False
+    if not run_id:
+        log.warning("Contract alignment summary skipped; run_id missing.")
+        return False
+
+    payload = _contract_alignment_payload(env=env, run_id=run_id)
+    status = payload.get("status")
+    if status not in {None, "ok"}:
+        log.warning("Contract alignment summary degraded; status=%s run_id=%s", status, run_id)
+    created_at = datetime.now(tz=UTC)
+    row = {
+        "repo": env.repo,
+        "commit": env.commit,
+        "run_id": run_id,
+        "issue_count": _coerce_count(payload.get("issue_count"), ctx="issue_count"),
+        "target_count": _coerce_count(payload.get("target_count"), ctx="target_count"),
+        "table_count": _coerce_count(payload.get("table_count"), ctx="table_count"),
+        "missing_total": _coerce_count(payload.get("missing_total"), ctx="missing_total"),
+        "extra_total": _coerce_count(payload.get("extra_total"), ctx="extra_total"),
+        "coerced_total": _coerce_count(payload.get("coerced_total"), ctx="coerced_total"),
+        "created_at": created_at,
+    }
+    table, _ = table_for_rows(CONTRACT_ALIGNMENT_SUMMARY_TABLE_KEY, [row])
+
+    schema_service = get_schema_service()
+    table_schema = schema_service.require_table_schema(CONTRACT_ALIGNMENT_SUMMARY_TABLE_KEY)
+    schema_hash_value = schema_hash(table_schema)
+    partition_columns = _partition_columns_for_schema(table_schema)
+    options = ArrowDatasetWriteOptions(
+        partition_columns=partition_columns,
+        schema_hash=schema_hash_value,
+        manifest_extras={"table_schema": table_schema.to_json_obj()},
+    )
+    write_dataset(
+        dataset_root=dataset_root,
+        table_key=CONTRACT_ALIGNMENT_SUMMARY_TABLE_KEY,
+        snapshot_id=snapshot_id,
+        data=table,
+        options=options,
+    )
+    return True
+
+
 @dataclass(slots=True)
 class _ContractAlignmentTotals:
     target_names: set[str] = field(default_factory=set)
@@ -483,6 +553,13 @@ def _coerce_count(value: object | None, *, ctx: str) -> int:
 
 def _coerce_optional_count(value: object | None, *, ctx: str) -> int | None:
     return coerce_optional_int(value, ctx=ctx)
+
+
+def _partition_columns_for_schema(table_schema: TableSchema) -> tuple[str, ...]:
+    names = set(table_schema.column_names())
+    if "repo" in names and "commit" in names:
+        return ("repo", "commit")
+    return ()
 
 
 def _write_empty_dataset_issues(
@@ -1323,4 +1400,5 @@ def _ensure_dir(path: Path) -> Path:
 __all__ = [
     "diagnostics_dir",
     "emit_diagnostics",
+    "persist_contract_alignment_summary",
 ]

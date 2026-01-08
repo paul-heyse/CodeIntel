@@ -105,6 +105,19 @@
       "table_key": "analytics.config_projection_module_edges"
     },
     {
+      "filename": "config_references.jsonl",
+      "kind": "jsonl",
+      "provenance": {
+        "source_schema_hashes": [
+          "3f8650ed664e17a847b63e1d03a13599e1cf442b915a3d411400bb0b94f17be9"
+        ],
+        "source_table_keys": [
+          "analytics.config_references"
+        ]
+      },
+      "table_key": "analytics.config_references"
+    },
+    {
       "filename": "config_values.jsonl",
       "kind": "jsonl",
       "provenance": {
@@ -116,6 +129,19 @@
         ]
       },
       "table_key": "analytics.config_values"
+    },
+    {
+      "filename": "contract_alignment_summary.jsonl",
+      "kind": "jsonl",
+      "provenance": {
+        "source_schema_hashes": [
+          "5cddc655c62f1f7bbb3a14fb4c4496ca52297c632b7379ef1d2a203817c7f6c8"
+        ],
+        "source_table_keys": [
+          "analytics.contract_alignment_summary"
+        ]
+      },
+      "table_key": "analytics.contract_alignment_summary"
     },
     {
       "filename": "data_model_fields.jsonl",
@@ -430,19 +456,6 @@
       "table_key": "analytics.graph_stats"
     },
     {
-      "filename": "graph_validation.jsonl",
-      "kind": "jsonl",
-      "provenance": {
-        "source_schema_hashes": [
-          "75e2b00a8db1593227785a15cd1f96dc0a615f8550f156fb2e8303749a2f2deb"
-        ],
-        "source_table_keys": [
-          "analytics.graph_validation"
-        ]
-      },
-      "table_key": "analytics.graph_validation"
-    },
-    {
       "filename": "hello_example.jsonl",
       "kind": "jsonl",
       "provenance": {
@@ -495,17 +508,56 @@
       "table_key": "analytics.module_profile"
     },
     {
-      "filename": "py_cpg_quality_report.jsonl",
+      "filename": "scip_diagnostics_by_file.jsonl",
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "9e7926f76d2cf0afb8b073639afbbece0c7f568fdd1bfbafa94c048f6d6ada34"
+          "1dfd421d6c9ab1da2762069a7ecaca98bfd27c88219f3443624887c6751f36f6"
         ],
         "source_table_keys": [
-          "analytics.py_cpg_quality_report"
+          "analytics.scip_diagnostics_by_file"
         ]
       },
-      "table_key": "analytics.py_cpg_quality_report"
+      "table_key": "analytics.scip_diagnostics_by_file"
+    },
+    {
+      "filename": "scip_diagnostics_summary.jsonl",
+      "kind": "jsonl",
+      "provenance": {
+        "source_schema_hashes": [
+          "71dadf5abf5595ea10a3ccd72b336c2ddebf795cc074c6f48bca1a8c3ac5f83e"
+        ],
+        "source_table_keys": [
+          "analytics.scip_diagnostics_summary"
+        ]
+      },
+      "table_key": "analytics.scip_diagnostics_summary"
+    },
+    {
+      "filename": "scip_diagnostics_top_messages.jsonl",
+      "kind": "jsonl",
+      "provenance": {
+        "source_schema_hashes": [
+          "f4ab9e5c54dcdd6ab8042bdd3fc4d271d08fa044208932645b3207ca866a251f"
+        ],
+        "source_table_keys": [
+          "analytics.scip_diagnostics_top_messages"
+        ]
+      },
+      "table_key": "analytics.scip_diagnostics_top_messages"
+    },
+    {
+      "filename": "scip_external_symbol_usage.jsonl",
+      "kind": "jsonl",
+      "provenance": {
+        "source_schema_hashes": [
+          "a730b9c7f6fa56b516325be3dcdbbd132a0efb1088959c3f7b5211253f6ee098"
+        ],
+        "source_table_keys": [
+          "analytics.scip_external_symbol_usage"
+        ]
+      },
+      "table_key": "analytics.scip_external_symbol_usage"
     },
     {
       "filename": "semantic_roles_functions.jsonl",
@@ -1145,11 +1197,24 @@
       "table_key": "core.scip_external_symbols"
     },
     {
+      "filename": "scip_index_metadata.jsonl",
+      "kind": "jsonl",
+      "provenance": {
+        "source_schema_hashes": [
+          "b109ff08e21fce4fb89caff4ee89aa8740fe9dc689f341fa9e617c61572ec411"
+        ],
+        "source_table_keys": [
+          "core.scip_index_metadata"
+        ]
+      },
+      "table_key": "core.scip_index_metadata"
+    },
+    {
       "filename": "scip_module_state.jsonl",
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "3f65d61fa1b0f4e78dfe5cb40632786f65d836c95a4b730dd8053ea4efc3cc96"
+          "0ab9911026d039a120e0ece19ce3f729feb259f7c3416f54b0b7ba0e3a9a25a6"
         ],
         "source_table_keys": [
           "core.scip_module_state"
@@ -1162,7 +1227,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "1dd982cd6131450bdeb034b1a25a008dd8291011882230a615ed3bff503d9b8a"
+          "32218eee8c75ae075e3ea255deb0f8b05eaab1a6efeaff0de8f887af45cc0dd8"
         ],
         "source_table_keys": [
           "core.scip_occurrence_span_xref"
@@ -1253,7 +1318,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "4c8f6d719295a38fa629a79d9a867c3573a018ec6f7c418ba1cfb0142ef8dd55"
+          "1773a2c134c039f79511a5d6c2a093e61f26aa1fe354ec2a1410ca6d2c34c128"
         ],
         "source_table_keys": [
           "core.syntax_calls_resolved"
@@ -1279,7 +1344,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "e5184122894633726b5d95b740d8fa1d5721243b696ff0a51846a0af79b44302"
+          "2ab1f9ec1be04133cd770d1f80a98f580c2f6871895d5b6854c97b04b1c8dc6f"
         ],
         "source_table_keys": [
           "core.syntax_defs_resolved"
@@ -1344,7 +1409,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "347bcfea685aae3a6f49329803d23fed3755f3c8af935dbb4b57c5661a269a51"
+          "53393cbab910a53907647d3d0932b3e9703f16037299153d99983f8520072ed3"
         ],
         "source_table_keys": [
           "core.syntax_imports_resolved"
@@ -1396,7 +1461,7 @@
       "kind": "jsonl",
       "provenance": {
         "source_schema_hashes": [
-          "df33281960b5bca21c63f87861eef747b2ba61daa672b09c31fb189edfd1b7da"
+          "e95780ec4c332c75788472f4f75b21178fe1a187f87fa228f853de898a57180c"
         ],
         "source_table_keys": [
           "core.syntax_refs_resolved"
@@ -1899,6 +1964,19 @@
       "table_key": "analytics.config_projection_module_edges"
     },
     {
+      "filename": "config_references.parquet",
+      "kind": "parquet",
+      "provenance": {
+        "source_schema_hashes": [
+          "3f8650ed664e17a847b63e1d03a13599e1cf442b915a3d411400bb0b94f17be9"
+        ],
+        "source_table_keys": [
+          "analytics.config_references"
+        ]
+      },
+      "table_key": "analytics.config_references"
+    },
+    {
       "filename": "config_values.parquet",
       "kind": "parquet",
       "provenance": {
@@ -1910,6 +1988,19 @@
         ]
       },
       "table_key": "analytics.config_values"
+    },
+    {
+      "filename": "contract_alignment_summary.parquet",
+      "kind": "parquet",
+      "provenance": {
+        "source_schema_hashes": [
+          "5cddc655c62f1f7bbb3a14fb4c4496ca52297c632b7379ef1d2a203817c7f6c8"
+        ],
+        "source_table_keys": [
+          "analytics.contract_alignment_summary"
+        ]
+      },
+      "table_key": "analytics.contract_alignment_summary"
     },
     {
       "filename": "data_model_fields.parquet",
@@ -2224,19 +2315,6 @@
       "table_key": "analytics.graph_stats"
     },
     {
-      "filename": "graph_validation.parquet",
-      "kind": "parquet",
-      "provenance": {
-        "source_schema_hashes": [
-          "75e2b00a8db1593227785a15cd1f96dc0a615f8550f156fb2e8303749a2f2deb"
-        ],
-        "source_table_keys": [
-          "analytics.graph_validation"
-        ]
-      },
-      "table_key": "analytics.graph_validation"
-    },
-    {
       "filename": "hello_example.parquet",
       "kind": "parquet",
       "provenance": {
@@ -2289,17 +2367,56 @@
       "table_key": "analytics.module_profile"
     },
     {
-      "filename": "py_cpg_quality_report.parquet",
+      "filename": "scip_diagnostics_by_file.parquet",
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "9e7926f76d2cf0afb8b073639afbbece0c7f568fdd1bfbafa94c048f6d6ada34"
+          "1dfd421d6c9ab1da2762069a7ecaca98bfd27c88219f3443624887c6751f36f6"
         ],
         "source_table_keys": [
-          "analytics.py_cpg_quality_report"
+          "analytics.scip_diagnostics_by_file"
         ]
       },
-      "table_key": "analytics.py_cpg_quality_report"
+      "table_key": "analytics.scip_diagnostics_by_file"
+    },
+    {
+      "filename": "scip_diagnostics_summary.parquet",
+      "kind": "parquet",
+      "provenance": {
+        "source_schema_hashes": [
+          "71dadf5abf5595ea10a3ccd72b336c2ddebf795cc074c6f48bca1a8c3ac5f83e"
+        ],
+        "source_table_keys": [
+          "analytics.scip_diagnostics_summary"
+        ]
+      },
+      "table_key": "analytics.scip_diagnostics_summary"
+    },
+    {
+      "filename": "scip_diagnostics_top_messages.parquet",
+      "kind": "parquet",
+      "provenance": {
+        "source_schema_hashes": [
+          "f4ab9e5c54dcdd6ab8042bdd3fc4d271d08fa044208932645b3207ca866a251f"
+        ],
+        "source_table_keys": [
+          "analytics.scip_diagnostics_top_messages"
+        ]
+      },
+      "table_key": "analytics.scip_diagnostics_top_messages"
+    },
+    {
+      "filename": "scip_external_symbol_usage.parquet",
+      "kind": "parquet",
+      "provenance": {
+        "source_schema_hashes": [
+          "a730b9c7f6fa56b516325be3dcdbbd132a0efb1088959c3f7b5211253f6ee098"
+        ],
+        "source_table_keys": [
+          "analytics.scip_external_symbol_usage"
+        ]
+      },
+      "table_key": "analytics.scip_external_symbol_usage"
     },
     {
       "filename": "semantic_roles_functions.parquet",
@@ -2939,11 +3056,24 @@
       "table_key": "core.scip_external_symbols"
     },
     {
+      "filename": "scip_index_metadata.parquet",
+      "kind": "parquet",
+      "provenance": {
+        "source_schema_hashes": [
+          "b109ff08e21fce4fb89caff4ee89aa8740fe9dc689f341fa9e617c61572ec411"
+        ],
+        "source_table_keys": [
+          "core.scip_index_metadata"
+        ]
+      },
+      "table_key": "core.scip_index_metadata"
+    },
+    {
       "filename": "scip_module_state.parquet",
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "3f65d61fa1b0f4e78dfe5cb40632786f65d836c95a4b730dd8053ea4efc3cc96"
+          "0ab9911026d039a120e0ece19ce3f729feb259f7c3416f54b0b7ba0e3a9a25a6"
         ],
         "source_table_keys": [
           "core.scip_module_state"
@@ -2956,7 +3086,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "1dd982cd6131450bdeb034b1a25a008dd8291011882230a615ed3bff503d9b8a"
+          "32218eee8c75ae075e3ea255deb0f8b05eaab1a6efeaff0de8f887af45cc0dd8"
         ],
         "source_table_keys": [
           "core.scip_occurrence_span_xref"
@@ -3047,7 +3177,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "4c8f6d719295a38fa629a79d9a867c3573a018ec6f7c418ba1cfb0142ef8dd55"
+          "1773a2c134c039f79511a5d6c2a093e61f26aa1fe354ec2a1410ca6d2c34c128"
         ],
         "source_table_keys": [
           "core.syntax_calls_resolved"
@@ -3073,7 +3203,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "e5184122894633726b5d95b740d8fa1d5721243b696ff0a51846a0af79b44302"
+          "2ab1f9ec1be04133cd770d1f80a98f580c2f6871895d5b6854c97b04b1c8dc6f"
         ],
         "source_table_keys": [
           "core.syntax_defs_resolved"
@@ -3138,7 +3268,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "347bcfea685aae3a6f49329803d23fed3755f3c8af935dbb4b57c5661a269a51"
+          "53393cbab910a53907647d3d0932b3e9703f16037299153d99983f8520072ed3"
         ],
         "source_table_keys": [
           "core.syntax_imports_resolved"
@@ -3190,7 +3320,7 @@
       "kind": "parquet",
       "provenance": {
         "source_schema_hashes": [
-          "df33281960b5bca21c63f87861eef747b2ba61daa672b09c31fb189edfd1b7da"
+          "e95780ec4c332c75788472f4f75b21178fe1a187f87fa228f853de898a57180c"
         ],
         "source_table_keys": [
           "core.syntax_refs_resolved"
@@ -4376,6 +4506,76 @@
       "schema": "analytics",
       "schema_hash": "b1285f435ae72dce5a804b0010aebf92e3ef3b0a0ce04617fe7267945bd7d2ca",
       "table_key": "analytics.config_projection_module_edges"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "config_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "key",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "reference_paths",
+          "nullable": true,
+          "type": "BLOB"
+        },
+        {
+          "description": null,
+          "name": "reference_modules",
+          "nullable": true,
+          "type": "BLOB"
+        },
+        {
+          "description": null,
+          "name": "reference_count",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "derivation_kind": "inferred_relation",
+      "derivation_source": "config_references",
+      "description": "Config key references derived from module AST scanning.",
+      "indexes": [],
+      "inference_status": "inferred",
+      "name": "config_references",
+      "primary_key": [
+        "repo",
+        "commit",
+        "config_path",
+        "key"
+      ],
+      "producer_module": "analytics",
+      "producer_target": "config_references",
+      "producer_version": "1",
+      "schema": "analytics",
+      "schema_hash": "3f8650ed664e17a847b63e1d03a13599e1cf442b915a3d411400bb0b94f17be9",
+      "table_key": "analytics.config_references"
     },
     {
       "columns": [
@@ -6951,45 +7151,27 @@
         },
         {
           "description": null,
-          "name": "graph_name",
+          "name": "package_manager",
           "nullable": false,
           "type": "VARCHAR"
         },
         {
           "description": null,
-          "name": "entity_id",
+          "name": "package_name",
           "nullable": false,
           "type": "VARCHAR"
         },
         {
           "description": null,
-          "name": "issue",
+          "name": "package_version",
           "nullable": false,
           "type": "VARCHAR"
         },
         {
           "description": null,
-          "name": "severity",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "rel_path",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "detail",
+          "name": "symbol_count",
           "nullable": false,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "metadata",
-          "nullable": true,
-          "type": "BLOB"
+          "type": "INTEGER"
         },
         {
           "description": null,
@@ -6999,176 +7181,24 @@
         }
       ],
       "derivation_kind": "inferred_relation",
-      "derivation_source": "graph_validation",
-      "description": "Validation findings for analytics graph consistency checks",
-      "indexes": [
-        {
-          "columns": [
-            "repo",
-            "commit"
-          ],
-          "name": "idx_graph_validation_repo_commit",
-          "unique": false
-        }
-      ],
+      "derivation_source": "scip_external_symbol_usage",
+      "description": "Aggregated external symbol usage derived from SCIP external symbols.",
+      "indexes": [],
       "inference_status": "inferred",
-      "name": "graph_validation",
+      "name": "scip_external_symbol_usage",
       "primary_key": [
         "repo",
         "commit",
-        "graph_name",
-        "entity_id",
-        "issue"
+        "package_manager",
+        "package_name",
+        "package_version"
       ],
       "producer_module": "analytics",
-      "producer_target": "graph_validation",
+      "producer_target": "scip_external_symbol_usage",
       "producer_version": "1",
       "schema": "analytics",
-      "schema_hash": "75e2b00a8db1593227785a15cd1f96dc0a615f8550f156fb2e8303749a2f2deb",
-      "table_key": "analytics.graph_validation"
-    },
-    {
-      "columns": [
-        {
-          "description": null,
-          "name": "repo",
-          "nullable": false,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "commit",
-          "nullable": false,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "run_id",
-          "nullable": false,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "instruction_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "instruction_anchored_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "instruction_anchor_rate",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "sym_scope_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "sym_scope_anchored_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "sym_scope_anchor_rate",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "cfg_block_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "cfg_reachable_block_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "cfg_reachability_rate",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "defuse_event_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "defuse_edge_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "defuse_resolution_rate",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "inspect_object_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "inspect_anchored_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "inspect_anchor_rate",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "created_at",
-          "nullable": true,
-          "type": "TIMESTAMP"
-        }
-      ],
-      "derivation_kind": "explicit_override",
-      "derivation_source": "py_cpg_quality_report",
-      "description": "Run-level quality metrics for Python CPG extraction.",
-      "indexes": [
-        {
-          "columns": [
-            "run_id"
-          ],
-          "name": "idx_analytics_py_cpg_quality_run_id",
-          "unique": false
-        }
-      ],
-      "inference_status": "override",
-      "name": "py_cpg_quality_report",
-      "primary_key": [
-        "repo",
-        "commit",
-        "run_id"
-      ],
-      "producer_module": "analytics",
-      "producer_target": "py_cpg_quality_report",
-      "producer_version": "1",
-      "schema": "analytics",
-      "schema_hash": "9e7926f76d2cf0afb8b073639afbbece0c7f568fdd1bfbafa94c048f6d6ada34",
-      "table_key": "analytics.py_cpg_quality_report"
+      "schema_hash": "a730b9c7f6fa56b516325be3dcdbbd132a0efb1088959c3f7b5211253f6ee098",
+      "table_key": "analytics.scip_external_symbol_usage"
     },
     {
       "columns": [
@@ -12216,6 +12246,84 @@
         },
         {
           "description": null,
+          "name": "project_root",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "text_document_encoding",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "tool_name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "tool_version",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "tool_arguments",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "derivation_kind": "explicit_override",
+      "derivation_source": "scip",
+      "description": "Metadata recorded from SCIP index headers",
+      "indexes": [
+        {
+          "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_core_scip_index_metadata_repo_commit",
+          "unique": false
+        }
+      ],
+      "inference_status": "override",
+      "name": "scip_index_metadata",
+      "primary_key": [
+        "repo",
+        "commit",
+        "created_at"
+      ],
+      "producer_module": "ingestion",
+      "producer_target": "scip",
+      "producer_version": "1",
+      "schema": "core",
+      "schema_hash": "b109ff08e21fce4fb89caff4ee89aa8740fe9dc689f341fa9e617c61572ec411",
+      "table_key": "core.scip_index_metadata"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "rel_path",
           "nullable": false,
           "type": "VARCHAR"
@@ -12235,6 +12343,12 @@
         {
           "description": null,
           "name": "tool_version",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "environment_source",
           "nullable": true,
           "type": "VARCHAR"
         },
@@ -12282,7 +12396,7 @@
       "producer_target": "scip",
       "producer_version": "1",
       "schema": "core",
-      "schema_hash": "3f65d61fa1b0f4e78dfe5cb40632786f65d836c95a4b730dd8053ea4efc3cc96",
+      "schema_hash": "0ab9911026d039a120e0ece19ce3f729feb259f7c3416f54b0b7ba0e3a9a25a6",
       "table_key": "core.scip_module_state"
     },
     {
@@ -12319,6 +12433,12 @@
         },
         {
           "description": null,
+          "name": "syntax_kind",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
           "name": "is_definition",
           "nullable": false,
           "type": "BOOLEAN"
@@ -12350,6 +12470,12 @@
         {
           "description": null,
           "name": "enclosing_symbol",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "documentation",
           "nullable": true,
           "type": "VARCHAR"
         },
@@ -12456,7 +12582,7 @@
       "producer_target": "scip_resolution",
       "producer_version": "1",
       "schema": "core",
-      "schema_hash": "1dd982cd6131450bdeb034b1a25a008dd8291011882230a615ed3bff503d9b8a",
+      "schema_hash": "32218eee8c75ae075e3ea255deb0f8b05eaab1a6efeaff0de8f887af45cc0dd8",
       "table_key": "core.scip_occurrence_span_xref"
     },
     {
@@ -12638,6 +12764,42 @@
         },
         {
           "description": null,
+          "name": "syntax_kind",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "enclosing_start_line",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "enclosing_start_col",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "enclosing_end_line",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "enclosing_end_col",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "override_documentation",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "position_encoding",
           "nullable": true,
           "type": "INTEGER"
@@ -12700,7 +12862,7 @@
       "producer_target": "scip",
       "producer_version": "1",
       "schema": "core",
-      "schema_hash": "8ea592963e6986478b832655c7a4224c9588d62f12ee53a908b9ee66cd2ab607",
+      "schema_hash": "735a185abe95864302cd56a7347315d8c2f3a5e91b5716fafa8f3d8875424b4e",
       "table_key": "core.scip_occurrences"
     },
     {
@@ -13444,6 +13606,18 @@
         },
         {
           "description": null,
+          "name": "syntax_kind",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "documentation",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "is_definition",
           "nullable": true,
           "type": "BOOLEAN"
@@ -13520,7 +13694,7 @@
       "producer_target": "syntax_enrich",
       "producer_version": "1",
       "schema": "core",
-      "schema_hash": "4c8f6d719295a38fa629a79d9a867c3573a018ec6f7c418ba1cfb0142ef8dd55",
+      "schema_hash": "1773a2c134c039f79511a5d6c2a093e61f26aa1fe354ec2a1410ca6d2c34c128",
       "table_key": "core.syntax_calls_resolved"
     },
     {
@@ -13754,6 +13928,18 @@
         },
         {
           "description": null,
+          "name": "syntax_kind",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "documentation",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "is_definition",
           "nullable": true,
           "type": "BOOLEAN"
@@ -13830,7 +14016,7 @@
       "producer_target": "syntax_enrich",
       "producer_version": "1",
       "schema": "core",
-      "schema_hash": "e5184122894633726b5d95b740d8fa1d5721243b696ff0a51846a0af79b44302",
+      "schema_hash": "2ab1f9ec1be04133cd770d1f80a98f580c2f6871895d5b6854c97b04b1c8dc6f",
       "table_key": "core.syntax_defs_resolved"
     },
     {
@@ -14392,6 +14578,18 @@
         },
         {
           "description": null,
+          "name": "syntax_kind",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "documentation",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "is_definition",
           "nullable": true,
           "type": "BOOLEAN"
@@ -14468,7 +14666,7 @@
       "producer_target": "syntax_enrich",
       "producer_version": "1",
       "schema": "core",
-      "schema_hash": "347bcfea685aae3a6f49329803d23fed3755f3c8af935dbb4b57c5661a269a51",
+      "schema_hash": "53393cbab910a53907647d3d0932b3e9703f16037299153d99983f8520072ed3",
       "table_key": "core.syntax_imports_resolved"
     },
     {
@@ -14940,6 +15138,18 @@
         },
         {
           "description": null,
+          "name": "syntax_kind",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "documentation",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "is_definition",
           "nullable": true,
           "type": "BOOLEAN"
@@ -15016,7 +15226,7 @@
       "producer_target": "syntax_enrich",
       "producer_version": "1",
       "schema": "core",
-      "schema_hash": "df33281960b5bca21c63f87861eef747b2ba61daa672b09c31fb189edfd1b7da",
+      "schema_hash": "e95780ec4c332c75788472f4f75b21178fe1a187f87fa228f853de898a57180c",
       "table_key": "core.syntax_refs_resolved"
     },
     {

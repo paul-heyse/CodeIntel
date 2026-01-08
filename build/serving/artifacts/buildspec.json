@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "2a8d9752ac7a02ad167096bc71629fb4d2fc27a6bd880e466252d1096985aae7",
+  "buildspec_hash": "037e1e862fe1003bffb47f0e4bd8f31cbd1656ee5f7d176c5acb3cbfc0712ef4",
   "datasets": [
     {
       "schema_hash": "bfd52893bcac939b2dcdbb656760191635dc5e27a83cc07d5173e5fd82e7860d",
@@ -32,6 +32,10 @@
     {
       "schema_hash": "b1285f435ae72dce5a804b0010aebf92e3ef3b0a0ce04617fe7267945bd7d2ca",
       "table_key": "analytics.config_projection_module_edges"
+    },
+    {
+      "schema_hash": "3f8650ed664e17a847b63e1d03a13599e1cf442b915a3d411400bb0b94f17be9",
+      "table_key": "analytics.config_references"
     },
     {
       "schema_hash": "26739bd1a32cbbcbe91bdf9445e4c2e2f70de1d37dabb0a8746ab5696e53668e",
@@ -122,12 +126,8 @@
       "table_key": "analytics.graph_stats"
     },
     {
-      "schema_hash": "75e2b00a8db1593227785a15cd1f96dc0a615f8550f156fb2e8303749a2f2deb",
-      "table_key": "analytics.graph_validation"
-    },
-    {
-      "schema_hash": "9e7926f76d2cf0afb8b073639afbbece0c7f568fdd1bfbafa94c048f6d6ada34",
-      "table_key": "analytics.py_cpg_quality_report"
+      "schema_hash": "a730b9c7f6fa56b516325be3dcdbbd132a0efb1088959c3f7b5211253f6ee098",
+      "table_key": "analytics.scip_external_symbol_usage"
     },
     {
       "schema_hash": "8a2c6db931a1f1aa5290dd2c9e4c331aefd0172f51f33762f3906ddcf3bfc366",
@@ -330,11 +330,15 @@
       "table_key": "core.scip_external_symbols"
     },
     {
-      "schema_hash": "3f65d61fa1b0f4e78dfe5cb40632786f65d836c95a4b730dd8053ea4efc3cc96",
+      "schema_hash": "b109ff08e21fce4fb89caff4ee89aa8740fe9dc689f341fa9e617c61572ec411",
+      "table_key": "core.scip_index_metadata"
+    },
+    {
+      "schema_hash": "0ab9911026d039a120e0ece19ce3f729feb259f7c3416f54b0b7ba0e3a9a25a6",
       "table_key": "core.scip_module_state"
     },
     {
-      "schema_hash": "1dd982cd6131450bdeb034b1a25a008dd8291011882230a615ed3bff503d9b8a",
+      "schema_hash": "32218eee8c75ae075e3ea255deb0f8b05eaab1a6efeaff0de8f887af45cc0dd8",
       "table_key": "core.scip_occurrence_span_xref"
     },
     {
@@ -342,7 +346,7 @@
       "table_key": "core.scip_occurrence_syntax_xref"
     },
     {
-      "schema_hash": "8ea592963e6986478b832655c7a4224c9588d62f12ee53a908b9ee66cd2ab607",
+      "schema_hash": "735a185abe95864302cd56a7347315d8c2f3a5e91b5716fafa8f3d8875424b4e",
       "table_key": "core.scip_occurrences"
     },
     {
@@ -370,7 +374,7 @@
       "table_key": "core.syntax_calls"
     },
     {
-      "schema_hash": "3c9df545872ed277fe83da6e6a9cc3d4706e1f284139bbf72597de01ec933194",
+      "schema_hash": "1119f24e63acb737a9d71ee50d0c2161d7e11b1c55a82fffe627238184a4f2ef",
       "table_key": "core.syntax_calls_resolved"
     },
     {
@@ -378,7 +382,7 @@
       "table_key": "core.syntax_defs"
     },
     {
-      "schema_hash": "8d8841d05ca61ded35196691b85078802358dc741a05f357960f36e34fe834b6",
+      "schema_hash": "a3e62b4e701081249ae3e17578f28eef13fe2f16c25934b101100634c205f31b",
       "table_key": "core.syntax_defs_resolved"
     },
     {
@@ -398,7 +402,7 @@
       "table_key": "core.syntax_imports"
     },
     {
-      "schema_hash": "5614c23ff80f8c757a1801fb7f1d287aed82daab4093845a2d421834803a1576",
+      "schema_hash": "57f933e470806de8e0d1f90d13e4f871b95ed5756afd95b0b4f98439845a520d",
       "table_key": "core.syntax_imports_resolved"
     },
     {
@@ -414,7 +418,7 @@
       "table_key": "core.syntax_refs"
     },
     {
-      "schema_hash": "bf86f9b9d58aa533ebe18bf82a1ebbfae0ba70c55923e070d8adfa33da9bb6fc",
+      "schema_hash": "1d988763d4f29ef424e8bfcd2a11e7a79bc00eb48c0f9cfafb59b38f6727934c",
       "table_key": "core.syntax_refs_resolved"
     },
     {
@@ -778,6 +782,18 @@
     {
       "artifacts": [],
       "deps": [
+        "scip"
+      ],
+      "domain": "analytics",
+      "impl_kind": "native",
+      "name": "config_references",
+      "outputs": [
+        "analytics.config_references"
+      ]
+    },
+    {
+      "artifacts": [],
+      "deps": [
         "modules",
         "scip",
         "scip_proto"
@@ -1054,16 +1070,6 @@
     },
     {
       "artifacts": [],
-      "deps": [],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "graph_validation",
-      "outputs": [
-        "analytics.graph_validation"
-      ]
-    },
-    {
-      "artifacts": [],
       "deps": [
         "scip"
       ],
@@ -1122,20 +1128,6 @@
       ]
     },
     {
-      "artifacts": [],
-      "deps": [
-        "modules",
-        "scip",
-        "scip_proto"
-      ],
-      "domain": "analytics",
-      "impl_kind": "native",
-      "name": "py_cpg_quality_report",
-      "outputs": [
-        "analytics.py_cpg_quality_report"
-      ]
-    },
-    {
       "artifacts": [
         {
           "kind": null,
@@ -1153,6 +1145,7 @@
       "outputs": [
         "core.scip_diagnostics",
         "core.scip_external_symbols",
+        "core.scip_index_metadata",
         "core.scip_module_state",
         "core.scip_occurrences",
         "core.scip_symbol_information",
@@ -1161,11 +1154,30 @@
       ]
     },
     {
+      "artifacts": [],
+      "deps": [
+        "modules",
+        "scip",
+        "scip_proto"
+      ],
+      "domain": "analytics",
+      "impl_kind": "native",
+      "name": "scip_external_symbol_usage",
+      "outputs": [
+        "analytics.scip_external_symbol_usage"
+      ]
+    },
+    {
       "artifacts": [
         {
           "kind": null,
           "name": "scip_pb2",
           "path_template": "{scip_dir}/proto/scip_pb2.py"
+        },
+        {
+          "kind": null,
+          "name": "scip_pb2_pyi",
+          "path_template": "{scip_dir}/proto/scip_pb2.pyi"
         }
       ],
       "deps": [],

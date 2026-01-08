@@ -293,14 +293,16 @@ def _goids_table(goids: InferableTabularInput) -> pa.Table:
     return safe_filter(table, mask)
 
 
-def _definition_anchors_table(defs_resolved: InferableTabularInput) -> pa.Table:
-    table = tabular_to_scoped_table(
-        defs_resolved,
+def _definition_anchors_table(
+    defs: InferableTabularInput,
+    goids: InferableTabularInput,
+) -> pa.Table:
+    defs_table = tabular_to_scoped_table(
+        defs,
         columns=[
             "repo",
             "commit",
             "rel_path",
-            "goid_h128",
             "start_line",
             "start_col",
             "end_line",
@@ -311,10 +313,39 @@ def _definition_anchors_table(defs_resolved: InferableTabularInput) -> pa.Table:
         scope=None,
         require_scope_columns=False,
     )
-    table = _cast_int32(table, ["start_line", "start_col", "end_line", "end_col"])
-    if table.num_rows == 0:
-        return table
-    return safe_filter(table, is_valid_mask(table["goid_h128"]))
+    goids_table = tabular_to_scoped_table(
+        goids,
+        columns=[
+            "repo",
+            "commit",
+            "rel_path",
+            "start_line",
+            "end_line",
+            "goid_h128",
+        ],
+        scope=None,
+        require_scope_columns=False,
+    )
+    defs_table = _cast_int32(defs_table, ["start_line", "start_col", "end_line", "end_col"])
+    goids_table = _cast_int32(goids_table, ["start_line", "end_line"])
+    if defs_table.num_rows == 0 or goids_table.num_rows == 0:
+        goid_type = _goid_type_for_table(goids_table)
+        return _append_null_column(defs_table, "goid_h128", goid_type)
+    join_spec = ArrowJoinSpec(
+        left_on=["repo", "commit", "rel_path", "start_line", "end_line"],
+        right_on=["repo", "commit", "rel_path", "start_line", "end_line"],
+        how="left",
+        validate="m:1",
+    )
+    joined = arrow_join_tables(
+        defs_table,
+        goids_table,
+        spec=join_spec,
+        options=build_join_options(defs_table, goids_table),
+    )
+    if "goid_h128" not in joined.column_names:
+        return joined
+    return safe_filter(joined, is_valid_mask(joined["goid_h128"]))
 
 
 def _occurrences_table(occurrences: InferableTabularInput) -> pa.Table:
@@ -882,7 +913,7 @@ def scip_resolution__frames(
     q__core__scip_occurrences: InferableTabularInput,
     q__core__scip_symbol_information: InferableTabularInput,
     q__core__goids: InferableTabularInput,
-    q__core__syntax_defs_resolved: InferableTabularInput,
+    q__core__syntax_defs: InferableTabularInput,
 ) -> ScipResolutionFrames:
     """Build base SCIP resolution frames.
 
@@ -895,7 +926,7 @@ def scip_resolution__frames(
     occurrences = _occurrences_table(q__core__scip_occurrences)
     symbol_info = _symbol_info_table(q__core__scip_symbol_information)
     goids = _goids_table(q__core__goids)
-    anchors = _definition_anchors_table(q__core__syntax_defs_resolved)
+    anchors = _definition_anchors_table(q__core__syntax_defs, q__core__goids)
     symbol_goid_xref = _symbol_goid_xref_table(
         occurrences=occurrences,
         goids=goids,

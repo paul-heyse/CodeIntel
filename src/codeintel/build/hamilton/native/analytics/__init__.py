@@ -37,11 +37,6 @@ from codeintel.build.hamilton.native.analytics.config_graphs import (
     t__config_graph_metrics,
     t__config_references,
 )
-from codeintel.build.hamilton.native.analytics.contract_alignment_summary import (
-    contract_alignment_summary__base,
-    contract_alignment_summary__table,
-    t__contract_alignment_summary,
-)
 from codeintel.build.hamilton.native.analytics.data_models import (
     data_model_fields__base,
     data_model_fields__table,
@@ -112,27 +107,6 @@ from codeintel.build.hamilton.native.analytics.graph_metrics import (
     t__graph_stats,
     t__symbol_graph_metrics,
 )
-from codeintel.build.hamilton.native.analytics.graph_validation import (
-    graph_validation__base,
-    graph_validation__table,
-    t__graph_validation,
-)
-from codeintel.build.hamilton.native.analytics.py_cpg_quality_report import (
-    py_cpg_quality_report__base,
-    py_cpg_quality_report__table,
-    t__py_cpg_quality_report,
-)
-from codeintel.build.hamilton.native.analytics.scip_diagnostics import (
-    scip_diagnostics__rollups,
-    scip_diagnostics__table_materializations,
-    scip_diagnostics_by_file__base,
-    scip_diagnostics_by_file__table,
-    scip_diagnostics_summary__base,
-    scip_diagnostics_summary__table,
-    scip_diagnostics_top_messages__base,
-    scip_diagnostics_top_messages__table,
-    t__scip_diagnostics,
-)
 from codeintel.build.hamilton.native.analytics.scip_external_symbols import (
     scip_external_symbol_usage__base,
     scip_external_symbol_usage__table,
@@ -202,8 +176,6 @@ __all__ = [
     "config_references__base",
     "config_references__table",
     "config_references__table_materializations",
-    "contract_alignment_summary__base",
-    "contract_alignment_summary__table",
     "data_model_fields__base",
     "data_model_fields__table",
     "data_model_relationships__base",
@@ -252,18 +224,6 @@ __all__ = [
     "graph_metrics_modules_ext__table",
     "graph_stats__base",
     "graph_stats__table",
-    "graph_validation__base",
-    "graph_validation__table",
-    "py_cpg_quality_report__base",
-    "py_cpg_quality_report__table",
-    "scip_diagnostics__rollups",
-    "scip_diagnostics__table_materializations",
-    "scip_diagnostics_by_file__base",
-    "scip_diagnostics_by_file__table",
-    "scip_diagnostics_summary__base",
-    "scip_diagnostics_summary__table",
-    "scip_diagnostics_top_messages__base",
-    "scip_diagnostics_top_messages__table",
     "scip_external_symbol_usage__base",
     "scip_external_symbol_usage__table",
     "semantic_roles__table_materializations",
@@ -293,7 +253,6 @@ __all__ = [
     "t__config_data_flow",
     "t__config_graph_metrics",
     "t__config_references",
-    "t__contract_alignment_summary",
     "t__data_model_usage",
     "t__data_models",
     "t__entrypoints",
@@ -306,9 +265,6 @@ __all__ = [
     "t__graph_metrics",
     "t__graph_metrics_ext",
     "t__graph_stats",
-    "t__graph_validation",
-    "t__py_cpg_quality_report",
-    "t__scip_diagnostics",
     "t__scip_external_symbol_usage",
     "t__semantic_roles",
     "t__subsystem_agreement",

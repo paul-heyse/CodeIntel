@@ -107,7 +107,7 @@ from codeintel.build.tabular.arrow_ops import (
     dedupe_table_for_table,
     emit_alignment_report,
 )
-from codeintel.build.tabular.compute_helpers import scalar_from_compute
+from codeintel.build.tabular.compute_helpers import cast_array, scalar_from_compute
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     invert_mask,
@@ -116,7 +116,9 @@ from codeintel.build.tabular.compute_masks import (
 )
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.row_models import columns_for_table_key
+from codeintel.core.schemas.service import get_schema_service
 
 LOG = logging.getLogger(__name__)
 
@@ -187,6 +189,7 @@ def assemble_cpg_nodes(tables: Sequence[pa.Table]) -> pa.Table:
         return empty_table_for_table(CPG_NODES_TABLE_KEY)
     combined = concat_tables_unified(tables)
     combined = _ensure_contract_columns(CPG_NODES_TABLE_KEY, combined)
+    combined = _cast_to_contract_types(CPG_NODES_TABLE_KEY, combined)
     combined = dedupe_table_for_table(CPG_NODES_TABLE_KEY, combined)
     return align_table_to_contract(
         CPG_NODES_TABLE_KEY,
@@ -210,6 +213,7 @@ def assemble_cpg_edges(tables: Sequence[pa.Table]) -> pa.Table:
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
     combined = concat_tables_unified(tables)
     combined = _ensure_contract_columns(CPG_EDGES_TABLE_KEY, combined)
+    combined = _cast_to_contract_types(CPG_EDGES_TABLE_KEY, combined)
     combined = dedupe_table_for_table(CPG_EDGES_TABLE_KEY, combined)
     return align_table_to_contract(
         CPG_EDGES_TABLE_KEY,
@@ -511,6 +515,38 @@ def _ensure_contract_columns(table_key: str, table: pa.Table) -> pa.Table:
     if columns is None:
         return table
     return ensure_table_columns(table, columns)
+
+
+def _cast_to_contract_types(table_key: str, table: pa.Table) -> pa.Table:
+    schema_service = get_schema_service()
+    table_schema = schema_service.get_table_schema(table_key)
+    if table_schema is None:
+        return table
+    contract = arrow_contract_for_table_schema(table_schema=table_schema, metadata=None)
+    type_map = {field.name: field.type for field in contract}
+    arrays: list[pa.Array | pa.ChunkedArray] = []
+    changed = False
+    for name in table.column_names:
+        column = table[name]
+        target_type = type_map.get(name)
+        if target_type is None or column.type == target_type:
+            arrays.append(column)
+            continue
+        if pa.types.is_null(column.type):
+            casted = pa.nulls(table.num_rows, type=target_type)
+        else:
+            casted = cast_array(column, target_type, safe=False)
+        arrays.append(casted)
+        changed = True
+    if not changed:
+        return table
+    fields: list[pa.Field] = []
+    for name, array in zip(table.column_names, arrays, strict=True):
+        field = table.schema.field(name)
+        if field.type != array.type:
+            field = field.with_type(array.type)
+        fields.append(field)
+    return pa.Table.from_arrays(arrays, schema=pa.schema(fields, metadata=table.schema.metadata))
 
 
 def _count_mask(mask: pa.Array | pa.ChunkedArray) -> int:

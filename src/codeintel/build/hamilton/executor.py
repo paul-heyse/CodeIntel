@@ -62,6 +62,7 @@ from codeintel.build.hamilton.diagnostics import (
     DiagnosticsTargets,
     diagnostics_dir,
     emit_diagnostics,
+    persist_contract_alignment_summary,
 )
 from codeintel.build.hamilton.driver_factory import target_to_node_name
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
@@ -82,6 +83,9 @@ from codeintel.build.hamilton.hooks import (
 )
 from codeintel.build.hamilton.native.views.view_outputs import view_lineage_payload
 from codeintel.build.hamilton.optional_inputs import optional_inputs_for_target
+from codeintel.build.hamilton.post_run_quality_outputs import (
+    persist_post_run_quality_outputs,
+)
 from codeintel.build.hamilton.result_builder import BuildResultBuilder
 from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
@@ -1828,11 +1832,13 @@ def _finalize_run(
     ]
     inputs.writer.save_run_targets(env=context.env, run_id=context.run_id, records=records)
     persist_contract_alignment_issues(env=context.env, run_id=context.run_id)
+    persist_contract_alignment_summary(env=context.env, run_id=context.run_id)
     persist_empty_dataset_issues(
         env=context.env,
         run_id=context.run_id,
         catalog=catalog,
     )
+    persist_post_run_quality_outputs(env=context.env, run_id=context.run_id)
     inputs.writer.persist_asset_catalog(
         env=context.env,
         run_id=context.run_id,
