@@ -3,10 +3,24 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol, cast
 
 import pyarrow as pa
+import pytest
 
 from codeintel.build.hamilton.cache_adapter import ArrowCachedResult, ArrowFileResultStore
+
+
+class _Pylistable(Protocol):
+    def to_pylist(self) -> list[object]:
+        """Return the table as a list of Python objects."""
+        ...
+
+
+class _RecordBatchReader(Protocol):
+    def read_all(self) -> _Pylistable:
+        """Read all batches into a table-like object."""
+        ...
 
 
 def _reader_from_table(table: pa.Table) -> pa.RecordBatchReader:
@@ -20,12 +34,20 @@ def _reader_from_table(table: pa.Table) -> pa.RecordBatchReader:
     return pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
 
 
-def _table_from_cached(value: object) -> pa.Table:
+def _table_from_cached(value: object | None) -> _Pylistable:
+    if value is None:
+        pytest.fail("Expected cached value but got None")
     if isinstance(value, pa.Table):
-        return value
+        return cast("_Pylistable", value)
     if isinstance(value, pa.RecordBatchReader):
-        return value.read_all()
-    raise AssertionError(f"Unexpected cached value type: {type(value)!r}")
+        reader = cast("_RecordBatchReader", value)
+        return reader.read_all()
+    msg = f"Unexpected cached value type: {type(value)!r}"
+    pytest.fail(msg)
+
+
+def _table_pylist(table: pa.Table) -> list[object]:
+    return cast("_Pylistable", table).to_pylist()
 
 
 def test_arrow_file_result_store_round_trip_reader(tmp_path: Path) -> None:
@@ -38,7 +60,7 @@ def test_arrow_file_result_store_round_trip_reader(tmp_path: Path) -> None:
 
     cached = store.get("reader-v1")
     cached_table = _table_from_cached(cached)
-    assert cached_table.to_pylist() == table.to_pylist()
+    assert cached_table.to_pylist() == _table_pylist(table)
 
 
 def test_arrow_file_result_store_round_trip_table(tmp_path: Path) -> None:
@@ -50,7 +72,7 @@ def test_arrow_file_result_store_round_trip_table(tmp_path: Path) -> None:
 
     cached = store.get("table-v1")
     assert isinstance(cached, pa.Table)
-    assert cached.to_pylist() == table.to_pylist()
+    assert _table_pylist(cached) == _table_pylist(table)
 
 
 def test_arrow_file_result_store_round_trip_wrapped_reader(tmp_path: Path) -> None:
@@ -63,4 +85,4 @@ def test_arrow_file_result_store_round_trip_wrapped_reader(tmp_path: Path) -> No
 
     cached = store.get("wrapped-v1")
     cached_table = _table_from_cached(cached)
-    assert cached_table.to_pylist() == table.to_pylist()
+    assert cached_table.to_pylist() == _table_pylist(table)

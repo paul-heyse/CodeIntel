@@ -474,6 +474,18 @@ class ScipOccurrenceRow:
         Ending column number (0-based).
     roles
         SCIP symbol roles bitmask.
+    syntax_kind
+        Optional syntax highlighting kind enum.
+    enclosing_start_line
+        Enclosing range start line (0-based).
+    enclosing_start_col
+        Enclosing range start column (0-based).
+    enclosing_end_line
+        Enclosing range end line (0-based).
+    enclosing_end_col
+        Enclosing range end column (0-based).
+    override_documentation
+        Optional occurrence-specific documentation.
     position_encoding
         Encoding enum for interpreting column offsets.
     text_document_encoding
@@ -495,6 +507,12 @@ class ScipOccurrenceRow:
     end_line: int
     end_col: int
     roles: int
+    syntax_kind: int | None
+    enclosing_start_line: int | None
+    enclosing_start_col: int | None
+    enclosing_end_line: int | None
+    enclosing_end_col: int | None
+    override_documentation: str | None
     position_encoding: int | None
     text_document_encoding: str | None
     start_byte: int | None
@@ -602,6 +620,8 @@ class ScipOccurrenceSpanXrefRow:
         True when ReadAccess role is set.
     enclosing_symbol
         Optional enclosing symbol identifier.
+    documentation
+        Optional documentation text (override or symbol-level).
     start_line
         Occurrence start line (0-based).
     start_col
@@ -635,6 +655,7 @@ class ScipOccurrenceSpanXrefRow:
     is_write: bool
     is_read: bool
     enclosing_symbol: str | None
+    documentation: str | None
     start_line: int
     start_col: int
     end_line: int

@@ -102,7 +102,8 @@ CodeIntel integration defaults
 
 CodeIntel standardizes several scip-python behaviors to keep SCIP ingestion deterministic and easy to maintain:
 
-- Project identity: always pass --project-name CodeIntel, with no --project-version or --project-namespace.
+- Project identity: always pass --project-name CodeIntel. Optional --project-version and
+  --project-namespace are configurable via ScipIngestOptions and default to unset (no change).
 - Protobuf parsing: index.scip is parsed via generated scip_pb2 bindings; JSON artifacts are not used.
 - DAG codegen: the scip_proto target runs grpc_tools.protoc and publishes scip_pb2.py; the local mirror script is scripts/scip_proto_codegen.sh.
 - Incremental indexing: per-module shards live under build/scip/shards, with core.scip_module_state as the source-of-truth and the shard manifest as a cache artifact.

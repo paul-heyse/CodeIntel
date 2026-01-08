@@ -450,6 +450,16 @@ class ScipRunIdentityProtocol(Protocol):
         ...
 
     @property
+    def project_version(self) -> str | None:
+        """Project version passed to scip-python."""
+        ...
+
+    @property
+    def project_namespace(self) -> str | None:
+        """Project namespace passed to scip-python."""
+        ...
+
+    @property
     def tool_version(self) -> str | None:
         """Tool version string."""
         ...

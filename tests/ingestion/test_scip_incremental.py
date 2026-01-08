@@ -20,7 +20,7 @@ from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.ingestion.scip.incremental import ScipIncrementalConfig, update_index_incremental
 from codeintel.ingestion.scip.index_store import load_index_proto
 from codeintel.ingestion.scip.manifest import load_manifest, manifest_path
-from codeintel.ingestion.scip.telemetry import ScipRunTelemetry
+from codeintel.ingestion.scip.telemetry import ScipRunIdentity, ScipRunTelemetry
 from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.scip_proto import ensure_proto_module, write_scip_index
 
@@ -159,6 +159,17 @@ def _module_record(repo_root: Path, rel_path: str, index: int, total: int) -> Mo
     )
 
 
+def _scip_identity(*, run_id: str, options_hash: str | None = "options-hash") -> ScipRunIdentity:
+    return ScipRunIdentity(
+        repo="test/repo",
+        commit="abc123",
+        run_id=run_id,
+        options_hash=options_hash,
+        project_version=None,
+        project_namespace=None,
+    )
+
+
 def _write_module(repo_root: Path, rel_path: str, body: str) -> None:
     path = repo_root / rel_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -256,12 +267,7 @@ def test_incremental_batches_changed_modules(tmp_path: Path) -> None:
             },
         ),
     )
-    telemetry = ScipRunTelemetry.create(
-        repo="test/repo",
-        commit="abc123",
-        run_id="run-1",
-        options_hash="options-hash",
-    )
+    telemetry = ScipRunTelemetry.create(identity=_scip_identity(run_id="run-1"))
     config = ScipIncrementalConfig(
         repo_root=repo_root,
         output_scip=output_scip,
@@ -377,12 +383,7 @@ def test_full_rebuild_thresholds_trigger_full_rebuild(tmp_path: Path) -> None:
         cache_dir=tmp_path,
         config=_ProtoIndexRunnerConfig(proto_module_path=proto_module_path, doc_map=base_docs),
     )
-    telemetry = ScipRunTelemetry.create(
-        repo="test/repo",
-        commit="abc123",
-        run_id="run-2",
-        options_hash="options-hash",
-    )
+    telemetry = ScipRunTelemetry.create(identity=_scip_identity(run_id="run-2"))
     config = ScipIncrementalConfig(
         repo_root=repo_root,
         output_scip=output_scip,
@@ -423,12 +424,7 @@ def test_hash_reuse_from_file_state(tmp_path: Path) -> None:
         cache_dir=tmp_path,
         config=_ProtoIndexRunnerConfig(proto_module_path=proto_module_path, doc_map=base_docs),
     )
-    telemetry = ScipRunTelemetry.create(
-        repo="test/repo",
-        commit="abc123",
-        run_id="run-3",
-        options_hash="options-hash",
-    )
+    telemetry = ScipRunTelemetry.create(identity=_scip_identity(run_id="run-3"))
     config = ScipIncrementalConfig(
         repo_root=repo_root,
         output_scip=output_scip,
@@ -471,12 +467,7 @@ def test_hash_resolver_fallback_to_disk(tmp_path: Path) -> None:
         cache_dir=tmp_path,
         config=_ProtoIndexRunnerConfig(proto_module_path=proto_module_path, doc_map=base_docs),
     )
-    telemetry = ScipRunTelemetry.create(
-        repo="test/repo",
-        commit="abc123",
-        run_id="run-3b",
-        options_hash="options-hash",
-    )
+    telemetry = ScipRunTelemetry.create(identity=_scip_identity(run_id="run-3b"))
     config = ScipIncrementalConfig(
         repo_root=repo_root,
         output_scip=output_scip,
@@ -524,12 +515,7 @@ def test_ratio_gate_prevents_small_repo_full_rebuild(tmp_path: Path) -> None:
         cache_dir=tmp_path,
         config=_ProtoIndexRunnerConfig(proto_module_path=proto_module_path, doc_map=base_docs),
     )
-    telemetry = ScipRunTelemetry.create(
-        repo="test/repo",
-        commit="abc123",
-        run_id="run-4",
-        options_hash="options-hash",
-    )
+    telemetry = ScipRunTelemetry.create(identity=_scip_identity(run_id="run-4"))
     config = ScipIncrementalConfig(
         repo_root=repo_root,
         output_scip=output_scip,

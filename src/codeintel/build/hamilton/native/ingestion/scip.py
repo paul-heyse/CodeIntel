@@ -112,7 +112,7 @@ from codeintel.ingestion.scip.rows import (
     iter_symbol_relationship_rows,
     iter_symbol_rows,
 )
-from codeintel.ingestion.scip.telemetry import ScipRunTelemetry
+from codeintel.ingestion.scip.telemetry import ScipRunIdentity, ScipRunTelemetry
 from codeintel.observability.semconv_keys import (
     SCIP_COMMIT,
     SCIP_MODE,
@@ -180,6 +180,8 @@ class ScipRunRecord:
     commit: str
     mode: str
     options_hash: str | None
+    project_version: str | None
+    project_namespace: str | None
     tool_version: str | None
     total_modules: int
     changed_modules: int
@@ -288,11 +290,47 @@ def _scip_options_hash(
     options: ScipIngestOptions,
     tools_config: ToolsConfig,
     tool_version: str | None,
+    *,
+    project_version: str | None,
+    project_namespace: str | None,
 ) -> str | None:
     payload = asdict(options)
     payload["project_name"] = tools_config.scip_project_name
     payload["tool_version"] = tool_version
+    payload["project_version"] = project_version
+    payload["project_namespace"] = project_namespace
     return compute_options_hash(payload)
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _resolve_project_version(
+    options: ScipIngestOptions,
+    *,
+    commit: str,
+    default_value: str | None,
+) -> str | None:
+    mode = options.project_version_mode.strip().lower()
+    if mode == "commit":
+        return commit
+    if mode == "constant":
+        return _normalize_optional_text(options.project_version_value or default_value)
+    if mode == "unset":
+        return _normalize_optional_text(default_value)
+    return None
+
+
+def _normalize_project_namespace(
+    project_namespace: str | None,
+    *,
+    default_value: str | None,
+) -> str | None:
+    return _normalize_optional_text(project_namespace or default_value)
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -600,6 +638,12 @@ def _update_occurrence_span(
             range_end_line=occ.range_end_line,
             range_end_col=occ.range_end_col,
             symbol_roles=occ.symbol_roles,
+            syntax_kind=occ.syntax_kind,
+            enclosing_start_line=occ.enclosing_start_line,
+            enclosing_start_col=occ.enclosing_start_col,
+            enclosing_end_line=occ.enclosing_end_line,
+            enclosing_end_col=occ.enclosing_end_col,
+            override_documentation=occ.override_documentation,
             position_encoding=occ.position_encoding,
             text_document_encoding=occ.text_document_encoding,
             start_byte=span[0],
@@ -838,16 +882,33 @@ def _execute_scip_incremental(
         )
 
     change_set, force_full_rebuild = _resolve_change_set(module_inputs.scan)
+    tool_version = _scip_tool_version(env)
+    tools_config = env.providers.tool_runner.tools_config
+    project_version = _resolve_project_version(
+        run_config.options,
+        commit=env.snapshot.commit,
+        default_value=tools_config.scip_project_version,
+    )
+    project_namespace = _normalize_project_namespace(
+        run_config.options.project_namespace,
+        default_value=tools_config.scip_project_namespace,
+    )
     options_hash = _scip_options_hash(
         run_config.options,
-        env.providers.tool_runner.tools_config,
-        _scip_tool_version(env),
+        tools_config,
+        tool_version,
+        project_version=project_version,
+        project_namespace=project_namespace,
     )
     telemetry = ScipRunTelemetry.create(
-        repo=env.snapshot.repo,
-        commit=env.snapshot.commit,
-        run_id=run_id,
-        options_hash=options_hash,
+        identity=ScipRunIdentity(
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
+            run_id=run_id,
+            options_hash=options_hash,
+            project_version=project_version,
+            project_namespace=project_namespace,
+        )
     )
     file_state_rows = module_inputs.scan.file_state_rows
     if (
@@ -871,6 +932,8 @@ def _execute_scip_incremental(
             tool_runner=env.providers.tool_runner,
             scope_paths=run_config.options.scope_paths,
             environment_json=run_config.options.environment_json,
+            project_version=project_version,
+            project_namespace=project_namespace,
             max_file_size_kb=run_config.options.max_file_size_kb,
             timeout_seconds=run_config.options.timeout_seconds,
             target_dir=None,

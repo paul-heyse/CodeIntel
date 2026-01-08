@@ -469,6 +469,8 @@ class ToolService:
             target_dir=request.target_dir,
             rel_paths=request.rel_paths,
             environment_json=request.environment_json,
+            project_version=request.project_version,
+            project_namespace=request.project_namespace,
             proto_module_path=request.proto_module_path,
             timeout_s=request.timeout_s,
         )

@@ -131,6 +131,18 @@ class ScipOccurrence:
         End column (0-based).
     symbol_roles
         Bitmask of symbol roles (1=definition, 2=reference).
+    syntax_kind
+        Optional syntax highlighting kind enum.
+    enclosing_start_line
+        Enclosing range start line (0-based).
+    enclosing_start_col
+        Enclosing range start column (0-based).
+    enclosing_end_line
+        Enclosing range end line (0-based).
+    enclosing_end_col
+        Enclosing range end column (0-based).
+    override_documentation
+        Optional occurrence-specific documentation.
     position_encoding
         Encoding enum for interpreting column offsets.
     text_document_encoding
@@ -147,6 +159,12 @@ class ScipOccurrence:
     range_end_line: int
     range_end_col: int
     symbol_roles: int
+    syntax_kind: int | None = None
+    enclosing_start_line: int | None = None
+    enclosing_start_col: int | None = None
+    enclosing_end_line: int | None = None
+    enclosing_end_col: int | None = None
+    override_documentation: str | None = None
     position_encoding: int | None = None
     text_document_encoding: str | None = None
     start_byte: int | None = None
@@ -221,6 +239,10 @@ class ScipRunRequest:
         Optional repo-relative paths to index.
     environment_json
         Optional environment JSON passed to scip-python.
+    project_version
+        Optional project version passed to scip-python.
+    project_namespace
+        Optional namespace prefix passed to scip-python.
     timeout_s
         Optional timeout override (seconds).
     """
@@ -231,6 +253,8 @@ class ScipRunRequest:
     target_dir: Path | None = None
     rel_paths: Sequence[str] | None = None
     environment_json: Path | None = None
+    project_version: str | None = None
+    project_namespace: str | None = None
     timeout_s: float | None = None
 
 

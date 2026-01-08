@@ -19,7 +19,11 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolNotFoundError,
     ToolRunOptions,
 )
-from codeintel.ingestion.scip.cli import build_scip_python_args, ensure_pip_available
+from codeintel.ingestion.scip.cli import (
+    ScipPythonArgs,
+    build_scip_python_args,
+    ensure_pip_available,
+)
 from codeintel.ingestion.scip.hash_resolver import FileDigestResolver
 from codeintel.ingestion.scip.index_store import (
     MergeIndexContext,
@@ -103,6 +107,8 @@ class ScipIncrementalConfig:
     timeout_seconds: int
     target_dir: Path | None
     environment_json: Path | None = None
+    project_version: str | None = None
+    project_namespace: str | None = None
     force_full_rebuild: bool = False
     batch_size: int = 200
     batch_max_bytes: int = 50_000_000
@@ -123,6 +129,8 @@ class _ScipRunConfig:
     target_base: Path
     timeout_seconds: int
     environment_json: Path | None
+    project_version: str | None
+    project_namespace: str | None
 
 
 @dataclass(frozen=True)
@@ -303,6 +311,8 @@ def _build_run_context(config: ScipIncrementalConfig) -> _IncrementalRunContext:
         target_base=target_base,
         timeout_seconds=config.timeout_seconds,
         environment_json=config.environment_json,
+        project_version=config.project_version,
+        project_namespace=config.project_namespace,
     )
     total_modules = len(config.modules)
     changed_modules = tuple(config.change_set.added) + tuple(config.change_set.modified)
@@ -906,11 +916,15 @@ def _run_scip_python(
     if run_config.environment_json is None:
         ensure_pip_available()
     args = build_scip_python_args(
-        target_base=run_config.target_base,
-        output_scip=output_scip,
-        project_name=run_config.tools_config.scip_project_name,
-        target_paths=rel_paths if rel_paths is not None else scope_paths,
-        environment_json=run_config.environment_json,
+        ScipPythonArgs(
+            target_base=run_config.target_base,
+            output_scip=output_scip,
+            project_name=run_config.tools_config.scip_project_name,
+            target_paths=rel_paths if rel_paths is not None else scope_paths,
+            environment_json=run_config.environment_json,
+            project_version=run_config.project_version,
+            project_namespace=run_config.project_namespace,
+        )
     )
     result = asyncio.run(
         run_config.tool_runner.run_async(

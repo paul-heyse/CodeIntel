@@ -131,6 +131,7 @@ dependencies = [
     "pyre-check>=0.9.25",
     "rustworkx>=0.17.1",
     "pip>=25.3",
+    "setuptools>=80.9.0",
 ]
 
 [project.scripts]

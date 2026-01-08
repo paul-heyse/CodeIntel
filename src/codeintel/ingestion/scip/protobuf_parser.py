@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, cast
@@ -292,6 +292,11 @@ def _parse_occurrence(
     range_tuple = _parse_range(occ.range)
     if range_tuple is None:
         return None
+    enclosing_tuple = _parse_range(getattr(occ, "enclosing_range", ()))
+    override_documentation = _override_documentation_text(
+        getattr(occ, "override_documentation", ())
+    )
+    syntax_kind = _normalize_syntax_kind(getattr(occ, "syntax_kind", None))
     return ScipOccurrence(
         symbol=occ.symbol,
         range_start_line=range_tuple[0],
@@ -299,6 +304,12 @@ def _parse_occurrence(
         range_end_line=range_tuple[2],
         range_end_col=range_tuple[3],
         symbol_roles=occ.symbol_roles,
+        syntax_kind=syntax_kind,
+        enclosing_start_line=enclosing_tuple[0] if enclosing_tuple is not None else None,
+        enclosing_start_col=enclosing_tuple[1] if enclosing_tuple is not None else None,
+        enclosing_end_line=enclosing_tuple[2] if enclosing_tuple is not None else None,
+        enclosing_end_col=enclosing_tuple[3] if enclosing_tuple is not None else None,
+        override_documentation=override_documentation,
         position_encoding=position_encoding,
         text_document_encoding=text_document_encoding,
         start_byte=None,
@@ -306,7 +317,23 @@ def _parse_occurrence(
     )
 
 
-def _parse_range(rng: IntListProto) -> tuple[int, int, int, int] | None:
+def _override_documentation_text(values: Sequence[str]) -> str | None:
+    if not values:
+        return None
+    text = "\n".join(values)
+    return text or None
+
+
+def _normalize_syntax_kind(value: int | None) -> int | None:
+    if value is None:
+        return None
+    normalized = int(value)
+    if normalized <= 0:
+        return None
+    return normalized
+
+
+def _parse_range(rng: IntListProto | Sequence[int]) -> tuple[int, int, int, int] | None:
     length = len(rng)
     if length == _RANGE_LEN_SAME_LINE:
         return (int(rng[0]), int(rng[1]), int(rng[0]), int(rng[2]))

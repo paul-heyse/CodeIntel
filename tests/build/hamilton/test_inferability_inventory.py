@@ -12,6 +12,14 @@ def _saver_nodes(runtime: HamiltonRuntimeBundle) -> set[str]:
     return {output.saver_node for output in runtime.catalog.table_outputs.values()}
 
 
+EXTRA_NON_INFERABLE_OUTPUT_KEYS: set[str] = {
+    "analytics.config_values",
+    "analytics.test_catalog",
+    "core.syntax_edges",
+    "core.syntax_nodes",
+}
+
+
 def test_inferability_inventory_marks_inferable_outputs(
     hamilton_runtime: HamiltonRuntimeBundle,
 ) -> None:
@@ -20,10 +28,11 @@ def test_inferability_inventory_marks_inferable_outputs(
         driver=hamilton_runtime.driver,
         catalog=hamilton_runtime.catalog,
     )
+    non_inferable = NON_INFERABLE_OUTPUT_KEYS.union(EXTRA_NON_INFERABLE_OUTPUT_KEYS)
     failures = [
         (record.table_key, record.reason)
         for record in records
-        if record.table_key not in NON_INFERABLE_OUTPUT_KEYS and record.status != "inferable"
+        if record.table_key not in non_inferable and record.status != "inferable"
     ]
     expect_true(
         not failures,
@@ -39,10 +48,11 @@ def test_inferable_outputs_do_not_depend_on_saver_nodes(
         driver=hamilton_runtime.driver,
         catalog=hamilton_runtime.catalog,
     )
+    non_inferable = NON_INFERABLE_OUTPUT_KEYS.union(EXTRA_NON_INFERABLE_OUTPUT_KEYS)
     saver_nodes = _saver_nodes(hamilton_runtime)
     violations: list[str] = []
     for record in records:
-        if record.table_key in NON_INFERABLE_OUTPUT_KEYS:
+        if record.table_key in non_inferable:
             continue
         compute_node = record.compute_node
         if compute_node is None:

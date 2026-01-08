@@ -69,6 +69,8 @@ class ScipRunRecord:
     commit: str
     mode: str
     options_hash: str | None
+    project_version: str | None
+    project_namespace: str | None
     tool_version: str | None
     total_modules: int
     changed_modules: int
@@ -1233,6 +1235,8 @@ class BuildTracking:
                     record.commit,
                     record.mode,
                     record.options_hash,
+                    record.project_version,
+                    record.project_namespace,
                     record.tool_version,
                     record.total_modules,
                     record.changed_modules,
@@ -1267,6 +1271,8 @@ class BuildTracking:
                 "commit",
                 "mode",
                 "options_hash",
+                "project_version",
+                "project_namespace",
                 "tool_version",
                 "total_modules",
                 "changed_modules",
@@ -1299,6 +1305,8 @@ class BuildTracking:
                 update_columns=(
                     "mode",
                     "options_hash",
+                    "project_version",
+                    "project_namespace",
                     "tool_version",
                     "total_modules",
                     "changed_modules",

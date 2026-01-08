@@ -8184,6 +8184,12 @@
         },
         {
           "description": null,
+          "name": "documentation",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "start_line",
           "nullable": false,
           "type": "INTEGER"
@@ -8450,6 +8456,42 @@
           "name": "roles",
           "nullable": false,
           "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "syntax_kind",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "enclosing_start_line",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "enclosing_start_col",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "enclosing_end_line",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "enclosing_end_col",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "override_documentation",
+          "nullable": true,
+          "type": "VARCHAR"
         },
         {
           "description": null,

@@ -25,7 +25,11 @@ from codeintel.ingestion.engine.plugins import (
     ToolStatus,
 )
 from codeintel.ingestion.engine.results import ScipDocument, ScipIndexResult, ScipOccurrence
-from codeintel.ingestion.scip.cli import build_scip_python_args, ensure_pip_available
+from codeintel.ingestion.scip.cli import (
+    ScipPythonArgs,
+    build_scip_python_args,
+    ensure_pip_available,
+)
 from codeintel.ingestion.scip.index_store import write_index_proto
 from codeintel.ingestion.scip.paths import resolve_target_base
 from codeintel.ingestion.scip.proto import load_generated_module
@@ -72,6 +76,23 @@ def _parse_scip_index(
                     occ.range_end_col,
                 ),
                 symbol_roles=occ.symbol_roles,
+                syntax_kind=occ.syntax_kind,
+                enclosing_range=(
+                    (
+                        occ.enclosing_start_line,
+                        occ.enclosing_start_col,
+                        occ.enclosing_end_line,
+                        occ.enclosing_end_col,
+                    )
+                    if (
+                        occ.enclosing_start_line is not None
+                        and occ.enclosing_start_col is not None
+                        and occ.enclosing_end_line is not None
+                        and occ.enclosing_end_col is not None
+                    )
+                    else None
+                ),
+                override_documentation=occ.override_documentation,
                 position_encoding=occ.position_encoding,
                 text_document_encoding=occ.text_document_encoding,
                 start_byte=occ.start_byte,
@@ -108,6 +129,8 @@ class _ScipToolRun:
     target_dir: Path | None
     rel_paths: Sequence[str] | None
     environment_json: Path | None
+    project_version: str | None
+    project_namespace: str | None
     timeout_s: float | None
 
 
@@ -125,7 +148,14 @@ class ScipPlugin(ToolPlugin):
             datasets=("core.scip_symbols", "core.goid_crosswalk"),
             spec=ToolSpec(
                 required_kwargs=("output_scip", "proto_module_path"),
-                optional_kwargs=("target_dir", "rel_paths", "environment_json", "timeout_s"),
+                optional_kwargs=(
+                    "target_dir",
+                    "rel_paths",
+                    "environment_json",
+                    "project_version",
+                    "project_namespace",
+                    "timeout_s",
+                ),
             ),
         )
     )
@@ -139,6 +169,8 @@ class ScipPlugin(ToolPlugin):
         Path | None,
         tuple[str, ...] | None,
         Path | None,
+        str | None,
+        str | None,
         float | None,
     ]:
         """Validate and extract keyword arguments for run method.
@@ -150,9 +182,18 @@ class ScipPlugin(ToolPlugin):
 
         Returns
         -------
-        tuple[Path, Path, Path | None, tuple[str, ...] | None, Path | None, float | None]
+        tuple[
+            Path,
+            Path,
+            Path | None,
+            tuple[str, ...] | None,
+            Path | None,
+            str | None,
+            str | None,
+            float | None,
+        ]
             Tuple of (output_scip, proto_module_path, target_dir, rel_paths,
-            environment_json, timeout_s).
+            environment_json, project_version, project_namespace, timeout_s).
 
         Raises
         ------
@@ -165,6 +206,8 @@ class ScipPlugin(ToolPlugin):
         rel_paths_obj = kwargs.get("rel_paths")
         proto_module_obj = kwargs.get("proto_module_path")
         environment_obj = kwargs.get("environment_json")
+        project_version_obj = kwargs.get("project_version")
+        project_namespace_obj = kwargs.get("project_namespace")
         timeout_obj = kwargs.get("timeout_s")
 
         if not isinstance(output_scip_obj, Path):
@@ -182,6 +225,12 @@ class ScipPlugin(ToolPlugin):
         if environment_obj is not None and not isinstance(environment_obj, Path):
             message = "scip-python plugin requires environment_json to be Path or None"
             raise TypeError(message)
+        if project_version_obj is not None and not isinstance(project_version_obj, str):
+            message = "scip-python plugin requires project_version to be str or None"
+            raise TypeError(message)
+        if project_namespace_obj is not None and not isinstance(project_namespace_obj, str):
+            message = "scip-python plugin requires project_namespace to be str or None"
+            raise TypeError(message)
         if timeout_obj is not None and not isinstance(timeout_obj, Real):
             message = "scip-python plugin requires timeout_s to be a number or None"
             raise TypeError(message)
@@ -194,6 +243,8 @@ class ScipPlugin(ToolPlugin):
             target_dir_obj,
             rel_paths,
             environment_obj,
+            project_version_obj,
+            project_namespace_obj,
             timeout_s,
         )
 
@@ -220,6 +271,8 @@ class ScipPlugin(ToolPlugin):
             target_dir,
             rel_paths,
             environment_json,
+            project_version,
+            project_namespace,
             timeout_s,
         ) = self._validate_kwargs(dict(kwargs))
         run_args = _ScipToolRun(
@@ -227,6 +280,8 @@ class ScipPlugin(ToolPlugin):
             target_dir=target_dir,
             rel_paths=rel_paths,
             environment_json=environment_json,
+            project_version=project_version,
+            project_namespace=project_namespace,
             timeout_s=timeout_s,
         )
 
@@ -316,11 +371,15 @@ class ScipPlugin(ToolPlugin):
         if run_args.environment_json is None:
             ensure_pip_available()
         args = build_scip_python_args(
-            target_base=target_base,
-            output_scip=output_scip,
-            project_name=self.tools_config.scip_project_name,
-            target_paths=run_args.rel_paths,
-            environment_json=run_args.environment_json,
+            ScipPythonArgs(
+                target_base=target_base,
+                output_scip=output_scip,
+                project_name=self.tools_config.scip_project_name,
+                target_paths=run_args.rel_paths,
+                environment_json=run_args.environment_json,
+                project_version=run_args.project_version,
+                project_namespace=run_args.project_namespace,
+            )
         )
 
         result = await self.runner.run_async(

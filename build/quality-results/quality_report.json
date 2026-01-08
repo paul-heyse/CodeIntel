@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2026-01-07T23:54:04.331875+00:00",
+  "generated_at": "2026-01-08T00:58:39.581955+00:00",
   "overall_status": "failed",
-  "duration_seconds": 60.783448,
+  "duration_seconds": 67.629954,
   "results": [
     {
       "name": "pylist_guardrail",
@@ -15,9 +15,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T23:53:03.547687+00:00",
-      "ended_at": "2026-01-07T23:53:11.292467+00:00",
-      "duration_seconds": 7.74478,
+      "started_at": "2026-01-08T00:57:31.951387+00:00",
+      "ended_at": "2026-01-08T00:57:44.324179+00:00",
+      "duration_seconds": 12.372792,
       "stdout": [
         "Guardrail: no to_pylist usage found in build code."
       ],
@@ -34,9 +34,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T23:53:11.292520+00:00",
-      "ended_at": "2026-01-07T23:53:25.270823+00:00",
-      "duration_seconds": 13.978303,
+      "started_at": "2026-01-08T00:57:44.324217+00:00",
+      "ended_at": "2026-01-08T00:57:58.785908+00:00",
+      "duration_seconds": 14.461691,
       "stdout": [],
       "stderr": [
         "<frozen runpy>:128: RuntimeWarning: 'tools.guardrails' found in sys.modules after import of package 'tools', but prior to execution of 'tools.guardrails'; this may result in unpredictable behaviour",
@@ -76,9 +76,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T23:53:25.270868+00:00",
-      "ended_at": "2026-01-07T23:53:32.969188+00:00",
-      "duration_seconds": 7.69832,
+      "started_at": "2026-01-08T00:57:58.785946+00:00",
+      "ended_at": "2026-01-08T00:58:06.914099+00:00",
+      "duration_seconds": 8.128153,
       "stdout": [],
       "stderr": []
     },
@@ -93,16 +93,22 @@
       ],
       "status": "failed",
       "return_code": 1,
-      "started_at": "2026-01-07T23:53:32.969238+00:00",
-      "ended_at": "2026-01-07T23:53:33.034010+00:00",
-      "duration_seconds": 0.064772,
+      "started_at": "2026-01-08T00:58:06.914142+00:00",
+      "ended_at": "2026-01-08T00:58:07.019004+00:00",
+      "duration_seconds": 0.104862,
       "stdout": [
-        "tests/build/hamilton/test_cache_adapter_arrow_store.py:",
-        "  28:11 TRY003 Avoid specifying long messages outside the exception class",
-        "  28:26 EM102 Exception must not use an f-string literal, assign to variable first",
+        "tests/build/hamilton/test_dag_catalog_compiler.py:",
+        "   57:9 DOC201 `return` is not documented in docstring",
+        "   62:9 DOC201 `return` is not documented in docstring",
+        "   87:9 DOC201 `return` is not documented in docstring",
+        "   92:9 DOC201 `return` is not documented in docstring",
+        "   97:9 DOC201 `return` is not documented in docstring",
+        "  148:9 DOC201 `return` is not documented in docstring",
+        "  203:9 DOC201 `return` is not documented in docstring",
+        "  220:5 DOC502 Raised exception is not explicitly raised: `RuntimeError`",
+        "  243:5 DOC501 Raised exception `RuntimeError` missing from docstring",
         "",
-        "Found 3 errors (1 fixed, 2 remaining).",
-        "No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option)."
+        "Found 12 errors (3 fixed, 9 remaining)."
       ],
       "stderr": []
     },
@@ -117,9 +123,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2026-01-07T23:53:33.034049+00:00",
-      "ended_at": "2026-01-07T23:53:39.465591+00:00",
-      "duration_seconds": 6.431542,
+      "started_at": "2026-01-08T00:58:07.019042+00:00",
+      "ended_at": "2026-01-08T00:58:13.876869+00:00",
+      "duration_seconds": 6.857827,
       "stdout": [],
       "stderr": []
     },
@@ -134,17 +140,17 @@
       ],
       "status": "failed",
       "return_code": 1,
-      "started_at": "2026-01-07T23:53:39.465650+00:00",
-      "ended_at": "2026-01-07T23:54:01.910228+00:00",
-      "duration_seconds": 22.444578,
+      "started_at": "2026-01-08T00:58:13.876925+00:00",
+      "ended_at": "2026-01-08T00:58:37.275649+00:00",
+      "duration_seconds": 23.398724,
       "stdout": [
         "/Users/paulheyse/CodeIntel/CodeIntel/tests/build/hamilton/test_cache_adapter_arrow_store.py",
-        "  /Users/paulheyse/CodeIntel/CodeIntel/tests/build/hamilton/test_cache_adapter_arrow_store.py:27:22 - error: Cannot access attribute \"read_all\" for class \"object\"",
-        "  \u00a0\u00a0Attribute \"read_all\" is unknown (reportAttributeAccessIssue)",
-        "  /Users/paulheyse/CodeIntel/CodeIntel/tests/build/hamilton/test_cache_adapter_arrow_store.py:53:19 - error: Cannot access attribute \"to_pylist\" for class \"object\"",
-        "  \u00a0\u00a0Attribute \"to_pylist\" is unknown (reportAttributeAccessIssue)",
-        "  /Users/paulheyse/CodeIntel/CodeIntel/tests/build/hamilton/test_cache_adapter_arrow_store.py:53:19 - error: \"to_pylist\" is not a known attribute of \"None\" (reportOptionalMemberAccess)",
-        "3 errors, 0 warnings, 0 informations"
+        "  /Users/paulheyse/CodeIntel/CodeIntel/tests/build/hamilton/test_cache_adapter_arrow_store.py:15:28 - error: Function with declared return type \"list[object]\" must return value on all code paths",
+        "  \u00a0\u00a0\"None\" is not assignable to \"list[object]\" (reportReturnType)",
+        "  /Users/paulheyse/CodeIntel/CodeIntel/tests/build/hamilton/test_cache_adapter_arrow_store.py:20:27 - error: Function with declared return type \"_Pylistable\" must return value on all code paths",
+        "  \u00a0\u00a0\"None\" is incompatible with protocol \"_Pylistable\"",
+        "  \u00a0\u00a0\u00a0\u00a0\"to_pylist\" is not present (reportReturnType)",
+        "2 errors, 0 warnings, 0 informations"
       ],
       "stderr": []
     },
@@ -156,15 +162,29 @@
         "pyrefly",
         "check"
       ],
-      "status": "passed",
-      "return_code": 0,
-      "started_at": "2026-01-07T23:54:01.910351+00:00",
-      "ended_at": "2026-01-07T23:54:04.331135+00:00",
-      "duration_seconds": 2.420784,
-      "stdout": [],
+      "status": "failed",
+      "return_code": 1,
+      "started_at": "2026-01-08T00:58:37.275860+00:00",
+      "ended_at": "2026-01-08T00:58:39.581341+00:00",
+      "duration_seconds": 2.305481,
+      "stdout": [
+        "ERROR Function declared to return `list[object]` but is missing an explicit `return` [bad-return]",
+        "  --> tests/build/hamilton/test_cache_adapter_arrow_store.py:15:28",
+        "   |",
+        "15 |     def to_pylist(self) -> list[object]:",
+        "   |                            ^^^^^^^^^^^^",
+        "   |",
+        "ERROR Function declared to return `_Pylistable` but is missing an explicit `return` [bad-return]",
+        "  --> tests/build/hamilton/test_cache_adapter_arrow_store.py:20:27",
+        "   |",
+        "20 |     def read_all(self) -> _Pylistable:",
+        "   |                           ^^^^^^^^^^^",
+        "   |",
+        "  Protocol `_Pylistable` requires attribute `to_pylist`"
+      ],
       "stderr": [
         " INFO Checking project configured at `/Users/paulheyse/CodeIntel/CodeIntel/pyrefly.toml`",
-        " INFO 0 errors (148 suppressed)"
+        " INFO 2 errors (148 suppressed)"
       ]
     }
   ],

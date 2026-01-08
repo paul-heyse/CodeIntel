@@ -59,6 +59,12 @@ class ScipIngestOptions:
         Optional prefixes to limit processing to matching files.
     environment_json
         Optional scip-python environment JSON file.
+    project_version_mode
+        Project version mode: unset, commit, or constant.
+    project_version_value
+        Project version value when using constant mode.
+    project_namespace
+        Optional namespace prefix for project symbols.
     include_references
         Whether to include symbol references in output.
     include_implementations
@@ -85,6 +91,9 @@ class ScipIngestOptions:
 
     scope_paths: list[str] | None = None
     environment_json: Path | None = None
+    project_version_mode: str = "unset"
+    project_version_value: str | None = None
+    project_namespace: str | None = None
     include_references: bool = True
     include_implementations: bool = True
     max_file_size_kb: int = 102400

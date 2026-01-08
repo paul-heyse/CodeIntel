@@ -272,6 +272,14 @@ class ToolsConfig(BaseModel):
         "CodeIntel",
         description="Project name passed to scip-python for stable SCIP identity",
     )
+    scip_project_version: str | None = Field(
+        default=None,
+        description="Optional project version passed to scip-python",
+    )
+    scip_project_namespace: str | None = Field(
+        default=None,
+        description="Optional project namespace passed to scip-python",
+    )
     scip_python_bin: str = Field(
         "scip-python",
         description="Path to scip-python CLI (binary name is scip-python)",

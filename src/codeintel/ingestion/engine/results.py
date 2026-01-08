@@ -372,6 +372,12 @@ class ScipOccurrence:
         Line/column range as a tuple (start_line, start_col, end_line, end_col).
     symbol_roles
         Bitmask of symbol roles for this occurrence.
+    syntax_kind
+        Optional syntax highlighting kind enum.
+    enclosing_range
+        Optional enclosing range tuple (start_line, start_col, end_line, end_col).
+    override_documentation
+        Optional occurrence-specific documentation.
     position_encoding
         Encoding enum for interpreting column offsets.
     text_document_encoding
@@ -385,6 +391,9 @@ class ScipOccurrence:
     symbol: str
     range_: tuple[int, int, int, int]
     symbol_roles: int = 0
+    syntax_kind: int | None = None
+    enclosing_range: tuple[int, int, int, int] | None = None
+    override_documentation: str | None = None
     position_encoding: int | None = None
     text_document_encoding: str | None = None
     start_byte: int | None = None
@@ -410,6 +419,20 @@ class ScipOccurrence:
             range_end_line=self.range_[2],
             range_end_col=self.range_[3],
             symbol_roles=self.symbol_roles,
+            syntax_kind=self.syntax_kind,
+            enclosing_start_line=(
+                self.enclosing_range[0] if self.enclosing_range is not None else None
+            ),
+            enclosing_start_col=(
+                self.enclosing_range[1] if self.enclosing_range is not None else None
+            ),
+            enclosing_end_line=(
+                self.enclosing_range[2] if self.enclosing_range is not None else None
+            ),
+            enclosing_end_col=(
+                self.enclosing_range[3] if self.enclosing_range is not None else None
+            ),
+            override_documentation=self.override_documentation,
             position_encoding=self.position_encoding,
             text_document_encoding=self.text_document_encoding,
             start_byte=self.start_byte,

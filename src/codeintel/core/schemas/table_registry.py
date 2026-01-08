@@ -492,6 +492,8 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("commit", "VARCHAR", nullable=False),
             Column("mode", "VARCHAR", nullable=False),
             Column("options_hash", "VARCHAR"),
+            Column("project_version", "VARCHAR"),
+            Column("project_namespace", "VARCHAR"),
             Column("tool_version", "VARCHAR"),
             Column("total_modules", "INTEGER"),
             Column("changed_modules", "INTEGER"),

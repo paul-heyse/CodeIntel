@@ -173,6 +173,8 @@ class TestScipRunTracking:
             commit="abc123",
             mode="incremental",
             options_hash="options-hash",
+            project_version=None,
+            project_namespace=None,
             tool_version="scip-python 1.0.0",
             total_modules=10,
             changed_modules=2,

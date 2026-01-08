@@ -392,6 +392,9 @@ def _convert_scip_occurrence(
 
     occ_position_encoding = getattr(occ, "position_encoding", None)
     occ_text_encoding = getattr(occ, "text_document_encoding", None)
+    enclosing_range = getattr(occ, "enclosing_range", None)
+    override_documentation = getattr(occ, "override_documentation", None)
+    syntax_kind = getattr(occ, "syntax_kind", None)
 
     return ScipOccurrence(
         symbol=getattr(occ, "symbol", ""),
@@ -400,6 +403,14 @@ def _convert_scip_occurrence(
         range_end_line=end_line,
         range_end_col=end_col,
         symbol_roles=getattr(occ, "symbol_roles", 0) or 0,
+        syntax_kind=syntax_kind if isinstance(syntax_kind, int) else None,
+        enclosing_start_line=(enclosing_range[0] if isinstance(enclosing_range, tuple) else None),
+        enclosing_start_col=(enclosing_range[1] if isinstance(enclosing_range, tuple) else None),
+        enclosing_end_line=(enclosing_range[2] if isinstance(enclosing_range, tuple) else None),
+        enclosing_end_col=(enclosing_range[3] if isinstance(enclosing_range, tuple) else None),
+        override_documentation=(
+            override_documentation if isinstance(override_documentation, str) else None
+        ),
         position_encoding=(
             occ_position_encoding if occ_position_encoding is not None else position_encoding
         ),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -22,48 +23,50 @@ def _normalize_target_only_paths(paths: Sequence[str]) -> list[str]:
     return normalized
 
 
-def build_scip_python_args(
-    *,
-    target_base: Path,
-    output_scip: Path,
-    project_name: str,
-    target_paths: Sequence[str] | None = None,
-    environment_json: Path | None = None,
-) -> list[str]:
+@dataclass(frozen=True)
+class ScipPythonArgs:
+    """Arguments for scip-python CLI invocations."""
+
+    target_base: Path
+    output_scip: Path
+    project_name: str
+    target_paths: Sequence[str] | None = None
+    environment_json: Path | None = None
+    project_version: str | None = None
+    project_namespace: str | None = None
+
+
+def build_scip_python_args(args: ScipPythonArgs) -> list[str]:
     """Build scip-python CLI arguments.
 
     Parameters
     ----------
-    target_base
-        Project root passed to scip-python.
-    output_scip
-        Output index.scip path.
-    project_name
-        Project name used for SCIP identity.
-    target_paths
-        Optional repo-relative paths or prefixes to index.
-    environment_json
-        Optional scip-python --environment JSON file.
+    args
+        scip-python argument bundle.
 
     Returns
     -------
     list[str]
         Argument list for scip-python.
     """
-    args = [
+    argv = [
         "index",
-        str(target_base),
+        str(args.target_base),
         "--output",
-        str(output_scip),
+        str(args.output_scip),
         "--project-name",
-        project_name,
+        args.project_name,
     ]
-    if environment_json is not None:
-        args.extend(["--environment", str(environment_json)])
-    if target_paths:
-        for rel_path in _normalize_target_only_paths(target_paths):
-            args.extend(["--target-only", rel_path])
-    return args
+    if args.project_version is not None:
+        argv.extend(["--project-version", args.project_version])
+    if args.project_namespace is not None:
+        argv.extend(["--project-namespace", args.project_namespace])
+    if args.environment_json is not None:
+        argv.extend(["--environment", str(args.environment_json)])
+    if args.target_paths:
+        for rel_path in _normalize_target_only_paths(args.target_paths):
+            argv.extend(["--target-only", rel_path])
+    return argv
 
 
 def ensure_pip_available() -> None:
@@ -83,4 +86,4 @@ def ensure_pip_available() -> None:
     raise ValueError(message)
 
 
-__all__ = ["build_scip_python_args", "ensure_pip_available"]
+__all__ = ["ScipPythonArgs", "build_scip_python_args", "ensure_pip_available"]

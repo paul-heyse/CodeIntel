@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pyarrow as pa
+import pyarrow.compute as pc
 from google.protobuf.struct_pb2 import NullValue, Struct
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -103,6 +104,25 @@ def _cast_int32(table: pa.Table, columns: Sequence[str]) -> pa.Table:
     return pa.Table.from_arrays(arrays, names=list(table.column_names))
 
 
+def _replace_column(
+    table: pa.Table,
+    name: str,
+    values: pa.Array | pa.ChunkedArray,
+) -> pa.Table:
+    index = table.schema.get_field_index(name)
+    if index < 0:
+        return table
+    return table.set_column(index, name, values)
+
+
+def _if_else(
+    condition: pa.Array | pa.ChunkedArray,
+    left: pa.Array | pa.ChunkedArray,
+    right: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    return pc.call_function("if_else", [condition, left, right])
+
+
 def _empty_reader_for_output_table(table_key: str) -> pa.Table:
     try:
         return empty_table_for_table(table_key)
@@ -123,6 +143,63 @@ def _empty_table_for_output_table(table_key: str) -> pa.Table:
     return pa.Table.from_batches([], schema=arrow_schema)
 
 
+def _apply_enclosing_ranges(table: pa.Table) -> pa.Table:
+    required = {
+        "enclosing_start_line",
+        "enclosing_start_col",
+        "enclosing_end_line",
+        "enclosing_end_col",
+    }
+    if table.num_rows == 0 or not required.issubset(set(table.column_names)):
+        return table
+    enclosing_mask = and_kleene(
+        and_kleene(
+            is_valid_mask(table["enclosing_start_line"]),
+            is_valid_mask(table["enclosing_start_col"]),
+        ),
+        and_kleene(
+            is_valid_mask(table["enclosing_end_line"]),
+            is_valid_mask(table["enclosing_end_col"]),
+        ),
+    )
+    table = _replace_column(
+        table,
+        "start_line",
+        _if_else(enclosing_mask, table["enclosing_start_line"], table["start_line"]),
+    )
+    table = _replace_column(
+        table,
+        "start_col",
+        _if_else(enclosing_mask, table["enclosing_start_col"], table["start_col"]),
+    )
+    table = _replace_column(
+        table,
+        "end_line",
+        _if_else(enclosing_mask, table["enclosing_end_line"], table["end_line"]),
+    )
+    return _replace_column(
+        table,
+        "end_col",
+        _if_else(enclosing_mask, table["enclosing_end_col"], table["end_col"]),
+    )
+
+
+def _apply_occurrence_documentation(table: pa.Table) -> pa.Table:
+    if table.num_rows == 0:
+        return table
+    if "override_documentation" not in table.column_names:
+        return table
+    override_doc = table["override_documentation"]
+    if "documentation" not in table.column_names:
+        return table.append_column("documentation", override_doc)
+    merged_doc = _if_else(
+        is_valid_mask(override_doc),
+        override_doc,
+        table["documentation"],
+    )
+    return _replace_column(table, "documentation", merged_doc)
+
+
 def _symbol_info_table(symbol_info: InferableTabularInput) -> pa.Table:
     table = tabular_to_scoped_table(
         symbol_info,
@@ -130,6 +207,7 @@ def _symbol_info_table(symbol_info: InferableTabularInput) -> pa.Table:
             "repo",
             "commit",
             "symbol",
+            "documentation",
             "enclosing_symbol",
         ],
         scope=None,
@@ -168,7 +246,15 @@ def _occurrences_table(occurrences: InferableTabularInput) -> pa.Table:
         require_scope_columns=False,
     )
     table = _rename_columns(table, {"symbol": "scip_symbol"})
-    return _cast_int32(table, ["start_line", "end_line"])
+    return _cast_int32(
+        table,
+        [
+            "start_line",
+            "end_line",
+            "enclosing_start_line",
+            "enclosing_end_line",
+        ],
+    )
 
 
 def _goids_by_start_line(goids: pa.Table) -> pa.Table:
@@ -342,6 +428,8 @@ def _occurrence_span_xref_table(
         spec=join_spec,
         options=join_options,
     )
+    base = _apply_occurrence_documentation(base)
+    base = _apply_enclosing_ranges(base)
     roles = base["roles"] if "roles" in base.column_names else None
     if roles is None:
         return _empty_table_for_output_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
@@ -388,6 +476,7 @@ def _occurrence_span_xref_table(
             "is_write",
             "is_read",
             "enclosing_symbol",
+            "documentation",
             "start_line",
             "start_col",
             "end_line",
