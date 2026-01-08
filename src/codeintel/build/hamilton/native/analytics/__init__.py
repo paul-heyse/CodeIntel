@@ -33,6 +33,11 @@ from codeintel.build.hamilton.native.analytics.config_graphs import (
     t__config_data_flow,
     t__config_graph_metrics,
 )
+from codeintel.build.hamilton.native.analytics.contract_alignment_summary import (
+    contract_alignment_summary__base,
+    contract_alignment_summary__table,
+    t__contract_alignment_summary,
+)
 from codeintel.build.hamilton.native.analytics.data_models import (
     data_model_fields__base,
     data_model_fields__table,
@@ -190,6 +195,8 @@ __all__ = [
     "config_projection_key_edges__table",
     "config_projection_module_edges__base",
     "config_projection_module_edges__table",
+    "contract_alignment_summary__base",
+    "contract_alignment_summary__table",
     "data_model_fields__base",
     "data_model_fields__table",
     "data_model_relationships__base",
@@ -278,6 +285,7 @@ __all__ = [
     "t__cfg_dfg_metrics",
     "t__config_data_flow",
     "t__config_graph_metrics",
+    "t__contract_alignment_summary",
     "t__data_model_usage",
     "t__data_models",
     "t__entrypoints",

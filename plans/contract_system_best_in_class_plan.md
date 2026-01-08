@@ -121,7 +121,7 @@ Target files:
 
 ### 2) Contract Policy Registry + Profiles
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Centralize policy selection while keeping target code minimal.
@@ -160,9 +160,14 @@ Active policy defaults (current config):
 - Lenient targets: analytics metrics + config graph outputs.
 - Table-level overrides for selected graph edges + analytics graph/config tables.
 
+Completed scope (current implementation):
+- ContractPolicyRegistry + config wiring live with default/strict/lenient profiles.
+- Profile mappings now cover table/target policy resolution and validation_profile defaults.
+- Table target save specs inherit validation_profile from contract policy when unset.
+
 ### 3) Schema Evolution Classification + Gating
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Detect and gate breaking schema changes systematically.
@@ -189,9 +194,14 @@ Target files:
 - `tools/quality_report.py`
 - `config/schema_breaks.yaml`
 
+Completed scope (current implementation):
+- `tools.schema_diff` classifies drift + breaking changes and emits a summary.
+- Quality report executes schema_diff and fails on unapproved breaking changes.
+- `config/schema_breaks.yaml` is the allowlist for approved breaks.
+
 ### 4) Contract Diagnostics as First-Class Outputs
 
-Status: Proposed
+Status: In progress
 
 Goal:
 - Persist alignment diffs for auditability and quality enforcement.
@@ -226,7 +236,13 @@ Target files:
 - `src/codeintel/core/schemas/table_registry.py`
 - `src/codeintel/build/tabular/arrow_ops.py`
 - `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`
-- `src/codeintel/build/hamilton/native/diagnostics.py`
+- `src/codeintel/build/hamilton/native/materialization_records.py`
+- `src/codeintel/build/hamilton/contract_alignment_issues.py`
+- `src/codeintel/build/hamilton/executor.py`
+
+Started scope (current implementation):
+- Added `build.contract_alignment_issues` schema and persistence hook at run finalization.
+- Alignment reports now drain into a diagnostics buffer for dataset emission.
 
 ### 5) Migrations Registry + Loader Integration
 

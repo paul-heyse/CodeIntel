@@ -3621,6 +3621,27 @@ GRAPH_VALIDATION_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
+CONTRACT_ALIGNMENT_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    TableSchema(
+        schema="analytics",
+        name="contract_alignment_summary",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("run_id", "VARCHAR", nullable=False),
+            Column("issue_count", "INTEGER", nullable=False),
+            Column("target_count", "INTEGER", nullable=False),
+            Column("table_count", "INTEGER", nullable=False),
+            Column("missing_total", "INTEGER", nullable=False),
+            Column("extra_total", "INTEGER", nullable=False),
+            Column("coerced_total", "INTEGER", nullable=False),
+            *CREATED_AT_COL,
+        ],
+        primary_key=("repo", "commit", "run_id"),
+        indexes=(Index("idx_analytics_contract_alignment_run_id", ("run_id",)),),
+        description="Run-level contract alignment issue counts and column drift totals",
+    ),
+)
+
 CPG_QUALITY_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="analytics",
@@ -3878,6 +3899,7 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
         *GOIDS_OVERRIDE_TABLES,
         *GRAPH_METRICS_OVERRIDE_TABLES,
         *GRAPH_VALIDATION_OVERRIDE_TABLES,
+        *CONTRACT_ALIGNMENT_OVERRIDE_TABLES,
         *CPG_QUALITY_OVERRIDE_TABLES,
         *IMPORT_GRAPH_OVERRIDE_TABLES,
         *MODULES_OVERRIDE_TABLES,
@@ -4021,6 +4043,7 @@ __all__ = [
     "CI_PLAN_OVERRIDE_TABLES",
     "CONFIG_DATA_FLOW_OVERRIDE_TABLES",
     "CONFIG_INGEST_OVERRIDE_TABLES",
+    "CONTRACT_ALIGNMENT_OVERRIDE_TABLES",
     "CPG_OVERRIDE_TABLES",
     "CPG_QUALITY_OVERRIDE_TABLES",
     "CST_OVERRIDE_TABLES",

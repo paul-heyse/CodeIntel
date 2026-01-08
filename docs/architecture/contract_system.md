@@ -1,22 +1,23 @@
 # Contract System (Build-Time) — End-to-End Design
 
 This document explains how the CodeIntel **build-time contract system** works end-to-end: how
-contracts are resolved, how contract alignment is applied across Arrow/Polars backends, how
-materialization records store contract metadata and diagnostics, and how loader-side migrations keep
-older snapshots readable.
+contracts are resolved via lazy references, how contract alignment is applied across Arrow/Polars
+backends, how materialization records store contract metadata and diagnostics, and how optional
+loader-side migrations keep older snapshots readable.
 
 ## Goals
 
 - **Single source of truth** for table shape and semantics, derived from schema definitions.
+- **Lazy, import-safe resolution**: targets declare contract refs that resolve only after schema
+  services are configured.
 - **Target-aware alignment**: the same `table_key` can be emitted by different targets without
   collisions in alignment behavior.
 - **High-performance alignment**: reader-first schema alignment with caching and fast paths.
-- **Strong observability**: surface alignment diffs in a structured way and persist them with
-  materialization metadata.
+- **Strong observability**: surface alignment diffs in a structured way and persist them as build
+  diagnostics and run-level summaries.
 - **Evolution without fragility**: contract versions/hashes attached to outputs + optional loader
   migrations to support older snapshots.
-- **Ergonomic authoring**: minimize boilerplate via contract factories and table-target context
-  objects.
+- **Ergonomic authoring**: minimize boilerplate via contract refs and table-target context objects.
 
 ## Core Types and Concepts
 
@@ -29,7 +30,26 @@ A fully-qualified table identifier: `"domain.table_name"` (e.g. `"analytics.grap
 - **Schema**: the canonical model of the dataset (fields, types, metadata, validation defaults).
   Schema is owned by the schema service and used to generate Arrow schemas.
 - **Build-time contract spec**: the *target-specific* contract policy and wiring used by Hamilton
-  build nodes and materializers.
+  build nodes and materializers, resolved at runtime from `ContractRef`.
+
+### `ContractRef`
+
+Lazy contract handle created at import time (safe before SchemaService exists). It captures:
+
+- `table_key`
+- `target_name`
+- `input_name`
+- optional overrides (policy, required cols, ops module, etc.)
+
+### `ContractRuntime`
+
+Runtime resolver configured after the schema service is available:
+
+- resolves `ContractRef` to a concrete `TableContractSpec`
+- applies policy defaults from `ContractPolicyRegistry`
+- caches resolutions by `(table_key, target_name, input_name, overrides)`
+
+Runtime wiring happens during composition in `src/codeintel/runtime/compose.py`.
 
 ### `ContractPolicy`
 
@@ -41,6 +61,19 @@ Relevant fields (see `src/codeintel/build/contracts/types.py`):
 - `validation_profile`: optional validation profile.
 - `coerce_types`: whether type coercion is allowed during alignment.
 - `allow_nulls`: validation policy hook (used by validation stages).
+
+Defaults are resolved via `ContractPolicyRegistry`, which is configured from
+`config/codeintel.build.toml` (`[contracts]` section) during runtime composition.
+
+### `ContractPolicyRegistry`
+
+The policy registry centralizes defaults so targets do not hard-code policy choices. Configuration
+keys under `[contracts]` include:
+
+- `policy_profiles`: named policy definitions
+- `policy_tables`: table key → profile mapping
+- `policy_targets`: target name → profile mapping
+- `default_profile`: fallback profile name
 
 ### `TableContractSpec`
 
@@ -65,45 +98,28 @@ This preserves output-specific shaping when a `table_key` is reused across multi
 
 ## Resolution: How a `TableContractSpec` Is Produced
 
-### Registry
+### Contract runtime + registry
 
-The build-time entrypoint is the contract registry:
+Targets declare **lazy contract refs** and resolve them at runtime:
 
-- `src/codeintel/build/contracts/registry.py`
+1. Targets create a `ContractRef` via `contract_ref_for_table(...)`.
+2. `configure_contract_runtime(...)` sets up a `ContractRuntime` with the schema service and policy
+   registry during composition (`src/codeintel/runtime/compose.py`).
+3. When a table target spec is built/attached, the runtime resolves the ref into a concrete
+   `TableContractSpec`.
 
-Conceptually:
-
-1. The schema service provides a canonical `TableSchema`.
-2. The registry derives a `TableContractSpec` from the schema defaults.
-3. Target-specific override values (input name, optional policy tweaks) are applied.
-
-The registry also attaches **identity metadata**:
+The resolver derives the contract spec from the canonical `TableSchema` and applies overrides. It
+also attaches **identity metadata**:
 
 - `contract_version`: derived from the dataset contract (if present).
 - `contract_hash`: a stable hash of the `TableSchema` (the schema “fingerprint”).
 
-#### Convenience APIs and injection
-
-The registry module exposes both low-level and target-aware helpers:
-
-- `get_contract(...)` / `require_contract(...)`: resolve by explicit `domain` + `target`.
-- `get_contract_for_target(...)` / `require_contract_for_target(...)`: resolve by `table_key` +
-  `target_name` (domain is derived from `table_key`).
-
-For testing or specialized deployments, the global registry can be replaced:
-
-- `set_contract_registry(registry=...)` and `get_contract_registry()`
-
-This enables swapping out contract resolution behavior without changing target code.
-
-### Factory helpers (`Scope 8`)
-
-To reduce repetitive `ContractOverrides(...)` scaffolding, targets use a factory:
+### Canonical helper (`ContractRef`)
 
 ```python
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 
-CONTRACT = contract_for_table(
+CONTRACT = contract_ref_for_table(
     table_key="analytics.graph_metrics_functions",
     target_name="graph_metrics",
     input_name="graph_metrics_functions__base",
@@ -112,26 +128,9 @@ CONTRACT = contract_for_table(
 )
 ```
 
-This is the canonical pattern for targets under `src/codeintel/build/hamilton/native/analytics/*`.
-
-There is also a batch helper for multi-table targets:
-
-```python
-from codeintel.build.contracts.registry import ContractForTableInput, contracts_for_target
-
-contracts = contracts_for_target(
-    target_name="config_graph_metrics",
-    specs=(
-        ContractForTableInput(
-            table_key="analytics.config_graph_metrics_keys",
-            input_name="config_graph_metrics_keys__base",
-            required_cols=(),
-            clip_column=None,
-        ),
-        # ...
-    ),
-)
-```
+For tests or specialized tooling you can still resolve contracts directly via the registry
+(`contract_for_table`, `require_contract_for_target`), but Hamilton targets should use refs to avoid
+import-time schema resolution.
 
 ## Contract Attachment: From Contract Specs to Hamilton Targets
 
@@ -147,9 +146,11 @@ Key concepts:
   `TableTargetSpec` and table specs.
 - `build_single_table_target_spec(...)` / `build_multi_table_target_spec(...)`: build specs used to
   attach target templates.
-- `TableTargetContext.from_contract(...)` and `TableTargetTableContext.from_contract(...)`:
-  context constructors that ensure the **contract drives base node wiring** (the contract’s
-  `input_name` becomes the single source of truth for the base node name).
+- `TableTargetContext.from_contract_ref(...)` and
+  `TableTargetTableContext.from_contract_ref(...)`: context constructors that ensure the **contract
+  ref drives base node wiring** (the ref’s `input_name` becomes the single source of truth for the
+  base node name). The ref is resolved to a `TableContractSpec` at attach time via
+  `ContractRuntime`.
 
 ### Guardrail: contract provenance
 
@@ -179,7 +180,7 @@ Given a `TableContractSpec`, the pipeline wires these stages:
 1) **Input cleaning** (`pipe_clean_df`)
    - Uses `required_cols` and `clip_column`.
    - Targets the base input name via `input_name` (this is why
-     `TableTargetContext.from_contract(...)` is the canonical wiring pattern).
+     `TableTargetContext.from_contract_ref(...)` is the canonical wiring pattern).
 2) **Feature injection** (`with_features`, optional)
    - Enabled when `ops_module` is present.
    - Uses `columns_to_pass` and config-provided feature selections.
@@ -228,7 +229,8 @@ Alignment resolves policy in the following order:
 
 1) If a `policy` override is provided, it is used directly.
 2) Else, if `target_name` is provided, alignment resolves `TableContractSpec.policy` via
-   `require_contract_for_target(table_key=..., target_name=...)`.
+   `require_contract_for_target(table_key=..., target_name=...)`, which applies policy defaults
+   from `ContractPolicyRegistry`.
 3) Else, it falls back to a default `ContractPolicy()`.
 
 If `extras_policy` is provided, it must be compatible with the resolved policy:
@@ -262,7 +264,7 @@ Alignment uses a cached plan (`ContractAlignmentPlan`) keyed by:
 
 This keeps alignment overhead small, especially in large DAGs with repeated alignment calls.
 
-## Cross-Tabular Alignment (Arrow + Polars) (`Scope 7`)
+## Cross-Tabular Alignment (Arrow + Polars)
 
 Some pipeline steps and nodes operate on Polars frames while others operate on Arrow tables/readers.
 To keep contract alignment consistent across backends, the system provides:
@@ -292,7 +294,7 @@ The Hamilton step utilities route alignment through this helper:
 
 - `src/codeintel/build/hamilton/transforms/tabular_steps.py`
 
-## Diagnostics: Alignment Reports and Materialization Metadata (`Scope 6`)
+## Diagnostics: Alignment Reports and Persistence
 
 ### Alignment report structure
 
@@ -329,6 +331,30 @@ Under the hood, `emit_alignment_report(...)`:
 - Logs at most once per `(table_key, target_name)` to reduce log noise.
 - Stores the last report in an in-process map so materialization records can attach it later.
 
+Alignment diagnostics intended for persistence are captured separately:
+
+- `record_alignment_diagnostic(...)` stores the latest diagnostic for a table target.
+- `drain_alignment_diagnostics(...)` returns and clears pending diagnostics for persistence.
+
+### Persistent diagnostics dataset
+
+Alignment diagnostics are persisted as a build dataset at run finalization:
+
+- `build.contract_alignment_issues` (per target/table)
+- written via `persist_contract_alignment_issues` in
+  `src/codeintel/build/hamilton/contract_alignment_issues.py`
+- triggered from `src/codeintel/build/hamilton/executor.py`
+
+Each row records run metadata, missing/extra/coerced counts, row count when available, and the
+contract hash/version used for alignment.
+
+### Run-level summary target
+
+A lightweight analytics rollup aggregates per-run counts:
+
+- `analytics.contract_alignment_summary`
+- defined in `src/codeintel/build/hamilton/native/analytics/contract_alignment_summary.py`
+
 ### Persistence in materialization records
 
 Materialization records attach contract metadata and alignment reports to dataset refs:
@@ -346,7 +372,7 @@ keys:
 - `alignment_report` (a dict payload containing missing/extra/coerced columns and row count)
 - `dataset_manifest_path` (when available)
 
-## Output Metadata: Contract Identity on Materialized Datasets (`Scope 6 + 5`)
+## Output Metadata: Contract Identity on Materialized Datasets
 
 ### Dataset saver
 
@@ -385,7 +411,7 @@ Targets also attach contract identity as Hamilton tags (when available):
 
 This helps introspection and target lineage/observability tooling.
 
-## Loader-Side Migration: Keeping Old Snapshots Readable (`Scope 5`)
+## Loader-Side Migration: Keeping Old Snapshots Readable
 
 ### Motivation
 
@@ -406,8 +432,11 @@ Migrations are registered and applied by:
 
 Conceptually:
 
-- `register_contract_migration(...)` registers a function keyed by `(table_key, from_version, to_version)`.
-- `apply_contract_migration(...)` applies the registered migration to an Arrow table.
+- `register_contract_migration(...)` registers a function keyed by `table_key`.
+- `apply_contract_migration(...)` applies the registered migration when versions differ.
+
+Current behavior supports one migration per table key (no chained version routing yet). The
+migration function receives `from_version` and `to_version` for context.
 
 ### Loader behavior
 
@@ -430,7 +459,7 @@ Note: loader alignment uses the lower-level alignment utilities in
 `codeintel.core.columnar.schema_alignment` because loaders need to apply environment-specific
 `schema_promote_options` while aligning streamed/loaded datasets.
 
-## Pipeline Ordering: Where Contracts Apply (`Scope 4`)
+## Pipeline Ordering: Where Contracts Apply
 
 Contracts are enforced at well-defined points:
 
@@ -449,20 +478,25 @@ The general strategy is:
 ## Developer Workflow: Adding or Modifying a Contracted Table
 
 1) Ensure the table exists in the schema service (TableSchema / dataset contract source).
-2) In a target module, declare the contract spec via `contract_for_table(...)`.
-3) Use `TableTargetContext.from_contract(...)` (single-table) or
-   `TableTargetTableContext.from_contract(...)` (multi-table) so `input_name` is the base-node
+2) In a target module, declare a contract ref via `contract_ref_for_table(...)`.
+3) Use `TableTargetContext.from_contract_ref(...)` (single-table) or
+   `TableTargetTableContext.from_contract_ref(...)` (multi-table) so `input_name` is the base-node
    source of truth.
-4) Ensure output alignment happens through:
+4) If you need strict/lenient defaults, map the table/target in `config/codeintel.build.toml`
+   under `[contracts]`.
+5) Ensure output alignment happens through:
    - `align_table_to_contract(...)` / `align_reader_to_contract(...)` for Arrow, or
    - `align_tabular_to_contract(...)` if the node can return Polars.
-5) If you change schema versions, add a migration in `src/codeintel/build/contracts/migrations.py`
-   when older snapshots must remain readable.
+6) If you change schema versions and need compatibility, add a migration in
+   `src/codeintel/build/contracts/migrations.py`.
 
 ## File Index (Key Entry Points)
 
 - Contract types: `src/codeintel/build/contracts/types.py`
-- Contract registry + factories: `src/codeintel/build/contracts/registry.py`
+- Contract refs + runtime: `src/codeintel/build/contracts/ref.py`,
+  `src/codeintel/build/contracts/runtime.py`
+- Contract registry (direct resolution): `src/codeintel/build/contracts/registry.py`
+- Contract policy registry: `src/codeintel/build/contracts/policy_registry.py`
 - Contract migrations: `src/codeintel/build/contracts/migrations.py`
 - Alignment engine: `src/codeintel/build/tabular/arrow_ops.py`
 - Graph assembly wrappers: `src/codeintel/build/graphs/assembly/contracts.py`
@@ -473,6 +507,9 @@ The general strategy is:
 - Table target templates/contexts: `src/codeintel/build/hamilton/native/patterns/table_target.py`
 - Loader migrations + validation: `src/codeintel/build/hamilton/native/patterns/loaders.py`
 - Materialization metadata: `src/codeintel/build/hamilton/native/materialization_records.py`
+- Alignment diagnostics persistence: `src/codeintel/build/hamilton/contract_alignment_issues.py`
+- Alignment summary target:
+  `src/codeintel/build/hamilton/native/analytics/contract_alignment_summary.py`
 
 ## Deprecations
 

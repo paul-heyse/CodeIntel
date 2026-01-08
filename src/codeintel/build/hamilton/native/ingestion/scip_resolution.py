@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -58,6 +59,7 @@ _HAMILTON_TYPE_HINTS = (
     TargetRunRecord,
     InferableTabularInput,
 )
+LOG = logging.getLogger(__name__)
 
 SCIP_RESOLUTION_TARGET_NAME = "scip_resolution"
 SCIP_SYMBOL_GOID_XREF_TABLE_KEY = "core.scip_symbol_goid_xref"
@@ -69,8 +71,12 @@ _ROLE_IMPORT = 0x2
 _ROLE_WRITE = 0x4
 _ROLE_READ = 0x8
 
+_MATCH_KIND_BYTE_SPAN = "byte_span"
+_MATCH_KIND_LINE_COL = "line_col"
 _MATCH_KIND_LINE_SPAN = "line_span"
 _MATCH_KIND_LINE_START = "line_start"
+_MATCH_CONFIDENCE_BYTE_SPAN = 1.0
+_MATCH_CONFIDENCE_LINE_COL = 0.8
 _MATCH_CONFIDENCE_LINE_SPAN = 1.0
 _MATCH_CONFIDENCE_LINE_START = 0.6
 
@@ -105,6 +111,48 @@ def _cast_int32(table: pa.Table, columns: Sequence[str]) -> pa.Table:
         else:
             arrays.append(column)
     return pa.Table.from_arrays(arrays, names=list(table.column_names))
+
+
+def _drop_columns_if_present(table: pa.Table, names: Sequence[str]) -> pa.Table:
+    existing = [name for name in names if name in table.column_names]
+    if not existing:
+        return table
+    return table.drop_columns(existing)
+
+
+def _append_null_column(table: pa.Table, name: str, data_type: pa.DataType) -> pa.Table:
+    if name in table.column_names:
+        return table
+    if table.num_rows == 0:
+        return table.append_column(name, pa.array([], type=data_type))
+    return table.append_column(name, pa.nulls(table.num_rows, type=data_type))
+
+
+def _valid_mask_for_columns(
+    table: pa.Table, columns: Sequence[str]
+) -> pa.Array | pa.ChunkedArray | None:
+    mask: pa.Array | pa.ChunkedArray | None = None
+    for name in columns:
+        column_mask = is_valid_mask(table[name])
+        mask = column_mask if mask is None else and_kleene(mask, column_mask)
+    return mask
+
+
+def _split_by_valid_columns(table: pa.Table, columns: Sequence[str]) -> tuple[pa.Table, pa.Table]:
+    if table.num_rows == 0:
+        return table, table
+    mask = _valid_mask_for_columns(table, columns)
+    if mask is None:
+        return table, table.slice(0, 0)
+    valid = safe_filter(table, mask)
+    invalid = safe_filter(table, invert_mask(mask))
+    return valid, invalid
+
+
+def _goid_type_for_table(table: pa.Table) -> pa.DataType:
+    if "goid_h128" in table.column_names:
+        return table.schema.field("goid_h128").type
+    return pa.decimal128(38, 0)
 
 
 def _replace_column(
@@ -245,6 +293,30 @@ def _goids_table(goids: InferableTabularInput) -> pa.Table:
     return safe_filter(table, mask)
 
 
+def _definition_anchors_table(defs_resolved: InferableTabularInput) -> pa.Table:
+    table = tabular_to_scoped_table(
+        defs_resolved,
+        columns=[
+            "repo",
+            "commit",
+            "rel_path",
+            "goid_h128",
+            "start_line",
+            "start_col",
+            "end_line",
+            "end_col",
+            "start_byte",
+            "end_byte",
+        ],
+        scope=None,
+        require_scope_columns=False,
+    )
+    table = _cast_int32(table, ["start_line", "start_col", "end_line", "end_col"])
+    if table.num_rows == 0:
+        return table
+    return safe_filter(table, is_valid_mask(table["goid_h128"]))
+
+
 def _occurrences_table(occurrences: InferableTabularInput) -> pa.Table:
     table = tabular_to_scoped_table(
         occurrences,
@@ -257,9 +329,13 @@ def _occurrences_table(occurrences: InferableTabularInput) -> pa.Table:
         table,
         [
             "start_line",
+            "start_col",
             "end_line",
+            "end_col",
             "enclosing_start_line",
+            "enclosing_start_col",
             "enclosing_end_line",
+            "enclosing_end_col",
         ],
     )
 
@@ -297,16 +373,121 @@ def _definition_occurrences(occurrences: pa.Table) -> pa.Table:
     return safe_filter(occurrences, def_mask)
 
 
+def _anchor_goid_matches(
+    definitions: pa.Table,
+    anchors: pa.Table,
+    *,
+    join_keys: Sequence[str],
+    match_kind: str,
+    confidence: float,
+) -> tuple[pa.Table, pa.Table]:
+    matched = definitions.slice(0, 0)
+    missing = definitions
+    required_right = set(join_keys) | {"goid_h128"}
+    can_join = True
+    if (
+        definitions.num_rows == 0
+        or anchors.num_rows == 0
+        or not set(join_keys).issubset(definitions.column_names)
+        or not required_right.issubset(anchors.column_names)
+    ):
+        can_join = False
+    if can_join:
+        left = _drop_columns_if_present(
+            definitions,
+            ["goid_h128", "match_kind", "match_confidence"],
+        )
+        left_valid, left_invalid = _split_by_valid_columns(left, join_keys)
+        right_mask = _valid_mask_for_columns(anchors, list(required_right))
+        if left_valid.num_rows == 0 or right_mask is None:
+            can_join = False
+        else:
+            anchors_valid = safe_filter(anchors, right_mask)
+            if anchors_valid.num_rows == 0:
+                can_join = False
+            else:
+                join_spec = ArrowJoinSpec(on=list(join_keys), how="left", validate="m:1")
+                joined = arrow_join_tables(
+                    left_valid,
+                    anchors_valid,
+                    spec=join_spec,
+                    options=build_join_options(left_valid, anchors_valid),
+                )
+                matched_mask = is_valid_mask(joined["goid_h128"])
+                matched = safe_filter(joined, matched_mask)
+                matched = _attach_match_metadata(
+                    matched,
+                    kind=match_kind,
+                    confidence=confidence,
+                )
+                missing = safe_filter(joined, invert_mask(matched_mask))
+                if left_invalid.num_rows != 0:
+                    goid_type = _goid_type_for_table(anchors_valid)
+                    left_invalid = _append_null_column(left_invalid, "goid_h128", goid_type)
+                    missing = concat_tables_unified([missing, left_invalid])
+    return matched, missing
+
+
+def _byte_span_goid_matches(
+    definitions: pa.Table,
+    anchors: pa.Table,
+) -> tuple[pa.Table, pa.Table]:
+    anchor_cols = ["rel_path", "start_byte", "end_byte", "goid_h128"]
+    if not set(anchor_cols).issubset(anchors.column_names):
+        return definitions.slice(0, 0), definitions
+    return _anchor_goid_matches(
+        definitions,
+        anchors.select(anchor_cols),
+        join_keys=["rel_path", "start_byte", "end_byte"],
+        match_kind=_MATCH_KIND_BYTE_SPAN,
+        confidence=_MATCH_CONFIDENCE_BYTE_SPAN,
+    )
+
+
+def _line_col_goid_matches(
+    definitions: pa.Table,
+    anchors: pa.Table,
+) -> tuple[pa.Table, pa.Table]:
+    anchor_cols = [
+        "rel_path",
+        "start_line",
+        "start_col",
+        "end_line",
+        "end_col",
+        "goid_h128",
+    ]
+    if not set(anchor_cols).issubset(anchors.column_names):
+        return definitions.slice(0, 0), definitions
+    return _anchor_goid_matches(
+        definitions,
+        anchors.select(anchor_cols),
+        join_keys=["rel_path", "start_line", "start_col", "end_line", "end_col"],
+        match_kind=_MATCH_KIND_LINE_COL,
+        confidence=_MATCH_CONFIDENCE_LINE_COL,
+    )
+
+
 def _strict_goid_matches(
     definitions: pa.Table,
     goids: pa.Table,
 ) -> tuple[pa.Table, pa.Table]:
+    required = {"rel_path", "start_line", "end_line"}
+    if definitions.num_rows == 0 or goids.num_rows == 0:
+        return definitions.slice(0, 0), definitions
+    if not required.issubset(set(definitions.column_names)):
+        return definitions.slice(0, 0), definitions
+    if not required.issubset(set(goids.column_names)):
+        return definitions.slice(0, 0), definitions
+    left = _drop_columns_if_present(
+        definitions,
+        ["goid_h128", "match_kind", "match_confidence"],
+    )
     join_spec = ArrowJoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1")
     strict_join = arrow_join_tables(
-        definitions,
+        left,
         goids,
         spec=join_spec,
-        options=build_join_options(definitions, goids),
+        options=build_join_options(left, goids),
     )
     strict_mask = is_valid_mask(strict_join["goid_h128"])
     strict_matched = safe_filter(strict_join, strict_mask)
@@ -322,7 +503,10 @@ def _strict_goid_matches(
 def _fallback_goid_matches(definitions: pa.Table, goids: pa.Table) -> list[pa.Table]:
     if definitions.num_rows == 0:
         return []
-    fallback_left = definitions.drop_columns(["goid_h128"])
+    fallback_left = _drop_columns_if_present(
+        definitions,
+        ["goid_h128", "match_kind", "match_confidence"],
+    )
     goids_by_line = _goids_by_start_line(goids)
     fallback_spec = ArrowJoinSpec(
         on=["rel_path", "start_line"],
@@ -351,21 +535,54 @@ def _fallback_goid_matches(definitions: pa.Table, goids: pa.Table) -> list[pa.Ta
     return [fallback_matched, fallback_unmatched]
 
 
+def _log_symbol_goid_coverage(table: pa.Table) -> None:
+    if table.num_rows == 0 or "match_kind" not in table.column_names:
+        return
+    counts: dict[str, int] = {}
+    for value in table.column("match_kind").to_pylist():
+        key = "none" if value is None else str(value)
+        counts[key] = counts.get(key, 0) + 1
+    summary = " ".join(f"{key}={count}" for key, count in sorted(counts.items()))
+    LOG.info(
+        "scip_symbol_goid_xref match coverage total=%d %s",
+        table.num_rows,
+        summary,
+    )
+
+
 def _symbol_goid_xref_table(
     *,
     occurrences: pa.Table,
     goids: pa.Table,
+    anchors: pa.Table,
     created_at: datetime,
 ) -> pa.Table:
-    if occurrences.num_rows == 0 or goids.num_rows == 0:
+    if occurrences.num_rows == 0:
         return _empty_table_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
     definitions = _definition_occurrences(occurrences)
     if definitions.num_rows == 0:
         return _empty_table_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
-
-    strict_matched, strict_missing = _strict_goid_matches(definitions, goids)
-    fallback_tables = _fallback_goid_matches(strict_missing, goids)
-    joined = concat_tables_unified([strict_matched, *fallback_tables])
+    if anchors.num_rows == 0 and goids.num_rows == 0:
+        return _empty_table_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
+    matched_tables: list[pa.Table] = []
+    remaining = definitions
+    if anchors.num_rows != 0:
+        byte_matched, remaining = _byte_span_goid_matches(remaining, anchors)
+        if byte_matched.num_rows != 0:
+            matched_tables.append(byte_matched)
+        line_col_matched, remaining = _line_col_goid_matches(remaining, anchors)
+        if line_col_matched.num_rows != 0:
+            matched_tables.append(line_col_matched)
+    fallback_tables: list[pa.Table] = []
+    if goids.num_rows != 0:
+        strict_matched, strict_missing = _strict_goid_matches(remaining, goids)
+        if strict_matched.num_rows != 0:
+            matched_tables.append(strict_matched)
+        fallback_tables = _fallback_goid_matches(strict_missing, goids)
+    joined_tables = [*matched_tables, *fallback_tables]
+    if not joined_tables:
+        return _empty_table_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
+    joined = concat_tables_unified(joined_tables)
     joined = joined.select(
         [
             "repo",
@@ -393,6 +610,7 @@ def _symbol_goid_xref_table(
             "end_col": "def_end_col",
         },
     )
+    _log_symbol_goid_coverage(joined)
     created = constant_array(created_at, joined.num_rows)
     return joined.append_column("created_at", created)
 
@@ -664,6 +882,7 @@ def scip_resolution__frames(
     q__core__scip_occurrences: InferableTabularInput,
     q__core__scip_symbol_information: InferableTabularInput,
     q__core__goids: InferableTabularInput,
+    q__core__syntax_defs_resolved: InferableTabularInput,
 ) -> ScipResolutionFrames:
     """Build base SCIP resolution frames.
 
@@ -676,9 +895,11 @@ def scip_resolution__frames(
     occurrences = _occurrences_table(q__core__scip_occurrences)
     symbol_info = _symbol_info_table(q__core__scip_symbol_information)
     goids = _goids_table(q__core__goids)
+    anchors = _definition_anchors_table(q__core__syntax_defs_resolved)
     symbol_goid_xref = _symbol_goid_xref_table(
         occurrences=occurrences,
         goids=goids,
+        anchors=anchors,
         created_at=created_at,
     )
     occurrence_span_xref = _occurrence_span_xref_table(

@@ -5,14 +5,18 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
+import pyarrow.dataset as ds
 from hamilton.caching.adapter import HamiltonCacheAdapter
 
+from codeintel.build.hamilton.contract_alignment_issues import (
+    CONTRACT_ALIGNMENT_ISSUES_TABLE_KEY,
+)
 from codeintel.build.hamilton.decision_trace import (
     build_cache_manifest_entries,
     default_decision_trace_path,
@@ -26,6 +30,7 @@ from codeintel.build.hamilton.observability import (
 )
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.settings import get_arrow_scan_settings
+from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import scan_dataset
@@ -33,6 +38,7 @@ from codeintel.core.datasets.manifests import load_dataset_manifest
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.hamilton import tags as ht
+from codeintel.core.query_results import coerce_optional_int
 from codeintel.core.schemas.primitives import TableSchema
 
 if TYPE_CHECKING:
@@ -130,6 +136,11 @@ def emit_diagnostics(inputs: DiagnosticsInputs) -> None:
         run_id=inputs.run_id,
         null_payload=null_payload,
         drift_payload=drift_payload,
+    )
+    _write_contract_alignment_summary(
+        diag_dir=diag_dir,
+        env=inputs.env,
+        run_id=inputs.run_id,
     )
     _write_target_duration_summary(
         output_path=diag_dir / "target_durations.json",
@@ -241,6 +252,229 @@ def _write_schema_drift(
     )
     _write_json(diag_dir / "schema_drift.json", payload)
     return payload
+
+
+def _write_contract_alignment_summary(
+    *,
+    diag_dir: Path,
+    env: BuildEnv,
+    run_id: str,
+) -> None:
+    payload = _contract_alignment_payload(env=env, run_id=run_id)
+    _write_json(diag_dir / "contract_alignment_summary.json", payload)
+
+
+@dataclass(slots=True)
+class _ContractAlignmentTotals:
+    target_names: set[str] = field(default_factory=set)
+    table_keys: set[str] = field(default_factory=set)
+    missing_total: int = 0
+    extra_total: int = 0
+    coerced_total: int = 0
+
+
+def _contract_alignment_payload(
+    *,
+    env: BuildEnv,
+    run_id: str,
+) -> dict[str, object]:
+    payload = _contract_alignment_base_payload(env=env, run_id=run_id)
+    dataset, status = _load_contract_alignment_dataset(env=env)
+    payload.update(status)
+    if dataset is None:
+        return payload
+    columns, missing_columns = _contract_alignment_columns(dataset)
+    if missing_columns:
+        payload["missing_columns"] = missing_columns
+    if "run_id" not in columns:
+        payload["status"] = "missing_columns"
+        return payload
+    issues, totals = _contract_alignment_scan(dataset, run_id=run_id, columns=columns)
+    payload.update(_contract_alignment_summary_payload(issues=issues, totals=totals))
+    return payload
+
+
+def _contract_alignment_base_payload(*, env: BuildEnv, run_id: str) -> dict[str, object]:
+    return {
+        "run_id": run_id,
+        "repo": env.repo,
+        "commit": env.commit,
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "issue_count": 0,
+        "target_count": 0,
+        "table_count": 0,
+        "missing_total": 0,
+        "extra_total": 0,
+        "coerced_total": 0,
+        "issues": [],
+    }
+
+
+def _load_contract_alignment_dataset(
+    *, env: BuildEnv
+) -> tuple[ds.Dataset | None, dict[str, object]]:
+    dataset_root = env.paths.dataset_root_dir
+    if dataset_root is None:
+        return None, {"status": "missing_dataset_root"}
+    snapshot_id = env.commit.strip()
+    if not snapshot_id:
+        return None, {"status": "missing_snapshot_id"}
+    try:
+        dataset = scan_dataset(
+            dataset_root=dataset_root,
+            table_key=CONTRACT_ALIGNMENT_ISSUES_TABLE_KEY,
+            snapshot_id=snapshot_id,
+        )
+    except FileNotFoundError:
+        snapshot_dir = dataset_snapshot_dir(
+            dataset_root,
+            table_key=CONTRACT_ALIGNMENT_ISSUES_TABLE_KEY,
+            snapshot_id=snapshot_id,
+        )
+        return None, {
+            "status": "missing_dataset",
+            "snapshot_dir": str(snapshot_dir),
+        }
+    except (OSError, ValueError, pa.ArrowInvalid) as exc:
+        return None, {"status": "error", "error": str(exc)}
+    return dataset, {"status": "ok"}
+
+
+def _contract_alignment_columns(dataset: ds.Dataset) -> tuple[list[str], list[str]]:
+    requested_columns = (
+        "run_id",
+        "target_name",
+        "table_key",
+        "missing_count",
+        "extra_count",
+        "coerced_count",
+        "row_count",
+        "contract_hash",
+        "contract_version",
+    )
+    available_columns = set(dataset.schema.names)
+    missing_columns = [name for name in requested_columns if name not in available_columns]
+    columns = [name for name in requested_columns if name in available_columns]
+    return columns, missing_columns
+
+
+def _contract_alignment_scan(
+    dataset: ds.Dataset,
+    *,
+    run_id: str,
+    columns: Sequence[str],
+) -> tuple[list[dict[str, object]], _ContractAlignmentTotals]:
+    issues: list[dict[str, object]] = []
+    totals = _ContractAlignmentTotals()
+    for row in _iter_contract_alignment_rows(dataset, run_id=run_id, columns=columns):
+        issue, counts = _contract_alignment_issue(row)
+        issues.append(issue)
+        _update_contract_alignment_totals(totals, issue, counts)
+    return issues, totals
+
+
+def _contract_alignment_issue(
+    row: Mapping[str, object],
+) -> tuple[dict[str, object], tuple[int, int, int]]:
+    missing_count = _coerce_count(row.get("missing_count"), ctx="missing_count")
+    extra_count = _coerce_count(row.get("extra_count"), ctx="extra_count")
+    coerced_count = _coerce_count(row.get("coerced_count"), ctx="coerced_count")
+    row_count = _coerce_optional_count(row.get("row_count"), ctx="row_count")
+    issue = {
+        "target_name": row.get("target_name"),
+        "table_key": row.get("table_key"),
+        "missing_count": missing_count,
+        "extra_count": extra_count,
+        "coerced_count": coerced_count,
+        "row_count": row_count,
+        "contract_hash": row.get("contract_hash"),
+        "contract_version": row.get("contract_version"),
+    }
+    return issue, (missing_count, extra_count, coerced_count)
+
+
+def _update_contract_alignment_totals(
+    totals: _ContractAlignmentTotals,
+    issue: Mapping[str, object],
+    counts: tuple[int, int, int],
+) -> None:
+    target_name = _string_value(issue.get("target_name"))
+    table_key = _string_value(issue.get("table_key"))
+    if target_name is not None:
+        totals.target_names.add(target_name)
+    if table_key is not None:
+        totals.table_keys.add(table_key)
+    totals.missing_total += counts[0]
+    totals.extra_total += counts[1]
+    totals.coerced_total += counts[2]
+
+
+def _contract_alignment_summary_payload(
+    *,
+    issues: Sequence[dict[str, object]],
+    totals: _ContractAlignmentTotals,
+) -> dict[str, object]:
+    return {
+        "status": "ok",
+        "issue_count": len(issues),
+        "target_count": len(totals.target_names),
+        "table_count": len(totals.table_keys),
+        "missing_total": totals.missing_total,
+        "extra_total": totals.extra_total,
+        "coerced_total": totals.coerced_total,
+        "issues": list(issues),
+    }
+
+
+def _iter_contract_alignment_rows(
+    dataset: ds.Dataset,
+    *,
+    run_id: str,
+    columns: Sequence[str],
+) -> Iterable[Mapping[str, object]]:
+    scanner = _contract_alignment_scanner(dataset, columns=columns)
+    for batch in scanner.to_batches():
+        for row in iter_rows(batch, columns):
+            run_id_value = row.get("run_id")
+            if run_id_value is None or str(run_id_value) != run_id:
+                continue
+            yield row
+
+
+def _contract_alignment_scanner(
+    dataset: ds.Dataset,
+    *,
+    columns: Sequence[str],
+) -> ds.Scanner:
+    scan_settings = get_arrow_scan_settings()
+    return build_scanner(
+        dataset,
+        options=DatasetScanOptions(
+            batch_size=scan_settings.batch_size or DEFAULT_ARROW_BATCH_SIZE,
+            columns=columns,
+            unify_schemas=True,
+        ),
+    )
+
+
+def _string_value(value: object | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _coerce_count(value: object | None, *, ctx: str) -> int:
+    if value is None:
+        return 0
+    coerced = coerce_optional_int(value, ctx=ctx)
+    if coerced is None:
+        return 0
+    return coerced
+
+
+def _coerce_optional_count(value: object | None, *, ctx: str) -> int | None:
+    return coerce_optional_int(value, ctx=ctx)
 
 
 def _schema_drift_payload(

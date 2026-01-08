@@ -164,18 +164,15 @@ class TableTargetContext:
             Standardized target spec configured for a single table output.
         """
         resolved_context = context
-        if context.save_spec is None:
-            if save_options is None:
-                save_spec = DatasetSaveSpec(table_key=context.table_key)
-            else:
-                save_spec = DatasetSaveSpec(
-                    table_key=context.table_key,
-                    partition_columns=save_options.partition_columns,
-                    validation_profile=save_options.validation_profile,
-                    collect_group=save_options.collect_group,
-                    output_role=save_options.output_role,
-                    output_name=save_options.output_name,
-                )
+        if context.save_spec is None and save_options is not None:
+            save_spec = DatasetSaveSpec(
+                table_key=context.table_key,
+                partition_columns=save_options.partition_columns,
+                validation_profile=save_options.validation_profile,
+                collect_group=save_options.collect_group,
+                output_role=save_options.output_role,
+                output_name=save_options.output_name,
+            )
             resolved_context = replace(context, save_spec=save_spec)
         return build_single_table_target_spec(context=resolved_context)
 
@@ -351,8 +348,6 @@ class MultiTableTargetContext:
         resolved_save_spec = context.save_spec
         if resolved_save_spec is None and save_spec_factory is not None:
             resolved_save_spec = save_spec_factory(context.table_key)
-        if resolved_save_spec is None:
-            resolved_save_spec = DatasetSaveSpec(table_key=context.table_key)
         resolved_input_type = context.input_type or default_input_type
         return TableTargetTableSpec(
             table_key=context.table_key,
@@ -380,18 +375,15 @@ class MultiTableTargetContext:
             Table specification derived from the provided context.
         """
         resolved_context = context
-        if context.save_spec is None:
-            if save_options is None:
-                save_spec = DatasetSaveSpec(table_key=context.table_key)
-            else:
-                save_spec = DatasetSaveSpec(
-                    table_key=context.table_key,
-                    partition_columns=save_options.partition_columns,
-                    validation_profile=save_options.validation_profile,
-                    collect_group=save_options.collect_group,
-                    output_role=save_options.output_role,
-                    output_name=save_options.output_name,
-                )
+        if context.save_spec is None and save_options is not None:
+            save_spec = DatasetSaveSpec(
+                table_key=context.table_key,
+                partition_columns=save_options.partition_columns,
+                validation_profile=save_options.validation_profile,
+                collect_group=save_options.collect_group,
+                output_role=save_options.output_role,
+                output_name=save_options.output_name,
+            )
             resolved_context = replace(context, save_spec=save_spec)
         return MultiTableTargetContext.build_table_spec(
             context=resolved_context,
@@ -438,7 +430,6 @@ def build_single_table_target_spec(*, context: TableTargetContext) -> TableTarge
     TableTargetSpec
         Standardized target spec configured for a single table output.
     """
-    save_spec = context.save_spec or DatasetSaveSpec(table_key=context.table_key)
     table_materializations_node = (
         context.table_materializations_node or f"{context.target_name}__table_materializations"
     )
@@ -454,7 +445,7 @@ def build_single_table_target_spec(*, context: TableTargetContext) -> TableTarge
                 base_node=context.base_node,
                 contract=context.contract,
                 contract_ref=context.contract_ref,
-                save_spec=save_spec,
+                save_spec=context.save_spec,
                 node_name=context.node_name or f"{context.target_name}__table",
                 input_type=context.input_type,
                 extra_tags=context.extra_tags,
@@ -769,15 +760,25 @@ def _resolve_table_contract(table_spec: TableTargetTableSpec) -> TableTargetTabl
 def _resolve_save_spec(
     table_spec: TableTargetTableSpec,
 ) -> DatasetSaveSpec | RelationTableSaveSpec:
+    policy_profile = _policy_validation_profile(table_spec)
     if table_spec.save_spec is None:
-        return DatasetSaveSpec(table_key=table_spec.table_key)
-    if table_spec.save_spec.table_key != table_spec.table_key:
-        msg = (
-            "SaveSpec table_key mismatch: "
-            f"{table_spec.save_spec.table_key} != {table_spec.table_key}"
+        if policy_profile is None:
+            return DatasetSaveSpec(table_key=table_spec.table_key)
+        return DatasetSaveSpec(
+            table_key=table_spec.table_key,
+            validation_profile=policy_profile,
         )
+    save_spec = table_spec.save_spec
+    if save_spec.table_key != table_spec.table_key:
+        msg = f"SaveSpec table_key mismatch: {save_spec.table_key} != {table_spec.table_key}"
         raise ValueError(msg)
-    return table_spec.save_spec
+    if policy_profile is None:
+        return save_spec
+    if isinstance(save_spec, DatasetSaveSpec) and save_spec.validation_profile is None:
+        return replace(save_spec, validation_profile=policy_profile)
+    if isinstance(save_spec, RelationTableSaveSpec) and save_spec.validation_profile is None:
+        return replace(save_spec, validation_profile=policy_profile)
+    return save_spec
 
 
 def _resolve_input_type(table_spec: TableTargetTableSpec) -> object:
@@ -822,6 +823,15 @@ def _contract_tags(
     if not tags:
         return None
     return tags
+
+
+def _policy_validation_profile(
+    table_spec: TableTargetTableSpec,
+) -> ValidationProfile | None:
+    contract = table_spec.contract
+    if contract is None:
+        return None
+    return contract.policy.validation_profile
 
 
 def _validate_table_spec(table_spec: TableTargetTableSpec) -> None:

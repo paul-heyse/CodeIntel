@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+import logging
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -32,6 +33,7 @@ CDG_EDGES_TABLE_KEY = "graph.cdg_edges"
 CDG_TARGET_NAME = "cdg"
 
 _EXPR_TYPE = getattr(pc, "Expression", None)
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -376,18 +378,27 @@ def cdg_edges(
     if blocks_table.num_rows == 0 or edges_table.num_rows == 0:
         return empty_table_for_table(CDG_EDGES_TABLE_KEY)
 
+    missing_goids: Counter[str] = Counter()
     blocks_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
     for row in iter_rows(blocks_table):
         function_goid = _coerce_goid(row.get("function_goid_h128"))
         if function_goid is None:
+            missing_goids["blocks_missing_goid"] += 1
             continue
         blocks_by_goid[function_goid].append(row)
     edges_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
     for row in iter_rows(edges_table):
         function_goid = _coerce_goid(row.get("function_goid_h128"))
         if function_goid is None:
+            missing_goids["edges_missing_goid"] += 1
             continue
         edges_by_goid[function_goid].append(row)
+    if missing_goids:
+        LOG.info(
+            "cdg_edges dropped rows missing function_goid_h128 blocks=%d edges=%d",
+            missing_goids.get("blocks_missing_goid", 0),
+            missing_goids.get("edges_missing_goid", 0),
+        )
 
     rows: list[dict[str, object]] = []
     for function_goid, blocks in blocks_by_goid.items():

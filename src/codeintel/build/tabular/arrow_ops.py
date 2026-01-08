@@ -1002,11 +1002,30 @@ def _build_alignment_report(
 
 _ALIGNMENT_REPORT_SEEN: set[AlignmentReportKey] = set()
 _ALIGNMENT_REPORTS: dict[AlignmentReportKey, AlignmentReport] = {}
+_ALIGNMENT_DIAGNOSTICS: dict[AlignmentReportKey, AlignmentReport] = {}
 
 
 def record_alignment_report(report: AlignmentReport) -> None:
     """Store the latest alignment report for a table target."""
     _ALIGNMENT_REPORTS[report.table_key, report.target_name] = report
+
+
+def record_alignment_diagnostic(report: AlignmentReport) -> None:
+    """Store alignment diagnostics for contract drift persistence."""
+    _ALIGNMENT_DIAGNOSTICS[report.table_key, report.target_name] = report
+
+
+def drain_alignment_diagnostics() -> tuple[AlignmentReport, ...]:
+    """Return and clear stored alignment diagnostics.
+
+    Returns
+    -------
+    tuple[AlignmentReport, ...]
+        Alignment diagnostics captured for persistence.
+    """
+    diagnostics = tuple(_ALIGNMENT_DIAGNOSTICS.values())
+    _ALIGNMENT_DIAGNOSTICS.clear()
+    return diagnostics
 
 
 def pop_alignment_report(
@@ -1487,6 +1506,7 @@ __all__ = [
     "concat_tables_unified",
     "dedupe_table_for_table",
     "dedupe_tabular",
+    "drain_alignment_diagnostics",
     "emit_alignment_report",
     "ensure_array",
     "group_list_or_polars",
@@ -1498,6 +1518,7 @@ __all__ = [
     "normalize_table_for_compute",
     "normalize_table_for_join",
     "pop_alignment_report",
+    "record_alignment_diagnostic",
     "record_alignment_report",
     "require_json_writer",
     "resolve_join_filter_field",

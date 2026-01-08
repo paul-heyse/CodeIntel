@@ -60,9 +60,6 @@ IMPORT_GRAPH_TABLE_KEYS = (IMPORT_MODULES_TABLE_KEY, IMPORT_GRAPH_EDGES_TABLE_KE
 _PARTITIONED_DATASET_SAVE_OPTIONS = DatasetSaveSpecOptions(
     partition_columns=("repo", "commit"),
 )
-_STRICT_DATASET_SAVE_OPTIONS = DatasetSaveSpecOptions(
-    validation_profile="strict",
-)
 
 
 def _dataset_save_spec(
@@ -81,10 +78,6 @@ def _dataset_save_spec(
 
 def _partitioned_save_spec(table_key: str) -> DatasetSaveSpec:
     return _dataset_save_spec(table_key, _PARTITIONED_DATASET_SAVE_OPTIONS)
-
-
-def _strict_save_spec(table_key: str) -> DatasetSaveSpec:
-    return _dataset_save_spec(table_key, _STRICT_DATASET_SAVE_OPTIONS)
 
 
 _MODULE = sys.modules[__name__]
@@ -165,7 +158,6 @@ _CFG_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
         tables=(),
         table_materializations_node="cfg__table_materializations",
         anchor_node_name="t__cfg",
-        save_spec_factory=_strict_save_spec,
     ),
     table_contexts=_CFG_TABLE_CONTEXTS,
 )
@@ -185,7 +177,6 @@ _DFG_TABLE_TARGET_SPEC = TableTargetContext.build_dataset_table_spec(
         table_materializations_node="dfg__table_materializations",
         anchor_node_name="t__dfg",
     ),
-    save_options=_STRICT_DATASET_SAVE_OPTIONS,
 )
 attach_table_target_template(_MODULE, spec=_DFG_TABLE_TARGET_SPEC)
 dfg__edges_table = _MODULE.dfg__edges_table

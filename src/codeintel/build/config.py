@@ -671,6 +671,7 @@ def _validate_contracts_section(contracts: object, *, config_path: Path) -> None
             msg = f"contracts.{key} must be a mapping in {config_path}"
             raise TypeError(msg)
 
+
 def _validate_hamilton_section(hamilton: object, *, config_path: Path) -> None:
     if hamilton is None:
         return

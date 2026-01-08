@@ -118,12 +118,15 @@ scip_external_symbol_usage = "lenient"
 [contracts.policy_profiles.default]
 coerce_types = true
 allow_nulls = true
+validation_profile = "lenient"
 
 [contracts.policy_profiles.strict]
 extras_policy = "reject"
 coerce_types = false
+validation_profile = "strict"
 
 [contracts.policy_profiles.lenient]
 extras_policy = "retain"
 coerce_types = true
 allow_nulls = true
+validation_profile = "lenient"

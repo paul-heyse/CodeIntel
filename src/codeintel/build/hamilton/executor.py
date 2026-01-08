@@ -50,6 +50,9 @@ from codeintel.build.hamilton.cache_adapter import (
     ManifestBackedCacheAdapter,
 )
 from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
+from codeintel.build.hamilton.contract_alignment_issues import (
+    persist_contract_alignment_issues,
+)
 from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
     DECISION_TRACE_PATH_TEMPLATE,
@@ -1821,6 +1824,7 @@ def _finalize_run(
         value for value in inputs.outputs.values() if isinstance(value, TargetRunRecord)
     ]
     inputs.writer.save_run_targets(env=context.env, run_id=context.run_id, records=records)
+    persist_contract_alignment_issues(env=context.env, run_id=context.run_id)
     inputs.writer.persist_asset_catalog(
         env=context.env,
         run_id=context.run_id,

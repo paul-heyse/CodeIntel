@@ -218,7 +218,7 @@ Target files:
 
 ## 8. Handle empty scope gracefully
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Avoid hard failures when the target scope has no Python files.
@@ -242,7 +242,7 @@ Target files:
 
 ## 9. Track environment provenance in telemetry and module state
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Make environment changes visible and cache-safe.
@@ -267,7 +267,7 @@ Target files:
 
 ## 10. Surface syntax_kind and documentation in syntax enrichment
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Improve symbol overlays and downstream search relevance.
@@ -295,7 +295,7 @@ Target files:
 
 ## 11. External symbol usage analytics
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Turn `core.scip_external_symbols` into dependency usage insights.
@@ -320,7 +320,7 @@ Target files:
 
 ## 12. Diagnostics analytics rollup
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Quantify indexing health and failure reasons.
@@ -345,7 +345,7 @@ Target files:
 
 ## 13. Persist scip-python stdout/stderr artifacts
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Make tool outputs available for later inspection.

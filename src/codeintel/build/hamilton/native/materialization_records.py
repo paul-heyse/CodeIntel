@@ -22,7 +22,11 @@ from codeintel.build.hamilton.run_records import (
     options_hash_for_target,
     save_manifest,
 )
-from codeintel.build.tabular.arrow_ops import AlignmentReport, pop_alignment_report
+from codeintel.build.tabular.arrow_ops import (
+    AlignmentReport,
+    pop_alignment_report,
+    record_alignment_diagnostic,
+)
 from codeintel.core.execution.materialization import (
     MaterializationStatus,
     failed_artifact_result,
@@ -1123,6 +1127,7 @@ def _alignment_reports_for_target(
         report = pop_alignment_report(table_key=table_key, target_name=target_name)
         if report is None:
             continue
+        record_alignment_diagnostic(report)
         reports[table_key] = report
     return reports
 
