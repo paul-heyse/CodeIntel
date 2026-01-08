@@ -94,7 +94,7 @@ def drop_table_columns(table: pa.Table, columns: Sequence[str]) -> pa.Table:
         return table
     existing = [column for column in table.column_names if column not in set(columns)]
     if not existing:
-        return empty_table_for_columns([])
+        return table.select([])
     return table.select(existing)
 
 

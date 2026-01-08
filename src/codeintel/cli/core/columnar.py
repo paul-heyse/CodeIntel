@@ -8,6 +8,7 @@ from collections.abc import Iterable, Iterator, Mapping
 import pyarrow as pa
 
 from codeintel.cli.core.results import ResultBase
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
 from codeintel.core.columnar.stream import ColumnarStream, RecordBatchReaderStream
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 
@@ -70,17 +71,10 @@ def _record_batch_reader_from_records(
     batch_size: int,
 ) -> pa.RecordBatchReader:
     batch_iter = _iter_batches(records, batch_size=batch_size)
-    try:
-        first_batch = next(batch_iter)
-    except StopIteration:
+    reader = record_batch_reader_from_iterable(batch_iter, empty_policy="none")
+    if reader is None:
         return pa.RecordBatchReader.from_batches(pa.schema([]), [])
-    schema = first_batch.schema
-
-    def _all_batches() -> Iterator[pa.RecordBatch]:
-        yield first_batch
-        yield from batch_iter
-
-    return pa.RecordBatchReader.from_batches(schema, _all_batches())
+    return reader
 
 
 __all__ = ["stream_from_items"]

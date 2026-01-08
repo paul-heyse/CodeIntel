@@ -145,6 +145,9 @@ class OccurrenceProto(Protocol):
     symbol: str
     range: IntListProto
     symbol_roles: int
+    syntax_kind: int
+    enclosing_range: IntListProto
+    override_documentation: StringListProto
     diagnostics: DiagnosticListProto
 
 

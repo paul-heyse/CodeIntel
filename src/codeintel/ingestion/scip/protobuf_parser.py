@@ -60,6 +60,18 @@ class _IndexFieldNumbers:
     external_symbols: int
 
 
+@dataclass
+class _ScipParseState:
+    documents: list[ScipDocument]
+    symbol_infos: list[ScipSymbolInfo]
+    relationships: list[ScipSymbolRelationship]
+    diagnostics: list[ScipDiagnostic]
+    external_symbols: list[ScipExternalSymbol]
+    metadata: ScipIndexMetadata | None
+    text_document_encoding: str | None
+    project_root: Path | None
+
+
 def load_proto_module(proto_module_path: Path) -> ScipProtoModule:
     """Load scip_pb2 from the generated file path.
 
@@ -98,72 +110,84 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
     index = module.Index()
     field_numbers = _index_field_numbers(index)
 
-    text_document_encoding: str | None = None
-    project_root: Path | None = None
-    metadata_entry: ScipIndexMetadata | None = None
-    documents: list[ScipDocument] = []
-    symbol_infos: list[ScipSymbolInfo] = []
-    relationships: list[ScipSymbolRelationship] = []
-    diagnostics: list[ScipDiagnostic] = []
-    external_symbols: list[ScipExternalSymbol] = []
+    state = _ScipParseState(
+        documents=[],
+        symbol_infos=[],
+        relationships=[],
+        diagnostics=[],
+        external_symbols=[],
+        metadata=None,
+        text_document_encoding=None,
+        project_root=None,
+    )
 
     for field_no, payload in _iter_index_payloads(index_path, field_numbers):
         if field_no == field_numbers.metadata:
-            metadata = module.Metadata()
-            _parse_from_string(metadata, payload)
-            text_document_encoding = _normalize_text_document_encoding(
-                getattr(metadata, "text_document_encoding", 0)
-            )
-            project_root = _parse_project_root(getattr(metadata, "project_root", None))
-            tool_info = getattr(metadata, "tool_info", None)
-            tool_name = _normalize_optional_text(getattr(tool_info, "name", None))
-            tool_version = _normalize_optional_text(getattr(tool_info, "version", None))
-            tool_arguments = _normalize_tool_arguments(getattr(tool_info, "arguments", None))
-            metadata_entry = ScipIndexMetadata(
-                project_root=project_root,
-                text_document_encoding=text_document_encoding,
-                tool_name=tool_name,
-                tool_version=tool_version,
-                tool_arguments=tool_arguments,
-            )
+            _apply_index_metadata(module, payload, state)
             continue
         if field_no == field_numbers.documents:
             doc = module.Document()
             _parse_from_string(doc, payload)
             position_encoding = _normalize_position_encoding(getattr(doc, "position_encoding", 0))
-            documents.append(
+            state.documents.append(
                 _parse_document(
                     doc,
                     position_encoding=position_encoding,
-                    text_document_encoding=text_document_encoding,
+                    text_document_encoding=state.text_document_encoding,
                 )
             )
             for sym_info in doc.symbols:
-                symbol_infos.append(_parse_symbol_info(sym_info))
-                relationships.extend(_parse_relationships(sym_info))
-            diagnostics.extend(
+                state.symbol_infos.append(_parse_symbol_info(sym_info))
+                state.relationships.extend(_parse_relationships(sym_info))
+            state.diagnostics.extend(
                 _parse_document_diagnostics(
                     module,
                     doc,
                     doc.relative_path,
                     position_encoding=position_encoding,
-                    text_document_encoding=text_document_encoding,
+                    text_document_encoding=state.text_document_encoding,
                 )
             )
             continue
         if field_no == field_numbers.external_symbols:
             sym = module.SymbolInformation()
             _parse_from_string(sym, payload)
-            external_symbols.append(_parse_external_symbol(sym))
+            state.external_symbols.append(_parse_external_symbol(sym))
 
     return ScipParsedIndex(
-        documents=tuple(documents),
-        symbol_infos=tuple(symbol_infos),
-        relationships=tuple(relationships),
-        diagnostics=tuple(diagnostics),
-        external_symbols=tuple(external_symbols),
-        metadata=metadata_entry,
+        documents=tuple(state.documents),
+        symbol_infos=tuple(state.symbol_infos),
+        relationships=tuple(state.relationships),
+        diagnostics=tuple(state.diagnostics),
+        external_symbols=tuple(state.external_symbols),
+        metadata=state.metadata,
+        project_root=state.project_root,
+    )
+
+
+def _apply_index_metadata(
+    module: ScipProtoModule,
+    payload: bytes,
+    state: _ScipParseState,
+) -> None:
+    metadata = module.Metadata()
+    _parse_from_string(metadata, payload)
+    text_document_encoding = _normalize_text_document_encoding(
+        getattr(metadata, "text_document_encoding", 0)
+    )
+    project_root = _parse_project_root(getattr(metadata, "project_root", None))
+    tool_info = getattr(metadata, "tool_info", None)
+    tool_name = _normalize_optional_text(getattr(tool_info, "name", None))
+    tool_version = _normalize_optional_text(getattr(tool_info, "version", None))
+    tool_arguments = _normalize_tool_arguments(getattr(tool_info, "arguments", None))
+    state.text_document_encoding = text_document_encoding
+    state.project_root = project_root
+    state.metadata = ScipIndexMetadata(
         project_root=project_root,
+        text_document_encoding=text_document_encoding,
+        tool_name=tool_name,
+        tool_version=tool_version,
+        tool_arguments=tool_arguments,
     )
 
 
@@ -256,10 +280,9 @@ def _normalize_tool_arguments(value: object) -> tuple[str, ...] | None:
     if isinstance(value, str):
         normalized = value.strip()
         return (normalized,) if normalized else None
-    try:
-        values = [str(item).strip() for item in value]
-    except TypeError:
+    if not isinstance(value, Sequence):
         return None
+    values = [str(item).strip() for item in value]
     entries = [item for item in values if item]
     return tuple(entries) if entries else None
 

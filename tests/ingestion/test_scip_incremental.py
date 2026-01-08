@@ -167,6 +167,7 @@ def _scip_identity(*, run_id: str, options_hash: str | None = "options-hash") ->
         options_hash=options_hash,
         project_version=None,
         project_namespace=None,
+        environment_source="pip",
     )
 
 

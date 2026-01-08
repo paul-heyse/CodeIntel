@@ -295,7 +295,13 @@ def iter_index_metadata_rows(
     metadata: ScipIndexMetadata | None,
     context: ScipRowContext,
 ) -> Iterator[dict[str, object]]:
-    """Iterate rows for the scip_index_metadata table."""
+    """Iterate rows for the scip_index_metadata table.
+
+    Yields
+    ------
+    dict[str, object]
+        Row payload for the scip_index_metadata table.
+    """
     if metadata is None:
         return
     tool_arguments = None
@@ -504,6 +510,7 @@ def iter_module_state_rows(
             "content_hash": record.content_hash,
             "options_hash": record.options_hash,
             "tool_version": record.tool_version,
+            "environment_source": record.environment_source,
             "shard_path": record.shard_path,
             "updated_at": record.updated_at,
         }

@@ -55,5 +55,5 @@ def test_maybe_enable_nx_gpu_raises_when_strict() -> None:
         raise RuntimeError(message)
 
     cfg = GraphBackendConfig(use_gpu=True, backend="auto", strict=True)
-    with pytest.raises(RuntimeError, match="GPU backend is unavailable"):
+    with pytest.raises(RuntimeError, match="missing"):
         maybe_enable_nx_gpu(cfg, enabler=_failing_enabler)

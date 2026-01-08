@@ -154,6 +154,8 @@ def test_dataset_insertion_idempotent(
     extra_assertion: Callable[[DuckDBPyConnection], None] | None,
 ) -> None:
     """Inserting rows twice should be idempotent and FK-clean when applicable."""
+    if contract_ctx.gateway.config.dataset_root_dir is None:
+        pytest.skip("Dataset root not configured for this test context.")
     contract = get_analytics_dataset_contract(contract_ctx.gateway, table_key)
     row = row_builder(contract_ctx)
     insert_analytics_rows(

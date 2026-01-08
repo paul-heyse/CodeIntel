@@ -109,6 +109,7 @@ from codeintel.ingestion.scip.manifest import (
 from codeintel.ingestion.scip.rows import (
     iter_diagnostic_rows,
     iter_external_symbol_rows,
+    iter_index_metadata_rows,
     iter_module_state_rows,
     iter_occurrence_rows,
     iter_symbol_information_rows,
@@ -292,23 +293,29 @@ def _scip_tool_version(env: BuildEnv) -> str | None:
     return stdout.splitlines()[0] if stdout else None
 
 
+@dataclass(frozen=True)
+class _ScipOptionsHashInputs:
+    options: ScipIngestOptions
+    tools_config: ToolsConfig
+    tool_version: str | None
+    project_version: str | None
+    project_namespace: str | None
+    environment_json: Path | None
+    environment_source: str | None
+    environment_json_hash: str | None
+
+
 def _scip_options_hash(
-    options: ScipIngestOptions,
-    tools_config: ToolsConfig,
-    tool_version: str | None,
-    *,
-    project_version: str | None,
-    project_namespace: str | None,
-    environment_json: Path | None,
-    environment_json_hash: str | None,
+    inputs: _ScipOptionsHashInputs,
 ) -> str | None:
-    payload = asdict(options)
-    payload["environment_json"] = environment_json
-    payload["environment_json_hash"] = environment_json_hash
-    payload["project_name"] = tools_config.scip_project_name
-    payload["tool_version"] = tool_version
-    payload["project_version"] = project_version
-    payload["project_namespace"] = project_namespace
+    payload = asdict(inputs.options)
+    payload["environment_json"] = inputs.environment_json
+    payload["environment_json_hash"] = inputs.environment_json_hash
+    payload["environment_source"] = inputs.environment_source
+    payload["project_name"] = inputs.tools_config.scip_project_name
+    payload["tool_version"] = inputs.tool_version
+    payload["project_version"] = inputs.project_version
+    payload["project_namespace"] = inputs.project_namespace
     return compute_options_hash(payload)
 
 
@@ -801,6 +808,7 @@ def _shard_record_matches(left: ScipShardRecord, right: ScipShardRecord) -> bool
         and left.content_hash == right.content_hash
         and left.options_hash == right.options_hash
         and left.tool_version == right.tool_version
+        and left.environment_source == right.environment_source
         and left.shard_path == right.shard_path
         and left.updated_at == right.updated_at
     )
@@ -887,21 +895,28 @@ def _persist_scip_telemetry_safe(env: BuildEnv, telemetry: ScipRunTelemetry) -> 
         log.warning("Failed to persist SCIP telemetry: %s", exc)
 
 
-def _execute_scip_incremental(
+@dataclass(frozen=True)
+class _ScipIncrementalContext:
+    change_set: ChangeSet
+    force_full_rebuild: bool
+    tool_version: str | None
+    tools_config: ToolsConfig
+    project_version: str | None
+    project_namespace: str | None
+    environment_json: Path | None
+    environment_source: str | None
+    environment_json_hash: str | None
+    options_hash: str | None
+
+
+def _build_incremental_context(
     env: BuildEnv,
     run_config: ScipRunConfig,
     module_inputs: ScipModuleInputs,
     output_scip: Path,
     *,
     run_id: str,
-) -> ScipRunResult:
-    if run_config.proto_module_path is None:
-        return ScipRunResult(
-            result=ExecutionResult.failed("SCIP proto module path is missing"),
-            run_id=run_id,
-            mode="unknown",
-        )
-
+) -> _ScipIncrementalContext | ScipRunResult:
     change_set, force_full_rebuild = _resolve_change_set(module_inputs.scan)
     tool_version = _scip_tool_version(env)
     tools_config = env.providers.tool_runner.tools_config
@@ -946,33 +961,74 @@ def _execute_scip_incremental(
     environment_source = env_resolution.source
     environment_json_hash = _hash_file(environment_json)
     options_hash = _scip_options_hash(
-        run_config.options,
-        tools_config,
-        tool_version,
+        _ScipOptionsHashInputs(
+            options=run_config.options,
+            tools_config=tools_config,
+            tool_version=tool_version,
+            project_version=project_version,
+            project_namespace=project_namespace,
+            environment_json=environment_json,
+            environment_source=environment_source,
+            environment_json_hash=environment_json_hash,
+        )
+    )
+    return _ScipIncrementalContext(
+        change_set=change_set,
+        force_full_rebuild=force_full_rebuild,
+        tool_version=tool_version,
+        tools_config=tools_config,
         project_version=project_version,
         project_namespace=project_namespace,
         environment_json=environment_json,
+        environment_source=environment_source,
         environment_json_hash=environment_json_hash,
+        options_hash=options_hash,
     )
+
+
+def _execute_scip_incremental(
+    env: BuildEnv,
+    run_config: ScipRunConfig,
+    module_inputs: ScipModuleInputs,
+    output_scip: Path,
+    *,
+    run_id: str,
+) -> ScipRunResult:
+    if run_config.proto_module_path is None:
+        return ScipRunResult(
+            result=ExecutionResult.failed("SCIP proto module path is missing"),
+            run_id=run_id,
+            mode="unknown",
+        )
+
+    context = _build_incremental_context(
+        env,
+        run_config,
+        module_inputs,
+        output_scip,
+        run_id=run_id,
+    )
+    if isinstance(context, ScipRunResult):
+        return context
     telemetry = ScipRunTelemetry.create(
         identity=ScipRunIdentity(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
             run_id=run_id,
-            options_hash=options_hash,
-            project_version=project_version,
-            project_namespace=project_namespace,
-            environment_source=environment_source,
+            options_hash=context.options_hash,
+            project_version=context.project_version,
+            project_namespace=context.project_namespace,
+            environment_source=context.environment_source,
         )
     )
     file_state_rows = module_inputs.scan.file_state_rows
     if (
         module_inputs.scan.file_state_row_count == 0
-        and columnar_row_count(change_set.state_rows) > 0
+        and columnar_row_count(context.change_set.state_rows) > 0
     ):
         file_state_rows, _ = table_for_columnar_rows(
             FILE_STATE_TABLE_KEY,
-            change_set.state_rows,
+            context.change_set.state_rows,
         )
     file_state_by_path = _build_file_state_map(file_state_rows)
     try:
@@ -980,21 +1036,21 @@ def _execute_scip_incremental(
             repo_root=env.snapshot.repo_root,
             output_scip=output_scip,
             proto_module_path=run_config.proto_module_path,
-            change_set=change_set,
+            change_set=context.change_set,
             modules=module_inputs.scan.modules,
-            options_hash=options_hash,
-            tools_config=env.providers.tool_runner.tools_config,
+            options_hash=context.options_hash,
+            tools_config=context.tools_config,
             tool_runner=env.providers.tool_runner,
             scope_paths=run_config.options.scope_paths,
-            environment_json=environment_json,
+            environment_json=context.environment_json,
             pyright_config_path=run_config.options.pyright_config_path,
-            project_version=project_version,
-            project_namespace=project_namespace,
+            project_version=context.project_version,
+            project_namespace=context.project_namespace,
             max_file_size_kb=run_config.options.max_file_size_kb,
             timeout_seconds=run_config.options.timeout_seconds,
             scip_node_max_old_space_mb=run_config.options.scip_node_max_old_space_mb,
             target_dir=None,
-            force_full_rebuild=force_full_rebuild,
+            force_full_rebuild=context.force_full_rebuild,
             batch_size=run_config.options.batch_size,
             batch_max_bytes=run_config.options.batch_max_bytes,
             full_rebuild_threshold_count=run_config.options.full_rebuild_threshold_count,
@@ -1178,56 +1234,54 @@ def _build_scip_row_payload(
         include_references=options.should_include_references(),
         include_implementations=options.should_include_implementations(),
     )
-    symbol_rows, symbol_row_count = table_for_rows(
-        SCIP_SYMBOLS_TABLE_KEY,
-        iter_symbol_rows(parsed.documents, row_context),
-        extras_policy="retain",
-    )
-    occurrence_rows, occurrence_row_count = table_for_rows(
-        SCIP_OCCURRENCES_TABLE_KEY,
-        iter_occurrence_rows(parsed.documents, row_context),
-        extras_policy="retain",
-    )
-    symbol_info_rows, symbol_info_row_count = table_for_rows(
-        SCIP_SYMBOL_INFO_TABLE_KEY,
-        iter_symbol_information_rows(parsed.symbol_infos, row_context),
-        extras_policy="retain",
-    )
-    relationship_rows, relationship_row_count = table_for_rows(
-        SCIP_RELATIONSHIPS_TABLE_KEY,
-        iter_symbol_relationship_rows(parsed.relationships, row_context),
-        extras_policy="retain",
-    )
-    diagnostic_rows, diagnostic_row_count = table_for_rows(
-        SCIP_DIAGNOSTICS_TABLE_KEY,
-        iter_diagnostic_rows(parsed.diagnostics, row_context),
-        extras_policy="retain",
-    )
-    external_symbol_rows, external_symbol_row_count = table_for_rows(
-        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
-        iter_external_symbol_rows(parsed.external_symbols, row_context),
-        extras_policy="retain",
-    )
-    index_metadata_rows, index_metadata_row_count = table_for_rows(
-        SCIP_INDEX_METADATA_TABLE_KEY,
-        iter_index_metadata_rows(parsed.metadata, row_context),
-        extras_policy="retain",
-    )
+    table_specs = {
+        "symbol": (
+            SCIP_SYMBOLS_TABLE_KEY,
+            iter_symbol_rows(parsed.documents, row_context),
+        ),
+        "occurrence": (
+            SCIP_OCCURRENCES_TABLE_KEY,
+            iter_occurrence_rows(parsed.documents, row_context),
+        ),
+        "symbol_info": (
+            SCIP_SYMBOL_INFO_TABLE_KEY,
+            iter_symbol_information_rows(parsed.symbol_infos, row_context),
+        ),
+        "relationship": (
+            SCIP_RELATIONSHIPS_TABLE_KEY,
+            iter_symbol_relationship_rows(parsed.relationships, row_context),
+        ),
+        "diagnostic": (
+            SCIP_DIAGNOSTICS_TABLE_KEY,
+            iter_diagnostic_rows(parsed.diagnostics, row_context),
+        ),
+        "external_symbol": (
+            SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+            iter_external_symbol_rows(parsed.external_symbols, row_context),
+        ),
+        "index_metadata": (
+            SCIP_INDEX_METADATA_TABLE_KEY,
+            iter_index_metadata_rows(parsed.metadata, row_context),
+        ),
+    }
+    tables: dict[str, tuple[pa.Table, int]] = {}
+    for name, (table_key, iterator) in table_specs.items():
+        tables[name] = table_for_rows(table_key, iterator, extras_policy="retain")
     return ScipRowPayload(
-        symbol_rows=symbol_rows,
-        occurrence_rows=occurrence_rows,
-        symbol_info_rows=symbol_info_rows,
-        relationship_rows=relationship_rows,
-        diagnostic_rows=diagnostic_rows,
-        external_symbol_rows=external_symbol_rows,
-        index_metadata_rows=index_metadata_rows,
-        symbol_row_count=symbol_row_count,
-        occurrence_row_count=occurrence_row_count,
-        symbol_info_row_count=symbol_info_row_count,
-        relationship_row_count=relationship_row_count,
-        diagnostic_row_count=diagnostic_row_count,
-        external_symbol_row_count=external_symbol_row_count,
-        index_metadata_row_count=index_metadata_row_count,
+        symbol_rows=tables["symbol"][0],
+        occurrence_rows=tables["occurrence"][0],
+        symbol_info_rows=tables["symbol_info"][0],
+        relationship_rows=tables["relationship"][0],
+        diagnostic_rows=tables["diagnostic"][0],
+        external_symbol_rows=tables["external_symbol"][0],
+        index_metadata_rows=tables["index_metadata"][0],
+        symbol_row_count=tables["symbol"][1],
+        occurrence_row_count=tables["occurrence"][1],
+        symbol_info_row_count=tables["symbol_info"][1],
+        relationship_row_count=tables["relationship"][1],
+        diagnostic_row_count=tables["diagnostic"][1],
+        external_symbol_row_count=tables["external_symbol"][1],
+        index_metadata_row_count=tables["index_metadata"][1],
     )
 
 
@@ -1286,7 +1340,10 @@ def _build_scip_ingest_result(
         log.exception("SCIP ingestion failed")
         return IngestStep(result=ExecutionResult.failed("SCIP ingestion failed with exception"))
 
-    if payload.symbol_row_count == 0 or payload.occurrence_row_count == 0:
+    warnings: tuple[str, ...] | None = None
+    if payload.symbol_row_count == 0 and payload.occurrence_row_count == 0:
+        warnings = ("SCIP scope empty: no symbols or occurrences",)
+    elif payload.symbol_row_count == 0 or payload.occurrence_row_count == 0:
         return IngestStep(
             result=ExecutionResult.failed("SCIP ingestion produced empty symbols or occurrences")
         )
@@ -1295,6 +1352,7 @@ def _build_scip_ingest_result(
     table_counts = _scip_table_counts(payload, module_state_count)
     result = ExecutionResult.ok(
         table_counts=normalize_table_counts(SCIP_TABLE_KEYS, table_counts),
+        warnings=warnings,
     )
     payload_by_table = {
         SCIP_SYMBOLS_TABLE_KEY: payload.symbol_rows,

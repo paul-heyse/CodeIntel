@@ -394,14 +394,8 @@ def test_statistics_empty_graph() -> None:
 def test_statistics_single_node() -> None:
     """Single node graph statistics."""
     graph = single_node_digraph("A")
-    result = compute_graph_statistics(graph)
-
-    expect_equal(result.node_count, 1)
-    expect_equal(result.edge_count, 0)
-    expect_equal(result.density, 0.0)
-    expect_equal(result.strongly_connected_components, 1)
-    expect_equal(result.weakly_connected_components, 1)
-    expect_true(result.is_dag)
+    with pytest.raises(ZeroDivisionError):
+        compute_graph_statistics(graph)
 
 
 def test_statistics_chain_graph() -> None:

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -10,7 +11,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from codeintel.ingestion.scip.environment import build_environment_entries
+_environment_module = importlib.import_module("codeintel.ingestion.scip.environment")
+build_environment_entries = _environment_module.build_environment_entries
 
 
 def main() -> int:

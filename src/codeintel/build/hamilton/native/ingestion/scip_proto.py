@@ -117,7 +117,7 @@ def t__scip_proto__run(
     env: BuildEnv,
     catalog: DagCatalog,
 ) -> ScipProtoRunResult:
-    """Generate scip_pb2.py using grpc_tools.protoc.
+    """Generate scip_pb2.py and scip_pb2.pyi using grpc_tools.protoc.
 
     Returns
     -------

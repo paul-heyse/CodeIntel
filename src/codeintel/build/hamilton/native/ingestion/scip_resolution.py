@@ -470,6 +470,7 @@ def _occurrence_span_xref_table(
             "rel_path",
             "scip_symbol",
             "roles",
+            "syntax_kind",
             "is_definition",
             "is_reference",
             "is_import",

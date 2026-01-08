@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Literal
 
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.build.tabular.compute_helpers import cast_array, take_array
+from codeintel.build.tabular.compute_helpers import cast_array, scalar_from_compute, take_array
 from codeintel.core.columnar import normalization as _core_normalization
 from codeintel.core.columnar import type_normalization as _type_normalization
 
@@ -85,16 +86,39 @@ def take_by_key(
     keys: pa.Array | pa.ChunkedArray,
     key_set: pa.Array | pa.ChunkedArray,
     values: pa.Array | pa.ChunkedArray,
+    *,
+    missing_policy: Literal["error", "null"] = "error",
 ) -> pa.Array | pa.ChunkedArray:
     """Return values aligned to keys via vectorized index lookup.
+
+    Parameters
+    ----------
+    keys
+        Keys to map onto the key_set ordering.
+    key_set
+        Lookup key set that matches the values array.
+    values
+        Values aligned to the key_set ordering.
+    missing_policy
+        Behavior when keys are missing: raise ("error") or return nulls ("null").
 
     Returns
     -------
     pa.Array | pa.ChunkedArray
         Values aligned to the key order.
     """
-    indices = index_in(keys, value_set=key_set)
-    return take_array(ensure_array(values), indices)
+    indices = ensure_array(index_in(keys, value_set=key_set))
+    missing_mask = pc.less(indices, pa.scalar(0))
+    missing_any = scalar_from_compute("any", [missing_mask])
+    if missing_policy == "error" and missing_any:
+        msg = "take_by_key missing keys"
+        raise ValueError(msg)
+    safe_indices = pc.if_else(missing_mask, pa.scalar(0), indices)
+    selected = take_array(ensure_array(values), safe_indices)
+    if missing_policy == "null":
+        nulls = pa.nulls(len(indices), type=values.type)
+        return pc.if_else(missing_mask, nulls, selected)
+    return selected
 
 
 __all__ = [

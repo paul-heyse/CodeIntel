@@ -19,7 +19,7 @@ from codeintel.build.analytics.entrypoints.core import (
 )
 from codeintel.build.analytics.entrypoints.runtime import load_entrypoint_module_sources
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -44,14 +44,14 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 ENTRYPOINTS_TARGET_NAME = "entrypoints"
 ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
 ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
-ENTRYPOINTS_CONTRACT = contract_for_table(
+ENTRYPOINTS_CONTRACT = contract_ref_for_table(
     table_key=ENTRYPOINTS_TABLE_KEY,
     target_name=ENTRYPOINTS_TARGET_NAME,
     input_name="entrypoints__base",
     required_cols=(),
     clip_column=None,
 )
-ENTRYPOINT_TESTS_CONTRACT = contract_for_table(
+ENTRYPOINT_TESTS_CONTRACT = contract_ref_for_table(
     table_key=ENTRYPOINT_TESTS_TABLE_KEY,
     target_name=ENTRYPOINTS_TARGET_NAME,
     input_name="entrypoint_tests__base",
@@ -352,12 +352,12 @@ def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pa.Table:
 
 _MODULE = sys.modules[__name__]
 _ENTRYPOINTS_TABLE_CONTEXTS = (
-    TableTargetTableContext.from_contract(
-        contract=ENTRYPOINTS_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=ENTRYPOINTS_CONTRACT,
         node_name="entrypoints__table",
     ),
-    TableTargetTableContext.from_contract(
-        contract=ENTRYPOINT_TESTS_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=ENTRYPOINT_TESTS_CONTRACT,
         node_name="entrypoint_tests__table",
     ),
 )

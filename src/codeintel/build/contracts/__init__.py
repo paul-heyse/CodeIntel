@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from codeintel.build.contracts.ref import (
+    ContractRef,
+    ContractRefOverrides,
+    contract_ref_for_table,
+)
 from codeintel.build.contracts.types import (
     UNSET,
     ContractDescriptor,
@@ -16,6 +21,9 @@ __all__ = [
     "ContractDescriptor",
     "ContractOverrides",
     "ContractPolicy",
+    "ContractRef",
+    "ContractRefOverrides",
     "TableContractSpec",
     "UnsetType",
+    "contract_ref_for_table",
 ]

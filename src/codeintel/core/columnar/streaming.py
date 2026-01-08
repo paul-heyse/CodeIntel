@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, cast
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_ops import unify_schemas
 from codeintel.core.config.settings import ArrowScanSettings
@@ -504,7 +505,10 @@ def sample_reader(
             remaining -= current.num_rows
             yield current
 
-    return pa.RecordBatchReader.from_batches(reader.schema, _iter_batches())
+    sampled = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
+    if sampled is None:
+        return empty_reader_from_schema(reader.schema)
+    return sampled
 
 
 def _dataset_fragments(dataset: ds.Dataset) -> Iterable[ds.Fragment] | None:

@@ -17,6 +17,7 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.columnar.schema_metadata import decode_metadata, merge_metadata
 from codeintel.core.columnar.streaming import DatasetScanOptions, dataset_for_manifest
@@ -574,7 +575,7 @@ def _apply_dictionary_options(
         if not encode_enabled and not options.unify_dictionaries:
             return data
         try:
-            table = pa.Table.from_batches(data, schema=data.schema)
+            table = reader_to_table(data)
         except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
             LOG.debug("Dictionary encode skipped for stream input")
             return data

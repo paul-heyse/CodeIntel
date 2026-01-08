@@ -8,7 +8,7 @@ import pyarrow as pa
 
 from codeintel.build.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.build.analytics.parsing.compute import get_validation_rows
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -23,7 +23,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, FunctionAnalytics
 
 FUNCTION_VALIDATION_TARGET_NAME = "function_validation"
 FUNCTION_VALIDATION_TABLE_KEY = "analytics.function_validation"
-FUNCTION_VALIDATION_CONTRACT = contract_for_table(
+FUNCTION_VALIDATION_CONTRACT = contract_ref_for_table(
     table_key=FUNCTION_VALIDATION_TABLE_KEY,
     target_name=FUNCTION_VALIDATION_TARGET_NAME,
     input_name="function_validation__base",
@@ -51,8 +51,8 @@ def function_validation__base(
 
 _MODULE = sys.modules[__name__]
 _FUNCTION_VALIDATION_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext.from_contract(
-        contract=FUNCTION_VALIDATION_CONTRACT,
+    context=TableTargetContext.from_contract_ref(
+        contract_ref=FUNCTION_VALIDATION_CONTRACT,
         input_type=pa.Table,
     )
 )

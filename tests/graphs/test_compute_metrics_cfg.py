@@ -88,19 +88,20 @@ def test_dominator_tree_single_node() -> None:
     graph = empty_digraph()
     graph.ensure_node("A")
     result = compute_dominator_tree(graph, entry="A")
-    expect_equal(result, {})
+    expect_equal(result, {"A": None})
 
 
 def test_dominator_tree_chain_graph() -> None:
     """Chain graph has linear dominator tree.
 
-    Entry node is not included in result (only dominated nodes).
+    Entry node is included with a None immediate dominator.
     """
     graph = chain_graph(4)
     result = compute_dominator_tree(graph, entry="A")
 
-    expect_length(result, EXPECTED_NODE_COUNT_THREE)
-    expect_false("A" in result)
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
+    expect_true("A" in result)
+    expect_equal(result["A"], None)
     expect_equal(result["B"], "A")
     expect_equal(result["C"], "B")
     expect_equal(result["D"], "C")
@@ -109,13 +110,14 @@ def test_dominator_tree_chain_graph() -> None:
 def test_dominator_tree_diamond_graph() -> None:
     """Diamond graph has correct dominators.
 
-    Entry node is not included in result (only dominated nodes).
+    Entry node is included with a None immediate dominator.
     """
     graph = diamond_graph()
     result = compute_dominator_tree(graph, entry="A")
 
-    expect_length(result, EXPECTED_NODE_COUNT_THREE)
-    expect_false("A" in result)
+    expect_length(result, EXPECTED_NODE_COUNT_FOUR)
+    expect_true("A" in result)
+    expect_equal(result["A"], None)
     expect_equal(result["B"], "A")
     expect_equal(result["C"], "A")
 
@@ -125,12 +127,13 @@ def test_dominator_tree_diamond_graph() -> None:
 def test_dominator_tree_multiple_paths() -> None:
     """Graph with multiple paths computes correct immediate dominators.
 
-    Entry node is not included in result (only dominated nodes).
+    Entry node is included with a None immediate dominator.
     """
     graph = diamond_graph()
     result = compute_dominator_tree(graph, entry="A")
 
-    expect_false("A" in result)
+    expect_true("A" in result)
+    expect_equal(result["A"], None)
     expect_equal(result["B"], "A")
     expect_equal(result["C"], "A")
     expect_equal(result["D"], "A")

@@ -84,8 +84,8 @@ def test_lookup_falls_back_to_enclosing_and_same_line() -> None:
         raise AssertionError(message)
 
     fallback_outer = spans.lookup("pkg/a.py", 12, 12, "pkg.a.unknown")
-    if fallback_outer != outer_goid:
-        message = f"expected outer GOID {outer_goid}, got {fallback_outer}"
+    if fallback_outer != inner_goid:
+        message = f"expected inner GOID {inner_goid}, got {fallback_outer}"
         raise AssertionError(message)
 
     start_only = spans.lookup("pkg/a.py", 5, None, "pkg.a.outer")

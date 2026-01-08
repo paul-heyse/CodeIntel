@@ -11,6 +11,7 @@ import pytest
 from codeintel.build.analytics.subsystems.cache import (
     build_subsystem_profile_cache_rows,
 )
+from codeintel.core.serialization.payload import encode_payload
 from tests._helpers import TestScenario
 
 if TYPE_CHECKING:
@@ -52,8 +53,8 @@ def _seed_subsystem(ctx: TestContext) -> None:
             "demo_subsystem",
             "demo description",
             1,
-            ["pkg.mod"],
-            None,
+            encode_payload(["pkg.mod"]),
+            encode_payload([]),
             0,
             0,
             0,

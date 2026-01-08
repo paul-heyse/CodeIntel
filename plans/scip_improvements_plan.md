@@ -6,7 +6,7 @@ steps, representative code patterns, and target files.
 
 ## 1. Pyright config path wiring for scip-python
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Ensure scip-python resolves imports and src-layout paths deterministically.
@@ -17,21 +17,16 @@ Rationale:
 
 Implementation:
 1. Add `pyright_config_path` to `ScipIngestOptions`.
-2. Pass `--pyrightconfig` (or equivalent) when the file exists.
+2. Stage `pyrightconfig.json` into the scip-python target base for the run.
 3. Record the config path in options hashing for cache correctness.
 
 Representative code pattern:
 ```python
-args = [
-    "index",
-    str(target_base),
-    "--output",
-    str(output_scip),
-    "--project-name",
-    project_name,
-]
-if pyright_config_path is not None:
-    args.extend(["--pyrightconfig", str(pyright_config_path)])
+with stage_pyright_config(
+    target_base=target_base,
+    pyright_config_path=pyright_config_path,
+):
+    run_scip_python(...)
 ```
 
 Target files:
@@ -41,7 +36,7 @@ Target files:
 
 ## 2. Env JSON fallback when pip is unavailable
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Make dependency discovery deterministic even when pip is absent.
@@ -50,17 +45,18 @@ Rationale:
 - scip-python defaults to pip introspection; uv environments can omit pip.
 
 Implementation:
-1. Detect missing pip and auto-generate an env JSON via `scripts/gen_scip_env.py`.
-2. Hash the generated env JSON path and content into options hash.
+1. Resolve env JSON: use pip when available, else generate `env.json` under the SCIP dir.
+2. Hash the resolved env JSON path and content into options hash.
 3. Persist the env source (pip vs json) to telemetry.
 
 Representative code pattern:
 ```python
-env_source = "pip"
-if environment_json is None and not pip_available:
-    environment_json = scip_dir / "env.json"
-    run_env_json_generator(environment_json)
-    env_source = "json"
+resolution = resolve_environment_json(
+    environment_json=environment_json,
+    scip_dir=scip_dir,
+)
+environment_json = resolution.environment_json
+env_source = resolution.source
 ```
 
 Target files:
@@ -71,7 +67,7 @@ Target files:
 
 ## 3. Node heap sizing for large repos
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Avoid Node OOM failures during indexing runs.
@@ -85,10 +81,10 @@ Implementation:
 
 Representative code pattern:
 ```python
-env = dict(run_options.env or {})
-if scip_node_max_old_space_mb:
+env = {}
+if scip_node_max_old_space_mb is not None and scip_node_max_old_space_mb > 0:
     env["NODE_OPTIONS"] = f"--max-old-space-size={scip_node_max_old_space_mb}"
-run_options = run_options.model_copy(update={"env": env})
+run_options = ToolRunOptions(..., env=env or None)
 ```
 
 Target files:
@@ -97,7 +93,7 @@ Target files:
 
 ## 4. Persist index metadata in a dedicated table
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Make index provenance queryable and auditable.
@@ -120,6 +116,7 @@ metadata_row = {
     "text_document_encoding": parsed.metadata.text_document_encoding,
     "tool_name": parsed.metadata.tool_name,
     "tool_version": parsed.metadata.tool_version,
+    "tool_arguments": parsed.metadata.tool_arguments,
     "created_at": created_at,
 }
 ```
@@ -132,7 +129,7 @@ Target files:
 
 ## 5. Generate scip_pb2.pyi alongside scip_pb2.py
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Improve typing fidelity for protobuf parsing and consumers.
@@ -165,7 +162,7 @@ Target files:
 
 ## 6. Expand proto typing protocols for new fields
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Align typed protocols with newer SCIP occurrence fields.
@@ -195,7 +192,7 @@ Target files:
 
 ## 7. Merge symbol relationships across shards
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Preserve relationship edges even when docstrings are missing in a shard.

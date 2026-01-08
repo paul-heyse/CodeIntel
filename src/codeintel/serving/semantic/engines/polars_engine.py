@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.serving.semantic.engines.protocol import QueryExplain
 from codeintel.serving.semantic.guardrails import warn_eager_materialization
@@ -113,7 +114,10 @@ class PolarsExecutablePlan:
             batches,
             unify_dictionaries=execution.unify_dictionaries,
         )
-        return pa.RecordBatchReader.from_batches(arrow_schema, record_batches)
+        reader = record_batch_reader_from_iterable(record_batches, empty_policy="none")
+        if reader is None:
+            return pa.RecordBatchReader.from_batches(arrow_schema, [])
+        return reader
 
     def explain(self) -> QueryExplain:
         """Return the DuckDB relation explain plan.

@@ -19,6 +19,7 @@ from sqlglot import exp
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
+from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.masks import and_mask, fill_null_false, invert_mask
 from codeintel.core.columnar.normalization import normalize_array
@@ -368,7 +369,7 @@ class BuildTracking:
             return None
         if table.schema == arrow_schema:
             return table
-        reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+        reader = table_to_reader(table, batch_size=None)
         aligned = align_reader_to_contract(reader, arrow_schema)
         return aligned.read_all()
 
@@ -490,7 +491,7 @@ class BuildTracking:
             "change_delta",
         ]
         selected = table.select(columns)
-        reader = pa.RecordBatchReader.from_batches(selected.schema, selected.to_batches())
+        reader = table_to_reader(selected, batch_size=None)
         return tuple(_parse_manifest_row(row) for row in iter_tuples_from_arrow_reader(reader))
 
     def _save_manifest_parquet(self, manifest: OutputManifest) -> None:

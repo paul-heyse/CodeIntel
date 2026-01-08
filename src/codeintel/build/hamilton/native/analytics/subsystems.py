@@ -12,7 +12,7 @@ from codeintel.build.analytics.subsystems.materialize import (
     SubsystemRows,
     build_subsystem_rows,
 )
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -32,14 +32,14 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 SUBSYSTEMS_TARGET_NAME = "subsystems"
 SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
 SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
-SUBSYSTEMS_CONTRACT = contract_for_table(
+SUBSYSTEMS_CONTRACT = contract_ref_for_table(
     table_key=SUBSYSTEMS_TABLE_KEY,
     target_name=SUBSYSTEMS_TARGET_NAME,
     input_name="subsystems__base",
     required_cols=(),
     clip_column=None,
 )
-SUBSYSTEM_MODULES_CONTRACT = contract_for_table(
+SUBSYSTEM_MODULES_CONTRACT = contract_ref_for_table(
     table_key=SUBSYSTEM_MODULES_TABLE_KEY,
     target_name=SUBSYSTEMS_TARGET_NAME,
     input_name="subsystem_modules__base",
@@ -178,13 +178,13 @@ def subsystem_modules__base(subsystem_rows: SubsystemRows) -> pa.Table:
 
 _MODULE = sys.modules[__name__]
 _SUBSYSTEMS_TABLE_CONTEXTS = (
-    TableTargetTableContext.from_contract(
-        contract=SUBSYSTEMS_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=SUBSYSTEMS_CONTRACT,
         node_name="subsystems__table",
         input_type=pa.Table,
     ),
-    TableTargetTableContext.from_contract(
-        contract=SUBSYSTEM_MODULES_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=SUBSYSTEM_MODULES_CONTRACT,
         node_name="subsystem_modules__table",
         input_type=pa.Table,
     ),

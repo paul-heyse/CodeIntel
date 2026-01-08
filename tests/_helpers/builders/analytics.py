@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 
+from codeintel.core.serialization.payload import encode_payload
 from tests._helpers.builders._common import _iso
 
 if TYPE_CHECKING:
@@ -305,7 +306,7 @@ class ConfigValueRow:
     reference_modules: list[str]
     reference_count: int
 
-    def to_tuple(self) -> tuple[str, str, str, str, str, list[str], list[str], int]:
+    def to_tuple(self) -> tuple[str, str, str, str, str, bytes | None, bytes | None, int]:
         """Serialize row to database insert order.
 
         Returns
@@ -319,8 +320,8 @@ class ConfigValueRow:
             self.config_path,
             self.format,
             self.key,
-            self.reference_paths,
-            self.reference_modules,
+            encode_payload(self.reference_paths),
+            encode_payload(self.reference_modules),
             self.reference_count,
         )
 
@@ -577,8 +578,8 @@ class SubsystemRow:
         str,
         str,
         int,
-        list[str],
-        list[str],
+        bytes,
+        bytes,
         int,
         int,
         int,
@@ -597,6 +598,8 @@ class SubsystemRow:
         tuple
             Values in column order for INSERT.
         """
+        modules_payload = cast("bytes", encode_payload(self.modules_json))
+        entrypoints_payload = cast("bytes", encode_payload(self.entrypoints_json))
         return (
             self.repo,
             self.commit,
@@ -604,8 +607,8 @@ class SubsystemRow:
             self.name,
             self.description,
             self.module_count,
-            self.modules_json,
-            self.entrypoints_json,
+            modules_payload,
+            entrypoints_payload,
             self.internal_edge_count,
             self.external_edge_count,
             self.fan_in,

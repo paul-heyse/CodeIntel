@@ -20,6 +20,7 @@ class ScipShardRecord:
     content_hash: str
     options_hash: str | None
     tool_version: str | None
+    environment_source: str | None
     shard_path: str
     updated_at: datetime
 
@@ -36,6 +37,7 @@ class ScipShardRecord:
             "content_hash": self.content_hash,
             "options_hash": self.options_hash,
             "tool_version": self.tool_version,
+            "environment_source": self.environment_source,
             "shard_path": self.shard_path,
             "updated_at": self.updated_at.isoformat(),
         }
@@ -60,6 +62,7 @@ class ScipShardRecord:
             content_hash=str(payload.get("content_hash", "")),
             options_hash=_coerce_optional_str(payload.get("options_hash")),
             tool_version=_coerce_optional_str(payload.get("tool_version")),
+            environment_source=_coerce_optional_str(payload.get("environment_source")),
             shard_path=str(payload.get("shard_path", "")),
             updated_at=updated_at,
         )
@@ -213,6 +216,7 @@ def manifest_from_state_rows(rows: Sequence[Mapping[str, object]]) -> ScipShardM
             content_hash=str(row.get("content_hash", "")),
             options_hash=_coerce_optional_str(row.get("options_hash")),
             tool_version=_coerce_optional_str(row.get("tool_version")),
+            environment_source=_coerce_optional_str(row.get("environment_source")),
             shard_path=str(row.get("shard_path", "")),
             updated_at=updated_at,
         )

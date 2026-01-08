@@ -35,7 +35,7 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_function_rows,
     build_symbol_graph_metrics_module_rows,
 )
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.graphs.builders import (
     build_call_graph_from_rows,
     build_import_graph_from_rows,
@@ -70,14 +70,14 @@ GRAPH_METRICS_TARGET_NAME = "graph_metrics"
 GRAPH_METRICS_FUNCTIONS_TABLE_KEY = "analytics.graph_metrics_functions"
 GRAPH_METRICS_MODULES_TABLE_KEY = "analytics.graph_metrics_modules"
 GRAPH_METRICS_COLLECT_GROUP = "graph_metrics_core"
-GRAPH_METRICS_FUNCTIONS_CONTRACT = contract_for_table(
+GRAPH_METRICS_FUNCTIONS_CONTRACT = contract_ref_for_table(
     table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
     target_name=GRAPH_METRICS_TARGET_NAME,
     input_name="graph_metrics_functions__base",
     required_cols=(),
     clip_column=None,
 )
-GRAPH_METRICS_MODULES_CONTRACT = contract_for_table(
+GRAPH_METRICS_MODULES_CONTRACT = contract_ref_for_table(
     table_key=GRAPH_METRICS_MODULES_TABLE_KEY,
     target_name=GRAPH_METRICS_TARGET_NAME,
     input_name="graph_metrics_modules__base",
@@ -88,14 +88,14 @@ GRAPH_METRICS_MODULES_CONTRACT = contract_for_table(
 GRAPH_METRICS_EXT_TARGET_NAME = "graph_metrics_ext"
 GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY = "analytics.graph_metrics_functions_ext"
 GRAPH_METRICS_MODULES_EXT_TABLE_KEY = "analytics.graph_metrics_modules_ext"
-GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT = contract_for_table(
+GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT = contract_ref_for_table(
     table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
     target_name=GRAPH_METRICS_EXT_TARGET_NAME,
     input_name="graph_metrics_functions_ext__base",
     required_cols=(),
     clip_column=None,
 )
-GRAPH_METRICS_MODULES_EXT_CONTRACT = contract_for_table(
+GRAPH_METRICS_MODULES_EXT_CONTRACT = contract_ref_for_table(
     table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
     target_name=GRAPH_METRICS_EXT_TARGET_NAME,
     input_name="graph_metrics_modules_ext__base",
@@ -106,14 +106,14 @@ GRAPH_METRICS_MODULES_EXT_CONTRACT = contract_for_table(
 SYMBOL_GRAPH_METRICS_TARGET_NAME = "symbol_graph_metrics"
 SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY = "analytics.symbol_graph_metrics_functions"
 SYMBOL_GRAPH_MODULES_TABLE_KEY = "analytics.symbol_graph_metrics_modules"
-SYMBOL_GRAPH_FUNCTIONS_CONTRACT = contract_for_table(
+SYMBOL_GRAPH_FUNCTIONS_CONTRACT = contract_ref_for_table(
     table_key=SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY,
     target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
     input_name="symbol_graph_metrics_functions__base",
     required_cols=(),
     clip_column=None,
 )
-SYMBOL_GRAPH_MODULES_CONTRACT = contract_for_table(
+SYMBOL_GRAPH_MODULES_CONTRACT = contract_ref_for_table(
     table_key=SYMBOL_GRAPH_MODULES_TABLE_KEY,
     target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
     input_name="symbol_graph_metrics_modules__base",
@@ -123,7 +123,7 @@ SYMBOL_GRAPH_MODULES_CONTRACT = contract_for_table(
 
 GRAPH_STATS_TARGET_NAME = "graph_stats"
 GRAPH_STATS_TABLE_KEY = "analytics.graph_stats"
-GRAPH_STATS_CONTRACT = contract_for_table(
+GRAPH_STATS_CONTRACT = contract_ref_for_table(
     table_key=GRAPH_STATS_TABLE_KEY,
     target_name=GRAPH_STATS_TARGET_NAME,
     input_name="graph_stats__base",
@@ -697,12 +697,12 @@ def _graph_metrics_save_spec(table_key: str) -> DatasetSaveSpec:
 
 _MODULE = sys.modules[__name__]
 _GRAPH_METRICS_TABLE_CONTEXTS = (
-    TableTargetTableContext.from_contract(
-        contract=GRAPH_METRICS_FUNCTIONS_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=GRAPH_METRICS_FUNCTIONS_CONTRACT,
         node_name="graph_metrics_functions__table",
     ),
-    TableTargetTableContext.from_contract(
-        contract=GRAPH_METRICS_MODULES_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=GRAPH_METRICS_MODULES_CONTRACT,
         node_name="graph_metrics_modules__table",
     ),
 )
@@ -725,12 +725,12 @@ graph_metrics__table_materializations = _MODULE.graph_metrics__table_materializa
 t__graph_metrics = _MODULE.t__graph_metrics
 
 _GRAPH_METRICS_EXT_TABLE_CONTEXTS = (
-    TableTargetTableContext.from_contract(
-        contract=GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=GRAPH_METRICS_FUNCTIONS_EXT_CONTRACT,
         node_name="graph_metrics_functions_ext__table",
     ),
-    TableTargetTableContext.from_contract(
-        contract=GRAPH_METRICS_MODULES_EXT_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=GRAPH_METRICS_MODULES_EXT_CONTRACT,
         node_name="graph_metrics_modules_ext__table",
     ),
 )
@@ -752,12 +752,12 @@ graph_metrics_ext__table_materializations = _MODULE.graph_metrics_ext__table_mat
 t__graph_metrics_ext = _MODULE.t__graph_metrics_ext
 
 _SYMBOL_GRAPH_METRICS_TABLE_CONTEXTS = (
-    TableTargetTableContext.from_contract(
-        contract=SYMBOL_GRAPH_FUNCTIONS_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=SYMBOL_GRAPH_FUNCTIONS_CONTRACT,
         node_name="symbol_graph_metrics_functions__table",
     ),
-    TableTargetTableContext.from_contract(
-        contract=SYMBOL_GRAPH_MODULES_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=SYMBOL_GRAPH_MODULES_CONTRACT,
         node_name="symbol_graph_metrics_modules__table",
     ),
 )
@@ -779,8 +779,8 @@ symbol_graph_metrics__table_materializations = _MODULE.symbol_graph_metrics__tab
 t__symbol_graph_metrics = _MODULE.t__symbol_graph_metrics
 
 _GRAPH_STATS_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext.from_contract(
-        contract=GRAPH_STATS_CONTRACT,
+    context=TableTargetContext.from_contract_ref(
+        contract_ref=GRAPH_STATS_CONTRACT,
         input_type=pa.Table,
     )
 )

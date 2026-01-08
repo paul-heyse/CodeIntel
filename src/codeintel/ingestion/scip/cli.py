@@ -78,7 +78,18 @@ def stage_pyright_config(
     target_base: Path,
     pyright_config_path: Path | None,
 ) -> Iterator[Path | None]:
-    """Stage a pyrightconfig.json for scip-python in the target base."""
+    """Stage a pyrightconfig.json for scip-python in the target base.
+
+    Yields
+    ------
+    Path | None
+        Path to the staged config, or None when no staging occurs.
+
+    Raises
+    ------
+    ValueError
+        If the provided pyright config path is invalid.
+    """
     if pyright_config_path is None:
         yield None
         return

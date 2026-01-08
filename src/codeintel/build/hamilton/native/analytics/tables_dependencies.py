@@ -14,7 +14,7 @@ from codeintel.build.analytics.dependencies.compute import (
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -39,14 +39,14 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 EXTERNAL_DEPS_TARGET_NAME = "external_deps"
 EXTERNAL_DEPENDENCIES_TABLE_KEY = "analytics.external_dependencies"
 EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY = "analytics.external_dependency_calls"
-EXTERNAL_DEPENDENCIES_CONTRACT = contract_for_table(
+EXTERNAL_DEPENDENCIES_CONTRACT = contract_ref_for_table(
     table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY,
     target_name=EXTERNAL_DEPS_TARGET_NAME,
     input_name="external_dependencies__base",
     required_cols=(),
     clip_column=None,
 )
-EXTERNAL_DEPENDENCY_CALLS_CONTRACT = contract_for_table(
+EXTERNAL_DEPENDENCY_CALLS_CONTRACT = contract_ref_for_table(
     table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
     target_name=EXTERNAL_DEPS_TARGET_NAME,
     input_name="external_dependency_calls__base",
@@ -222,12 +222,12 @@ def external_dependencies__base(
 
 _MODULE = sys.modules[__name__]
 _EXTERNAL_DEPS_TABLE_CONTEXTS = (
-    TableTargetTableContext.from_contract(
-        contract=EXTERNAL_DEPENDENCY_CALLS_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=EXTERNAL_DEPENDENCY_CALLS_CONTRACT,
         node_name="external_dependency_calls__table",
     ),
-    TableTargetTableContext.from_contract(
-        contract=EXTERNAL_DEPENDENCIES_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=EXTERNAL_DEPENDENCIES_CONTRACT,
         node_name="external_dependencies__table",
     ),
 )

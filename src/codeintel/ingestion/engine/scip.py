@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, cast
 
 from anyio import to_thread
 
+from codeintel.core.execution.ids import new_run_id
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
@@ -36,6 +37,7 @@ from codeintel.ingestion.scip.paths import resolve_target_base
 from codeintel.ingestion.scip.proto import load_generated_module
 from codeintel.ingestion.scip.proto_types import ScipProtoModule
 from codeintel.ingestion.scip.protobuf_parser import parse_index, rebase_parsed_index
+from codeintel.ingestion.scip.telemetry import write_tool_logs
 
 if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
@@ -49,6 +51,62 @@ log = logging.getLogger(__name__)
 
 def _mkdir_parents(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
+
+
+def _require_path(kwargs: dict[str, object], key: str) -> Path:
+    value = kwargs.get(key)
+    if not isinstance(value, Path):
+        message = f"scip-python plugin requires {key} of type Path"
+        raise TypeError(message)
+    return value
+
+
+def _optional_path(value: object, key: str) -> Path | None:
+    if value is None:
+        return None
+    if not isinstance(value, Path):
+        message = f"scip-python plugin requires {key} to be Path or None"
+        raise TypeError(message)
+    return value
+
+
+def _optional_str(value: object, key: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        message = f"scip-python plugin requires {key} to be str or None"
+        raise TypeError(message)
+    return value
+
+
+def _optional_int(value: object, key: str) -> int | None:
+    if value is None:
+        return None
+    if not isinstance(value, int):
+        message = f"scip-python plugin requires {key} to be int or None"
+        raise TypeError(message)
+    return value
+
+
+def _optional_real(value: object, key: str) -> float | None:
+    if value is None:
+        return None
+    if not isinstance(value, Real):
+        message = f"scip-python plugin requires {key} to be a number or None"
+        raise TypeError(message)
+    return float(value)
+
+
+def _optional_rel_paths(value: object) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        message = "scip-python plugin requires rel_paths to be a sequence of strings"
+        raise TypeError(message)
+    if not all(isinstance(item, str) for item in value):
+        message = "scip-python plugin requires rel_paths to contain strings"
+        raise TypeError(message)
+    return tuple(value)
 
 
 def _parse_scip_index(
@@ -124,6 +182,25 @@ def _write_empty_scip_index(output_scip: Path, proto_module_path: Path) -> None:
     write_index_proto(empty_index, output_scip)
 
 
+def _persist_tool_logs(
+    result: ToolRunResult,
+    *,
+    output_scip: Path,
+    run_id: str,
+    label: str,
+) -> None:
+    try:
+        write_tool_logs(
+            scip_dir=output_scip.parent,
+            run_id=run_id,
+            label=label,
+            stdout=result.stdout,
+            stderr=result.stderr,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.warning("Failed to persist scip-python logs: %s", exc)
+
+
 @dataclass(frozen=True)
 class _ScipToolRun:
     output_scip: Path
@@ -135,6 +212,7 @@ class _ScipToolRun:
     project_namespace: str | None
     scip_node_max_old_space_mb: int | None
     timeout_s: float | None
+    run_id: str
 
 
 @dataclass
@@ -160,6 +238,7 @@ class ScipPlugin(ToolPlugin):
                     "project_namespace",
                     "scip_node_max_old_space_mb",
                     "timeout_s",
+                    "run_id",
                 ),
             ),
         )
@@ -179,6 +258,7 @@ class ScipPlugin(ToolPlugin):
         str | None,
         int | None,
         float | None,
+        str | None,
     ]:
         """Validate and extract keyword arguments for run method.
 
@@ -200,61 +280,39 @@ class ScipPlugin(ToolPlugin):
             str | None,
             int | None,
             float | None,
+            str | None,
         ]
             Tuple of (output_scip, proto_module_path, target_dir, rel_paths,
             environment_json, pyright_config_path, project_version, project_namespace,
-            scip_node_max_old_space_mb, timeout_s).
-
-        Raises
-        ------
-        TypeError
-            If required arguments are missing or of wrong type.
+            scip_node_max_old_space_mb, timeout_s, run_id).
         """
         _ = self
-        output_scip_obj = kwargs.get("output_scip")
-        target_dir_obj = kwargs.get("target_dir")
-        rel_paths_obj = kwargs.get("rel_paths")
-        proto_module_obj = kwargs.get("proto_module_path")
-        environment_obj = kwargs.get("environment_json")
-        pyright_config_obj = kwargs.get("pyright_config_path")
-        project_version_obj = kwargs.get("project_version")
-        project_namespace_obj = kwargs.get("project_namespace")
-        node_max_obj = kwargs.get("scip_node_max_old_space_mb")
-        timeout_obj = kwargs.get("timeout_s")
-
-        if not isinstance(output_scip_obj, Path):
-            message = "scip-python plugin requires output_scip of type Path"
-            raise TypeError(message)
-        if target_dir_obj is not None and not isinstance(target_dir_obj, Path):
-            message = "scip-python plugin requires target_dir to be Path or None"
-            raise TypeError(message)
-        if rel_paths_obj is not None and not isinstance(rel_paths_obj, Sequence):
-            message = "scip-python plugin requires rel_paths to be a sequence of strings"
-            raise TypeError(message)
-        if not isinstance(proto_module_obj, Path):
-            message = "scip-python plugin requires proto_module_path of type Path"
-            raise TypeError(message)
-        if environment_obj is not None and not isinstance(environment_obj, Path):
-            message = "scip-python plugin requires environment_json to be Path or None"
-            raise TypeError(message)
-        if pyright_config_obj is not None and not isinstance(pyright_config_obj, Path):
-            message = "scip-python plugin requires pyright_config_path to be Path or None"
-            raise TypeError(message)
-        if project_version_obj is not None and not isinstance(project_version_obj, str):
-            message = "scip-python plugin requires project_version to be str or None"
-            raise TypeError(message)
-        if project_namespace_obj is not None and not isinstance(project_namespace_obj, str):
-            message = "scip-python plugin requires project_namespace to be str or None"
-            raise TypeError(message)
-        if node_max_obj is not None and not isinstance(node_max_obj, int):
-            message = "scip-python plugin requires scip_node_max_old_space_mb to be int or None"
-            raise TypeError(message)
-        if timeout_obj is not None and not isinstance(timeout_obj, Real):
-            message = "scip-python plugin requires timeout_s to be a number or None"
-            raise TypeError(message)
-
-        rel_paths = tuple(rel_paths_obj) if rel_paths_obj is not None else None
-        timeout_s = float(timeout_obj) if isinstance(timeout_obj, Real) else None
+        output_scip_obj = _require_path(kwargs, "output_scip")
+        target_dir_obj = _optional_path(kwargs.get("target_dir"), "target_dir")
+        rel_paths = _optional_rel_paths(kwargs.get("rel_paths"))
+        proto_module_obj = _require_path(kwargs, "proto_module_path")
+        environment_obj = _optional_path(
+            kwargs.get("environment_json"),
+            "environment_json",
+        )
+        pyright_config_obj = _optional_path(
+            kwargs.get("pyright_config_path"),
+            "pyright_config_path",
+        )
+        project_version_obj = _optional_str(
+            kwargs.get("project_version"),
+            "project_version",
+        )
+        project_namespace_obj = _optional_str(
+            kwargs.get("project_namespace"),
+            "project_namespace",
+        )
+        node_max_obj = _optional_int(
+            kwargs.get("scip_node_max_old_space_mb"),
+            "scip_node_max_old_space_mb",
+        )
+        timeout_s = _optional_real(kwargs.get("timeout_s"), "timeout_s")
+        run_id = _optional_str(kwargs.get("run_id"), "run_id")
         return (
             output_scip_obj,
             proto_module_obj,
@@ -266,6 +324,7 @@ class ScipPlugin(ToolPlugin):
             project_namespace_obj,
             node_max_obj,
             timeout_s,
+            run_id,
         )
 
     async def run(
@@ -296,7 +355,9 @@ class ScipPlugin(ToolPlugin):
             project_namespace,
             scip_node_max_old_space_mb,
             timeout_s,
+            run_id,
         ) = self._validate_kwargs(dict(kwargs))
+        resolved_run_id = run_id or new_run_id("scip")
         run_args = _ScipToolRun(
             output_scip=output_scip,
             target_dir=target_dir,
@@ -307,6 +368,7 @@ class ScipPlugin(ToolPlugin):
             project_namespace=project_namespace,
             scip_node_max_old_space_mb=scip_node_max_old_space_mb,
             timeout_s=timeout_s,
+            run_id=resolved_run_id,
         )
 
         result: ToolPluginResult | None = None
@@ -408,11 +470,11 @@ class ScipPlugin(ToolPlugin):
             )
         )
         env: dict[str, str] | None = None
-        if run_args.scip_node_max_old_space_mb is not None:
-            if run_args.scip_node_max_old_space_mb > 0:
-                env = {
-                    "NODE_OPTIONS": f"--max-old-space-size={run_args.scip_node_max_old_space_mb}"
-                }
+        if (
+            run_args.scip_node_max_old_space_mb is not None
+            and run_args.scip_node_max_old_space_mb > 0
+        ):
+            env = {"NODE_OPTIONS": f"--max-old-space-size={run_args.scip_node_max_old_space_mb}"}
 
         with stage_pyright_config(
             target_base=target_base,
@@ -430,6 +492,12 @@ class ScipPlugin(ToolPlugin):
                     env=env,
                 ),
             )
+        _persist_tool_logs(
+            result,
+            output_scip=output_scip,
+            run_id=run_args.run_id,
+            label="scip-python",
+        )
         if not result.ok:
             raise ToolExecutionError(result)
         return result

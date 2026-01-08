@@ -11,6 +11,7 @@ import duckdb
 import pyarrow as pa
 import sqlglot.expressions as exp
 
+from codeintel.core.columnar.conversion import table_to_frame
 from codeintel.core.schemas.arrow_gen import arrow_type_for_column_type
 from codeintel.core.schemas.primitives import (
     COMPLEX_TYPE_BASES,
@@ -276,12 +277,8 @@ def polars_type_from_column_type(column_type: ColumnType) -> PolarsDataType | No
         table = pa.Table.from_arrays([pa.array([], type=arrow_type)], names=["_col"])
     except (TypeError, ValueError):
         return None
-    frame = pl.from_arrow(table)
-    if isinstance(frame, pl.DataFrame):
-        return frame.schema.get("_col")
-    if isinstance(frame, pl.Series):
-        return frame.dtype
-    return None
+    frame = table_to_frame(table)
+    return frame.schema.get("_col")
 
 
 @dataclass(frozen=True, slots=True)

@@ -18,6 +18,7 @@ from hamilton import graph_types
 from hamilton.caching.stores.file import FileResultStore
 from hamilton.caching.stores.sqlite import SQLiteMetadataStore
 
+from codeintel.build.contracts.runtime import configure_contract_runtime
 from codeintel.build.hamilton.cache_adapter import (
     CacheAdapterOptions,
     CacheStore,
@@ -189,8 +190,19 @@ def set_execution_active(*, active: bool) -> None:
 
 def _ensure_schema_service_for_module_imports(*, env: BuildEnv) -> None:
     try:
-        get_schema_service()
+        schema_service = get_schema_service()
     except RuntimeError:
+        provider = _override_schema_provider(env=env)
+        schema_service = SchemaService(table_provider=provider)
+        set_schema_service(schema_service)
+    configure_contract_runtime(schema_service=schema_service)
+    schema_service = get_schema_service()
+    required_keys = (
+        "analytics.scip_diagnostics_summary",
+        "analytics.scip_diagnostics_by_file",
+        "analytics.scip_diagnostics_top_messages",
+    )
+    if any(schema_service.get_table_schema(key) is None for key in required_keys):
         provider = _override_schema_provider(env=env)
         set_schema_service(SchemaService(table_provider=provider))
 
@@ -278,8 +290,12 @@ def compose_runtime(
             cache_store=cache_store,
         )
         observation_provider = observation_provider_for_env(env)
-        configure_schema_service(runtime=runtime_bundle, observation_provider=observation_provider)
+        schema_service = configure_schema_service(
+            runtime=runtime_bundle,
+            observation_provider=observation_provider,
+        )
         configure_contract_service(runtime=runtime_bundle)
+        configure_contract_runtime(schema_service=schema_service)
         _validate_graph_invariants(
             runtime=runtime_bundle,
             mode=_graph_validation_mode(identity.config),

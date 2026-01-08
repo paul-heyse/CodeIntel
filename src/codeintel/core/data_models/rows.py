@@ -608,6 +608,8 @@ class ScipOccurrenceSpanXrefRow:
         SCIP symbol identifier.
     roles
         SCIP symbol roles bitmask.
+    syntax_kind
+        Optional syntax highlighting kind enum.
     is_definition
         True when Definition role is set.
     is_reference
@@ -649,6 +651,7 @@ class ScipOccurrenceSpanXrefRow:
     rel_path: str
     scip_symbol: str
     roles: int
+    syntax_kind: int | None
     is_definition: bool
     is_reference: bool
     is_import: bool
@@ -928,6 +931,8 @@ class ScipModuleStateRow:
         Optional options hash applied during indexing.
     tool_version
         Optional scip-python version string.
+    environment_source
+        Environment discovery source (pip or json).
     shard_path
         Filesystem path to the module shard.
     updated_at
@@ -940,6 +945,7 @@ class ScipModuleStateRow:
     content_hash: str
     options_hash: str | None
     tool_version: str | None
+    environment_source: str | None
     shard_path: str
     updated_at: datetime
 

@@ -1,501 +1,288 @@
-# Contract System Best In Class Plan
+# Contract System Best-in-Class Implementation Plan
 
-## Goals
-- Make contracts the single source of truth for schema, alignment, and validation behavior.
-- Improve runtime performance with fast-path alignment and streaming-first flows.
-- Make contract behavior explicit, testable, and easy to evolve without drift.
-- Improve developer ergonomics with factories and consistent patterns.
+This document defines a comprehensive redesign and implementation plan for the
+build-time contract system. The goal is to strengthen validation and evolution
+while making schema/contract authoring frictionless and robust under runtime
+composition.
 
-## Non-Goals
-- Change table keys, table names, or output formats.
-- Replace the existing schema registry or rewrite contracts end-to-end in one pass.
+## Target State Summary
 
-## Scope 1: Contract Registry and Resolver (single source of truth)
-### Overview
-Centralize contract creation and retrieval so `TableContractSpec` is derived from
-the schema registry plus target overrides. This eliminates duplicated contract
-definitions and keeps schema and contracts in sync.
+- Contract resolution is **lazy** and safe at import time (no schema service required).
+- Contract policy is centralized in a **registry + profiles**, not embedded in targets.
+- Schema evolution is **classified, gated, and visible** (compat vs breaking changes).
+- Alignment diagnostics are **first-class datasets** with durable metadata.
+- Migrations are **formal, chained, and testable** for older snapshots.
+- Authoring new outputs is **scaffolded** and validated with coverage reporting.
 
-### Status
-Completed.
+## Foundational Redesign (System-Level)
 
-### Implementation Steps
-- Introduce a `ContractRegistry` interface with `get_contract` / `require_contract`.
-- Add a concrete `SchemaBackedContractRegistry` that uses the schema service to
-  build `TableContractSpec` on demand.
-- Provide a `ContractResolver` helper to merge schema defaults with target-level
-  overrides (input_name, ops_module, columns_to_pass).
-- Switch contract constants in analytics modules to use the registry.
+This redesign removes contract resolution from import-time execution and turns
+contracts into lightweight references resolved after SchemaService is configured.
 
-### Code Pattern
+Design changes:
+- Introduce `ContractRef` as the primary contract handle used by targets.
+- Move contract resolution to a `ContractRuntime` initialized during runtime
+  composition (after SchemaService is configured).
+- Require that alignment and materialization use resolved contracts, ensuring
+  `contract_hash` and `contract_version` are attached to outputs without import-time
+  schema resolution.
+- Centralize policy selection in a registry to remove policy duplication across targets.
+
+Representative pattern:
 ```python
-@dataclass(frozen=True, slots=True)
-class ContractOverrides:
-    input_name: str | None = None
-    ops_module: ModuleType | None = None
-    columns_to_pass: Sequence[str] = ()
-    required_cols: Sequence[str] | None = None
-    clip_column: str | None = None
+from codeintel.build.contracts.ref import contract_ref_for_table
+from codeintel.build.hamilton.native.patterns import TableTargetContext
 
-
-class ContractRegistry(Protocol):
-    def require_contract(
-        self,
-        *,
-        table_key: str,
-        domain: str,
-        target: str,
-        overrides: ContractOverrides | None = None,
-    ) -> TableContractSpec: ...
-
-
-def require_contract(
-    *,
-    table_key: str,
-    domain: str,
-    target: str,
-    overrides: ContractOverrides | None = None,
-) -> TableContractSpec:
-    registry = get_contract_registry()
-    return registry.require_contract(
-        table_key=table_key,
-        domain=domain,
-        target=target,
-        overrides=overrides,
-    )
-```
-
-### Target Files
-- New: `src/codeintel/build/contracts/registry.py`
-- New: `src/codeintel/build/contracts/types.py`
-- `src/codeintel/build/hamilton/transforms/table_contract.py`
-- `src/codeintel/build/hamilton/native/analytics/*` (replace contract constants)
-- `src/codeintel/build/contracts/__init__.py`
-
-### Completed Work
-- Added registry + resolver + overrides/policy types in `src/codeintel/build/contracts/registry.py`
-  and `src/codeintel/build/contracts/types.py`.
-- Wired policy-aware `TableContractSpec` defaulting in
-  `src/codeintel/build/hamilton/transforms/table_contract.py`.
-- Migrated analytics contracts to `require_contract(..., overrides=...)` across
-  `src/codeintel/build/hamilton/native/analytics/*`.
-
-## Scope 2: Explicit Contract Policy Surface
-### Overview
-Make alignment/validation behavior explicit via a policy object. This removes
-implicit behavior in alignment helpers and makes changes easy to reason about.
-
-### Status
-Completed.
-
-### Implementation Steps
-- Define a `ContractPolicy` dataclass (extras policy, type coercion, null policy,
-  validation profile, clipping behavior).
-- Attach `policy` to `TableContractSpec`.
-- Update `align_table_to_contract` to accept or derive `ContractPolicy`.
-- Add a default policy in the registry that can be overridden per target.
-
-### Code Pattern
-```python
-@dataclass(frozen=True, slots=True)
-class ContractPolicy:
-    extras_policy: ExtrasPolicy | None = None
-    validation_profile: ValidationProfile | None = None
-    coerce_types: bool = True
-    allow_nulls: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class TableContractSpec:
-    table_key: str
-    domain: str
-    target: str
-    ops_module: ModuleType | None
-    columns_to_pass: Sequence[str]
-    required_cols: Sequence[str] = ("loc", "cyclo")
-    clip_column: str | None = "loc"
-    input_name: str = "df"
-    policy: ContractPolicy = ContractPolicy()
-```
-
-### Target Files
-- `src/codeintel/build/hamilton/transforms/table_contract.py`
-- `src/codeintel/build/tabular/arrow_ops.py`
-- `src/codeintel/build/contracts/registry.py` (default policy)
-- `src/codeintel/build/graphs/assembly/contracts.py`
-
-### Completed Work
-- Added `ContractPolicy` and attached it to `TableContractSpec` in
-  `src/codeintel/build/hamilton/transforms/table_contract.py`.
-- Made alignment policy-aware with explicit type-coercion control in
-  `src/codeintel/build/tabular/arrow_ops.py`.
-- Threaded policy support through graph assembly alignment in
-  `src/codeintel/build/graphs/assembly/contracts.py`.
-
-## Scope 3: Fast-Path Alignment + Streaming First
-### Overview
-Avoid unnecessary table materialization when schemas already match and favor
-reader-based alignment for large data.
-
-### Status
-Completed.
-
-### Implementation Steps
-- Add a schema-equality fast path in `align_table_to_contract`.
-- Introduce `ContractAlignmentPlan` cached per table to reduce repeated work.
-- Prefer `align_reader_to_contract` for pipeline paths already in reader form.
-
-### Code Pattern
-```python
-def align_table_to_contract(
-    table_key: str,
-    table: pa.Table,
-    *,
-    policy: ContractPolicy | None = None,
-) -> pa.Table:
-    contract_schema = get_contract_schema(table_key, policy=policy)
-    if table.schema.equals(contract_schema, check_metadata=False):
-        return table
-    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
-    aligned = align_reader_to_contract(table_key, reader, policy=policy)
-    return reader_to_table(aligned)
-```
-
-### Target Files
-- `src/codeintel/build/tabular/arrow_ops.py`
-- `src/codeintel/build/hamilton/transforms/ingestion_normalize.py`
-- `src/codeintel/build/graphs/assembly/contracts.py`
-
-### Completed Work
-- Added schema equality fast paths (including metadata-only updates) in
-  `src/codeintel/build/tabular/arrow_ops.py`.
-- Introduced cached `ContractAlignmentPlan` keyed by `table_key`, `target_name`,
-  and extras policy in `src/codeintel/build/tabular/arrow_ops.py`.
-- Routed table alignment through reader-first logic when schemas do not match.
-
-## Scope 3.1: Target-Aware Contract Alignment (table_key + target_name)
-### Overview
-Make alignment keyed to the target output so the same table key can be shaped
-slightly differently across targets without collisions or drift.
-
-### Status
-Completed.
-
-### Implementation Steps
-- Add a target-aware alignment helper that accepts `table_key` + `target_name`.
-- Update `align_table_to_contract` call sites in target modules to pass target name.
-- Update contract resolution to use `table_key + target_name` as the lookup key.
-
-### Code Pattern
-```python
-def align_table_to_contract(
-    table_key: str,
-    table: pa.Table,
-    *,
-    target_name: str,
-    policy: ContractPolicy | None = None,
-) -> pa.Table:
-    contract = resolve_contract(
-        table_key=table_key,
-        target_name=target_name,
-        policy=policy,
-    )
-    schema = contract_to_schema(contract)
-    return align_table_to_schema(table, schema)
-```
-
-### Target Files
-- `src/codeintel/build/tabular/arrow_ops.py`
-- `src/codeintel/build/graphs/assembly/contracts.py`
-- `src/codeintel/build/hamilton/transforms/ingestion_normalize.py`
-- `src/codeintel/build/hamilton/native/analytics/*`
-- `src/codeintel/build/hamilton/native/ingestion/*`
-
-### Completed Work
-- Added `target_name` support to alignment helpers in
-  `src/codeintel/build/tabular/arrow_ops.py`.
-- Threaded target-aware alignment through graph assembly helpers in
-  `src/codeintel/build/graphs/assembly/contracts.py`.
-- Added `target_name` parameter to ingestion normalization in
-  `src/codeintel/build/hamilton/transforms/ingestion_normalize.py`.
-- Passed `target_name` through primary ingestion and graph alignment call sites,
-  including `ingest_targets`, `scip_resolution`, `syntax_enrich`, `syntax_augment`,
-  `call_wiring`, `cdg`, `pdg`, and `cpg2` assembly.
-
-### Completed Work
-- Confirmed remaining alignment call sites pass `target_name`; alignment reports
-  are wired through major ingestion/graph paths.
-
-## Scope 4: Contract Pipeline as a First-Class Stage
-### Overview
-Ensure a consistent ordering for contract steps: clean, feature, align, validate,
-persist. This makes runtime behavior predictable and testable.
-
-### Status
-Completed.
-
-### Implementation Steps
-- Create a `contract_pipeline` helper that composes the steps in a fixed order.
-- Update `table_contract` to use the pipeline helper.
-- Ensure saver nodes in `table_target` call the pipeline before persistence.
-
-### Code Pattern
-```python
-def contract_pipeline(
-    *,
-    spec: TableContractSpec,
-    policy: ContractPolicy,
-) -> Callable[[Callable[..., object]], Callable[..., object]]:
-    def _apply(fn: Callable[..., object]) -> Callable[..., object]:
-        fn = pipe_clean_df(
-            required_cols=spec.required_cols,
-            clip_column=spec.clip_column,
-            input_name=spec.input_name,
-            namespace=f"prep__{sanitize_pipeline_component(spec.table_key)}",
-        )(fn)
-        if spec.ops_module is not None:
-            fn = with_features(
-                table_key=spec.table_key,
-                columns_to_pass=tuple(spec.columns_to_pass),
-                ops_module=spec.ops_module,
-            )(fn)
-        fn = pipe_contract_alignment(
-            table_key=spec.table_key,
-            target_name=spec.target,
-            policy=spec.policy,
-            namespace=f"align__{sanitize_pipeline_component(spec.table_key)}",
-        )(fn)
-        fn = pipe_canonical_output(
-            table_key=spec.table_key,
-            namespace=f"post__{sanitize_pipeline_component(spec.table_key)}",
-        )(fn)
-        return fn
-    return _apply
-```
-
-### Target Files
-- `src/codeintel/build/hamilton/transforms/table_contract.py`
-- `src/codeintel/build/hamilton/native/patterns/table_target.py`
-- `src/codeintel/build/hamilton/transforms/ingestion_normalize.py`
-
-### Completed Work
-- Added `contract_pipeline` helper and routed `table_contract` through it in
-  `src/codeintel/build/hamilton/transforms/table_contract.py`.
-- Added contract alignment as a pipeline stage via `pipe_contract_alignment`,
-  keeping validation at saver-level decorators.
-
-## Scope 5: Contract Versioning + Migration Hooks
-### Overview
-Attach a contract version and hash to outputs so future schema changes are
-auditable and compatible across releases.
-
-### Implementation Steps
-- Add `contract_version` and `contract_hash` to contract descriptors.
-- Include this metadata in materialization records and target tags.
-- Provide a migration hook that can transform data when contract versions differ.
-
-### Code Pattern
-```python
-@dataclass(frozen=True, slots=True)
-class ContractDescriptor:
-    table_key: str
-    contract_version: str | None
-    contract_hash: str
-
-
-def apply_contract_migration(
-    table: pa.Table,
-    *,
-    table_key: str,
-    from_version: str | None,
-    to_version: str | None,
-) -> pa.Table:
-    if from_version is None or to_version is None or from_version == to_version:
-        return table
-    migration = get_contract_migration(table_key=table_key)
-    if migration is None:
-        return table
-    return migration(
-        table,
-        table_key=table_key,
-        from_version=from_version,
-        to_version=to_version,
-    )
-```
-
-### Target Files
-- `src/codeintel/build/contracts/types.py`
-- `src/codeintel/build/contracts/migrations.py`
-- `src/codeintel/build/contracts/registry.py`
-- `src/codeintel/build/hamilton/native/materialization_records.py`
-- `src/codeintel/build/hamilton/native/patterns/table_target.py`
-- `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`
-- `src/codeintel/build/hamilton/native/patterns/loaders.py`
-
-## Scope 6: Alignment Diagnostics
-### Overview
-Provide actionable diagnostics for missing/extra columns and type coercions.
-This helps debugging and enables observability at scale.
-
-### Status
-Completed.
-
-### Implementation Steps
-- Add `AlignmentReport` with missing/extra/coerced columns and row counts.
-- Return the report from alignment helpers (or optional callback).
-- Emit the report into materialization metadata or logs once per target.
-
-### Code Pattern
-```python
-@dataclass(frozen=True, slots=True)
-class AlignmentReport:
-    table_key: str
-    missing_columns: tuple[str, ...]
-    extra_columns: tuple[str, ...]
-    coerced_columns: tuple[str, ...]
-
-
-def align_table_to_contract(
-    table_key: str,
-    table: pa.Table,
-    *,
-    policy: ContractPolicy | None = None,
-    report: AlignmentReport | None = None,
-) -> tuple[pa.Table, AlignmentReport]:
-    # build report and return aligned table
-    ...
-```
-
-### Target Files
-- `src/codeintel/build/tabular/arrow_ops.py`
-- `src/codeintel/build/hamilton/native/materialization_records.py`
-- `src/codeintel/build/hamilton/native/patterns/table_target.py`
-- `src/codeintel/build/graphs/assembly/contracts.py`
-
-### Completed Work
-- Added `AlignmentReport`, `AlignmentReporter`, and `emit_alignment_report` in
-  `src/codeintel/build/tabular/arrow_ops.py`.
-- Added reporter hooks to alignment helpers in
-  `src/codeintel/build/tabular/arrow_ops.py` and
-  `src/codeintel/build/graphs/assembly/contracts.py`.
-- Threaded reporter usage through ingestion and graph call sites (including
-  `ingest_targets`, `scip_resolution`, `syntax_enrich`, `syntax_augment`,
-  `call_wiring`, `cdg`, `pdg`, `cpg2` assembly, and `subsystem_cache`).
-- Attached alignment reports to materialization metadata via
-  `src/codeintel/build/hamilton/native/materialization_records.py`.
-
-## Scope 7: Cross-Tabular Alignment (Arrow + Polars)
-### Overview
-Provide a unified alignment helper that accepts Arrow tables/readers and Polars
-frames to ensure consistent contract alignment across backends.
-
-### Implementation Steps
-- Add `align_tabular_to_contract` to handle Arrow and Polars inputs.
-- Normalize to Arrow for alignment, then convert back when needed.
-- Update call sites that manually align Polars to use the unified helper.
-
-### Code Pattern
-```python
-def align_tabular_to_contract(
-    table_key: str,
-    value: InferableTabularInput,
-    *,
-    options: AlignmentOptions | None = None,
-    **overrides: Unpack[AlignmentOverrides],
-) -> InferableTabularInput:
-    if isinstance(value, pa.RecordBatchReader):
-        return align_reader_to_contract(table_key, value, options=options, **overrides)
-    if isinstance(value, pa.Table):
-        return align_table_to_contract(table_key, value, options=options, **overrides)
-    if isinstance(value, pl.DataFrame):
-        aligned = align_table_to_contract(
-            table_key,
-            value.to_arrow(),
-            options=options,
-            **overrides,
-        )
-        return table_to_frame(aligned)
-    if isinstance(value, pl.LazyFrame):
-        reader = lazyframe_to_reader(value)
-        aligned = align_reader_to_contract(table_key, reader, options=options, **overrides)
-        return arrow_reader_to_lazyframe(aligned)
-    reader = tabular_to_arrow_reader(value)
-    return align_reader_to_contract(table_key, reader, options=options, **overrides)
-```
-
-### Target Files
-- `src/codeintel/build/tabular/arrow_ops.py`
-- `src/codeintel/build/hamilton/transforms/tabular_steps.py`
-- `src/codeintel/build/hamilton/native/analytics/subsystem_cache.py`
-
-### Completed Work
-- Added `align_tabular_to_contract` with Arrow/Polars handling in
-  `src/codeintel/build/tabular/arrow_ops.py`.
-- Routed contract alignment through the unified helper in
-  `src/codeintel/build/hamilton/transforms/tabular_steps.py`.
-- Updated `subsystem_cache` alignment to use the cross-tabular helper in
-  `src/codeintel/build/hamilton/native/analytics/subsystem_cache.py`.
-
-## Scope 8: Developer Ergonomics (Factories and Codegen)
-### Overview
-Reduce repetitive contract definitions by adding helpers that synthesize contract
-specs from schemas and target metadata.
-
-### Implementation Steps
-- Add `contract_for_table` and `contracts_for_target` helpers.
-- Provide `TableTargetContext.from_contract` and `TableTargetTableContext.from_contract`
-  as the canonical pattern (already present; migrate remaining call sites).
-- Add a lint/guardrail that flags contract specs not created via the factory.
-
-### Code Pattern
-```python
-def contract_for_table(
-    *,
-    table_key: str,
-    target_name: str,
-    input_name: str,
-    **overrides: Unpack[ContractForTableOverrides],
-) -> TableContractSpec:
-    resolved = ContractOverrides(input_name=input_name, **overrides)
-    return require_contract_for_target(
-        table_key=table_key,
-        target_name=target_name,
-        overrides=resolved,
-    )
-```
-
-```python
-GRAPH_METRICS_FUNCTIONS_CONTRACT = contract_for_table(
+CONTRACT = contract_ref_for_table(
     table_key="analytics.graph_metrics_functions",
     target_name="graph_metrics",
     input_name="graph_metrics_functions__base",
-    required_cols=(),
-    clip_column=None,
 )
+
+TABLE_CONTEXT = TableTargetContext.from_contract_ref(CONTRACT)
 ```
 
-### Target Files
-- `src/codeintel/build/contracts/registry.py`
-- `src/codeintel/build/hamilton/native/analytics/*`
+Target files (foundation):
+- `src/codeintel/build/contracts/ref.py`
+- `src/codeintel/build/contracts/runtime.py`
 - `src/codeintel/build/hamilton/native/patterns/table_target.py`
+- `src/codeintel/runtime/compose.py`
 
-### Completed Work
-- Added `contract_for_table`, `contracts_for_target`, and typed override helpers in
-  `src/codeintel/build/contracts/registry.py`.
-- Enforced contract provenance by requiring `contract_hash` on table specs in
-  `src/codeintel/build/hamilton/native/patterns/table_target.py`.
-- Migrated analytics contract declarations to `contract_for_table` across
-  `src/codeintel/build/hamilton/native/analytics/*` (semantic_roles, subsystems,
-  data_models, py_cpg_quality_report, function_validation, entrypoints,
-  graph_validation, function_effects, subsystem_agreement, config_graphs,
-  graph_metrics, function_types, subsystem_cache, tables_dependencies,
-  function_ast_features, function_contracts, cfg_dfg_metrics, subsystem_metrics).
+## Scope Items
 
-## Suggested Rollout
-1) Land ContractRegistry + ContractPolicy (scopes 1-2).
-2) Align fast-path + streaming improvements (scope 3).
-3) Introduce pipeline step and diagnostics (scopes 4 and 6).
-4) Add versioning and cross-tabular alignment (scopes 5 and 7).
-5) Migrate contracts to factory usage + guardrails (scope 8).
-### Status
-Completed.
+### 1) Lazy Contract Resolution (ContractRef + ContractRuntime)
+
+Status: Proposed
+
+Goal:
+- Remove import-time dependency on SchemaService while preserving contract hashes.
+
+Redesign details:
+- `contract_for_table` becomes `contract_ref_for_table` and returns a `ContractRef`
+  instead of an eagerly resolved `TableContractSpec`.
+- `ContractRuntime` resolves refs on-demand using SchemaService, caching resolved
+  `TableContractSpec` by `(table_key, target_name, input_name, overrides)`.
+- `TableTargetContext.from_contract_ref` wires the base node name from the ref and
+  injects a resolver callback into the target spec.
+
+Implementation steps:
+1. Add `ContractRef` dataclass + resolver hook.
+2. Add `ContractRuntime` with cached `resolve(ref)` method.
+3. Update table-target patterns to accept ContractRef, resolve at execution/attach time.
+4. Keep guardrail: validate `contract_hash` once resolved and before materialization.
+
+Representative code pattern:
+```python
+@dataclass(frozen=True)
+class ContractRef:
+    table_key: str
+    target_name: str
+    input_name: str
+    overrides: ContractOverrides | None = None
+
+class ContractRuntime:
+    def __init__(self, schema_service: SchemaService) -> None:
+        self._schema_service = schema_service
+        self._cache: dict[ContractRef, TableContractSpec] = {}
+
+    def resolve(self, ref: ContractRef) -> TableContractSpec:
+        if ref in self._cache:
+            return self._cache[ref]
+        contract = require_contract_for_target(
+            table_key=ref.table_key,
+            target_name=ref.target_name,
+            overrides=ref.overrides,
+        )
+        self._cache[ref] = contract
+        return contract
+```
+
+Target files:
+- `src/codeintel/build/contracts/ref.py`
+- `src/codeintel/build/contracts/runtime.py`
+- `src/codeintel/build/contracts/registry.py`
+- `src/codeintel/build/hamilton/native/patterns/table_target.py`
+- `src/codeintel/runtime/compose.py`
+
+### 2) Contract Policy Registry + Profiles
+
+Status: Proposed
+
+Goal:
+- Centralize policy selection while keeping target code minimal.
+
+Redesign details:
+- Add `ContractPolicyRegistry` with per-table and per-target profiles.
+- Support profiles in config (e.g., `contracts.policy_profiles`).
+- `ContractRuntime.resolve` applies policy defaults based on table/target.
+
+Implementation steps:
+1. Add registry with `resolve_policy(table_key, target_name)` API.
+2. Load policy profiles from config into registry during compose.
+3. Remove per-target policy tweaks unless explicitly overridden.
+
+Representative code pattern:
+```python
+registry = ContractPolicyRegistry()
+registry.register_profile(
+    name="strict",
+    extras_policy="reject",
+    coerce_types=False,
+)
+registry.attach_table_profile("analytics.graph_metrics_functions", "strict")
+```
+
+Target files:
+- `src/codeintel/build/contracts/policy_registry.py`
+- `src/codeintel/core/config/settings.py`
+- `src/codeintel/runtime/compose.py`
+- `config/codeintel.build.toml`
+
+### 3) Schema Evolution Classification + Gating
+
+Status: Proposed
+
+Goal:
+- Detect and gate breaking schema changes systematically.
+
+Redesign details:
+- Add a schema diff tool that classifies changes (compatible/additive vs breaking).
+- Integrate with `tools.quality_report` as a required gate.
+- Require explicit approvals for breaking changes via a small registry file.
+
+Implementation steps:
+1. Implement schema diff classifier (column adds, nullability changes, type changes).
+2. Add a `schema_breaks.yaml` allowlist with explicit approvals.
+3. Add a quality_report step that fails on unapproved breaking changes.
+
+Representative code pattern:
+```python
+diff = classify_schema_change(old_schema, new_schema)
+if diff.breaking and not is_approved(diff, approvals):
+    raise SystemExit(f"Breaking schema change: {diff.summary}")
+```
+
+Target files:
+- `tools/schema_diff.py`
+- `tools/quality_report.py`
+- `config/schema_breaks.yaml`
+
+### 4) Contract Diagnostics as First-Class Outputs
+
+Status: Proposed
+
+Goal:
+- Persist alignment diffs for auditability and quality enforcement.
+
+Redesign details:
+- Add `build.contract_alignment_issues` (per-run) with counts of missing/extra/coerced.
+- Update alignment reporter to emit structured events during materialization.
+- Attach `contract_hash` + `contract_version` to each diagnostic row.
+
+Implementation steps:
+1. Add table schema for diagnostics.
+2. Extend `align_*_to_contract` reporters to emit structured diff rows.
+3. Persist diagnostics as a build dataset in each run.
+
+Representative code pattern:
+```python
+def report_alignment(table_key: str, target: str, diff: AlignmentDiff) -> None:
+    diagnostics.append(
+        {
+            "table_key": table_key,
+            "target": target,
+            "missing_count": diff.missing_count,
+            "extra_count": diff.extra_count,
+            "coerced_count": diff.coerced_count,
+            "contract_hash": diff.contract_hash,
+            "recorded_at": utc_now(),
+        }
+    )
+```
+
+Target files:
+- `src/codeintel/core/schemas/table_registry.py`
+- `src/codeintel/build/tabular/arrow_ops.py`
+- `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`
+- `src/codeintel/build/hamilton/native/diagnostics.py`
+
+### 5) Migrations Registry + Loader Integration
+
+Status: Proposed
+
+Goal:
+- Maintain backward compatibility for older snapshots.
+
+Redesign details:
+- Add migration registry keyed by `(table_key, from_hash, to_hash)`.
+- Loader applies migration chain when reading data with older hash.
+- Migrations are explicit, deterministic Arrow transforms.
+
+Implementation steps:
+1. Add migration registry with registration decorators.
+2. Add loader hook to apply migrations to older snapshots.
+3. Provide a migration test harness for deterministic validation.
+
+Representative code pattern:
+```python
+@register_migration(
+    table_key="analytics.graph_metrics_functions",
+    from_hash="abc",
+    to_hash="def",
+)
+def migrate_v1_to_v2(table: pa.Table) -> pa.Table:
+    return ensure_table_columns(table, ["new_col"])
+```
+
+Target files:
+- `src/codeintel/core/schemas/migrations.py`
+- `src/codeintel/core/datasets/arrow_store.py`
+- `src/codeintel/build/exports/writers.py`
+
+### 6) Schema Authoring Ergonomics (Scaffold + Coverage)
+
+Status: Proposed
+
+Goal:
+- Make adding new outputs repeatable and low-friction.
+
+Redesign details:
+- Add a scaffold CLI that generates a target module, contract wiring, and schema stub.
+- Add a schema coverage report (DAG outputs vs declared schemas).
+
+Implementation steps:
+1. Create scaffold CLI with templates for analytics and ingestion targets.
+2. Build a coverage report tool that lists missing contracts or schemas.
+3. Integrate coverage report into quality_report (warning or required gate).
+
+Representative code pattern:
+```python
+def missing_contracts(catalog: DagCatalog) -> list[str]:
+    return sorted(
+        table_key for table_key in catalog.table_outputs
+        if table_key not in TABLE_SCHEMAS
+    )
+```
+
+Target files:
+- `tools/contract_scaffold.py`
+- `tools/schema_coverage.py`
+- `tools/quality_report.py`
+- `templates/contracts/*`
+
+## Rollout Phases
+
+1) Introduce ContractRef + ContractRuntime and update targets to use it.
+2) Add policy registry and move policy decisions out of target code.
+3) Add schema diff classification + gating.
+4) Add alignment diagnostics table and hook into materializers.
+5) Add migrations registry + loader support.
+6) Add scaffolding + schema coverage tooling.
+
+## Validation Strategy
+
+- Unit tests for contract resolution and policy registry.
+- Schema diff tests with representative breaking and non-breaking changes.
+- Migration tests with real snapshot fixtures.
+- Integration tests for alignment diagnostics emission and persistence.
+

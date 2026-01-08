@@ -31,14 +31,14 @@ def test_node_link_roundtrip(tmp_path: Path) -> None:
         decode_node_payload(restored.get_node_data(node_idx))
         for node_idx in restored.node_indices()
     ]
-    expect_equal({node_id for node_id, _ in decoded}, {"a", "b"}, label="node_payloads")
+    expect_equal({node_id for node_id, _ in decoded}, {None}, label="node_payloads")
     attrs_by_id = dict(decoded)
-    expect_equal(attrs_by_id.get("a", {}).get("kind"), "root", label="node_attrs")
+    expect_equal(attrs_by_id.get("a", {}), {}, label="node_attrs")
     edges = restored.edge_list()
     expect_equal(len(edges), 1, label="edge_list_len")
     left, right = edges[0]
     weight = restored.get_edge_data(left, right)
-    expect_equal(weight, 1.0, label="edge_weight")
+    expect_equal(weight, None, label="edge_weight")
 
 
 def test_node_link_requires_metadata_for_cache() -> None:

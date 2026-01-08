@@ -12,9 +12,9 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
-import polars as pl
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import table_to_frame
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBRelation
@@ -349,9 +349,8 @@ def records_from_arrow_batch(
     """
     if batch.num_rows == 0:
         return []
-    frame = pl.from_arrow(batch)
-    if isinstance(frame, pl.Series):
-        frame = frame.to_frame()
+    table = pa.Table.from_batches([batch])
+    frame = table_to_frame(table)
     if columns is not None:
         frame = frame.select(list(columns))
     records = cast("list[dict[str, object]]", frame.to_dicts())
@@ -379,9 +378,7 @@ def records_from_arrow_table(
     """
     if table.num_rows == 0:
         return []
-    frame = pl.from_arrow(table)
-    if isinstance(frame, pl.Series):
-        frame = frame.to_frame()
+    frame = table_to_frame(table)
     if columns is not None:
         frame = frame.select(list(columns))
     records = cast("list[dict[str, object]]", frame.to_dicts())

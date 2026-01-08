@@ -13,6 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, TypedDict, cast
 
+from codeintel.core.serialization.payload import encode_payload
 from tests._helpers.builders.row_protocol import insert_rows
 
 if TYPE_CHECKING:
@@ -110,7 +111,7 @@ class CallGraphEdgeRow:
 
     def to_tuple(
         self,
-    ) -> tuple[str, str, int, int | None, str, int, int, str, str, str, float, JsonValue]:
+    ) -> tuple[str, str, int, int | None, str, int, int, str, str, str, float, bytes | None]:
         """Serialize row to database insert order.
 
         Returns
@@ -131,7 +132,7 @@ class CallGraphEdgeRow:
             self.kind,
             self.resolved_via,
             self.confidence,
-            evidence_json,
+            encode_payload(evidence_json),
         )
 
 

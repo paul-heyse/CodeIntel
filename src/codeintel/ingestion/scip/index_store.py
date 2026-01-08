@@ -13,6 +13,7 @@ from codeintel.ingestion.scip.proto_types import (
     ExternalSymbolListProto,
     ExternalSymbolProto,
     IndexProto,
+    RelationshipProto,
     ScipProtoModule,
     SymbolInfoProto,
 )
@@ -158,7 +159,7 @@ def _merge_document_symbols(
     merged: dict[str, SymbolInfoProto] = {}
     for symbol, shard_sym in shard_symbols.items():
         base_sym = base_symbols.get(symbol)
-        merged[symbol] = _prefer_symbol_info(
+        merged[symbol] = _merge_symbol_info(
             base_sym,
             shard_sym,
             base_updated_at=base_updated_at,
@@ -170,6 +171,53 @@ def _merge_document_symbols(
         sym_msg = shard_doc.symbols.add()
         _copy_from(sym_msg, merged[symbol])
     return shard_doc
+
+
+def _merge_symbol_info(
+    base_sym: SymbolInfoProto | None,
+    shard_sym: SymbolInfoProto,
+    *,
+    base_updated_at: datetime | None,
+    shard_updated_at: datetime | None,
+) -> SymbolInfoProto:
+    if base_sym is None:
+        return shard_sym
+    chosen = _prefer_symbol_info(
+        base_sym,
+        shard_sym,
+        base_updated_at=base_updated_at,
+        shard_updated_at=shard_updated_at,
+    )
+    merged_relationships = _merge_relationships(base_sym, shard_sym)
+    if chosen is base_sym:
+        _copy_from(shard_sym, base_sym)
+    _clear_field(shard_sym, "relationships")
+    for rel in merged_relationships:
+        rel_msg = shard_sym.relationships.add()
+        _copy_from(rel_msg, rel)
+    return shard_sym
+
+
+def _merge_relationships(
+    base_sym: SymbolInfoProto,
+    shard_sym: SymbolInfoProto,
+) -> list[RelationshipProto]:
+    merged: dict[tuple[str, bool, bool, bool, bool], RelationshipProto] = {}
+    for rel in base_sym.relationships:
+        merged[_relationship_key(rel)] = rel
+    for rel in shard_sym.relationships:
+        merged.setdefault(_relationship_key(rel), rel)
+    return list(merged.values())
+
+
+def _relationship_key(rel: RelationshipProto) -> tuple[str, bool, bool, bool, bool]:
+    return (
+        rel.symbol,
+        bool(rel.is_reference),
+        bool(rel.is_implementation),
+        bool(rel.is_type_definition),
+        bool(rel.is_definition),
+    )
 
 
 def _prefer_symbol_info(

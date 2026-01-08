@@ -415,10 +415,10 @@ def _maybe_dictionary_encode_table(
             fields.append(field)
         else:
             arrays.append(encoded)
-            fields.append(pa.field(name, encoded.type))
+            fields.append(field.with_type(encoded.type))
     if not arrays:
         return table
-    return pa.Table.from_arrays(arrays, schema=pa.schema(fields))
+    return pa.Table.from_arrays(arrays, schema=pa.schema(fields, metadata=table.schema.metadata))
 
 
 def _write_arrow_stream(

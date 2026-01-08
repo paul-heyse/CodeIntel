@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
+from codeintel.build.contracts.runtime import get_contract_runtime
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -40,6 +41,7 @@ from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
+    from codeintel.build.contracts.ref import ContractRef
     from codeintel.build.hamilton.native.patterns.specs import OutputRole
     from codeintel.core.validation.profiles import ValidationProfile
 
@@ -51,6 +53,7 @@ class TableTargetTableSpec:
     table_key: str
     base_node: str
     contract: TableContractSpec | None = None
+    contract_ref: ContractRef | None = None
     save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None
     node_name: str | None = None
     input_type: object | None = None
@@ -80,6 +83,7 @@ class TableTargetContext:
     table_key: str
     base_node: str
     contract: TableContractSpec | None = None
+    contract_ref: ContractRef | None = None
     input_type: object | None = None
     save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None
     node_name: str | None = None
@@ -117,6 +121,34 @@ class TableTargetContext:
             extra_tags=extra_tags,
         )
 
+    @classmethod
+    def from_contract_ref(
+        cls,
+        *,
+        contract_ref: ContractRef,
+        input_type: object | None = None,
+        save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None,
+        node_name: str | None = None,
+        extra_tags: Mapping[TagKey, TagValue] | None = None,
+    ) -> TableTargetContext:
+        """Build a target context from a contract reference.
+
+        Returns
+        -------
+        TableTargetContext
+            Context derived from the contract input name.
+        """
+        return cls(
+            domain=contract_ref.domain,
+            target_name=contract_ref.target_name,
+            table_key=contract_ref.table_key,
+            base_node=contract_ref.input_name,
+            contract_ref=contract_ref,
+            input_type=input_type,
+            save_spec=save_spec,
+            node_name=node_name,
+            extra_tags=extra_tags,
+        )
     @staticmethod
     def build_dataset_table_spec(
         *,
@@ -225,6 +257,7 @@ class TableTargetTableContext:
     table_key: str
     base_node: str
     contract: TableContractSpec | None = None
+    contract_ref: ContractRef | None = None
     save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None
     node_name: str | None = None
     input_type: object | None = None
@@ -257,6 +290,32 @@ class TableTargetTableContext:
             extra_tags=extra_tags,
         )
 
+    @classmethod
+    def from_contract_ref(
+        cls,
+        *,
+        contract_ref: ContractRef,
+        node_name: str | None = None,
+        save_spec: DatasetSaveSpec | RelationTableSaveSpec | None = None,
+        input_type: object | None = None,
+        extra_tags: Mapping[TagKey, TagValue] | None = None,
+    ) -> TableTargetTableContext:
+        """Build a table context from a contract reference.
+
+        Returns
+        -------
+        TableTargetTableContext
+            Context derived from the contract input name.
+        """
+        return cls(
+            table_key=contract_ref.table_key,
+            base_node=contract_ref.input_name,
+            contract_ref=contract_ref,
+            save_spec=save_spec,
+            node_name=node_name,
+            input_type=input_type,
+            extra_tags=extra_tags,
+        )
 
 @dataclass(frozen=True, slots=True)
 class MultiTableTargetContext:
@@ -297,6 +356,7 @@ class MultiTableTargetContext:
             table_key=context.table_key,
             base_node=context.base_node,
             contract=context.contract,
+            contract_ref=context.contract_ref,
             save_spec=resolved_save_spec,
             node_name=context.node_name,
             input_type=resolved_input_type,
@@ -391,6 +451,7 @@ def build_single_table_target_spec(*, context: TableTargetContext) -> TableTarge
                 table_key=context.table_key,
                 base_node=context.base_node,
                 contract=context.contract,
+                contract_ref=context.contract_ref,
                 save_spec=save_spec,
                 node_name=context.node_name or f"{context.target_name}__table",
                 input_type=context.input_type,
@@ -487,26 +548,27 @@ def attach_table_target_template(module: ModuleType, *, spec: TableTargetSpec) -
     table_nodes: set[str] = set()
     table_materialization_nodes: dict[str, str] = {}
     for table_spec in spec.tables:
-        _validate_table_spec(table_spec)
-        table_key = table_spec.table_key
+        resolved_spec = _resolve_table_contract(table_spec)
+        _validate_table_spec(resolved_spec)
+        table_key = resolved_spec.table_key
         if table_key in table_keys:
             msg = f"Duplicate table_key in {spec.target_name}: {table_key}"
             raise ValueError(msg)
         table_keys.append(table_key)
 
-        node_name = _resolve_table_node_name(table_spec)
+        node_name = _resolve_table_node_name(resolved_spec)
         if node_name in table_nodes:
             msg = f"Duplicate table node name in {spec.target_name}: {node_name}"
             raise ValueError(msg)
         table_nodes.add(node_name)
 
-        save_spec = table_spec.save_spec
+        save_spec = resolved_spec.save_spec
         if save_spec is not None and save_spec.output_name is not None:
             table_materialization_nodes[table_key] = save_spec.output_name
 
         _attach_table_node(
             context=context,
-            table_spec=table_spec,
+            table_spec=resolved_spec,
             node_name=node_name,
         )
 
@@ -680,6 +742,28 @@ def _resolve_table_node_name(table_spec: TableTargetTableSpec) -> str:
     return f"{base_node}__table"
 
 
+def _resolve_table_contract(table_spec: TableTargetTableSpec) -> TableTargetTableSpec:
+    if table_spec.contract is not None:
+        return table_spec
+    if table_spec.contract_ref is None:
+        return table_spec
+    if table_spec.contract_ref.table_key != table_spec.table_key:
+        msg = (
+            "ContractRef table_key mismatch: "
+            f"{table_spec.contract_ref.table_key} != {table_spec.table_key}"
+        )
+        raise ValueError(msg)
+    if table_spec.contract_ref.input_name != table_spec.base_node:
+        msg = (
+            "ContractRef input_name mismatch: "
+            f"{table_spec.contract_ref.input_name} != {table_spec.base_node}"
+        )
+        raise ValueError(msg)
+    runtime = get_contract_runtime()
+    contract = runtime.resolve(table_spec.contract_ref)
+    return replace(table_spec, contract=contract, contract_ref=None)
+
+
 def _resolve_save_spec(
     table_spec: TableTargetTableSpec,
 ) -> DatasetSaveSpec | RelationTableSaveSpec:
@@ -696,12 +780,16 @@ def _resolve_save_spec(
 
 def _resolve_input_type(table_spec: TableTargetTableSpec) -> object:
     if table_spec.input_type is not None:
-        if table_spec.contract is not None and table_spec.input_type is pa.Table:
+        if _has_contract(table_spec) and table_spec.input_type is pa.Table:
             return InferableTabularInput
         return table_spec.input_type
-    if table_spec.contract is None:
+    if not _has_contract(table_spec):
         return InferableTabularInput
     return InferableTabularInput
+
+
+def _has_contract(table_spec: TableTargetTableSpec) -> bool:
+    return table_spec.contract is not None or table_spec.contract_ref is not None
 
 
 def _merge_tags(
@@ -741,6 +829,22 @@ def _validate_table_spec(table_spec: TableTargetTableSpec) -> None:
     if not table_spec.base_node:
         msg = f"TableTargetTableSpec.base_node is required for {table_spec.table_key}"
         raise ValueError(msg)
+    if table_spec.contract_ref is not None and table_spec.contract is not None:
+        msg = "TableTargetTableSpec cannot specify both contract and contract_ref"
+        raise ValueError(msg)
+    if table_spec.contract_ref is not None:
+        if table_spec.contract_ref.table_key != table_spec.table_key:
+            msg = (
+                "ContractRef table_key mismatch: "
+                f"{table_spec.contract_ref.table_key} != {table_spec.table_key}"
+            )
+            raise ValueError(msg)
+        if table_spec.contract_ref.input_name != table_spec.base_node:
+            msg = (
+                "ContractRef input_name mismatch: "
+                f"{table_spec.contract_ref.input_name} != {table_spec.base_node}"
+            )
+            raise ValueError(msg)
     if table_spec.contract is None:
         return
     if table_spec.contract.contract_hash is None:

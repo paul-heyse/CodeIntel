@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.polars_collect import (
     PolarsExecutionOptions,
     collect_batches,
@@ -350,8 +351,7 @@ def stream_from_table(
     RecordBatchReaderStream
         Columnar stream adapter for the table.
     """
-    batches = table.to_batches(max_chunksize=batch_size) if batch_size else table.to_batches()
-    reader = pa.RecordBatchReader.from_batches(table.schema, batches)
+    reader = table_to_reader(table, batch_size=batch_size)
     return RecordBatchReaderStream(reader)
 
 
@@ -397,17 +397,11 @@ def coerce_arrow_reader(
         return reader
     table_from_c = _table_from_c_array(value)
     if table_from_c is not None:
-        batches = (
-            table_from_c.to_batches(max_chunksize=batch_size)
-            if batch_size
-            else table_from_c.to_batches()
-        )
-        return pa.RecordBatchReader.from_batches(table_from_c.schema, batches)
+        return table_to_reader(table_from_c, batch_size=batch_size)
     table = _table_from_interchange(value)
     if table is None:
         return None
-    batches = table.to_batches(max_chunksize=batch_size) if batch_size else table.to_batches()
-    return pa.RecordBatchReader.from_batches(table.schema, batches)
+    return table_to_reader(table, batch_size=batch_size)
 
 
 def coerce_arrow_table(value: object) -> pa.Table | None:

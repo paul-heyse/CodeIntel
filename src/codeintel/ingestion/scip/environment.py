@@ -18,12 +18,24 @@ class ScipEnvironmentResolution:
 
 
 def pip_available() -> bool:
-    """Return True when pip or pip3 is discoverable on PATH."""
+    """Return True when pip or pip3 is discoverable on PATH.
+
+    Returns
+    -------
+    bool
+        True when a pip executable is available.
+    """
     return shutil.which("pip") is not None or shutil.which("pip3") is not None
 
 
 def build_environment_entries() -> list[dict[str, object]]:
-    """Collect installed distributions for scip-python environment JSON."""
+    """Collect installed distributions for scip-python environment JSON.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        List of environment entries with package metadata.
+    """
     entries: list[dict[str, object]] = []
     for dist in metadata.distributions():
         name = dist.metadata.get("Name") or dist.metadata.get("Summary") or dist.name
@@ -52,7 +64,18 @@ def resolve_environment_json(
     environment_json: Path | None,
     scip_dir: Path,
 ) -> ScipEnvironmentResolution:
-    """Resolve which environment discovery mode to use for scip-python."""
+    """Resolve which environment discovery mode to use for scip-python.
+
+    Returns
+    -------
+    ScipEnvironmentResolution
+        Resolution describing the environment JSON path and source.
+
+    Raises
+    ------
+    ValueError
+        If an explicit environment JSON path is missing.
+    """
     if environment_json is not None:
         if not environment_json.is_file():
             message = f"SCIP environment JSON not found: {environment_json}"

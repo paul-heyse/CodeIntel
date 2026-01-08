@@ -6,7 +6,7 @@ import sys
 
 import pyarrow as pa
 
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.validation.runner import (
     GraphValidationRunRequest,
@@ -28,7 +28,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 GRAPH_VALIDATION_TARGET_NAME = "graph_validation"
 GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
-GRAPH_VALIDATION_CONTRACT = contract_for_table(
+GRAPH_VALIDATION_CONTRACT = contract_ref_for_table(
     table_key=GRAPH_VALIDATION_TABLE_KEY,
     target_name=GRAPH_VALIDATION_TARGET_NAME,
     input_name="graph_validation__base",
@@ -92,8 +92,8 @@ def graph_validation__base(
 
 _MODULE = sys.modules[__name__]
 _GRAPH_VALIDATION_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext.from_contract(
-        contract=GRAPH_VALIDATION_CONTRACT,
+    context=TableTargetContext.from_contract_ref(
+        contract_ref=GRAPH_VALIDATION_CONTRACT,
         input_type=pa.Table,
     )
 )

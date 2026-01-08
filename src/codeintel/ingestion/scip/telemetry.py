@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,8 @@ class ScipRunTelemetry:
         Project namespace passed to scip-python.
     environment_source
         Environment discovery source (pip or json).
+    tool_log_dir
+        Directory holding scip-python stdout/stderr logs for this run.
     tool_version
         Resolved scip-python version string.
     total_modules
@@ -103,6 +106,7 @@ class ScipRunTelemetry:
     project_version: str | None
     project_namespace: str | None
     environment_source: str | None
+    tool_log_dir: str | None
     tool_version: str | None
     total_modules: int
     changed_modules: int
@@ -147,6 +151,7 @@ class ScipRunTelemetry:
             "project_version": self.project_version,
             "project_namespace": self.project_namespace,
             "environment_source": self.environment_source,
+            "tool_log_dir": self.tool_log_dir,
             "tool_version": self.tool_version,
             "total_modules": self.total_modules,
             "changed_modules": self.changed_modules,
@@ -197,6 +202,7 @@ class ScipRunTelemetry:
             project_version=identity.project_version,
             project_namespace=identity.project_namespace,
             environment_source=identity.environment_source,
+            tool_log_dir=None,
             tool_version=None,
             total_modules=0,
             changed_modules=0,
@@ -226,4 +232,34 @@ class ScipRunTelemetry:
         )
 
 
-__all__ = ["ScipRunIdentity", "ScipRunTelemetry"]
+def _sanitize_label(label: str) -> str:
+    normalized = label.strip().lower()
+    if not normalized:
+        return "scip"
+    return "".join(ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in normalized)
+
+
+def write_tool_logs(
+    *,
+    scip_dir: Path,
+    run_id: str,
+    label: str,
+    stdout: str,
+    stderr: str,
+) -> Path:
+    """Persist scip-python stdout/stderr logs and return the run directory.
+
+    Returns
+    -------
+    Path
+        Directory containing the persisted log files.
+    """
+    run_dir = scip_dir / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    safe_label = _sanitize_label(label)
+    (run_dir / f"{safe_label}.stdout.log").write_text(stdout, encoding="utf-8")
+    (run_dir / f"{safe_label}.stderr.log").write_text(stderr, encoding="utf-8")
+    return run_dir
+
+
+__all__ = ["ScipRunIdentity", "ScipRunTelemetry", "write_tool_logs"]

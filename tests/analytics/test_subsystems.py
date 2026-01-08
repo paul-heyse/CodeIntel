@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import duckdb
 import polars as pl
@@ -15,6 +14,7 @@ from codeintel.build.analytics.subsystems.materialize import (
     build_subsystem_rows,
 )
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.serialization.payload import decode_payload
 from tests._helpers.assertions import expect_equal, expect_length
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds.subsystems_analytics import (
@@ -110,7 +110,12 @@ def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> 
 
     subs_by_id = {
         str(row.subsystem_id): (
-            set(json.loads(str(row.modules_json))),
+            set(
+                cast(
+                    "list[str]",
+                    decode_payload(row.modules_json),
+                )
+            ),
             str(row.risk_level),
             int(str(row.high_risk_function_count))
             if row.high_risk_function_count is not None

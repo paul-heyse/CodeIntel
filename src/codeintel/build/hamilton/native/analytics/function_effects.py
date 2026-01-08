@@ -12,7 +12,7 @@ from codeintel.build.analytics.functions.function_effects import (
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -30,7 +30,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FUNCTION_EFFECTS_TARGET_NAME = "function_effects"
 FUNCTION_EFFECTS_TABLE_KEY = "analytics.function_effects"
-FUNCTION_EFFECTS_CONTRACT = contract_for_table(
+FUNCTION_EFFECTS_CONTRACT = contract_ref_for_table(
     table_key=FUNCTION_EFFECTS_TABLE_KEY,
     target_name=FUNCTION_EFFECTS_TARGET_NAME,
     input_name="function_effects__base",
@@ -106,8 +106,8 @@ def function_effects__base(
 
 _MODULE = sys.modules[__name__]
 _FUNCTION_EFFECTS_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext.from_contract(
-        contract=FUNCTION_EFFECTS_CONTRACT,
+    context=TableTargetContext.from_contract_ref(
+        contract_ref=FUNCTION_EFFECTS_CONTRACT,
         input_type=pa.Table,
     )
 )

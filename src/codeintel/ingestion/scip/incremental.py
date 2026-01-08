@@ -11,13 +11,14 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
     ToolRunOptions,
+    ToolRunResult,
 )
 from codeintel.ingestion.scip.cli import (
     ScipPythonArgs,
@@ -47,7 +48,9 @@ from codeintel.ingestion.scip.policy import (
     ScipIncrementalInputs,
     ScipIncrementalPolicy,
 )
-from codeintel.ingestion.scip.telemetry import ScipRunTelemetry
+from codeintel.ingestion.scip.proto import load_generated_module
+from codeintel.ingestion.scip.proto_types import ScipProtoModule
+from codeintel.ingestion.scip.telemetry import ScipRunTelemetry, write_tool_logs
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -77,6 +80,12 @@ def _resolve_decode_error() -> type[Exception]:
 
 
 _DECODE_ERROR = _resolve_decode_error()
+
+
+def _write_empty_index(output_scip: Path, *, proto_module_path: Path) -> None:
+    module = cast("ScipProtoModule", load_generated_module(proto_module_path))
+    empty_index = module.Index()
+    write_index_proto(empty_index, output_scip)
 
 
 @dataclass(frozen=True)
@@ -136,6 +145,17 @@ class _ScipRunConfig:
     project_version: str | None
     project_namespace: str | None
     scip_node_max_old_space_mb: int | None
+
+
+@dataclass(frozen=True)
+class _ScipRunRequest:
+    run_config: _ScipRunConfig
+    output_scip: Path
+    rel_paths: Sequence[str] | None
+    scope_paths: Sequence[str] | None
+    log_prefix: str | None
+    log_label: str | None
+    telemetry: ScipRunTelemetry | None
 
 
 @dataclass(frozen=True)
@@ -245,6 +265,9 @@ def update_index_incremental(
     start_total = time.perf_counter()
     context = _build_run_context(config)
     telemetry = context.config.telemetry
+    if not _scope_has_modules(context.config.modules, context.config.scope_paths):
+        result = _handle_empty_scope(context)
+        return _finalize_result(result, telemetry=telemetry, start_total=start_total)
     decision = _resolve_decision(context)
     _initialize_telemetry(context, decision)
     _log_plan_summary(context, decision)
@@ -344,6 +367,61 @@ def _build_run_context(config: ScipIncrementalConfig) -> _IncrementalRunContext:
     )
 
 
+def _scope_has_modules(
+    modules: Sequence[ModuleRecord],
+    scope_paths: Sequence[str] | None,
+) -> bool:
+    if not modules:
+        return False
+    return any(_in_scope(module.rel_path, scope_paths) for module in modules)
+
+
+def _handle_empty_scope(context: _IncrementalRunContext) -> ScipIncrementalResult:
+    output_scip = context.config.output_scip
+    manifest_file = context.manifest_file
+    telemetry = context.config.telemetry
+    write_start = time.perf_counter()
+    try:
+        _write_empty_index(output_scip, proto_module_path=context.config.proto_module_path)
+        write_manifest(manifest_file, ScipShardManifest.empty())
+    except (FileNotFoundError, ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        message = f"Failed to write empty SCIP index: {exc}"
+        if telemetry is not None:
+            telemetry.mode = "incremental"
+            telemetry.status = "failed"
+            telemetry.error_summary = message
+            telemetry.output_scip = str(output_scip)
+        return ScipIncrementalResult(
+            success=False,
+            index_path=None,
+            manifest_path=None,
+            full_rebuild=False,
+            updated=False,
+            error=message,
+        )
+    write_ms = _elapsed_ms(write_start)
+    if telemetry is not None:
+        telemetry.mode = "incremental"
+        telemetry.status = "skipped"
+        telemetry.decision = "scope_empty"
+        telemetry.total_modules = 0
+        telemetry.changed_modules = 0
+        telemetry.deleted_modules = 0
+        telemetry.changed_ratio = None
+        telemetry.batch_size = context.config.batch_size
+        telemetry.batch_count = 0
+        telemetry.write_ms = write_ms
+        telemetry.output_scip = str(output_scip)
+    log.info("SCIP scope empty; wrote empty index (write_ms=%.1f)", write_ms)
+    return ScipIncrementalResult(
+        success=True,
+        index_path=output_scip,
+        manifest_path=manifest_file,
+        full_rebuild=False,
+        updated=True,
+    )
+
+
 def _initialize_telemetry(
     context: _IncrementalRunContext,
     decision: ScipIncrementalDecision,
@@ -361,6 +439,29 @@ def _initialize_telemetry(
     telemetry.ratio_gate_min_modules = decision.ratio_gate_min_modules
     telemetry.ratio_gate_min_changed = decision.ratio_gate_min_changed
     telemetry.output_scip = str(context.config.output_scip)
+
+
+def _persist_tool_logs(
+    *,
+    scip_dir: Path,
+    label: str,
+    result: ToolRunResult,
+    telemetry: ScipRunTelemetry | None,
+) -> None:
+    if telemetry is None:
+        return
+    try:
+        run_dir = write_tool_logs(
+            scip_dir=scip_dir,
+            run_id=telemetry.run_id,
+            label=label,
+            stdout=result.stdout,
+            stderr=result.stderr,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.warning("Failed to persist scip-python logs: %s", exc)
+        return
+    telemetry.tool_log_dir = str(run_dir)
 
 
 def _finalize_result(
@@ -537,11 +638,15 @@ def _full_rebuild(
     try:
         tool_start = time.perf_counter()
         _run_scip_python(
-            run_config=run_config,
-            output_scip=output_scip,
-            rel_paths=None,
-            scope_paths=scope_paths,
-            log_prefix="scip-python full",
+            _ScipRunRequest(
+                run_config=run_config,
+                output_scip=output_scip,
+                rel_paths=None,
+                scope_paths=scope_paths,
+                log_prefix="scip-python full",
+                log_label="full",
+                telemetry=telemetry,
+            )
         )
         tool_ms = _elapsed_ms(tool_start)
         if telemetry is not None:
@@ -847,6 +952,9 @@ def _index_changed_modules(request: _ShardIndexRequest) -> _ShardIndexResult:
     shard_indexes: list[IndexProto] = []
     shard_updates: dict[str, ScipShardRecord] = {}
     tool_version = _resolve_scip_python_version(request.run_config)
+    environment_source = (
+        request.telemetry.environment_source if request.telemetry is not None else None
+    )
     if request.telemetry is not None:
         request.telemetry.tool_version = tool_version
     tool_ms = 0.0
@@ -871,11 +979,15 @@ def _index_changed_modules(request: _ShardIndexRequest) -> _ShardIndexResult:
         rel_paths = list(batch.rel_paths)
         tool_start = time.perf_counter()
         _run_scip_python(
-            run_config=request.run_config,
-            output_scip=batch_path,
-            rel_paths=rel_paths,
-            scope_paths=None,
-            log_prefix=f"scip-python batch {idx}/{len(batches)}",
+            _ScipRunRequest(
+                run_config=request.run_config,
+                output_scip=batch_path,
+                rel_paths=rel_paths,
+                scope_paths=None,
+                log_prefix=f"scip-python batch {idx}/{len(batches)}",
+                log_label=f"batch_{idx}",
+                telemetry=request.telemetry,
+            )
         )
         tool_ms += _elapsed_ms(tool_start)
         parse_start = time.perf_counter()
@@ -892,6 +1004,7 @@ def _index_changed_modules(request: _ShardIndexRequest) -> _ShardIndexResult:
                 content_hash=plan.content_hash,
                 options_hash=request.options_hash,
                 tool_version=tool_version,
+                environment_source=environment_source,
                 shard_path=str(batch_path),
                 updated_at=updated_at,
             )
@@ -912,54 +1025,61 @@ def _in_scope(rel_path: str, scope_paths: Sequence[str] | None) -> bool:
     return any(normalized.startswith(scope.rstrip("/")) for scope in scope_paths)
 
 
-def _run_scip_python(
-    *,
-    run_config: _ScipRunConfig,
-    output_scip: Path,
-    rel_paths: Sequence[str] | None,
-    scope_paths: Sequence[str] | None,
-    log_prefix: str | None = None,
-) -> None:
+def _run_scip_python(request: _ScipRunRequest) -> ToolRunResult:
     trace_enabled = _scip_trace_enabled()
     progress_interval = (
         _SCIP_TRACE_PROGRESS_INTERVAL_S if trace_enabled else _SCIP_PROGRESS_INTERVAL_S
     )
     args = build_scip_python_args(
         ScipPythonArgs(
-            target_base=run_config.target_base,
-            output_scip=output_scip,
-            project_name=run_config.tools_config.scip_project_name,
-            target_paths=rel_paths if rel_paths is not None else scope_paths,
-            environment_json=run_config.environment_json,
-            project_version=run_config.project_version,
-            project_namespace=run_config.project_namespace,
+            target_base=request.run_config.target_base,
+            output_scip=request.output_scip,
+            project_name=request.run_config.tools_config.scip_project_name,
+            target_paths=request.rel_paths
+            if request.rel_paths is not None
+            else request.scope_paths,
+            environment_json=request.run_config.environment_json,
+            project_version=request.run_config.project_version,
+            project_namespace=request.run_config.project_namespace,
         )
     )
     env: dict[str, str] | None = None
-    if run_config.scip_node_max_old_space_mb is not None:
-        if run_config.scip_node_max_old_space_mb > 0:
-            env = {"NODE_OPTIONS": f"--max-old-space-size={run_config.scip_node_max_old_space_mb}"}
+    if (
+        request.run_config.scip_node_max_old_space_mb is not None
+        and request.run_config.scip_node_max_old_space_mb > 0
+    ):
+        env = {
+            "NODE_OPTIONS": f"--max-old-space-size={request.run_config.scip_node_max_old_space_mb}"
+        }
     with stage_pyright_config(
-        target_base=run_config.target_base,
-        pyright_config_path=run_config.pyright_config_path,
+        target_base=request.run_config.target_base,
+        pyright_config_path=request.run_config.pyright_config_path,
     ):
         result = asyncio.run(
-            run_config.tool_runner.run_async(
+            request.run_config.tool_runner.run_async(
                 ToolName.SCIP_PYTHON,
                 args,
                 options=ToolRunOptions(
-                    cwd=run_config.repo_root,
-                    output_path=output_scip,
-                    timeout_s=float(run_config.timeout_seconds),
+                    cwd=request.run_config.repo_root,
+                    output_path=request.output_scip,
+                    timeout_s=float(request.run_config.timeout_seconds),
                     progress_interval_s=progress_interval,
-                    log_prefix=log_prefix,
+                    log_prefix=request.log_prefix,
                     stream_output=trace_enabled,
                     env=env,
                 ),
             )
         )
+    label = request.log_label or request.log_prefix or "scip-python"
+    _persist_tool_logs(
+        scip_dir=request.output_scip.parent,
+        label=label,
+        result=result,
+        telemetry=request.telemetry,
+    )
     if not result.ok:
         raise ToolExecutionError(result)
+    return result
 
 
 def _resolve_scip_python_version(run_config: _ScipRunConfig) -> str | None:

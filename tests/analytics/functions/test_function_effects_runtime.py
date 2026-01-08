@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
-import json
 import textwrap
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import polars as pl
@@ -15,6 +15,8 @@ from codeintel.build.analytics.functions.function_effects import (
     build_function_effects_rows,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
+from codeintel.config.primitives import SnapshotRef
+from codeintel.core.serialization.payload import decode_payload
 from tests._helpers import TestScenario
 from tests._helpers.assertions import assert_logged, expect_equal, expect_false, expect_true
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
@@ -24,6 +26,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
+
+    from tests._helpers.context import TestContext
 
 
 def _build_function_ast_map(
@@ -52,10 +56,31 @@ def _build_function_ast_map(
     return ast_by_goid, module_path
 
 
-def test_build_function_effects_with_transitive_and_missing(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """build_function_effects_rows records direct, transitive, and missing AST effects."""
+def _expect_payload_dict(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return value
+    msg = f"Expected dict payload, got {type(value)}"
+    raise TypeError(msg)
+
+
+def _expect_payload_list(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    msg = f"Expected list payload, got {type(value)}"
+    raise TypeError(msg)
+
+
+@dataclass(frozen=True)
+class _FunctionEffectsFixture:
+    ctx: TestContext
+    snapshot: SnapshotRef
+    goids: dict[str, int]
+    module_path: Path
+    options: FunctionEffectsOptions
+    inputs: FunctionEffectsInputs
+
+
+def _build_function_effects_fixture(tmp_path: Path) -> _FunctionEffectsFixture:
     ctx = TestScenario.minimal().build(tmp_path)
     source = """
     import os
@@ -168,6 +193,8 @@ def test_build_function_effects_with_transitive_and_missing(
         ]
     )
 
+    edges_table = edges_frame.to_arrow()
+    nodes_table = nodes_frame.to_arrow()
     inputs = FunctionEffectsInputs(
         catalog_provider=MockFunctionCatalog(
             functions=[
@@ -233,23 +260,42 @@ def test_build_function_effects_with_transitive_and_missing(
         ),
         ast_map=ast_map,
         missing_goids={goids["missing"]},
-        call_graph_edges=edges_frame,
-        call_graph_nodes=nodes_frame,
+        call_graph_edges=edges_table,
+        call_graph_nodes=nodes_table,
     )
+    return _FunctionEffectsFixture(
+        ctx=ctx,
+        snapshot=snapshot,
+        goids=goids,
+        module_path=module_path,
+        options=options,
+        inputs=inputs,
+    )
+
+
+def test_build_function_effects_with_transitive_and_missing(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """build_function_effects_rows records direct, transitive, and missing AST effects."""
+    fixture = _build_function_effects_fixture(tmp_path)
 
     caplog.set_level("INFO")
     try:
-        rows = build_function_effects_rows(snapshot, options=options, inputs=inputs)
+        rows = build_function_effects_rows(
+            fixture.snapshot,
+            options=fixture.options,
+            inputs=fixture.inputs,
+        )
         if rows:
-            ctx.gateway.policy.delete_for_snapshot(
+            fixture.ctx.gateway.policy.delete_for_snapshot(
                 "analytics.function_effects",
-                repo=snapshot.repo,
-                commit=snapshot.commit,
+                repo=fixture.snapshot.repo,
+                commit=fixture.snapshot.commit,
             )
-            ctx.gateway.policy.bulk_insert_mappings("analytics.function_effects", rows)
+            fixture.ctx.gateway.policy.bulk_insert_mappings("analytics.function_effects", rows)
         effects_by_goid = {
             int(row[0]): row
-            for row in ctx.gateway.con.execute(
+            for row in fixture.ctx.gateway.con.execute(
                 """
                 select
                   function_goid_h128,
@@ -269,32 +315,35 @@ def test_build_function_effects_with_transitive_and_missing(
             ).fetchall()
         }
     finally:
-        ctx.close()
+        fixture.ctx.close()
 
-    expect_false(effects_by_goid[goids["impure"]][1])
-    expect_true(effects_by_goid[goids["impure"]][2])
-    expect_true(effects_by_goid[goids["impure"]][4])
-    expect_true(effects_by_goid[goids["impure"]][5])
-    expect_true(effects_by_goid[goids["impure"]][6])
-    expect_true(effects_by_goid[goids["impure"]][8])
+    expect_false(effects_by_goid[fixture.goids["impure"]][1])
+    expect_true(effects_by_goid[fixture.goids["impure"]][2])
+    expect_true(effects_by_goid[fixture.goids["impure"]][4])
+    expect_true(effects_by_goid[fixture.goids["impure"]][5])
+    expect_true(effects_by_goid[fixture.goids["impure"]][6])
+    expect_true(effects_by_goid[fixture.goids["impure"]][8])
 
-    expect_false(effects_by_goid[goids["caller"]][1])
-    expect_true(effects_by_goid[goids["caller"]][9])
-    expect_true(effects_by_goid[goids["caller"]][10] < 1.0)
-    expect_true(effects_by_goid[goids["wrapper"]][9])
+    expect_false(effects_by_goid[fixture.goids["caller"]][1])
+    expect_true(effects_by_goid[fixture.goids["caller"]][9])
+    expect_true(effects_by_goid[fixture.goids["caller"]][10] < 1.0)
+    expect_true(effects_by_goid[fixture.goids["wrapper"]][9])
 
-    expect_true(effects_by_goid[goids["uses_nonlocal"]][7])
+    expect_true(effects_by_goid[fixture.goids["uses_nonlocal"]][7])
 
-    expect_false(effects_by_goid[goids["missing"]][1])
-    expect_equal(effects_by_goid[goids["missing"]][10], 0.0)
-    expect_true(effects_by_goid[goids["naive_unicode"]][1])
+    expect_false(effects_by_goid[fixture.goids["missing"]][1])
+    expect_equal(effects_by_goid[fixture.goids["missing"]][10], 0.0)
+    expect_true(effects_by_goid[fixture.goids["naive_unicode"]][1])
 
-    effects_json = effects_by_goid[goids["missing"]][11]
-    parsed = effects_json if isinstance(effects_json, dict) else json.loads(effects_json)
-    expect_equal(parsed["errors"][0]["details"]["kind"], "missing_ast")
+    effects_json = effects_by_goid[fixture.goids["missing"]][11]
+    parsed = _expect_payload_dict(decode_payload(effects_json))
+    errors = _expect_payload_list(parsed.get("errors"))
+    error = _expect_payload_dict(errors[0])
+    details = _expect_payload_dict(error.get("details"))
+    expect_equal(details.get("kind"), "missing_ast")
 
     assert_logged(caplog.records, level="WARNING", containing="Missing AST for 1 functions")
-    assert_logged(caplog.records, level="WARNING", containing=str(goids["missing"]))
+    assert_logged(caplog.records, level="WARNING", containing=str(fixture.goids["missing"]))
     assert_logged(
         caplog.records,
         level="WARNING",

@@ -113,6 +113,22 @@ from codeintel.build.hamilton.native.analytics.py_cpg_quality_report import (
     py_cpg_quality_report__table,
     t__py_cpg_quality_report,
 )
+from codeintel.build.hamilton.native.analytics.scip_diagnostics import (
+    scip_diagnostics__rollups,
+    scip_diagnostics__table_materializations,
+    scip_diagnostics_by_file__base,
+    scip_diagnostics_by_file__table,
+    scip_diagnostics_summary__base,
+    scip_diagnostics_summary__table,
+    scip_diagnostics_top_messages__base,
+    scip_diagnostics_top_messages__table,
+    t__scip_diagnostics,
+)
+from codeintel.build.hamilton.native.analytics.scip_external_symbols import (
+    scip_external_symbol_usage__base,
+    scip_external_symbol_usage__table,
+    t__scip_external_symbol_usage,
+)
 from codeintel.build.hamilton.native.analytics.semantic_roles import (
     semantic_roles__table_materializations,
     semantic_roles_functions__base,
@@ -226,6 +242,16 @@ __all__ = [
     "graph_validation__table",
     "py_cpg_quality_report__base",
     "py_cpg_quality_report__table",
+    "scip_diagnostics__rollups",
+    "scip_diagnostics__table_materializations",
+    "scip_diagnostics_by_file__base",
+    "scip_diagnostics_by_file__table",
+    "scip_diagnostics_summary__base",
+    "scip_diagnostics_summary__table",
+    "scip_diagnostics_top_messages__base",
+    "scip_diagnostics_top_messages__table",
+    "scip_external_symbol_usage__base",
+    "scip_external_symbol_usage__table",
     "semantic_roles__table_materializations",
     "semantic_roles_functions__base",
     "semantic_roles_functions__table",
@@ -266,6 +292,8 @@ __all__ = [
     "t__graph_stats",
     "t__graph_validation",
     "t__py_cpg_quality_report",
+    "t__scip_diagnostics",
+    "t__scip_external_symbol_usage",
     "t__semantic_roles",
     "t__subsystem_agreement",
     "t__subsystem_caches",

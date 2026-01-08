@@ -20,7 +20,7 @@ from codeintel.build.analytics.graphs.config_graph_metrics import (
     compute_config_graph_metrics_result,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
 from codeintel.build.graphs.rx.algos import GraphInput
 from codeintel.build.graphs.rx.store import RxGraphStore
@@ -47,7 +47,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 CONFIG_DATA_FLOW_TARGET_NAME = "config_data_flow"
 CONFIG_DATA_FLOW_TABLE_KEY = "analytics.config_data_flow"
-CONFIG_DATA_FLOW_CONTRACT = contract_for_table(
+CONFIG_DATA_FLOW_CONTRACT = contract_ref_for_table(
     table_key=CONFIG_DATA_FLOW_TABLE_KEY,
     target_name=CONFIG_DATA_FLOW_TARGET_NAME,
     input_name="config_data_flow__base",
@@ -66,28 +66,28 @@ CONFIG_GRAPH_TABLE_KEYS = (
     CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
     CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
 )
-CONFIG_GRAPH_KEYS_CONTRACT = contract_for_table(
+CONFIG_GRAPH_KEYS_CONTRACT = contract_ref_for_table(
     table_key=CONFIG_GRAPH_KEYS_TABLE_KEY,
     target_name=CONFIG_GRAPH_TARGET_NAME,
     input_name="config_graph_metrics_keys__base",
     required_cols=(),
     clip_column=None,
 )
-CONFIG_GRAPH_MODULES_CONTRACT = contract_for_table(
+CONFIG_GRAPH_MODULES_CONTRACT = contract_ref_for_table(
     table_key=CONFIG_GRAPH_MODULES_TABLE_KEY,
     target_name=CONFIG_GRAPH_TARGET_NAME,
     input_name="config_graph_metrics_modules__base",
     required_cols=(),
     clip_column=None,
 )
-CONFIG_GRAPH_KEY_EDGES_CONTRACT = contract_for_table(
+CONFIG_GRAPH_KEY_EDGES_CONTRACT = contract_ref_for_table(
     table_key=CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
     target_name=CONFIG_GRAPH_TARGET_NAME,
     input_name="config_projection_key_edges__base",
     required_cols=(),
     clip_column=None,
 )
-CONFIG_GRAPH_MODULE_EDGES_CONTRACT = contract_for_table(
+CONFIG_GRAPH_MODULE_EDGES_CONTRACT = contract_ref_for_table(
     table_key=CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
     target_name=CONFIG_GRAPH_TARGET_NAME,
     input_name="config_projection_module_edges__base",
@@ -466,8 +466,8 @@ def config_projection_module_edges__base(
 
 _MODULE = sys.modules[__name__]
 _CONFIG_DATA_FLOW_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext.from_contract(
-        contract=CONFIG_DATA_FLOW_CONTRACT,
+    context=TableTargetContext.from_contract_ref(
+        contract_ref=CONFIG_DATA_FLOW_CONTRACT,
         node_name="config_data_flow__table",
         input_type=pa.Table,
     )
@@ -478,20 +478,20 @@ config_data_flow__table_materializations = _MODULE.config_data_flow__table_mater
 t__config_data_flow = _MODULE.t__config_data_flow
 
 _CONFIG_GRAPH_TABLE_CONTEXTS = (
-    TableTargetTableContext.from_contract(
-        contract=CONFIG_GRAPH_KEYS_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=CONFIG_GRAPH_KEYS_CONTRACT,
         node_name="config_graph_metrics_keys__table",
     ),
-    TableTargetTableContext.from_contract(
-        contract=CONFIG_GRAPH_MODULES_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=CONFIG_GRAPH_MODULES_CONTRACT,
         node_name="config_graph_metrics_modules__table",
     ),
-    TableTargetTableContext.from_contract(
-        contract=CONFIG_GRAPH_KEY_EDGES_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=CONFIG_GRAPH_KEY_EDGES_CONTRACT,
         node_name="config_projection_key_edges__table",
     ),
-    TableTargetTableContext.from_contract(
-        contract=CONFIG_GRAPH_MODULE_EDGES_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=CONFIG_GRAPH_MODULE_EDGES_CONTRACT,
         node_name="config_projection_module_edges__table",
     ),
 )

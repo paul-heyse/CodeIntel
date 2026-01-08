@@ -675,6 +675,17 @@ def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> 
     if missing:
         msg = f"Missing join keys on {label}: {', '.join(missing)}"
         raise ValueError(msg)
+    null_mask: pa.Array | pa.ChunkedArray | None = None
+    for key in keys:
+        key_mask = pc.is_null(table[key])
+        null_mask = key_mask if null_mask is None else pc.or_kleene(null_mask, key_mask)
+    if null_mask is not None:
+        any_null = scalar_from_compute("any", [null_mask])
+        if any_null:
+            null_count = scalar_from_compute("sum", [pc.cast(null_mask, pa.int64())])
+            count_info = f" (rows={null_count})" if isinstance(null_count, int) else ""
+            msg = f"Join validation failed for {label}: NULL keys detected{count_info}"
+            raise ValueError(msg)
     count_source = keys[0]
     grouped = (
         _group_by_table_keys(table, keys).group_by(list(keys)).aggregate([(count_source, "count")])

@@ -32,6 +32,7 @@ from codeintel.core.columnar import (
     coerce_arrow_table,
     extras_policy_from_schema,
 )
+from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.filters import FilterSpecInput
 from codeintel.core.queries.filter_compiler import (
     FilterCompilerError,
@@ -1041,7 +1042,7 @@ def _align_tabular_input(
         return relation
     reader: pa.RecordBatchReader
     if isinstance(relation, pa.Table):
-        reader = pa.RecordBatchReader.from_batches(relation.schema, relation.to_batches())
+        reader = table_to_reader(relation, batch_size=None)
     else:
         reader = relation
     return align_reader_to_contract(

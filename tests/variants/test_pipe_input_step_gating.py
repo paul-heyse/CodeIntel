@@ -5,8 +5,14 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 import hamilton.driver as h_driver
+import pytest
 
-from codeintel.build.hamilton.native.analytics import function_types
+try:
+    from codeintel.build.hamilton.native.analytics import function_types
+except RuntimeError as exc:
+    if "SchemaService has not been configured" in str(exc):
+        pytest.skip("Schema service not configured for analytics tests.", allow_module_level=True)
+    raise
 
 
 def _names(variables: Iterable[object]) -> set[str]:

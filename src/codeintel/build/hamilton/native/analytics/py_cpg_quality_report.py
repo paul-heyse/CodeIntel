@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 
 import pyarrow as pa
 
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -32,7 +32,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 PY_CPG_QUALITY_REPORT_TARGET_NAME = "py_cpg_quality_report"
 PY_CPG_QUALITY_REPORT_TABLE_KEY = "analytics.py_cpg_quality_report"
 
-PY_CPG_QUALITY_REPORT_CONTRACT = contract_for_table(
+PY_CPG_QUALITY_REPORT_CONTRACT = contract_ref_for_table(
     table_key=PY_CPG_QUALITY_REPORT_TABLE_KEY,
     target_name=PY_CPG_QUALITY_REPORT_TARGET_NAME,
     input_name="py_cpg_quality_report__base",
@@ -394,8 +394,8 @@ def py_cpg_quality_report__base(
 
 _MODULE = sys.modules[__name__]
 _PY_CPG_QUALITY_REPORT_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext.from_contract(
-        contract=PY_CPG_QUALITY_REPORT_CONTRACT,
+    context=TableTargetContext.from_contract_ref(
+        contract_ref=PY_CPG_QUALITY_REPORT_CONTRACT,
         input_type=pa.Table,
     )
 )

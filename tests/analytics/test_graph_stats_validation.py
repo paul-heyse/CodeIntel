@@ -26,7 +26,7 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
 )
 from codeintel.build.graphs.engine import NxGraphEngine
 from codeintel.build.graphs.validation import warn_graph_structure
-from codeintel.storage.query_results import records_from_relation
+from codeintel.storage.query_results import records_from_arrow_table, records_from_relation
 from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,
@@ -38,6 +38,7 @@ from tests._helpers.fixtures.rows import (
     SymbolUseEdgeRow,
     insert_rows,
 )
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from tests._helpers import TestContext
@@ -62,13 +63,10 @@ def _seed_test_modules(ctx: TestContext) -> None:
 
 
 def _module_inputs(ctx: TestContext) -> tuple[dict[str, str], set[str]]:
-    module_rows = records_from_relation(
-        ctx.gateway.relation_from_table_key("core.modules").select(
-            "module",
-            "path",
-            "repo",
-            "commit",
-        )
+    module_rows = _records_for_table(
+        ctx,
+        "core.modules",
+        ["module", "path", "repo", "commit"],
     )
     module_by_path: dict[str, str] = {}
     module_names: set[str] = set()
@@ -83,6 +81,20 @@ def _module_inputs(ctx: TestContext) -> tuple[dict[str, str], set[str]]:
         module_names.add(module_name)
         module_by_path[str(path)] = module_name
     return module_by_path, module_names
+
+
+def _records_for_table(
+    ctx: TestContext,
+    table_key: str,
+    columns: list[str],
+) -> list[dict[str, object]]:
+    if ctx.gateway.config.dataset_root_dir is None:
+        column_clause = ", ".join(columns)
+        table = ctx.gateway.con.execute(
+            f"SELECT {column_clause} FROM {table_key}"
+        ).arrow().read_all()
+        return records_from_arrow_table(table)
+    return records_from_relation(ctx.gateway.relation_from_table_key(table_key).select(*columns))
 
 
 def test_graph_stats_include_symbol_and_config_graphs(graph_ctx: TestContext) -> None:
@@ -122,23 +134,17 @@ def test_graph_stats_include_symbol_and_config_graphs(graph_ctx: TestContext) ->
         ],
     )
 
-    symbol_rows = records_from_relation(
-        graph_ctx.gateway.relation_from_table_key("graph.symbol_use_edges").select(
-            "def_path",
-            "use_path",
-            "def_goid_h128",
-            "use_goid_h128",
-        )
+    symbol_rows = _records_for_table(
+        graph_ctx,
+        "graph.symbol_use_edges",
+        ["def_path", "use_path", "def_goid_h128", "use_goid_h128"],
     )
     symbol_module_graph = build_symbol_module_graph(symbol_rows, module_by_path)
     symbol_function_graph = build_symbol_function_graph(symbol_rows)
-    config_rows = records_from_relation(
-        graph_ctx.gateway.relation_from_table_key("analytics.config_values").select(
-            "repo",
-            "commit",
-            "key",
-            "reference_modules",
-        )
+    config_rows = _records_for_table(
+        graph_ctx,
+        "analytics.config_values",
+        ["repo", "commit", "key", "reference_modules"],
     )
     config_bipartite = build_config_module_bipartite(
         config_rows,
@@ -248,21 +254,15 @@ def test_subsystem_agreement_summary_aggregates(graph_ctx: TestContext) -> None:
         ],
     )
 
-    subsystem_rows = records_from_relation(
-        graph_ctx.gateway.relation_from_table_key("analytics.subsystem_modules").select(
-            "repo",
-            "commit",
-            "module",
-            "subsystem_id",
-        )
+    subsystem_rows = _records_for_table(
+        graph_ctx,
+        "analytics.subsystem_modules",
+        ["repo", "commit", "module", "subsystem_id"],
     )
-    graph_metrics_rows = records_from_relation(
-        graph_ctx.gateway.relation_from_table_key("analytics.graph_metrics_modules_ext").select(
-            "repo",
-            "commit",
-            "module",
-            "import_community_id",
-        )
+    graph_metrics_rows = _records_for_table(
+        graph_ctx,
+        "analytics.graph_metrics_modules_ext",
+        ["repo", "commit", "module", "import_community_id"],
     )
     agreement_rows = build_subsystem_agreement_rows(
         SubsystemAgreementInputs(
@@ -279,7 +279,8 @@ def test_subsystem_agreement_summary_aggregates(graph_ctx: TestContext) -> None:
             commit=graph_ctx.commit,
         )
         graph_ctx.gateway.policy.bulk_insert("analytics.subsystem_agreement", agreement_rows)
-    materialize_view_plans(graph_ctx.con)
+    ensure_production_schemas(graph_ctx.con)
+    materialize_view_plans(graph_ctx.con, view_keys=["docs.v_subsystem_summary"])
 
     disagree_row = graph_ctx.con.execute(
         """

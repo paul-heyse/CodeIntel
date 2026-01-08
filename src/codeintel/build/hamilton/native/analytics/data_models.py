@@ -18,7 +18,7 @@ from codeintel.build.analytics.data_models.compute import (
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
-from codeintel.build.contracts.registry import contract_for_table
+from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns import (
@@ -43,21 +43,21 @@ DATA_MODELS_TABLE_KEY = "analytics.data_models"
 DATA_MODEL_FIELDS_TABLE_KEY = "analytics.data_model_fields"
 DATA_MODEL_RELATIONSHIPS_TABLE_KEY = "analytics.data_model_relationships"
 DATA_MODEL_USAGE_TABLE_KEY = "analytics.data_model_usage"
-DATA_MODELS_CONTRACT = contract_for_table(
+DATA_MODELS_CONTRACT = contract_ref_for_table(
     table_key=DATA_MODELS_TABLE_KEY,
     target_name=DATA_MODELS_TARGET_NAME,
     input_name="data_models__base",
     required_cols=(),
     clip_column=None,
 )
-DATA_MODEL_FIELDS_CONTRACT = contract_for_table(
+DATA_MODEL_FIELDS_CONTRACT = contract_ref_for_table(
     table_key=DATA_MODEL_FIELDS_TABLE_KEY,
     target_name=DATA_MODELS_TARGET_NAME,
     input_name="data_model_fields__base",
     required_cols=(),
     clip_column=None,
 )
-DATA_MODEL_RELATIONSHIPS_CONTRACT = contract_for_table(
+DATA_MODEL_RELATIONSHIPS_CONTRACT = contract_ref_for_table(
     table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
     target_name=DATA_MODELS_TARGET_NAME,
     input_name="data_model_relationships__base",
@@ -65,7 +65,7 @@ DATA_MODEL_RELATIONSHIPS_CONTRACT = contract_for_table(
     clip_column=None,
 )
 DATA_MODEL_USAGE_TARGET_NAME = "data_model_usage"
-DATA_MODEL_USAGE_CONTRACT = contract_for_table(
+DATA_MODEL_USAGE_CONTRACT = contract_ref_for_table(
     table_key=DATA_MODEL_USAGE_TABLE_KEY,
     target_name=DATA_MODEL_USAGE_TARGET_NAME,
     input_name="data_model_usage__base",
@@ -272,16 +272,16 @@ def data_model_relationships__base(
 
 _MODULE = sys.modules[__name__]
 _DATA_MODELS_TABLE_CONTEXTS = (
-    TableTargetTableContext.from_contract(
-        contract=DATA_MODELS_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=DATA_MODELS_CONTRACT,
         node_name="data_models__table",
     ),
-    TableTargetTableContext.from_contract(
-        contract=DATA_MODEL_FIELDS_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=DATA_MODEL_FIELDS_CONTRACT,
         node_name="data_model_fields__table",
     ),
-    TableTargetTableContext.from_contract(
-        contract=DATA_MODEL_RELATIONSHIPS_CONTRACT,
+    TableTargetTableContext.from_contract_ref(
+        contract_ref=DATA_MODEL_RELATIONSHIPS_CONTRACT,
         node_name="data_model_relationships__table",
     ),
 )
@@ -351,8 +351,8 @@ def data_model_usage__base(
 
 
 _DATA_MODEL_USAGE_TABLE_TARGET_SPEC = build_single_table_target_spec(
-    context=TableTargetContext.from_contract(
-        contract=DATA_MODEL_USAGE_CONTRACT,
+    context=TableTargetContext.from_contract_ref(
+        contract_ref=DATA_MODEL_USAGE_CONTRACT,
         input_type=pa.Table,
     )
 )

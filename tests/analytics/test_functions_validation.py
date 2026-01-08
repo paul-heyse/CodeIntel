@@ -101,7 +101,8 @@ def test_records_validation_when_parse_fails(ctx: TestContext) -> None:
     _insert_goid(ctx, rel_path=rel_path, qualname="pkg.mod.broken")
 
     snapshot = _get_snapshot(ctx)
-    result = compute_function_analytics_result(ctx.gateway, snapshot)
+    goids_input = ctx.gateway.con.execute("SELECT * FROM core.goids").arrow().read_all()
+    result = compute_function_analytics_result(goids_input, snapshot)
     _write_function_results(ctx, result)
 
     types_rows = run_query(ctx.gateway, "SELECT * FROM analytics.function_types")
@@ -132,7 +133,8 @@ def test_span_not_found_is_recorded(ctx: TestContext) -> None:
     _insert_goid(ctx, rel_path=rel_path, qualname="pkg.mod.foo", start_line=50, end_line=55)
 
     snapshot = _get_snapshot(ctx)
-    result = compute_function_analytics_result(ctx.gateway, snapshot)
+    goids_input = ctx.gateway.con.execute("SELECT * FROM core.goids").arrow().read_all()
+    result = compute_function_analytics_result(goids_input, snapshot)
     _write_function_results(ctx, result)
 
     validation_rows = run_query(
