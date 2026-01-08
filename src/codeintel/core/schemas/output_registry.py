@@ -84,6 +84,26 @@ SYNTAX_IMPORT_EXTRAS_STRUCT = (
     ")"
 )
 EMPTY_EXTRAS_STRUCT = "STRUCT(reserved BOOLEAN)"
+GRAPH_EXTRAS_STRUCT = EMPTY_EXTRAS_STRUCT
+EXTRAS_KV_MAP = "MAP(VARCHAR, VARCHAR)"
+CALL_CANDIDATE_STRUCT = (
+    "STRUCT("
+    "callee_goid_h128 DECIMAL(38,0), "
+    "callee_symbol VARCHAR, "
+    "callee_def_id VARCHAR, "
+    "callee_def_node_id VARCHAR, "
+    "target_role VARCHAR, "
+    "binding_kind VARCHAR, "
+    "origin VARCHAR, "
+    "call_kind VARCHAR, "
+    "augop VARCHAR, "
+    "resolution_kind VARCHAR, "
+    "confidence DOUBLE, "
+    "candidate_count INTEGER, "
+    "extras_kv MAP(VARCHAR, VARCHAR)"
+    ")"
+)
+CALL_CANDIDATES_LIST = f"LIST({CALL_CANDIDATE_STRUCT})"
 SYNTAX_CALL_ARGS_EXTRAS_STRUCT = EMPTY_EXTRAS_STRUCT
 SYNTAX_NODE_AST_IGNORE_STRUCT = "STRUCT(line INTEGER, tag VARCHAR)"
 SYNTAX_NODE_AST_STRUCT = (
@@ -351,6 +371,20 @@ PY_SYM_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "rel_path", "binding_id"),
         description="Symtable-derived binding inventory.",
+    ),
+    TableSchema(
+        schema="core",
+        name="py_sym_unresolved_bindings",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("binding_id", "VARCHAR", nullable=False),
+            Column("resolution_kind", "VARCHAR"),
+            Column("confidence", "DOUBLE"),
+            Column("reason", "VARCHAR"),
+        ],
+        primary_key=("repo", "commit", "rel_path", "binding_id"),
+        description="Symtable resolution targets without concrete bindings.",
     ),
     TableSchema(
         schema="core",
@@ -2477,10 +2511,27 @@ CALL_WIRING_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("resolution_kind", "VARCHAR", nullable=False),
             Column("confidence", "DOUBLE"),
             Column("candidate_count", "INTEGER"),
-            Column("extras_json", "BLOB"),
+            Column("extras", GRAPH_EXTRAS_STRUCT),
+            Column("extras_kv", EXTRAS_KV_MAP),
         ],
         primary_key=("repo", "commit", "rel_path", "call_id", "target_role", "binding_kind"),
         description="Resolved call targets with SCIP-backed symbol mapping.",
+    ),
+    TableSchema(
+        schema="graph",
+        name="cpg_call_candidates",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("call_id", "VARCHAR", nullable=False),
+            Column("call_node_id", "VARCHAR"),
+            Column("extras", GRAPH_EXTRAS_STRUCT),
+            Column("extras_kv", EXTRAS_KV_MAP),
+            Column("candidates", CALL_CANDIDATES_LIST, nullable=False),
+        ],
+        primary_key=("repo", "commit", "rel_path", "call_id"),
+        indexes=(Index("idx_graph_cpg_call_candidates_call", ("call_id",)),),
+        description="Per-call candidate target list for wiring joins.",
     ),
     TableSchema(
         schema="graph",
@@ -2492,7 +2543,8 @@ CALL_WIRING_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("callee_entry_block_id", "VARCHAR"),
             Column("edge_kind", "VARCHAR", nullable=False),
             Column("confidence", "DOUBLE"),
-            Column("extras_json", "BLOB"),
+            Column("extras", GRAPH_EXTRAS_STRUCT),
+            Column("extras_kv", EXTRAS_KV_MAP),
         ],
         indexes=(Index("idx_graph_cpg_edges_calls_call", ("call_id",)),),
         description="Call wiring edges from call sites to callee entries.",
@@ -2516,7 +2568,8 @@ CALL_WIRING_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("call_kind", "VARCHAR"),
             Column("augop", "VARCHAR"),
             Column("confidence", "DOUBLE"),
-            Column("extras_json", "BLOB"),
+            Column("extras", GRAPH_EXTRAS_STRUCT),
+            Column("extras_kv", EXTRAS_KV_MAP),
         ],
         indexes=(Index("idx_graph_cpg_edges_arg_to_param_call", ("call_id",)),),
         description="Argument-to-parameter wiring edges for calls.",
@@ -2534,7 +2587,8 @@ CALL_WIRING_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("origin", "VARCHAR"),
             Column("edge_kind", "VARCHAR", nullable=False),
             Column("confidence", "DOUBLE"),
-            Column("extras_json", "BLOB"),
+            Column("extras", GRAPH_EXTRAS_STRUCT),
+            Column("extras_kv", EXTRAS_KV_MAP),
         ],
         indexes=(Index("idx_graph_cpg_edges_ret_to_call_call", ("call_id",)),),
         description="Return-to-call wiring edges using callee exit summaries.",
@@ -2555,7 +2609,8 @@ CPG_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("rel_path", "VARCHAR"),
             Column("start_byte", "BIGINT"),
             Column("end_byte", "BIGINT"),
-            Column("extras_json", "BLOB"),
+            Column("extras", GRAPH_EXTRAS_STRUCT),
+            Column("extras_kv", EXTRAS_KV_MAP),
         ],
         primary_key=("repo", "commit", "cpg_node_id"),
         indexes=(Index("idx_graph_cpg_nodes_kind", ("node_kind",)),),
@@ -2573,7 +2628,8 @@ CPG_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("edge_layer", "VARCHAR", nullable=False),
             Column("rel_path", "VARCHAR"),
             Column("ordinal", "INTEGER", nullable=False),
-            Column("extras_json", "BLOB"),
+            Column("extras", GRAPH_EXTRAS_STRUCT),
+            Column("extras_kv", EXTRAS_KV_MAP),
         ],
         primary_key=(
             "repo",
@@ -3680,6 +3736,12 @@ CPG_QUALITY_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("inspect_object_count", "INTEGER"),
             Column("inspect_anchored_count", "INTEGER"),
             Column("inspect_anchor_rate", "DOUBLE"),
+            Column("symbol_edge_count", "INTEGER"),
+            Column("external_symbol_edge_count", "INTEGER"),
+            Column("external_symbol_edge_rate", "DOUBLE"),
+            Column("binding_resolution_edge_count", "INTEGER"),
+            Column("binding_unresolved_edge_count", "INTEGER"),
+            Column("binding_unresolved_edge_rate", "DOUBLE"),
             Column("created_at", "TIMESTAMP"),
         ],
         primary_key=("repo", "commit", "run_id"),
@@ -3990,6 +4052,7 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
         "core.py_sym_scope_edges",
         "core.py_sym_scopes",
         "core.py_sym_symbols",
+        "core.py_sym_unresolved_bindings",
         "core.repo_map",
         "core.schema_inference_errors",
         "core.scip_diagnostics",

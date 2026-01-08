@@ -8,8 +8,10 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Literal
 
 import pyarrow as pa
+import pyarrow.compute as pc
 from google.protobuf.struct_pb2 import NullValue, Struct
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -23,10 +25,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import (
-    ArrowJoinSpec,
     align_table_to_contract,
-    arrow_join_tables,
-    build_join_options,
     dedupe_table_for_table,
     emit_alignment_report,
     iter_rows,
@@ -45,8 +44,12 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
     not_equal_mask,
 )
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.conversion import reader_to_table, tabular_to_scoped_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.intervals.span_resolver import SpanResolver
@@ -79,6 +82,75 @@ _MATCH_CONFIDENCE_BYTE_SPAN = 1.0
 _MATCH_CONFIDENCE_LINE_COL = 0.8
 _MATCH_CONFIDENCE_LINE_SPAN = 1.0
 _MATCH_CONFIDENCE_LINE_START = 0.6
+
+_JOIN_STRING_KEYS = {"repo", "commit", "rel_path", "scip_symbol"}
+_JOIN_INT_KEYS = {
+    "start_line",
+    "start_col",
+    "end_line",
+    "end_col",
+    "start_byte",
+    "end_byte",
+}
+SortKey = tuple[str, Literal["ascending", "descending"]]
+
+
+def _join_casts(keys: Sequence[str]) -> dict[str, str]:
+    casts: dict[str, str] = {}
+    for key in keys:
+        if key in _JOIN_STRING_KEYS:
+            casts[key] = "string"
+        elif key in _JOIN_INT_KEYS:
+            casts[key] = "int64"
+    return casts
+
+
+def _project_with_cast(
+    table: pa.Table,
+    *,
+    casts: dict[str, str],
+) -> dict[str, pc.Expression]:
+    exprs: dict[str, pc.Expression] = {}
+    for name in table.column_names:
+        if name in casts:
+            exprs[name] = E.cast(E.field(name), casts[name])
+        else:
+            exprs[name] = E.field(name)
+    return exprs
+
+
+def _join_key_filter(keys: Sequence[str]) -> pc.Expression:
+    return E.and_(*(E.is_valid(key) for key in keys))
+
+
+def _hash_join_tables(
+    left: pa.Table,
+    right: pa.Table,
+    *,
+    left_keys: Sequence[str],
+    right_keys: Sequence[str],
+    how: JoinType = "left outer",
+) -> pa.Table:
+    left_exprs = _project_with_cast(left, casts=_join_casts(left_keys))
+    right_exprs = _project_with_cast(right, casts=_join_casts(right_keys))
+    left_plan = Plan.table(left).project(left_exprs).filter(_join_key_filter(left_keys))
+    right_plan = Plan.table(right).project(right_exprs).filter(_join_key_filter(right_keys))
+    right_output = [name for name in right_exprs if name not in left_exprs]
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=list(left_keys),
+            right_keys=list(right_keys),
+            how=how,
+            left_output=list(left_exprs.keys()),
+            right_output=right_output,
+        ),
+    )
+    table = reader_to_table(joined.to_reader(use_threads=True))
+    if table.num_rows == 0:
+        return table
+    sort_keys: list[SortKey] = [(key, "ascending") for key in left_keys]
+    return table.take(stable_sort_indices(table, sort_keys=sort_keys))
 
 
 @dataclass(frozen=True)
@@ -331,17 +403,12 @@ def _definition_anchors_table(
     if defs_table.num_rows == 0 or goids_table.num_rows == 0:
         goid_type = _goid_type_for_table(goids_table)
         return _append_null_column(defs_table, "goid_h128", goid_type)
-    join_spec = ArrowJoinSpec(
-        left_on=["repo", "commit", "rel_path", "start_line", "end_line"],
-        right_on=["repo", "commit", "rel_path", "start_line", "end_line"],
-        how="left",
-        validate="m:1",
-    )
-    joined = arrow_join_tables(
+    join_keys = ["repo", "commit", "rel_path", "start_line", "end_line"]
+    joined = _hash_join_tables(
         defs_table,
         goids_table,
-        spec=join_spec,
-        options=build_join_options(defs_table, goids_table),
+        left_keys=join_keys,
+        right_keys=join_keys,
     )
     if "goid_h128" not in joined.column_names:
         return joined
@@ -437,12 +504,11 @@ def _anchor_goid_matches(
             if anchors_valid.num_rows == 0:
                 can_join = False
             else:
-                join_spec = ArrowJoinSpec(on=list(join_keys), how="left", validate="m:1")
-                joined = arrow_join_tables(
+                joined = _hash_join_tables(
                     left_valid,
                     anchors_valid,
-                    spec=join_spec,
-                    options=build_join_options(left_valid, anchors_valid),
+                    left_keys=list(join_keys),
+                    right_keys=list(join_keys),
                 )
                 matched_mask = is_valid_mask(joined["goid_h128"])
                 matched = safe_filter(joined, matched_mask)
@@ -513,12 +579,12 @@ def _strict_goid_matches(
         definitions,
         ["goid_h128", "match_kind", "match_confidence"],
     )
-    join_spec = ArrowJoinSpec(on=["rel_path", "start_line", "end_line"], how="left", validate="m:1")
-    strict_join = arrow_join_tables(
+    join_keys = ["rel_path", "start_line", "end_line"]
+    strict_join = _hash_join_tables(
         left,
         goids,
-        spec=join_spec,
-        options=build_join_options(left, goids),
+        left_keys=join_keys,
+        right_keys=join_keys,
     )
     strict_mask = is_valid_mask(strict_join["goid_h128"])
     strict_matched = safe_filter(strict_join, strict_mask)
@@ -539,16 +605,12 @@ def _fallback_goid_matches(definitions: pa.Table, goids: pa.Table) -> list[pa.Ta
         ["goid_h128", "match_kind", "match_confidence"],
     )
     goids_by_line = _goids_by_start_line(goids)
-    fallback_spec = ArrowJoinSpec(
-        on=["rel_path", "start_line"],
-        how="left",
-        validate="m:1",
-    )
-    fallback_join = arrow_join_tables(
+    fallback_keys = ["rel_path", "start_line"]
+    fallback_join = _hash_join_tables(
         fallback_left,
         goids_by_line,
-        spec=fallback_spec,
-        options=build_join_options(fallback_left, goids_by_line),
+        left_keys=fallback_keys,
+        right_keys=fallback_keys,
     )
     fallback_mask = is_valid_mask(fallback_join["goid_h128"])
     fallback_matched = safe_filter(fallback_join, fallback_mask)
@@ -570,7 +632,7 @@ def _log_symbol_goid_coverage(table: pa.Table) -> None:
     if table.num_rows == 0 or "match_kind" not in table.column_names:
         return
     counts: dict[str, int] = {}
-    for value in table.column("match_kind").to_pylist():
+    for value in iter_array_values(table.column("match_kind")):
         key = "none" if value is None else str(value)
         counts[key] = counts.get(key, 0) + 1
     summary = " ".join(f"{key}={count}" for key, count in sorted(counts.items()))
@@ -665,24 +727,18 @@ def _occurrence_span_xref_table(
             "goid_h128",
         ]
     )
-    join_spec = ArrowJoinSpec(
-        on=["repo", "commit", "scip_symbol"],
-        how="left",
-        validate="m:1",
-    )
-    join_options = build_join_options(occurrences, symbol_info)
-    base = arrow_join_tables(
+    join_keys = ["repo", "commit", "scip_symbol"]
+    base = _hash_join_tables(
         occurrences,
         symbol_info,
-        spec=join_spec,
-        options=join_options,
+        left_keys=join_keys,
+        right_keys=join_keys,
     )
-    join_options = build_join_options(base, goid_lookup)
-    base = arrow_join_tables(
+    base = _hash_join_tables(
         base,
         goid_lookup,
-        spec=join_spec,
-        options=join_options,
+        left_keys=join_keys,
+        right_keys=join_keys,
     )
     base = _apply_occurrence_documentation(base)
     base = _apply_enclosing_ranges(base)

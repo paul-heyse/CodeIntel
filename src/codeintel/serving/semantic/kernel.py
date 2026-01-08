@@ -17,6 +17,7 @@ import pyarrow.parquet as pq
 from sqlglot.errors import SqlglotError
 
 from codeintel.core.columnar import align_reader_to_contract, extras_policy_from_schema
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.core.exports import (
     apply_ipc_metadata,
     build_ipc_write_options,
@@ -77,11 +78,11 @@ from codeintel.storage.constants import DUCKDB_DIALECT, META_CATALOG_NAME
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.query_results import (
     iter_records_from_arrow_reader,
-    records_from_arrow_reader,
+    records_from_arrow_table,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Sequence
     from pathlib import Path
 
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
@@ -487,9 +488,22 @@ class SemanticQueryKernel:
     def _rows_from_reader(
         reader: pa.RecordBatchReader,
         *,
+        table_key: str,
+        columns: Sequence[str] | None,
         cancel_check: CancelCheck | None,
     ) -> list[dict[str, object]]:
-        return records_from_arrow_reader(reader, cancel_check=cancel_check)
+        batches: list[pa.RecordBatch] = []
+        for batch in reader:
+            _raise_if_cancelled(cancel_check)
+            batches.append(batch)
+        if not batches:
+            return []
+        table = pa.Table.from_batches(batches, schema=reader.schema)
+        finalized = finalize_table(
+            table,
+            spec=FinalizeSpec(table_key=table_key, mode="tolerant"),
+        )
+        return records_from_arrow_table(finalized.good, columns=columns)
 
     @staticmethod
     def _log_ast_diff(
@@ -523,6 +537,7 @@ class SemanticQueryKernel:
         self,
         *,
         query: ServingQuery,
+        columns: Sequence[str],
         ctx: EngineContext,
         cancel_check: CancelCheck | None,
     ) -> tuple[list[dict[str, object]], QueryExplain, str]:
@@ -536,7 +551,12 @@ class SemanticQueryKernel:
         try:
             _raise_if_cancelled(cancel_check)
             reader = plan.to_reader(batch_size=self.settings.export_batch_size)
-            rows = self._rows_from_reader(reader, cancel_check=cancel_check)
+            rows = self._rows_from_reader(
+                reader,
+                table_key=query.spec.table_key,
+                columns=columns,
+                cancel_check=cancel_check,
+            )
             explain = plan.explain()
             self._log_ast_diff(
                 query=query,
@@ -576,6 +596,7 @@ class SemanticQueryKernel:
             batch_size = self.settings.export_batch_size
             rows, explain, engine_name = self._execute_engine_plan(
                 query=serving_query,
+                columns=inputs.columns,
                 ctx=engine_ctx,
                 cancel_check=cancel_check,
             )
@@ -1157,7 +1178,12 @@ class SemanticQueryKernel:
                 fts_available=is_fts_available(warehouse.gateway.con),
             )
             reader = relation.fetch_record_batch(self.settings.export_batch_size)
-            rows = self._rows_from_reader(reader, cancel_check=None)
+            rows = self._rows_from_reader(
+                reader,
+                table_key=f"{SEARCH_TABLE_SCHEMA}.{SEARCH_TABLE_NAME}",
+                columns=None,
+                cancel_check=None,
+            )
 
         truncated = len(rows) > request.limit
         if truncated:

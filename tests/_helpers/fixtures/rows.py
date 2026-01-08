@@ -348,6 +348,7 @@ class RowFactory:
             table_key=table_key,
             columns=tuple(schema.column_names()),
             column_types=tuple(column.type for column in schema.columns),
+            column_nullable=tuple(column.nullable for column in schema.columns),
             data={column.name: [] for column in schema.columns},
         )
         for row in rows:

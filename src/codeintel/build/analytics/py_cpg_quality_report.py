@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -10,7 +10,6 @@ import pyarrow as pa
 
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.serialization.payload import decode_payload
 
 PY_CPG_QUALITY_REPORT_TABLE_KEY = "analytics.py_cpg_quality_report"
 
@@ -25,6 +24,7 @@ class PyCpgQualityInputs:
     inspect_objects: pa.Table
     cfg_edges: pa.Table
     defuse_events: pa.Table
+    cpg_nodes: pa.Table
     cpg_edges: pa.Table
 
 
@@ -64,6 +64,24 @@ class _DefuseCoverage:
         return self.edge_count / self.event_count
 
 
+@dataclass(frozen=True, slots=True)
+class _CpgEdgeScan:
+    defuse_edge_count: int
+    inspect_anchor_ids: set[int]
+    symbol_edge_count: int
+    external_symbol_edge_count: int
+    binding_resolution_edge_count: int
+    binding_unresolved_edge_count: int
+
+    @property
+    def external_symbol_rate(self) -> float | None:
+        return _rate(self.external_symbol_edge_count, self.symbol_edge_count)
+
+    @property
+    def binding_unresolved_rate(self) -> float | None:
+        return _rate(self.binding_unresolved_edge_count, self.binding_resolution_edge_count)
+
+
 def build_py_cpg_quality_report_rows(
     *,
     repo: str,
@@ -82,13 +100,14 @@ def build_py_cpg_quality_report_rows(
     symtable_rate = _anchor_rate(inputs.scopes, anchor_column="anchor_ast_node_id")
     cfg_rate = _cfg_reachability(inputs.blocks, inputs.cfg_edges)
     defuse_event_count = _defuse_event_count(inputs.defuse_events)
-    defuse_edge_count, inspect_anchor_ids = _scan_cpg_edges(inputs.cpg_edges)
+    node_kind_by_id = _node_kind_index(inputs.cpg_nodes)
+    edge_scan = _scan_cpg_edges(inputs.cpg_edges, node_kind_by_id=node_kind_by_id)
     defuse_rate = _DefuseCoverage(
         event_count=defuse_event_count,
-        edge_count=defuse_edge_count,
+        edge_count=edge_scan.defuse_edge_count,
     )
     inspect_total = _count_rows(inputs.inspect_objects)
-    inspect_rate = _AnchorRate(total=inspect_total, anchored=len(inspect_anchor_ids))
+    inspect_rate = _AnchorRate(total=inspect_total, anchored=len(edge_scan.inspect_anchor_ids))
 
     return [
         {
@@ -110,6 +129,12 @@ def build_py_cpg_quality_report_rows(
             "inspect_object_count": inspect_rate.total,
             "inspect_anchored_count": inspect_rate.anchored,
             "inspect_anchor_rate": inspect_rate.rate,
+            "symbol_edge_count": edge_scan.symbol_edge_count,
+            "external_symbol_edge_count": edge_scan.external_symbol_edge_count,
+            "external_symbol_edge_rate": edge_scan.external_symbol_rate,
+            "binding_resolution_edge_count": edge_scan.binding_resolution_edge_count,
+            "binding_unresolved_edge_count": edge_scan.binding_unresolved_edge_count,
+            "binding_unresolved_edge_rate": edge_scan.binding_unresolved_rate,
             "created_at": datetime.now(UTC),
         }
     ]
@@ -127,6 +152,12 @@ def _reader_has_columns(table: pa.Table, columns: Iterable[str]) -> bool:
 
 def _count_rows(table: pa.Table) -> int:
     return table.num_rows
+
+
+def _rate(numerator: int, denominator: int) -> float | None:
+    if denominator == 0:
+        return None
+    return numerator / denominator
 
 
 def _anchor_rate(
@@ -257,25 +288,134 @@ def _defuse_event_count(reader: pa.Table) -> int:
 
 def _scan_cpg_edges(
     reader: pa.Table,
-) -> tuple[int, set[int]]:
+    *,
+    node_kind_by_id: dict[int, str] | None = None,
+) -> _CpgEdgeScan:
     has_edge_kind = "edge_kind" in reader.schema.names
-    has_extras = "extras_json" in reader.schema.names
-    has_src = "src_cpg_node_id" in reader.schema.names
     if not has_edge_kind:
-        return 0, set()
-    defuse_edge_count = 0
-    inspect_anchor_ids: set[int] = set()
+        return _CpgEdgeScan(0, set(), 0, 0, 0, 0)
+    kind_index = node_kind_by_id or {}
+    has_extras = "extras_kv" in reader.schema.names
+    has_src = "src_cpg_node_id" in reader.schema.names
+    has_dst = "dst_cpg_node_id" in reader.schema.names
+    has_layer = "edge_layer" in reader.schema.names
+    defuse_edge_count = _defuse_edge_count(reader, has_extras=has_extras)
+    inspect_anchor_ids = _inspect_anchor_ids(reader, has_src=has_src)
+    symbol_edge_count, external_symbol_edge_count = _symbol_edge_counts(
+        reader,
+        kind_index=kind_index,
+        has_dst=has_dst,
+        has_layer=has_layer,
+    )
+    binding_resolution_edge_count, binding_unresolved_edge_count = _binding_edge_counts(
+        reader,
+        kind_index=kind_index,
+        has_src=has_src,
+        has_dst=has_dst,
+    )
+    return _CpgEdgeScan(
+        defuse_edge_count=defuse_edge_count,
+        inspect_anchor_ids=inspect_anchor_ids,
+        symbol_edge_count=symbol_edge_count,
+        external_symbol_edge_count=external_symbol_edge_count,
+        binding_resolution_edge_count=binding_resolution_edge_count,
+        binding_unresolved_edge_count=binding_unresolved_edge_count,
+    )
+
+
+def _node_kind_index(reader: pa.Table) -> dict[int, str]:
+    if not _reader_has_columns(reader, ("cpg_node_id", "node_kind")):
+        return {}
+    tracked = {"SCIP_SYMBOL", "SCIP_SYMBOL_EXTERNAL", "BINDING", "BINDING_UNRESOLVED"}
+    node_kind_by_id: dict[int, str] = {}
+    for row in _reader_rows(reader):
+        node_kind = row.get("node_kind")
+        if not isinstance(node_kind, str) or node_kind not in tracked:
+            continue
+        node_id = normalize_decimal_id(row.get("cpg_node_id"))
+        if node_id is None:
+            continue
+        node_kind_by_id[node_id] = node_kind
+    return node_kind_by_id
+
+
+def _defuse_edge_count(reader: pa.Table, *, has_extras: bool) -> int:
+    if not has_extras:
+        return 0
+    count = 0
     for row in _reader_rows(reader):
         edge_kind = row.get("edge_kind")
-        if edge_kind in {"DEFINES_BINDING", "USES_BINDING"} and has_extras:
-            extras = decode_payload(row.get("extras_json"))
-            if isinstance(extras, dict) and extras.get("space") in {"local", "free", "global"}:
-                defuse_edge_count += 1
-        if edge_kind == "INSPECT_ANCHORS_AST" and has_src:
-            src_id = normalize_decimal_id(row.get("src_cpg_node_id"))
-            if src_id is not None:
-                inspect_anchor_ids.add(src_id)
-    return defuse_edge_count, inspect_anchor_ids
+        if edge_kind not in {"DEFINES_BINDING", "USES_BINDING"}:
+            continue
+        extras = row.get("extras_kv")
+        if not isinstance(extras, Mapping):
+            continue
+        space = extras.get("space")
+        if isinstance(space, str) and space in {"local", "free", "global"}:
+            count += 1
+    return count
+
+
+def _inspect_anchor_ids(reader: pa.Table, *, has_src: bool) -> set[int]:
+    if not has_src:
+        return set()
+    anchor_ids: set[int] = set()
+    for row in _reader_rows(reader):
+        if row.get("edge_kind") != "INSPECT_ANCHORS_AST":
+            continue
+        src_id = normalize_decimal_id(row.get("src_cpg_node_id"))
+        if src_id is not None:
+            anchor_ids.add(src_id)
+    return anchor_ids
+
+
+def _symbol_edge_counts(
+    reader: pa.Table,
+    *,
+    kind_index: dict[int, str],
+    has_dst: bool,
+    has_layer: bool,
+) -> tuple[int, int]:
+    if not kind_index or not has_dst or not has_layer:
+        return 0, 0
+    symbol_edge_count = 0
+    external_symbol_edge_count = 0
+    for row in _reader_rows(reader):
+        if row.get("edge_layer") != "SYMBOL":
+            continue
+        dst_id = normalize_decimal_id(row.get("dst_cpg_node_id"))
+        dst_kind = kind_index.get(dst_id) if dst_id is not None else None
+        if dst_kind in {"SCIP_SYMBOL", "SCIP_SYMBOL_EXTERNAL"}:
+            symbol_edge_count += 1
+            if dst_kind == "SCIP_SYMBOL_EXTERNAL":
+                external_symbol_edge_count += 1
+    return symbol_edge_count, external_symbol_edge_count
+
+
+def _binding_edge_counts(
+    reader: pa.Table,
+    *,
+    kind_index: dict[int, str],
+    has_src: bool,
+    has_dst: bool,
+) -> tuple[int, int]:
+    if not kind_index or not has_src or not has_dst:
+        return 0, 0
+    binding_resolution_edge_count = 0
+    binding_unresolved_edge_count = 0
+    for row in _reader_rows(reader):
+        if row.get("edge_kind") != "RESOLVES_TO":
+            continue
+        src_id = normalize_decimal_id(row.get("src_cpg_node_id"))
+        src_kind = kind_index.get(src_id) if src_id is not None else None
+        if src_kind != "BINDING":
+            continue
+        binding_resolution_edge_count += 1
+        dst_id = normalize_decimal_id(row.get("dst_cpg_node_id"))
+        dst_kind = kind_index.get(dst_id) if dst_id is not None else None
+        if dst_kind == "BINDING_UNRESOLVED":
+            binding_unresolved_edge_count += 1
+    return binding_resolution_edge_count, binding_unresolved_edge_count
 
 
 __all__ = [

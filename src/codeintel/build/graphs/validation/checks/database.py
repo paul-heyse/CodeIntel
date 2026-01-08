@@ -25,7 +25,6 @@ from codeintel.build.tabular.compute_masks import FilterExprContext, is_valid_ma
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.query_results import coerce_int, coerce_str
-from codeintel.core.serialization.payload import decode_payload
 
 if TYPE_CHECKING:
     from codeintel.build.graphs.validation.context import GraphValidationContext
@@ -975,7 +974,7 @@ def _warn_defuse_binding_space_mismatch_impl(
             dataset_root=dataset_root_dir,
             table_key="graph.cpg_edges",
             snapshot_id=commit,
-            columns=("rel_path", "edge_kind", "extras_json"),
+            columns=("rel_path", "edge_kind", "extras_kv"),
             repo=repo,
             commit=commit,
         )
@@ -993,8 +992,8 @@ def _warn_defuse_binding_space_mismatch_impl(
         if edge_kind not in {"DEFINES_BINDING", "USES_BINDING"}:
             continue
         rel_path = coerce_str(row.get("rel_path"), ctx="defuse_binding_space.rel_path")
-        extras = decode_payload(row.get("extras_json"))
-        if not isinstance(extras, dict):
+        extras = row.get("extras_kv")
+        if not isinstance(extras, Mapping):
             continue
         space = extras.get("space")
         binding_kind = extras.get("binding_kind")
@@ -1076,7 +1075,7 @@ def _warn_missing_defuse_binding_edges_impl(
             dataset_root=request.dataset_root_dir,
             table_key="graph.cpg_edges",
             snapshot_id=request.commit,
-            columns=("src_cpg_node_id", "edge_kind", "extras_json", "rel_path"),
+            columns=("src_cpg_node_id", "edge_kind", "extras_kv", "rel_path"),
             repo=request.repo,
             commit=request.commit,
         )
@@ -1110,8 +1109,8 @@ def _defuse_edges_by_source(
         src_id = normalize_decimal_id(row.get("src_cpg_node_id"))
         if src_id is None:
             continue
-        extras = decode_payload(row.get("extras_json"))
-        if not isinstance(extras, dict):
+        extras = row.get("extras_kv")
+        if not isinstance(extras, Mapping):
             continue
         edge_space = extras.get("space")
         binding_kind = extras.get("binding_kind")

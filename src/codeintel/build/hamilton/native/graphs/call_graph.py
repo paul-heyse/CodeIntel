@@ -19,6 +19,7 @@ from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabul
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -383,8 +384,12 @@ def call_graph_nodes_compute(
         goids_table=goids_table,
         module_by_path=module_by_path,
     )
-    reader, _ = table_for_rows(CALL_GRAPH_NODES_TABLE_KEY, output_rows)
-    return reader
+    table, _ = table_for_rows(CALL_GRAPH_NODES_TABLE_KEY, output_rows)
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=CALL_GRAPH_NODES_TABLE_KEY, mode="strict"),
+    )
+    return result.good
 
 
 def call_graph_edges_compute(
@@ -427,11 +432,15 @@ def call_graph_edges_compute(
         goid_language=goid_language,
     )
 
-    reader, _ = table_for_rows(
+    table, _ = table_for_rows(
         CALL_GRAPH_EDGES_TABLE_KEY,
         _edge_rows(edge_context, module_by_path=module_by_path),
     )
-    return reader
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=CALL_GRAPH_EDGES_TABLE_KEY, mode="strict"),
+    )
+    return result.good
 
 
 def call_graph_nodes_existing(env: BuildEnv) -> InferableTabularInput:

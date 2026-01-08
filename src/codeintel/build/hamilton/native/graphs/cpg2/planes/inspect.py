@@ -7,8 +7,8 @@ import pyarrow as pa
 from codeintel.build.graphs.assembly import table_rows
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import pk_from_row
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_node_id, cpg_source_pk_json
+from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
-from codeintel.core.serialization.payload import encode_payload
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 PY_INSPECT_OBJECTS_TABLE_KEY = "core.py_inspect_objects"
@@ -45,6 +45,7 @@ def cpg2_nodes__py_inspect_objects(objects: pa.Table) -> pa.Table:
             "has_annotations": row.get("has_annotations"),
             "status": row.get("status"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         rows.append(
             {
                 "repo": row.get("repo"),
@@ -56,7 +57,8 @@ def cpg2_nodes__py_inspect_objects(objects: pa.Table) -> pa.Table:
                 "rel_path": None,
                 "start_byte": None,
                 "end_byte": None,
-                "extras_json": _payload_bytes(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, _ = table_for_rows(CPG_NODES_TABLE_KEY, rows)
@@ -90,6 +92,7 @@ def cpg2_nodes__py_inspect_signatures(signatures: pa.Table) -> pa.Table:
             "has_varkw": row.get("has_varkw"),
             "status": row.get("status"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         rows.append(
             {
                 "repo": row.get("repo"),
@@ -101,7 +104,8 @@ def cpg2_nodes__py_inspect_signatures(signatures: pa.Table) -> pa.Table:
                 "rel_path": None,
                 "start_byte": None,
                 "end_byte": None,
-                "extras_json": _payload_bytes(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, _ = table_for_rows(CPG_NODES_TABLE_KEY, rows)
@@ -132,6 +136,7 @@ def cpg2_nodes__py_inspect_signature_params(params: pa.Table) -> pa.Table:
             "annotation_value": row.get("annotation_value"),
             "status": row.get("status"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         rows.append(
             {
                 "repo": row.get("repo"),
@@ -143,19 +148,12 @@ def cpg2_nodes__py_inspect_signature_params(params: pa.Table) -> pa.Table:
                 "rel_path": None,
                 "start_byte": None,
                 "end_byte": None,
-                "extras_json": _payload_bytes(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, _ = table_for_rows(CPG_NODES_TABLE_KEY, rows)
     return table
-
-
-def _payload_bytes(values: dict[str, object]) -> bytes:
-    encoded = encode_payload(values)
-    if encoded is None:
-        msg = "Expected payload encoding to return bytes"
-        raise ValueError(msg)
-    return encoded
 
 
 __all__ = [

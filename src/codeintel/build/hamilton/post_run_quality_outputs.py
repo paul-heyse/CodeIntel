@@ -27,6 +27,7 @@ from codeintel.build.graphs.validation.runner import (
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.graphs.cpg.constants import (
     CPG_EDGES_TABLE_KEY,
+    CPG_NODES_TABLE_KEY,
     PY_BC_BLOCKS_TABLE_KEY,
     PY_BC_CFG_EDGES_TABLE_KEY,
     PY_BC_DEFUSE_EVENTS_TABLE_KEY,
@@ -74,7 +75,16 @@ _PY_CPG_COLUMNS_BY_TABLE: dict[str, tuple[str, ...]] = {
     PY_INSPECT_OBJECTS_TABLE_KEY: ("repo", "commit"),
     PY_BC_CFG_EDGES_TABLE_KEY: ("repo", "commit", "code_unit_id", "src_block_id", "dst_block_id"),
     PY_BC_DEFUSE_EVENTS_TABLE_KEY: ("repo", "commit", "event_kind", "space"),
-    CPG_EDGES_TABLE_KEY: ("repo", "commit", "edge_kind", "extras_json", "src_cpg_node_id"),
+    CPG_NODES_TABLE_KEY: ("repo", "commit", "cpg_node_id", "node_kind"),
+    CPG_EDGES_TABLE_KEY: (
+        "repo",
+        "commit",
+        "edge_kind",
+        "edge_layer",
+        "extras_kv",
+        "src_cpg_node_id",
+        "dst_cpg_node_id",
+    ),
 }
 
 
@@ -192,6 +202,7 @@ def persist_py_cpg_quality_report(*, env: BuildEnv, run_id: str) -> bool:
             inspect_objects=tables[PY_INSPECT_OBJECTS_TABLE_KEY],
             cfg_edges=tables[PY_BC_CFG_EDGES_TABLE_KEY],
             defuse_events=tables[PY_BC_DEFUSE_EVENTS_TABLE_KEY],
+            cpg_nodes=tables[CPG_NODES_TABLE_KEY],
             cpg_edges=tables[CPG_EDGES_TABLE_KEY],
         ),
     )

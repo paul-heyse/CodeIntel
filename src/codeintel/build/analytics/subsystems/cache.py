@@ -7,13 +7,12 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.build.scopes.snapshot import SnapshotScope
-from codeintel.build.tabular.arrow_ops import (
-    ArrowJoinSpec,
-    arrow_join_tables,
-    build_join_options,
-    iter_rows,
-)
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_columns import append_constant_columns
+from codeintel.build.tabular.conversion import reader_to_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
 from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
@@ -45,13 +44,51 @@ def build_subsystem_profile_cache_frame(
     """
     subsystems = _filter_table_by_snapshot(subsystems_frame, snapshot)
     metrics = _filter_table_by_snapshot(subsystem_graph_metrics_frame, snapshot)
-    join_spec = ArrowJoinSpec(
-        on=["repo", "commit", "subsystem_id"],
-        how="left",
-        validate="m:1",
+    join_keys = ["repo", "commit", "subsystem_id"]
+    left_columns = list(subsystems.column_names)
+    right_columns = list(metrics.column_names)
+    left_project = {name: E.field(name) for name in left_columns}
+    right_project = {name: E.field(name) for name in right_columns}
+    for key in join_keys:
+        if key in left_project:
+            left_project[key] = E.cast(E.field(key), "string")
+        if key in right_project:
+            right_project[key] = E.cast(E.field(key), "string")
+    right_output = [
+        name for name in right_columns if name not in join_keys and name not in left_columns
+    ]
+    key_filter = E.and_(
+        E.is_valid("repo"),
+        E.is_valid("commit"),
+        E.is_valid("subsystem_id"),
     )
-    join_options = build_join_options(subsystems, metrics)
-    joined = arrow_join_tables(subsystems, metrics, spec=join_spec, options=join_options)
+    joined_plan = (
+        Plan.table(subsystems)
+        .project(left_project)
+        .filter(key_filter)
+        .hash_join(
+            right=Plan.table(metrics).project(right_project).filter(key_filter),
+            spec=HashJoinSpec(
+                left_keys=join_keys,
+                right_keys=join_keys,
+                how="left outer",
+                left_output=list(left_project.keys()),
+                right_output=right_output,
+            ),
+        )
+    )
+    joined = reader_to_table(joined_plan.to_reader(use_threads=True))
+    if joined.num_rows > 0:
+        joined = joined.take(
+            stable_sort_indices(
+                joined,
+                sort_keys=[
+                    ("repo", "ascending"),
+                    ("commit", "ascending"),
+                    ("subsystem_id", "ascending"),
+                ],
+            )
+        )
     columns = _profile_cache_columns()
     return _ensure_columns(joined, columns)
 

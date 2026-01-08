@@ -20,6 +20,9 @@ from codeintel.build.hamilton.native.graphs.cpg2.types import (
     _CpgOverlaySymbolInputs,
     _CpgOverlaySyntaxCallInputs,
     _CpgSymbolInputs,
+    _CpgSymbolOccurrenceInputs,
+    _CpgSymbolRelationInputs,
+    _CpgSymbolTableInputs,
     _CpgSyntaxNodeInputs,
 )
 from codeintel.build.tabular.types import InferableTabularInput
@@ -27,10 +30,9 @@ from codeintel.build.tabular.types import InferableTabularInput
 
 def cpg_edge_symbol_inputs(
     q__core__syntax_edges: InferableTabularInput,
-    q__core__scip_occurrence_syntax_xref: InferableTabularInput,
-    q__core__scip_occurrence_span_xref: InferableTabularInput,
-    q__core__scip_symbol_relationships: InferableTabularInput,
-    q__core__scip_symbol_goid_xref: InferableTabularInput,
+    cpg_edge_symbol_occurrence_inputs: _CpgSymbolOccurrenceInputs,
+    cpg_edge_symbol_relation_inputs: _CpgSymbolRelationInputs,
+    cpg_edge_symbol_table_inputs: _CpgSymbolTableInputs,
 ) -> _CpgSymbolInputs:
     """Collect symbol-layer inputs for CPG edge assembly.
 
@@ -41,10 +43,63 @@ def cpg_edge_symbol_inputs(
     """
     return _CpgSymbolInputs(
         syntax_edges=tabular_to_table(q__core__syntax_edges),
+        occ_syntax=cpg_edge_symbol_occurrence_inputs.occ_syntax,
+        occ_span=cpg_edge_symbol_occurrence_inputs.occ_span,
+        symbol_rels=cpg_edge_symbol_relation_inputs.symbol_rels,
+        symbol_goid=cpg_edge_symbol_relation_inputs.symbol_goid,
+        scip_symbols=cpg_edge_symbol_table_inputs.scip_symbols,
+        scip_external_symbols=cpg_edge_symbol_table_inputs.scip_external_symbols,
+    )
+
+
+def cpg_edge_symbol_occurrence_inputs(
+    q__core__scip_occurrence_syntax_xref: InferableTabularInput,
+    q__core__scip_occurrence_span_xref: InferableTabularInput,
+) -> _CpgSymbolOccurrenceInputs:
+    """Collect SCIP occurrence inputs for CPG symbol edges.
+
+    Returns
+    -------
+    _CpgSymbolOccurrenceInputs
+        Occurrence inputs for CPG symbol edges.
+    """
+    return _CpgSymbolOccurrenceInputs(
         occ_syntax=tabular_to_table(q__core__scip_occurrence_syntax_xref),
         occ_span=tabular_to_table(q__core__scip_occurrence_span_xref),
+    )
+
+
+def cpg_edge_symbol_relation_inputs(
+    q__core__scip_symbol_relationships: InferableTabularInput,
+    q__core__scip_symbol_goid_xref: InferableTabularInput,
+) -> _CpgSymbolRelationInputs:
+    """Collect SCIP relationship inputs for CPG symbol edges.
+
+    Returns
+    -------
+    _CpgSymbolRelationInputs
+        Relationship inputs for CPG symbol edges.
+    """
+    return _CpgSymbolRelationInputs(
         symbol_rels=tabular_to_table(q__core__scip_symbol_relationships),
         symbol_goid=tabular_to_table(q__core__scip_symbol_goid_xref),
+    )
+
+
+def cpg_edge_symbol_table_inputs(
+    q__core__scip_symbol_information: InferableTabularInput,
+    q__core__scip_external_symbols: InferableTabularInput,
+) -> _CpgSymbolTableInputs:
+    """Collect SCIP symbol tables for CPG symbol edges.
+
+    Returns
+    -------
+    _CpgSymbolTableInputs
+        Symbol table inputs for CPG symbol edges.
+    """
+    return _CpgSymbolTableInputs(
+        scip_symbols=tabular_to_table(q__core__scip_symbol_information),
+        scip_external_symbols=tabular_to_table(q__core__scip_external_symbols),
     )
 
 
@@ -365,6 +420,9 @@ __all__ = [
     "cpg_edge_overlay_symbol_inputs",
     "cpg_edge_overlay_syntax_call_inputs",
     "cpg_edge_symbol_inputs",
+    "cpg_edge_symbol_occurrence_inputs",
+    "cpg_edge_symbol_relation_inputs",
+    "cpg_edge_symbol_table_inputs",
     "cpg_edge_syntax_node_inputs",
     "cpg_edges",
 ]

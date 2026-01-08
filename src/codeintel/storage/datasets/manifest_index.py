@@ -266,11 +266,18 @@ def apply_tuning_options(
         fragment_readahead=options.fragment_readahead,
         filter_expression=options.filter_expression,
         use_threads=options.use_threads,
+        cache_metadata=options.cache_metadata,
+        parquet_pre_buffer=options.parquet_pre_buffer,
+        parquet_use_buffered_stream=options.parquet_use_buffered_stream,
+        parquet_buffer_size=options.parquet_buffer_size,
         memory_pool=options.memory_pool,
         metrics_enabled=options.metrics_enabled,
         schema=options.schema,
         columns=options.columns,
+        implicit_ordering=options.implicit_ordering,
+        require_sequenced_output=options.require_sequenced_output,
         unify_schemas=options.unify_schemas,
+        schema_promote_options=options.schema_promote_options,
     )
 
 

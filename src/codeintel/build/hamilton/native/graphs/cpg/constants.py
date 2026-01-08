@@ -10,6 +10,7 @@ SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
 SYNTAX_CALLS_TABLE_KEY = "core.syntax_calls"
 SYNTAX_CALL_ARGS_TABLE_KEY = "core.syntax_call_args"
 SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbol_information"
+SCIP_EXTERNAL_SYMBOLS_TABLE_KEY = "core.scip_external_symbols"
 GOIDS_TABLE_KEY = "core.goids"
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
@@ -18,6 +19,7 @@ TS_TRIVIA_TABLE_KEY = "core.ts_trivia"
 AST_NODES_TABLE_KEY = "core.ast_nodes"
 PY_SYM_SCOPES_TABLE_KEY = "core.py_sym_scopes"
 PY_SYM_BINDINGS_TABLE_KEY = "core.py_sym_bindings"
+PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY = "core.py_sym_unresolved_bindings"
 PY_SYM_SCOPE_EDGES_TABLE_KEY = "core.py_sym_scope_edges"
 PY_SYM_NAMESPACE_EDGES_TABLE_KEY = "core.py_sym_namespace_edges"
 PY_SYM_RESOLUTION_EDGES_TABLE_KEY = "core.py_sym_resolution_edges"
@@ -61,6 +63,8 @@ __all__ = [
     "PY_SYM_RESOLUTION_EDGES_TABLE_KEY",
     "PY_SYM_SCOPES_TABLE_KEY",
     "PY_SYM_SCOPE_EDGES_TABLE_KEY",
+    "PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY",
+    "SCIP_EXTERNAL_SYMBOLS_TABLE_KEY",
     "SCIP_SYMBOLS_TABLE_KEY",
     "SYNTAX_CALLS_TABLE_KEY",
     "SYNTAX_CALL_ARGS_TABLE_KEY",

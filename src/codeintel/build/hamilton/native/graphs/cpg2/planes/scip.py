@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pyarrow as pa
@@ -14,24 +15,22 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     identity_keys,
 )
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
-from codeintel.build.tabular.arrow_ops import (
-    ArrowJoinSpec,
-    JoinFilterClause,
-    arrow_join_tables,
-    build_join_options,
-    join_filter_expr,
-    normalize_table_for_join,
-)
+from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
+from codeintel.build.tabular.conversion import reader_to_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
+from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.intervals.span_resolver import SpanResolver
-from codeintel.core.serialization.payload import encode_payload
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbol_information"
+SCIP_EXTERNAL_SYMBOLS_TABLE_KEY = "core.scip_external_symbols"
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
 
 OccurrenceSpanKey = tuple[object, object, object, object, object, object, object, object]
@@ -67,6 +66,74 @@ class _OccurrenceRolePayload:
     is_read: bool | None
 
 
+_SCIP_JOIN_KEYS = ("repo", "commit", "symbol")
+
+
+def _scip_symbol_joined_table(
+    symbols: pa.Table,
+    *,
+    table_key: str,
+    left_output: Sequence[str],
+) -> pa.Table:
+    normalized = canonicalize_for_table(symbols, table_key=table_key)
+    normalized = normalize_table_for_join(normalized)
+    anchors = build_anchor_map(
+        normalized,
+        table_key=table_key,
+        pk_columns=identity_keys(table_key),
+        include_source_pk_json=True,
+    )
+    anchors = normalize_table_for_join(anchors)
+    left_exprs = _join_key_exprs()
+    for column in left_output:
+        if column in left_exprs:
+            continue
+        left_exprs[column] = E.field(column)
+    right_exprs = {
+        **_join_key_exprs(),
+        "cpg_node_id": E.field("cpg_node_id"),
+        "source_pk_json": E.field("source_pk_json"),
+    }
+    key_filter = _join_key_filter()
+    left_plan = Plan.table(normalized).project(left_exprs).filter(key_filter)
+    right_plan = Plan.table(anchors).project(right_exprs).filter(key_filter)
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=list(_SCIP_JOIN_KEYS),
+            right_keys=list(_SCIP_JOIN_KEYS),
+            how="left outer",
+            left_output=list(left_exprs.keys()),
+            right_output=["cpg_node_id", "source_pk_json"],
+        ),
+    )
+    table = reader_to_table(joined.to_reader(use_threads=True))
+    if table.num_rows == 0:
+        return table
+    return table.take(
+        stable_sort_indices(
+            table,
+            sort_keys=[
+                ("repo", "ascending"),
+                ("commit", "ascending"),
+                ("symbol", "ascending"),
+            ],
+        )
+    )
+
+
+def _join_key_exprs() -> dict[str, pc.Expression]:
+    return {
+        "repo": E.cast(E.field("repo"), "string"),
+        "commit": E.cast(E.field("commit"), "string"),
+        "symbol": E.cast(E.field("symbol"), "string"),
+    }
+
+
+def _join_key_filter() -> pc.Expression:
+    return E.is_valid("repo") & E.is_valid("commit") & E.is_valid("symbol")
+
+
 def cpg2_nodes__scip_symbols(
     symbols: pa.Table,
     *,
@@ -82,37 +149,10 @@ def cpg2_nodes__scip_symbols(
     required = {"repo", "commit", "symbol"}
     if not required.issubset(set(symbols.column_names)):
         return empty_table_for_table(CPG_NODES_TABLE_KEY)
-    normalized = canonicalize_for_table(symbols, table_key=SCIP_SYMBOLS_TABLE_KEY)
-    normalized = normalize_table_for_join(normalized)
-    anchors = build_anchor_map(
-        normalized,
+    joined = _scip_symbol_joined_table(
+        symbols,
         table_key=SCIP_SYMBOLS_TABLE_KEY,
-        pk_columns=identity_keys(SCIP_SYMBOLS_TABLE_KEY),
-        include_source_pk_json=True,
-    )
-    anchors = normalize_table_for_join(anchors)
-    join_spec = ArrowJoinSpec(on=["repo", "commit", "symbol"], how="left")
-    filter_expr = join_filter_expr(
-        left=normalized,
-        right=anchors,
-        spec=join_spec,
-        clause=JoinFilterClause(
-            field="cpg_node_id",
-            predicate=is_valid_expr,
-            side="right",
-        ),
-    )
-    join_options = build_join_options(
-        normalized,
-        anchors,
-        filter_expression=filter_expr,
-        normalize_inputs=False,
-    )
-    joined = arrow_join_tables(
-        normalized,
-        anchors,
-        spec=join_spec,
-        options=join_options,
+        left_output=list(_SCIP_JOIN_KEYS),
     )
     joined = append_constant_columns(
         joined,
@@ -122,7 +162,8 @@ def cpg2_nodes__scip_symbols(
             "rel_path": None,
             "start_byte": None,
             "end_byte": None,
-            "extras_json": None,
+            "extras": None,
+            "extras_kv": None,
         },
     )
     selected = joined.select(
@@ -136,7 +177,8 @@ def cpg2_nodes__scip_symbols(
             "rel_path",
             "start_byte",
             "end_byte",
-            "extras_json",
+            "extras",
+            "extras_kv",
         ]
     )
     filtered = _filter_valid_nodes(selected)
@@ -149,9 +191,77 @@ def cpg2_nodes__scip_symbols(
     return filtered
 
 
+def cpg2_nodes__scip_external_symbols(
+    symbols: pa.Table,
+    *,
+    diagnostics: dict[str, object] | None = None,
+) -> pa.Table:
+    """Build CPG nodes from external SCIP symbols.
+
+    Returns
+    -------
+    pyarrow.Table
+        CPG node table for external SCIP symbols.
+    """
+    required = {"repo", "commit", "symbol"}
+    if not required.issubset(set(symbols.column_names)):
+        return empty_table_for_table(CPG_NODES_TABLE_KEY)
+    desired_output = [
+        *_SCIP_JOIN_KEYS,
+        "package_manager",
+        "package_name",
+        "package_version",
+    ]
+    left_output = [column for column in desired_output if column in symbols.column_names]
+    joined = _scip_symbol_joined_table(
+        symbols,
+        table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+        left_output=left_output,
+    )
+    extras_kv = _external_symbol_extras_kv(joined)
+    joined = _upsert_column(joined, "extras_kv", extras_kv)
+    joined = append_constant_columns(
+        joined,
+        {
+            "node_kind": "SCIP_SYMBOL_EXTERNAL",
+            "source_table_key": SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+            "rel_path": None,
+            "start_byte": None,
+            "end_byte": None,
+            "extras": None,
+            "extras_kv": None,
+        },
+    )
+    selected = joined.select(
+        [
+            "repo",
+            "commit",
+            "cpg_node_id",
+            "node_kind",
+            "source_table_key",
+            "source_pk_json",
+            "rel_path",
+            "start_byte",
+            "end_byte",
+            "extras",
+            "extras_kv",
+        ]
+    )
+    filtered = _filter_valid_nodes(selected)
+    if diagnostics is not None:
+        diagnostics["scip_external_symbols"] = ScipNodeDiagnostics(
+            total_rows=selected.num_rows,
+            resolved_rows=filtered.num_rows,
+            dropped_rows=selected.num_rows - filtered.num_rows,
+        )
+    return filtered
+
+
 def cpg2_edges__scip_occurrences(
     occ_syntax: pa.Table,
     occ_span: pa.Table,
+    scip_symbols: pa.Table,
+    scip_external_symbols: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
 ) -> pa.Table:
@@ -162,61 +272,21 @@ def cpg2_edges__scip_occurrences(
     pyarrow.Table
         CPG edges for SCIP occurrence bindings.
     """
+    internal_keys = _symbol_key_set(scip_symbols)
+    external_keys = _symbol_key_set(scip_external_symbols)
     joined = _occurrence_roles(occ_syntax, occ_span)
-    rows: list[dict[str, object]] = []
-    for row in table_rows(joined):
-        if row.get("syntax_node_id") is None:
-            continue
-        syntax_pk = {
-            "repo": row.get("repo"),
-            "commit": row.get("commit"),
-            "rel_path": row.get("rel_path"),
-            "producer": row.get("producer"),
-            "node_id": row.get("syntax_node_id"),
-        }
-        symbol_pk = {
-            "repo": row.get("repo"),
-            "commit": row.get("commit"),
-            "symbol": row.get("scip_symbol"),
-        }
-        is_def = bool(row.get("is_definition")) if row.get("is_definition") is not None else False
-        is_import = bool(row.get("is_import")) if row.get("is_import") is not None else False
-        is_write = bool(row.get("is_write")) if row.get("is_write") is not None else False
-        is_read = bool(row.get("is_read")) if row.get("is_read") is not None else False
-        edge_kind = "REFERS_TO"
-        if is_def:
-            edge_kind = "DEFINES"
-        elif is_import:
-            edge_kind = "IMPORTS"
-        elif is_write:
-            edge_kind = "WRITES"
-        elif is_read:
-            edge_kind = "REFERS_TO"
-        extras_values = {
-            "scip_occurrence_id": row.get("scip_occurrence_id"),
-            "match_kind": row.get("match_kind"),
-            "candidate_count": row.get("candidate_count"),
-            "scip_roles": row.get("scip_roles"),
-            "span_match_kind": row.get("span_match_kind"),
-            "span_candidate_count": row.get("span_candidate_count"),
-        }
-        ordinal = cpg_edge_ordinal(
-            "core.scip_occurrence_syntax_xref",
-            {"scip_occurrence_id": row.get("scip_occurrence_id")},
+    rows = [
+        row
+        for row in (
+            _scip_occurrence_edge_row(
+                source=row,
+                internal_keys=internal_keys,
+                external_keys=external_keys,
+            )
+            for row in table_rows(joined)
         )
-        rows.append(
-            {
-                "repo": row.get("repo"),
-                "commit": row.get("commit"),
-                "src_cpg_node_id": cpg_node_id(SYNTAX_NODES_TABLE_KEY, syntax_pk),
-                "dst_cpg_node_id": cpg_node_id(SCIP_SYMBOLS_TABLE_KEY, symbol_pk),
-                "edge_kind": edge_kind,
-                "edge_layer": "SYMBOL",
-                "rel_path": row.get("rel_path"),
-                "ordinal": ordinal,
-                "extras_json": _payload_bytes(extras_values),
-            }
-        )
+        if row is not None
+    ]
     table, _ = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
     filtered = _filter_valid_edges(table)
     if diagnostics is not None:
@@ -226,6 +296,77 @@ def cpg2_edges__scip_occurrences(
             dropped_edges=table.num_rows - filtered.num_rows,
         )
     return filtered
+
+
+def _scip_occurrence_edge_row(
+    *,
+    source: dict[str, object],
+    internal_keys: set[tuple[str, str, str]],
+    external_keys: set[tuple[str, str, str]],
+) -> dict[str, object] | None:
+    if source.get("syntax_node_id") is None:
+        return None
+    syntax_pk = {
+        "repo": source.get("repo"),
+        "commit": source.get("commit"),
+        "rel_path": source.get("rel_path"),
+        "producer": source.get("producer"),
+        "node_id": source.get("syntax_node_id"),
+    }
+    symbol_pk = {
+        "repo": source.get("repo"),
+        "commit": source.get("commit"),
+        "symbol": source.get("scip_symbol"),
+    }
+    dst_table_key, is_external = _symbol_table_key(
+        source.get("repo"),
+        source.get("commit"),
+        source.get("scip_symbol"),
+        internal_keys=internal_keys,
+        external_keys=external_keys,
+    )
+    edge_kind = _edge_kind_for_occurrence(source)
+    extras_values = {
+        "scip_occurrence_id": source.get("scip_occurrence_id"),
+        "match_kind": source.get("match_kind"),
+        "candidate_count": source.get("candidate_count"),
+        "scip_roles": source.get("scip_roles"),
+        "span_match_kind": source.get("span_match_kind"),
+        "span_candidate_count": source.get("span_candidate_count"),
+    }
+    if is_external:
+        extras_values["symbol_origin"] = "external"
+    extras_kv = extras_kv_from_mapping(extras_values)
+    ordinal = cpg_edge_ordinal(
+        "core.scip_occurrence_syntax_xref",
+        {"scip_occurrence_id": source.get("scip_occurrence_id")},
+    )
+    return {
+        "repo": source.get("repo"),
+        "commit": source.get("commit"),
+        "src_cpg_node_id": cpg_node_id(SYNTAX_NODES_TABLE_KEY, syntax_pk),
+        "dst_cpg_node_id": cpg_node_id(dst_table_key, symbol_pk),
+        "edge_kind": edge_kind,
+        "edge_layer": "SYMBOL",
+        "rel_path": source.get("rel_path"),
+        "ordinal": ordinal,
+        "extras": None,
+        "extras_kv": extras_kv,
+    }
+
+
+def _edge_kind_for_occurrence(source: dict[str, object]) -> str:
+    if _flag_is_true(source.get("is_definition")):
+        return "DEFINES"
+    if _flag_is_true(source.get("is_import")):
+        return "IMPORTS"
+    if _flag_is_true(source.get("is_write")):
+        return "WRITES"
+    return "REFERS_TO"
+
+
+def _flag_is_true(value: object) -> bool:
+    return bool(value) if value is not None else False
 
 
 def _occurrence_role_resolvers(
@@ -405,12 +546,59 @@ def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     return safe_filter(table, mask)
 
 
-def _payload_bytes(values: dict[str, object]) -> bytes:
-    encoded = encode_payload(values)
-    if encoded is None:
-        msg = "Expected payload encoding to return bytes"
-        raise ValueError(msg)
-    return encoded
+def _symbol_key_set(table: pa.Table) -> set[tuple[str, str, str]]:
+    required = {"repo", "commit", "symbol"}
+    if not required.issubset(set(table.column_names)):
+        return set()
+    keys: set[tuple[str, str, str]] = set()
+    for row in table_rows(table):
+        repo = row.get("repo")
+        commit = row.get("commit")
+        symbol = row.get("symbol")
+        if isinstance(repo, str) and isinstance(commit, str) and isinstance(symbol, str):
+            keys.add((repo, commit, symbol))
+    return keys
+
+
+def _symbol_table_key(
+    repo: object,
+    commit: object,
+    symbol: object,
+    *,
+    internal_keys: set[tuple[str, str, str]],
+    external_keys: set[tuple[str, str, str]],
+) -> tuple[str, bool]:
+    if not isinstance(repo, str) or not isinstance(commit, str) or not isinstance(symbol, str):
+        return SCIP_SYMBOLS_TABLE_KEY, False
+    key = (repo, commit, symbol)
+    if key in internal_keys:
+        return SCIP_SYMBOLS_TABLE_KEY, False
+    if key in external_keys:
+        return SCIP_EXTERNAL_SYMBOLS_TABLE_KEY, True
+    return SCIP_EXTERNAL_SYMBOLS_TABLE_KEY, True
+
+
+def _external_symbol_extras_kv(table: pa.Table) -> pa.Array:
+    extras_values: list[dict[str, str] | None] = []
+    for row in table_rows(table):
+        values = {
+            "package_manager": row.get("package_manager"),
+            "package_name": row.get("package_name"),
+            "package_version": row.get("package_version"),
+        }
+        extras_values.append(extras_kv_from_mapping(values))
+    return pa.array(extras_values, type=pa.map_(pa.string(), pa.string()))
+
+
+def _upsert_column(
+    table: pa.Table,
+    name: str,
+    values: pa.Array | pa.ChunkedArray,
+) -> pa.Table:
+    index = table.schema.get_field_index(name)
+    if index == -1:
+        return table.append_column(name, values)
+    return table.set_column(index, name, values)
 
 
 def _coerce_bool(value: object) -> bool | None:
@@ -429,5 +617,6 @@ __all__ = [
     "ScipNodeDiagnostics",
     "ScipOccurrenceDiagnostics",
     "cpg2_edges__scip_occurrences",
+    "cpg2_nodes__scip_external_symbols",
     "cpg2_nodes__scip_symbols",
 ]

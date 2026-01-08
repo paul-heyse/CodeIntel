@@ -6,6 +6,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from numbers import Integral
+from typing import Literal
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -26,10 +27,7 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.array_ops import ensure_array
 from codeintel.build.tabular.arrow_ops import (
-    ArrowJoinSpec,
     align_table_to_contract,
-    arrow_join_tables,
-    build_join_options,
     dedupe_table_for_table,
     emit_alignment_report,
     group_list_or_polars,
@@ -52,7 +50,10 @@ from codeintel.build.tabular.compute_masks import (
     is_null_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.conversion import reader_to_table, tabular_to_scoped_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.columnar.schema_ops import concat_tables_unified
@@ -326,6 +327,77 @@ def _producer_table(nodes_table: pa.Table) -> pa.Table:
     return _rename_columns(grouped, rename)
 
 
+_JOIN_STRING_KEYS = {
+    "repo",
+    "commit",
+    "rel_path",
+    "language",
+    "producer",
+    "ts_node_id",
+    "syntax_node_id",
+}
+_JOIN_INT_KEYS = {"start_byte", "end_byte"}
+SortKey = tuple[str, Literal["ascending", "descending"]]
+
+
+def _join_casts(keys: Sequence[str]) -> dict[str, str]:
+    casts: dict[str, str] = {}
+    for key in keys:
+        if key in _JOIN_STRING_KEYS:
+            casts[key] = "string"
+        elif key in _JOIN_INT_KEYS:
+            casts[key] = "int64"
+    return casts
+
+
+def _project_with_cast(
+    table: pa.Table,
+    *,
+    casts: Mapping[str, str],
+) -> dict[str, pc.Expression]:
+    exprs: dict[str, pc.Expression] = {}
+    for name in table.column_names:
+        if name in casts:
+            exprs[name] = E.cast(E.field(name), casts[name])
+        else:
+            exprs[name] = E.field(name)
+    return exprs
+
+
+def _join_key_filter(keys: Sequence[str]) -> pc.Expression:
+    return E.and_(*(E.is_valid(key) for key in keys))
+
+
+def _hash_join_tables(
+    left: pa.Table,
+    right: pa.Table,
+    *,
+    left_keys: Sequence[str],
+    right_keys: Sequence[str],
+    how: JoinType = "left outer",
+) -> pa.Table:
+    left_exprs = _project_with_cast(left, casts=_join_casts(left_keys))
+    right_exprs = _project_with_cast(right, casts=_join_casts(right_keys))
+    left_plan = Plan.table(left).project(left_exprs).filter(_join_key_filter(left_keys))
+    right_plan = Plan.table(right).project(right_exprs).filter(_join_key_filter(right_keys))
+    right_output = [name for name in right_exprs if name not in left_exprs]
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=list(left_keys),
+            right_keys=list(right_keys),
+            how=how,
+            left_output=list(left_exprs.keys()),
+            right_output=right_output,
+        ),
+    )
+    table = reader_to_table(joined.to_reader(use_threads=True))
+    if table.num_rows == 0:
+        return table
+    sort_keys: list[SortKey] = [(key, "ascending") for key in left_keys]
+    return table.take(stable_sort_indices(table, sort_keys=sort_keys))
+
+
 def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
     required_ts = {"repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"}
     required_syntax = {
@@ -353,16 +425,12 @@ def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
     )
     syntax_selected = _rename_columns(syntax_selected, {"node_id": "syntax_node_id"})
     syntax_selected = normalize_table_for_join(syntax_selected)
-    join_spec = ArrowJoinSpec(
-        on=["repo", "commit", "rel_path", "start_byte", "end_byte"],
-        how="left",
-    )
-    join_options = build_join_options(ts_selected, syntax_selected, normalize_inputs=False)
-    joined = arrow_join_tables(
+    join_keys = ["repo", "commit", "rel_path", "start_byte", "end_byte"]
+    joined = _hash_join_tables(
         ts_selected,
         syntax_selected,
-        spec=join_spec,
-        options=join_options,
+        left_keys=join_keys,
+        right_keys=join_keys,
     )
     syntax_null = is_null_mask(joined["syntax_node_id"])
     match_kind = _if_else(syntax_null, pa.scalar("NONE"), pa.scalar("EXACT"))
@@ -405,13 +473,11 @@ def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
         return ts_selected
     xref_selected = select_table_columns(xref_exact, ["ts_node_id", "syntax_node_id"])
     xref_selected = normalize_table_for_join(xref_selected)
-    join_spec = ArrowJoinSpec(on=["ts_node_id"], how="left")
-    join_options = build_join_options(ts_selected, xref_selected, normalize_inputs=False)
-    joined = arrow_join_tables(
+    joined = _hash_join_tables(
         ts_selected,
         xref_selected,
-        spec=join_spec,
-        options=join_options,
+        left_keys=["ts_node_id"],
+        right_keys=["ts_node_id"],
     )
     mask = is_null_mask(joined["syntax_node_id"])
     return safe_filter(joined, mask)
@@ -580,13 +646,11 @@ def _xref_fuzzy(
     index_by_path = _build_syntax_index(syntax_nodes)
     unmatched_ts_nodes = normalize_table_for_join(unmatched_ts_nodes)
     producer_table = normalize_table_for_join(producer_table)
-    join_spec = ArrowJoinSpec(on=["rel_path"], how="left")
-    join_options = build_join_options(unmatched_ts_nodes, producer_table, normalize_inputs=False)
-    joined = arrow_join_tables(
+    joined = _hash_join_tables(
         unmatched_ts_nodes,
         producer_table,
-        spec=join_spec,
-        options=join_options,
+        left_keys=["rel_path"],
+        right_keys=["rel_path"],
     )
     rows: list[dict[str, object]] = []
     columns = (
@@ -750,13 +814,11 @@ def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
     ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
     filtered = normalize_table_for_join(filtered)
     ts_selected = normalize_table_for_join(ts_selected)
-    join_spec = ArrowJoinSpec(on=["ts_node_id"], how="left")
-    join_options = build_join_options(filtered, ts_selected, normalize_inputs=False)
-    joined = arrow_join_tables(
+    joined = _hash_join_tables(
         filtered,
         ts_selected,
-        spec=join_spec,
-        options=join_options,
+        left_keys=["ts_node_id"],
+        right_keys=["ts_node_id"],
     )
     payload = pa.StructArray.from_arrays(
         [
@@ -859,9 +921,12 @@ def _weld_coverage_table(
         mapped = safe_filter(xref, and_kleene(match_mask, is_valid_mask(xref["ts_node_id"])))
         mapped_counts = _count_by(mapped, count_col="ts_node_id", name="mapped_count")
 
-    join_spec = ArrowJoinSpec(on=key_cols, how="left")
-    join_options = build_join_options(ts_counts, mapped_counts)
-    joined = arrow_join_tables(ts_counts, mapped_counts, spec=join_spec, options=join_options)
+    joined = _hash_join_tables(
+        ts_counts,
+        mapped_counts,
+        left_keys=key_cols,
+        right_keys=key_cols,
+    )
     mapped = pc.fill_null(_column_or_null(joined, "mapped_count"), pa.scalar(0))
     total = _column_or_null(joined, "ts_node_count")
     total_float = cast_array(total, pa.float64(), safe=True)

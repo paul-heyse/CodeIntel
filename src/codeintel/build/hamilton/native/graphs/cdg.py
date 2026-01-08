@@ -10,12 +10,7 @@ from dataclasses import dataclass
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.build.tabular.arrow_ops import (
-    align_table_to_contract,
-    dedupe_table_for_table,
-    emit_alignment_report,
-    iter_rows,
-)
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter, safe_filter_expr
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
@@ -25,6 +20,7 @@ from codeintel.build.tabular.compute_masks import (
     non_empty_string_mask,
 )
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -423,13 +419,15 @@ def cdg_edges(
         return empty_table_for_table(CDG_EDGES_TABLE_KEY)
 
     table, _ = table_for_rows(CDG_EDGES_TABLE_KEY, rows)
-    table = dedupe_table_for_table(CDG_EDGES_TABLE_KEY, table)
-    return align_table_to_contract(
-        CDG_EDGES_TABLE_KEY,
+    result = finalize_table(
         table,
-        target_name=CDG_TARGET_NAME,
-        reporter=emit_alignment_report,
+        spec=FinalizeSpec(
+            table_key=CDG_EDGES_TABLE_KEY,
+            mode="strict",
+            target_name=CDG_TARGET_NAME,
+        ),
     )
+    return result.good
 
 
 __all__ = [

@@ -23,6 +23,7 @@ from codeintel.build.tabular.arrow_ops import iter_array_values, iter_rows
 from codeintel.build.tabular.compute_helpers import cast_array, safe_filter
 from codeintel.build.tabular.compute_masks import non_empty_string_expr, non_empty_string_mask
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -294,7 +295,12 @@ def cfg_blocks_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInp
         return empty_table_for_table(CFG_BLOCKS_TABLE_KEY)
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_blocks)
     table, _ = table_for_rows(CFG_BLOCKS_TABLE_KEY, rows)
-    return _cast_function_goid(table)
+    table = _cast_function_goid(table)
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=CFG_BLOCKS_TABLE_KEY, mode="strict"),
+    )
+    return result.good
 
 
 def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInput:
@@ -309,7 +315,12 @@ def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
         return empty_table_for_table(CFG_EDGES_TABLE_KEY)
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_edges)
     table, _ = table_for_rows(CFG_EDGES_TABLE_KEY, rows)
-    return _cast_function_goid(table)
+    table = _cast_function_goid(table)
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=CFG_EDGES_TABLE_KEY, mode="strict"),
+    )
+    return result.good
 
 
 def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInput:
@@ -324,7 +335,12 @@ def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
         return empty_table_for_table(DFG_EDGES_TABLE_KEY)
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.dfg_edges)
     table, _ = table_for_rows(DFG_EDGES_TABLE_KEY, rows)
-    return _cast_function_goid(table)
+    table = _cast_function_goid(table)
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=DFG_EDGES_TABLE_KEY, mode="strict"),
+    )
+    return result.good
 
 
 def cfg_blocks_existing(env: BuildEnv) -> InferableTabularInput:

@@ -22,7 +22,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
+import pyarrow.compute as pc
 from hamilton.function_modifiers import cache
+from pyarrow import acero
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -56,8 +58,15 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
-from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import reader_to_table
+from codeintel.build.tabular.arrow_ops import (
+    align_table_to_contract,
+    dedupe_table_for_table,
+    emit_alignment_report,
+    iter_rows,
+    normalize_table_for_join,
+)
+from codeintel.build.tabular.compute_columns import append_constant_columns
+from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import (
     columnar_row_count,
@@ -65,6 +74,7 @@ from codeintel.core.columnar.rows import (
     table_for_columnar_rows,
     table_for_rows,
 )
+from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
@@ -1464,8 +1474,94 @@ def scip__diagnostic_rows__base(
     return _scip_payload_frame(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
 
 
+def _derive_external_symbol_rows(
+    occurrences: pa.Table,
+    relationships: pa.Table,
+    symbol_info: pa.Table,
+) -> pa.Table:
+    table_key = SCIP_EXTERNAL_SYMBOLS_TABLE_KEY
+    candidates: list[pa.Table] = []
+    occ_required = {"repo", "commit", "symbol"}
+    if occurrences.num_rows > 0 and occ_required.issubset(occurrences.column_names):
+        candidates.append(occurrences.select(["repo", "commit", "symbol"]))
+    rel_required = {"repo", "commit", "symbol", "related_symbol"}
+    if relationships.num_rows > 0 and rel_required.issubset(relationships.column_names):
+        candidates.append(relationships.select(["repo", "commit", "symbol"]))
+        related = relationships.select(["repo", "commit", "related_symbol"]).rename_columns(
+            ["repo", "commit", "symbol"]
+        )
+        candidates.append(related)
+    if not candidates:
+        return empty_table_for_table(table_key)
+    combined = normalize_table_for_join(concat_tables_unified(candidates))
+    distinct = _distinct_external_symbol_rows(combined)
+    info_required = {"repo", "commit", "symbol"}
+    if symbol_info.num_rows == 0 or not info_required.issubset(symbol_info.column_names):
+        missing = distinct
+    else:
+        info = normalize_table_for_join(symbol_info.select(["repo", "commit", "symbol"]))
+        missing = _left_anti_external_symbols(distinct, info)
+    if missing.num_rows == 0:
+        return empty_table_for_table(table_key)
+    return append_constant_columns(
+        missing,
+        {
+            "package_manager": None,
+            "package_name": None,
+            "package_version": None,
+            "created_at": datetime.now(UTC),
+        },
+    )
+
+
+def _distinct_external_symbol_rows(symbols: pa.Table) -> pa.Table:
+    if symbols.num_rows == 0:
+        return symbols
+    source = acero.Declaration(
+        "table_source",
+        acero.TableSourceNodeOptions(symbols),
+    )
+    distinct = acero.Declaration(
+        "aggregate",
+        acero.AggregateNodeOptions(
+            keys=[pc.field("repo"), pc.field("commit"), pc.field("symbol")],
+            aggregates=[],
+        ),
+        inputs=[source],
+    )
+    reader = distinct.to_reader(use_threads=True)
+    return reader_to_table(reader)
+
+
+def _left_anti_external_symbols(left: pa.Table, right: pa.Table) -> pa.Table:
+    if left.num_rows == 0:
+        return left
+    source_left = acero.Declaration(
+        "table_source",
+        acero.TableSourceNodeOptions(left),
+    )
+    source_right = acero.Declaration(
+        "table_source",
+        acero.TableSourceNodeOptions(right),
+    )
+    anti = acero.Declaration(
+        "hashjoin",
+        acero.HashJoinNodeOptions(
+            join_type="left anti",
+            left_keys=["repo", "commit", "symbol"],
+            right_keys=["repo", "commit", "symbol"],
+        ),
+        inputs=[source_left, source_right],
+    )
+    reader = anti.to_reader(use_threads=True)
+    return reader_to_table(reader)
+
+
 def scip__external_symbol_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
+    scip__occurrence_rows__base: InferableTabularInput,
+    scip__relationship_rows__base: InferableTabularInput,
+    scip__symbol_info_rows__base: InferableTabularInput,
 ) -> InferableTabularInput:
     """Return rows for core.scip_external_symbols.
 
@@ -1474,7 +1570,27 @@ def scip__external_symbol_rows__base(
     InferableTabularInput
         Tabular input for core.scip_external_symbols.
     """
-    return _scip_payload_frame(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
+    base = _scip_payload_frame(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
+    base_table = tabular_to_arrow_table(base)
+    derived = _derive_external_symbol_rows(
+        tabular_to_arrow_table(scip__occurrence_rows__base),
+        tabular_to_arrow_table(scip__relationship_rows__base),
+        tabular_to_arrow_table(scip__symbol_info_rows__base),
+    )
+    if derived.num_rows == 0:
+        return base_table
+    combined = concat_tables_unified([base_table, derived])
+    combined = dedupe_table_for_table(
+        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+        combined,
+        prefer_columns=("package_manager", "package_name", "package_version"),
+    )
+    return align_table_to_contract(
+        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+        combined,
+        target_name=SCIP_TARGET_NAME,
+        reporter=emit_alignment_report,
+    )
 
 
 def scip__index_metadata_rows__base(

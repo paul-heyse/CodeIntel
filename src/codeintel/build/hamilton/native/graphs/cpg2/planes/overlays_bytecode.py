@@ -12,8 +12,8 @@ import pyarrow as pa
 
 from codeintel.build.graphs.assembly import table_rows
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
+from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
-from codeintel.core.serialization.payload import encode_payload
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 AST_NODES_TABLE_KEY = "core.ast_nodes"
@@ -394,6 +394,7 @@ def _bytecode_ast_anchor_edge_row(
         "match_kind": anchor.match_kind,
         "ast_node_type": anchor.node_type,
     }
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_bc_instr_ast",
         {"code_unit_id": code_unit_id, "instr_id": instr_id, "ast_hash": anchor.node_hash},
@@ -407,7 +408,8 @@ def _bytecode_ast_anchor_edge_row(
         "edge_layer": "SYNTAX",
         "rel_path": rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -493,6 +495,7 @@ def _bytecode_callsite_edge_row(
         "callee_text": call_row.get("callee_text"),
         "match_kind": match_kind,
     }
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_bc_callsite",
         {"code_unit_id": code_unit_id, "instr_id": instr_id, "call_id": call_id},
@@ -506,7 +509,8 @@ def _bytecode_callsite_edge_row(
         "edge_layer": "CALL",
         "rel_path": rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -693,6 +697,7 @@ def _bytecode_callsite_symbol_edge_row(
         "confidence": confidence,
         "symbol_display_name": symbol_row.get("display_name"),
     }
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_bc_callsite_symbol",
         {
@@ -711,7 +716,8 @@ def _bytecode_callsite_symbol_edge_row(
         "edge_layer": "CALL",
         "rel_path": rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -867,6 +873,7 @@ def _py_bc_cfg_edges_to_rows(cfg_edges: pa.Table) -> list[dict[str, object]]:
             "cond_instr_id": row.get("cond_instr_id"),
             "exc_entry_index": row.get("exc_entry_index"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         ordinal = cpg_edge_ordinal(
             PY_BC_CFG_EDGES_TABLE_KEY,
             {"edge_id": row.get("edge_id")},
@@ -881,7 +888,8 @@ def _py_bc_cfg_edges_to_rows(cfg_edges: pa.Table) -> list[dict[str, object]]:
                 "edge_layer": "FLOW",
                 "rel_path": row.get("rel_path"),
                 "ordinal": ordinal,
-                "extras_json": _row_to_payload(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     return rows
@@ -1023,6 +1031,7 @@ def _bytecode_memory_edge_row(
         "match_kind": anchor.match_kind,
         "ast_node_type": anchor.node_type,
     }
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_bc_memory",
         {"code_unit_id": code_unit_id, "instr_id": instr_id, "edge_kind": edge_kind},
@@ -1036,7 +1045,8 @@ def _bytecode_memory_edge_row(
         "edge_layer": "FLOW",
         "rel_path": rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -1326,6 +1336,7 @@ def _stack_edge_row(context: _StackEdgeContext) -> dict[str, object]:
         "depth_before": context.depth_before,
         "depth_after": context.depth_after,
     }
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_bc_stack",
         {
@@ -1345,7 +1356,8 @@ def _stack_edge_row(context: _StackEdgeContext) -> dict[str, object]:
         "edge_layer": "FLOW",
         "rel_path": rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -2120,6 +2132,7 @@ def _defuse_binding_edge_row(
         "resolution_kind": _coerce_str(resolution.get("kind")) if resolution else None,
         "resolution_reason": _coerce_str(resolution.get("reason")) if resolution else None,
     }
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_defuse_binding",
         {
@@ -2138,7 +2151,8 @@ def _defuse_binding_edge_row(
         "edge_layer": "SYMBOL",
         "rel_path": rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -2171,6 +2185,7 @@ def _reaches_edge_row(
         "name": event.get("name"),
         "binding_id": event.get("binding_id"),
     }
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_reaches",
         {
@@ -2189,7 +2204,8 @@ def _reaches_edge_row(
         "edge_layer": "FLOW",
         "rel_path": rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -2347,14 +2363,6 @@ def _collect_rows(frame: pa.Table, *, columns: Sequence[str]) -> list[dict[str, 
     if not set(columns).issubset(frame.column_names):
         return []
     return [{column: row.get(column) for column in columns} for row in table_rows(frame)]
-
-
-def _row_to_payload(values: Mapping[str, object]) -> bytes:
-    payload = encode_payload(dict(values))
-    if payload is None:
-        msg = "Expected payload encoding to return bytes"
-        raise ValueError(msg)
-    return payload
 
 
 def _empty_edges() -> pa.Table:

@@ -65,6 +65,13 @@ class RelationScanOptions:
     batch_readahead: int | None = None
     fragment_readahead: int | None = DEFAULT_FRAGMENT_READAHEAD
     use_threads: bool | None = None
+    cache_metadata: bool | None = None
+    parquet_pre_buffer: bool | None = None
+    parquet_use_buffered_stream: bool | None = None
+    parquet_buffer_size: int | None = None
+    memory_pool: pa.MemoryPool | None = None
+    implicit_ordering: bool | None = None
+    require_sequenced_output: bool | None = None
     unify_schemas: bool = False
     schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
     metrics_enabled: bool = False
@@ -657,9 +664,16 @@ def _scan_dataset(
         fragment_readahead=context.scan_options.fragment_readahead,
         filter_expression=filter_expression,
         use_threads=context.scan_options.use_threads,
+        cache_metadata=context.scan_options.cache_metadata,
+        parquet_pre_buffer=context.scan_options.parquet_pre_buffer,
+        parquet_use_buffered_stream=context.scan_options.parquet_use_buffered_stream,
+        parquet_buffer_size=context.scan_options.parquet_buffer_size,
+        memory_pool=context.scan_options.memory_pool,
         metrics_enabled=context.scan_options.metrics_enabled,
         schema=schema,
         columns=projection_columns,
+        implicit_ordering=context.scan_options.implicit_ordering,
+        require_sequenced_output=context.scan_options.require_sequenced_output,
         unify_schemas=context.scan_options.unify_schemas,
         schema_promote_options=context.scan_options.schema_promote_options,
     )

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Mapping, Sequence
+from typing import Literal
 
 import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -19,10 +21,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import (
-    ArrowJoinSpec,
     align_table_to_contract,
-    arrow_join_tables,
-    build_join_options,
     dedupe_table_for_table,
     emit_alignment_report,
 )
@@ -34,7 +33,10 @@ from codeintel.build.tabular.compute_masks import (
     is_null_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.conversion import reader_to_table, tabular_to_scoped_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan
 from codeintel.build.tabular.table_ops import ensure_table_columns
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -95,6 +97,88 @@ def _align_tables_for_concat(tables: list[pa.Table]) -> list[pa.Table]:
             resolved = ensure_table_columns(resolved, [*names, *missing])
         aligned.append(resolved.select(all_columns))
     return aligned
+
+
+_JOIN_STRING_KEYS = {
+    "repo",
+    "commit",
+    "rel_path",
+    "producer",
+    "scip_symbol",
+}
+_JOIN_INT_KEYS = {
+    "start_line",
+    "start_col",
+    "end_line",
+    "end_col",
+    "start_byte",
+    "end_byte",
+    "occ_start_line",
+    "occ_start_col",
+    "occ_end_line",
+    "occ_end_col",
+    "occ_start_byte",
+    "occ_end_byte",
+}
+SortKey = tuple[str, Literal["ascending", "descending"]]
+
+
+def _join_casts(keys: Sequence[str]) -> dict[str, str]:
+    casts: dict[str, str] = {}
+    for key in keys:
+        if key in _JOIN_STRING_KEYS:
+            casts[key] = "string"
+        elif key in _JOIN_INT_KEYS:
+            casts[key] = "int64"
+    return casts
+
+
+def _project_with_cast(
+    table: pa.Table,
+    *,
+    casts: Mapping[str, str],
+) -> dict[str, pc.Expression]:
+    exprs: dict[str, pc.Expression] = {}
+    for name in table.column_names:
+        if name in casts:
+            exprs[name] = E.cast(E.field(name), casts[name])
+        else:
+            exprs[name] = E.field(name)
+    return exprs
+
+
+def _join_key_filter(keys: Sequence[str]) -> pc.Expression:
+    return E.and_(*(E.is_valid(key) for key in keys))
+
+
+def _hash_join_tables(
+    left: pa.Table,
+    right: pa.Table,
+    *,
+    left_keys: Sequence[str],
+    right_keys: Sequence[str],
+    how: JoinType = "left outer",
+) -> pa.Table:
+    left_exprs = _project_with_cast(left, casts=_join_casts(left_keys))
+    right_exprs = _project_with_cast(right, casts=_join_casts(right_keys))
+    left_plan = Plan.table(left).project(left_exprs).filter(_join_key_filter(left_keys))
+    right_plan = Plan.table(right).project(right_exprs).filter(_join_key_filter(right_keys))
+    right_output = [name for name in right_exprs if name not in left_exprs]
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=list(left_keys),
+            right_keys=list(right_keys),
+            how=how,
+            left_output=list(left_exprs.keys()),
+            right_output=right_output,
+        ),
+    )
+    table = reader_to_table(joined.to_reader(use_threads=True))
+    if table.num_rows == 0:
+        return table
+    sort_keys: list[SortKey] = [(key, "ascending") for key in left_keys]
+    return table.take(stable_sort_indices(table, sort_keys=sort_keys))
 
 
 def _dedupe_for_table(table: pa.Table, *, table_key: str) -> pa.Table:
@@ -205,10 +289,12 @@ def _occurrence_resolution_table(
         "occ_end_line",
         "occ_end_col",
     ]
-    # Contract: span rows are unique per occurrence join key.
-    join_spec = ArrowJoinSpec(on=join_keys, how="left", validate="m:1")
-    join_options = build_join_options(syntax, span)
-    return arrow_join_tables(syntax, span, spec=join_spec, options=join_options)
+    return _hash_join_tables(
+        syntax,
+        span,
+        left_keys=join_keys,
+        right_keys=join_keys,
+    )
 
 
 def _resolve_facts(
@@ -262,15 +348,12 @@ def _resolve_occurrence_joins(
 
     occ_bytes_mask = _null_mask(occurrences, "occ_start_byte", "occ_end_byte")
     occ_bytes = _filter_table(occurrences, occ_bytes_mask)
-    byte_spec = _occurrence_byte_join_spec()
-    facts_with_bytes = _cast_join_key_int64(facts_with_bytes, byte_spec.left_on)
-    occ_bytes = _cast_join_key_int64(occ_bytes, byte_spec.right_on)
-    join_options = build_join_options(facts_with_bytes, occ_bytes)
-    bytes_join = arrow_join_tables(
+    byte_left, byte_right = _occurrence_byte_join_keys()
+    bytes_join = _hash_join_tables(
         facts_with_bytes,
         occ_bytes,
-        spec=byte_spec,
-        options=join_options,
+        left_keys=byte_left,
+        right_keys=byte_right,
     )
     bytes_join = _attach_column(bytes_join, "extras_json", extras_bytes)
     fallback = _filter_table(bytes_join, is_null_mask(bytes_join["scip_symbol"]))
@@ -296,15 +379,12 @@ def _filter_table(table: pa.Table, mask: pa.Array | pa.ChunkedArray) -> pa.Table
 
 def _line_join_occurrences(left: pa.Table, occurrences: pa.Table) -> pa.Table:
     stripped_left, extras_json = _detach_column(left, "extras_json")
-    line_spec = _occurrence_line_join_spec()
-    stripped_left = _cast_join_key_int64(stripped_left, line_spec.left_on)
-    occurrences = _cast_join_key_int64(occurrences, line_spec.right_on)
-    join_options = build_join_options(stripped_left, occurrences)
-    joined = arrow_join_tables(
+    line_left, line_right = _occurrence_line_join_keys()
+    joined = _hash_join_tables(
         stripped_left,
         occurrences,
-        spec=line_spec,
-        options=join_options,
+        left_keys=line_left,
+        right_keys=line_right,
     )
     return _attach_column(joined, "extras_json", extras_json)
 
@@ -328,39 +408,11 @@ def _attach_column(
     return table.append_column(column_name, column)
 
 
-def _cast_join_key_int64(table: pa.Table, keys: Sequence[str] | None) -> pa.Table:
-    if not keys:
-        return table
-    columns: list[pa.Array | pa.ChunkedArray] = []
-    changed = False
-    key_set = set(keys)
-    for name in table.column_names:
-        column = table[name]
-        if name in key_set and pa.types.is_integer(column.type) and column.type != pa.int64():
-            casted = _cast_to_int64(column)
-            if casted is not column:
-                column = casted
-                changed = True
-        columns.append(column)
-    if not changed:
-        return table
-    return pa.Table.from_arrays(columns, names=list(table.column_names))
-
-
-def _cast_to_int64(
-    column: pa.Array | pa.ChunkedArray,
-) -> pa.Array | pa.ChunkedArray:
-    try:
-        return cast_array(column, pa.int64(), safe=False)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
-        return column
-
-
-def _occurrence_byte_join_spec() -> ArrowJoinSpec:
+def _occurrence_byte_join_keys() -> tuple[list[str], list[str]]:
     # Contract: occurrence spans are unique per byte span.
-    return ArrowJoinSpec(
-        left_on=["repo", "commit", "rel_path", "producer", "start_byte", "end_byte"],
-        right_on=[
+    return (
+        ["repo", "commit", "rel_path", "producer", "start_byte", "end_byte"],
+        [
             "repo",
             "commit",
             "rel_path",
@@ -368,15 +420,13 @@ def _occurrence_byte_join_spec() -> ArrowJoinSpec:
             "occ_start_byte",
             "occ_end_byte",
         ],
-        how="left",
-        validate="m:1",
     )
 
 
-def _occurrence_line_join_spec() -> ArrowJoinSpec:
+def _occurrence_line_join_keys() -> tuple[list[str], list[str]]:
     # Contract: occurrence spans are unique per line/col span.
-    return ArrowJoinSpec(
-        left_on=[
+    return (
+        [
             "repo",
             "commit",
             "rel_path",
@@ -386,7 +436,7 @@ def _occurrence_line_join_spec() -> ArrowJoinSpec:
             "end_line",
             "end_col",
         ],
-        right_on=[
+        [
             "repo",
             "commit",
             "rel_path",
@@ -396,8 +446,6 @@ def _occurrence_line_join_spec() -> ArrowJoinSpec:
             "occ_end_line",
             "occ_end_col",
         ],
-        how="left",
-        validate="m:1",
     )
 
 

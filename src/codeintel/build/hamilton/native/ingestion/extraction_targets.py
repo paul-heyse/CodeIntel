@@ -21,8 +21,12 @@ from __future__ import annotations
 import importlib.util
 import logging
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import Literal
+
+import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -49,6 +53,18 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular.arrow_ops import (
+    align_table_to_contract,
+    dedupe_table_for_table,
+    emit_alignment_report,
+    normalize_table_for_join,
+)
+from codeintel.build.tabular.compute_helpers import array_from_compute, safe_filter
+from codeintel.build.tabular.compute_masks import equal_mask, or_kleene
+from codeintel.build.tabular.conversion import reader_to_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.execution.ids import RUN_PREFIX_INGEST, new_run_id
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
@@ -60,9 +76,6 @@ from codeintel.ingestion.compute.inspect_extract import InspectExtractStep
 from codeintel.ingestion.compute.symtable_extract import SymtableExtractStep
 from codeintel.ingestion.infrastructure.py_frontend import PyFrontend, PyFrontendOptions
 from codeintel.ingestion.ports.discovery import ModuleRecord
-
-if TYPE_CHECKING:
-    import pyarrow as pa
 
 log = logging.getLogger(__name__)
 
@@ -123,6 +136,7 @@ PY_SYM_SCOPE_EDGES_TABLE_KEY = "core.py_sym_scope_edges"
 PY_SYM_NAMESPACE_EDGES_TABLE_KEY = "core.py_sym_namespace_edges"
 PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY = "core.py_sym_function_partitions"
 PY_SYM_BINDINGS_TABLE_KEY = "core.py_sym_bindings"
+PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY = "core.py_sym_unresolved_bindings"
 PY_SYM_RESOLUTION_EDGES_TABLE_KEY = "core.py_sym_resolution_edges"
 PY_SYM_TABLE_KEYS = (
     PY_SYM_SCOPES_TABLE_KEY,
@@ -131,6 +145,7 @@ PY_SYM_TABLE_KEYS = (
     PY_SYM_NAMESPACE_EDGES_TABLE_KEY,
     PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY,
     PY_SYM_BINDINGS_TABLE_KEY,
+    PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY,
     PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
 )
 
@@ -1353,6 +1368,120 @@ def t__symtable__run(
     return coerced
 
 
+_JOIN_STRING_KEYS = {"repo", "commit", "rel_path", "binding_id"}
+SortKey = tuple[str, Literal["ascending", "descending"]]
+
+
+def _join_casts(keys: Sequence[str]) -> dict[str, str]:
+    casts: dict[str, str] = {}
+    for key in keys:
+        if key in _JOIN_STRING_KEYS:
+            casts[key] = "string"
+    return casts
+
+
+def _project_with_cast(
+    table: pa.Table,
+    *,
+    casts: dict[str, str],
+) -> dict[str, pc.Expression]:
+    exprs: dict[str, pc.Expression] = {}
+    for name in table.column_names:
+        if name in casts:
+            exprs[name] = E.cast(E.field(name), casts[name])
+        else:
+            exprs[name] = E.field(name)
+    return exprs
+
+
+def _join_key_filter(keys: Sequence[str]) -> pc.Expression:
+    return E.and_(*(E.is_valid(key) for key in keys))
+
+
+def _hash_join_tables(
+    left: pa.Table,
+    right: pa.Table,
+    *,
+    left_keys: Sequence[str],
+    right_keys: Sequence[str],
+    how: JoinType = "left outer",
+) -> pa.Table:
+    left_exprs = _project_with_cast(left, casts=_join_casts(left_keys))
+    right_exprs = _project_with_cast(right, casts=_join_casts(right_keys))
+    left_plan = Plan.table(left).project(left_exprs).filter(_join_key_filter(left_keys))
+    right_plan = Plan.table(right).project(right_exprs).filter(_join_key_filter(right_keys))
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=list(left_keys),
+            right_keys=list(right_keys),
+            how=how,
+            left_output=list(left_exprs.keys()),
+        ),
+    )
+    table = reader_to_table(joined.to_reader(use_threads=True))
+    if table.num_rows == 0:
+        return table
+    sort_keys: list[SortKey] = [(key, "ascending") for key in left_keys]
+    return table.take(stable_sort_indices(table, sort_keys=sort_keys))
+
+
+def _build_py_sym_unresolved_bindings(
+    resolution_edges: pa.Table,
+    bindings: pa.Table,
+) -> pa.Table:
+    table_key = PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY
+    required = {"repo", "commit", "rel_path", "dst_binding_id", "kind"}
+    if resolution_edges.num_rows == 0 or not required.issubset(resolution_edges.column_names):
+        return empty_table_for_table(table_key)
+    ends_with_mask = array_from_compute(
+        "ends_with",
+        [resolution_edges["dst_binding_id"], pa.scalar(":unknown")],
+    )
+    if ends_with_mask is None:
+        ends_with_mask = array_from_compute(
+            "match_substring_regex",
+            [resolution_edges["dst_binding_id"], pa.scalar(":unknown$")],
+        )
+    if ends_with_mask is None:
+        ends_with_mask = pa.array([False] * resolution_edges.num_rows)
+    unknown_mask = or_kleene(
+        ends_with_mask,
+        equal_mask(resolution_edges["kind"], "UNKNOWN"),
+    )
+    unknown = safe_filter(resolution_edges, unknown_mask)
+    if unknown.num_rows == 0:
+        return empty_table_for_table(table_key)
+    unknown = unknown.select(
+        ["repo", "commit", "rel_path", "dst_binding_id", "kind", "confidence", "reason"]
+    ).rename_columns(
+        ["repo", "commit", "rel_path", "binding_id", "resolution_kind", "confidence", "reason"]
+    )
+    binding_required = {"repo", "commit", "rel_path", "binding_id"}
+    if bindings.num_rows == 0 or not binding_required.issubset(bindings.column_names):
+        missing = unknown
+    else:
+        left = normalize_table_for_join(unknown)
+        right = normalize_table_for_join(
+            bindings.select(["repo", "commit", "rel_path", "binding_id"])
+        )
+        join_keys = ["repo", "commit", "rel_path", "binding_id"]
+        missing = _hash_join_tables(
+            left,
+            right,
+            left_keys=join_keys,
+            right_keys=join_keys,
+            how="left anti",
+        )
+    missing = dedupe_table_for_table(table_key, missing)
+    return align_table_to_contract(
+        table_key,
+        missing,
+        target_name=SYMTABLE_TARGET_NAME,
+        reporter=emit_alignment_report,
+    )
+
+
 def t__symtable__ingest(
     t__symtable__run: SymtableToolOutput,
 ) -> IngestStep[TabularByTable]:
@@ -1379,6 +1508,10 @@ def t__symtable__ingest(
             )
         )
 
+    unresolved_bindings = _build_py_sym_unresolved_bindings(
+        t__symtable__run.resolution_edge_rows,
+        t__symtable__run.binding_rows,
+    )
     payload = {
         PY_SYM_SCOPES_TABLE_KEY: t__symtable__run.scope_rows,
         PY_SYM_SYMBOLS_TABLE_KEY: t__symtable__run.symbol_rows,
@@ -1386,6 +1519,7 @@ def t__symtable__ingest(
         PY_SYM_NAMESPACE_EDGES_TABLE_KEY: t__symtable__run.namespace_edge_rows,
         PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: t__symtable__run.function_partition_rows,
         PY_SYM_BINDINGS_TABLE_KEY: t__symtable__run.binding_rows,
+        PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY: unresolved_bindings,
         PY_SYM_RESOLUTION_EDGES_TABLE_KEY: t__symtable__run.resolution_edge_rows,
     }
     table_counts = {
@@ -1395,6 +1529,7 @@ def t__symtable__ingest(
         PY_SYM_NAMESPACE_EDGES_TABLE_KEY: t__symtable__run.namespace_edge_row_count,
         PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: t__symtable__run.function_partition_row_count,
         PY_SYM_BINDINGS_TABLE_KEY: t__symtable__run.binding_row_count,
+        PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY: unresolved_bindings.num_rows,
         PY_SYM_RESOLUTION_EDGES_TABLE_KEY: t__symtable__run.resolution_edge_row_count,
     }
     return IngestStep(
@@ -1830,6 +1965,10 @@ _SYMTABLE_TARGET_SPEC = ToolTargetSpec(
         TableOutputSpec(
             table_key=PY_SYM_BINDINGS_TABLE_KEY,
             node_name="symtable__binding_rows",
+        ),
+        TableOutputSpec(
+            table_key=PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY,
+            node_name="symtable__unresolved_binding_rows",
         ),
         TableOutputSpec(
             table_key=PY_SYM_RESOLUTION_EDGES_TABLE_KEY,

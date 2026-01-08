@@ -13,9 +13,10 @@ import pyarrow as pa
 from codeintel.build.graphs.assembly import ensure_table_columns, table_rows
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
 from codeintel.build.tabular.arrow_ops import concat_tables_unified
+from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.schemas.row_models import columns_for_table_key
-from codeintel.core.serialization.payload import decode_payload, encode_payload
+from codeintel.core.serialization.payload import decode_payload
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 AST_NODES_TABLE_KEY = "core.ast_nodes"
@@ -692,6 +693,7 @@ def _inspect_arg_to_param_edge_row(
         "param_kind": param.get("kind"),
         "mapping_kind": mapping_kind,
     }
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_arg_to_param_inspect",
         {
@@ -711,7 +713,8 @@ def _inspect_arg_to_param_edge_row(
         "edge_layer": "FLOW",
         "rel_path": context.rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -971,6 +974,7 @@ def _py_inspect_signature_edges_to_rows(
             "eval_str": row.get("eval_str"),
             "status": row.get("status"),
         }
+        extras_kv = extras_kv_from_mapping(extras)
         ordinal = cpg_edge_ordinal(
             "graph.cpg_edges_inspect_signature",
             {"signature_id": signature_id},
@@ -985,7 +989,8 @@ def _py_inspect_signature_edges_to_rows(
                 "edge_layer": "SYMBOL",
                 "rel_path": None,
                 "ordinal": ordinal,
-                "extras_json": _row_to_payload(extras),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     for row in table_rows(params):
@@ -1011,6 +1016,7 @@ def _py_inspect_signature_edges_to_rows(
             "kind": row.get("kind"),
             "status": row.get("status"),
         }
+        extras_kv = extras_kv_from_mapping(extras)
         ordinal = cpg_edge_ordinal(
             "graph.cpg_edges_inspect_signature_param",
             {"signature_id": signature_id, "param_index": param_index},
@@ -1025,7 +1031,8 @@ def _py_inspect_signature_edges_to_rows(
                 "edge_layer": "SYMBOL",
                 "rel_path": None,
                 "ordinal": ordinal,
-                "extras_json": _row_to_payload(extras),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     return edges
@@ -1080,6 +1087,7 @@ def _inspect_ast_edge_row(
     rel_path: object,
     extras: Mapping[str, object],
 ) -> dict[str, object]:
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_inspect_ast",
         {"object_id": context.object_id, "ast_hash": node_hash},
@@ -1096,7 +1104,8 @@ def _inspect_ast_edge_row(
         "edge_layer": "SYMBOL",
         "rel_path": rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -1272,53 +1281,72 @@ def _inspect_to_scip_edges_to_rows(
     edges: list[dict[str, object]] = []
     seen: set[tuple[str, str]] = set()
     for row in table_rows(inspect_objects):
-        repo = _coerce_str(row.get("repo"))
-        commit = _coerce_str(row.get("commit"))
-        object_id = _coerce_str(row.get("object_id"))
-        if _has_missing(repo, commit, object_id):
-            continue
-        full_qualname = _inspect_full_qualname(
-            _coerce_str(row.get("module_name")),
-            _coerce_str(row.get("qualname")),
+        edges.extend(
+            _inspect_symbol_edges_for_object(
+                row,
+                symbols_by_key=symbols_by_key,
+                seen=seen,
+            )
         )
-        if full_qualname is None:
+    return edges
+
+
+def _inspect_symbol_edges_for_object(
+    row: Mapping[str, object],
+    *,
+    symbols_by_key: Mapping[tuple[str, str, str], list[Mapping[str, object]]],
+    seen: set[tuple[str, str]],
+) -> list[dict[str, object]]:
+    repo = _coerce_str(row.get("repo"))
+    commit = _coerce_str(row.get("commit"))
+    object_id = _coerce_str(row.get("object_id"))
+    if _has_missing(repo, commit, object_id):
+        return []
+    full_qualname = _inspect_full_qualname(
+        _coerce_str(row.get("module_name")),
+        _coerce_str(row.get("qualname")),
+    )
+    if full_qualname is None:
+        return []
+    symbol_key = (cast("str", repo), cast("str", commit), full_qualname)
+    edges: list[dict[str, object]] = []
+    for symbol in symbols_by_key.get(symbol_key, []):
+        symbol_id = _coerce_str(symbol.get("symbol"))
+        if symbol_id is None:
             continue
-        symbol_key = (cast("str", repo), cast("str", commit), full_qualname)
-        for symbol in symbols_by_key.get(symbol_key, []):
-            symbol_id = _coerce_str(symbol.get("symbol"))
-            if symbol_id is None:
-                continue
-            key = (cast("str", object_id), symbol_id)
-            if key in seen:
-                continue
-            extras = {
-                "match_kind": "QUALNAME",
-                "symbol_display_name": symbol.get("display_name"),
+        key = (cast("str", object_id), symbol_id)
+        if key in seen:
+            continue
+        extras = {
+            "match_kind": "QUALNAME",
+            "symbol_display_name": symbol.get("display_name"),
+        }
+        extras_kv = extras_kv_from_mapping(extras)
+        ordinal = cpg_edge_ordinal(
+            "graph.cpg_edges_inspect_symbol",
+            {"object_id": object_id, "symbol": symbol_id},
+        )
+        edges.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "src_cpg_node_id": cpg_node_id(
+                    PY_INSPECT_OBJECTS_TABLE_KEY,
+                    {"repo": repo, "commit": commit, "object_id": object_id},
+                ),
+                "dst_cpg_node_id": cpg_node_id(
+                    SCIP_SYMBOLS_TABLE_KEY,
+                    {"repo": repo, "commit": commit, "symbol": symbol_id},
+                ),
+                "edge_kind": "INSPECT_SYMBOL",
+                "edge_layer": "SYMBOL",
+                "rel_path": None,
+                "ordinal": ordinal,
+                "extras": None,
+                "extras_kv": extras_kv,
             }
-            ordinal = cpg_edge_ordinal(
-                "graph.cpg_edges_inspect_symbol",
-                {"object_id": object_id, "symbol": symbol_id},
-            )
-            edges.append(
-                {
-                    "repo": repo,
-                    "commit": commit,
-                    "src_cpg_node_id": cpg_node_id(
-                        PY_INSPECT_OBJECTS_TABLE_KEY,
-                        {"repo": repo, "commit": commit, "object_id": object_id},
-                    ),
-                    "dst_cpg_node_id": cpg_node_id(
-                        SCIP_SYMBOLS_TABLE_KEY,
-                        {"repo": repo, "commit": commit, "symbol": symbol_id},
-                    ),
-                    "edge_kind": "INSPECT_SYMBOL",
-                    "edge_layer": "SYMBOL",
-                    "rel_path": None,
-                    "ordinal": ordinal,
-                    "extras_json": _row_to_payload(extras),
-                }
-            )
-            seen.add(key)
+        )
+        seen.add(key)
     return edges
 
 
@@ -1354,6 +1382,7 @@ def _py_inspect_class_mro_edges_to_rows(class_mro: pa.Table) -> list[dict[str, o
             {"repo": repo, "commit": commit, "object_id": base_object_id},
         )
         extras = {"mro_index": mro_index, "status": row.get("status")}
+        extras_kv = extras_kv_from_mapping(extras)
         ordinal = cpg_edge_ordinal(
             "graph.cpg_edges_inspect_class_mro",
             {
@@ -1372,7 +1401,8 @@ def _py_inspect_class_mro_edges_to_rows(class_mro: pa.Table) -> list[dict[str, o
                 "edge_layer": "SYMBOL",
                 "rel_path": None,
                 "ordinal": ordinal,
-                "extras_json": _row_to_payload(extras),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     return edges
@@ -1460,6 +1490,7 @@ def _inspect_class_attr_edge(
         PY_INSPECT_OBJECTS_TABLE_KEY,
         {"repo": context.repo, "commit": context.commit, "object_id": target_object_id},
     )
+    extras_kv = extras_kv_from_mapping(context.extras)
     ordinal = cpg_edge_ordinal("graph.cpg_edges_inspect_class_attr", ordinal_values)
     return {
         "repo": context.repo,
@@ -1470,7 +1501,8 @@ def _inspect_class_attr_edge(
         "edge_layer": "SYMBOL",
         "rel_path": None,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(context.extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -1547,6 +1579,7 @@ def _runtime_state_has_state_edges(runtime_state: pa.Table) -> pa.Table:
         if _has_missing(repo, commit, object_id, frame_object_id):
             continue
         extras = _runtime_state_extras(row)
+        extras_kv = extras_kv_from_mapping(extras)
         ordinal = cpg_edge_ordinal(
             "graph.cpg_edges_inspect_runtime_state",
             {
@@ -1571,7 +1604,8 @@ def _runtime_state_has_state_edges(runtime_state: pa.Table) -> pa.Table:
                 "edge_layer": "FLOW",
                 "rel_path": None,
                 "ordinal": ordinal,
-                "extras_json": _row_to_payload(extras),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, _ = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
@@ -1723,6 +1757,7 @@ def _runtime_state_edges_for_instr(
 ) -> list[dict[str, object]]:
     edges: list[dict[str, object]] = []
     for instr_id in instr_matches:
+        extras_kv = extras_kv_from_mapping(context.extras)
         ordinal = cpg_edge_ordinal(
             "graph.cpg_edges_inspect_runtime_state",
             {
@@ -1755,7 +1790,8 @@ def _runtime_state_edges_for_instr(
                 "edge_layer": "FLOW",
                 "rel_path": rel_path,
                 "ordinal": ordinal,
-                "extras_json": _row_to_payload(context.extras),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     return edges
@@ -1844,6 +1880,7 @@ def _py_inspect_unwrap_edges_to_rows(unwrap_hops: pa.Table) -> list[dict[str, ob
                 "stop_reason": items[idx].get("stop_reason"),
                 "edge_kind": edge_kind,
             }
+            extras_kv = extras_kv_from_mapping(extras)
             hop_value = _coerce_int(items[idx].get("hop"))
             ordinal = cpg_edge_ordinal(
                 "graph.cpg_edges_inspect_wraps",
@@ -1863,7 +1900,8 @@ def _py_inspect_unwrap_edges_to_rows(unwrap_hops: pa.Table) -> list[dict[str, ob
                     "edge_layer": "SYMBOL",
                     "rel_path": None,
                     "ordinal": ordinal,
-                    "extras_json": _row_to_payload(extras),
+                    "extras": None,
+                    "extras_kv": extras_kv,
                 }
             )
     return edges
@@ -1993,14 +2031,6 @@ def _collect_rows(frame: pa.Table, *, columns: Sequence[str]) -> list[dict[str, 
     if not set(columns).issubset(frame.column_names):
         return []
     return [{column: row.get(column) for column in columns} for row in table_rows(frame)]
-
-
-def _row_to_payload(values: Mapping[str, object]) -> bytes:
-    payload = encode_payload(dict(values))
-    if payload is None:
-        msg = "Expected payload encoding to return bytes"
-        raise ValueError(msg)
-    return payload
 
 
 def _coerce_str(value: object) -> str | None:

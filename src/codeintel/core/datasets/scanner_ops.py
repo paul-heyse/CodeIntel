@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import pyarrow as pa
@@ -27,7 +27,7 @@ from codeintel.core.constants import (
 class ScannerParams:
     """Convenience parameters for dataset scanning."""
 
-    columns: Sequence[str] | None = None
+    columns: Sequence[str] | Mapping[str, ds.Expression] | None = None
     filter_expression: ds.Expression | None = None
     batch_size: int | None = None
     batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
@@ -39,6 +39,8 @@ class ScannerParams:
     parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
     memory_pool: pa.MemoryPool | None = None
     schema: pa.Schema | None = None
+    implicit_ordering: bool | None = None
+    require_sequenced_output: bool | None = None
     unify_schemas: bool = False
     schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
     metrics_enabled: bool = False
@@ -65,6 +67,8 @@ class ScannerParams:
             memory_pool=self.memory_pool,
             schema=self.schema,
             columns=self.columns,
+            implicit_ordering=self.implicit_ordering,
+            require_sequenced_output=self.require_sequenced_output,
             unify_schemas=self.unify_schemas,
             schema_promote_options=self.schema_promote_options,
             metrics_enabled=self.metrics_enabled,

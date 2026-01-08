@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -160,12 +161,18 @@ def test_cfg_dfg_metrics_columns(tmp_path: Path) -> None:
     metrics_analysis = cfg_dfg_metrics_analysis(env, metrics_inputs)
 
     def _columns(frame: object) -> list[str]:
-        if hasattr(frame, "column_names"):
-            return list(frame.column_names)
-        if hasattr(frame, "columns"):
-            return list(frame.columns)
-        if hasattr(frame, "collect"):
-            return list(frame.collect().columns)
+        column_names = getattr(frame, "column_names", None)
+        if isinstance(column_names, Sequence):
+            return list(column_names)
+        columns = getattr(frame, "columns", None)
+        if isinstance(columns, Sequence):
+            return list(columns)
+        collect = getattr(frame, "collect", None)
+        if callable(collect):
+            collected = collect()
+            collected_columns = getattr(collected, "columns", None)
+            if isinstance(collected_columns, Sequence):
+                return list(collected_columns)
         msg = f"Unsupported metrics frame type: {type(frame).__name__}"
         raise TypeError(msg)
 

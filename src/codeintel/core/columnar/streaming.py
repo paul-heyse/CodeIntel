@@ -66,7 +66,9 @@ class DatasetScanOptions:
     parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
     memory_pool: pa.MemoryPool | None = None
     schema: pa.Schema | None = None
-    columns: Sequence[str] | None = None
+    columns: Sequence[str] | Mapping[str, ds.Expression] | None = None
+    implicit_ordering: bool | None = None
+    require_sequenced_output: bool | None = None
     unify_schemas: bool = False
     schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
     metrics_enabled: bool = False
@@ -582,22 +584,23 @@ def _build_scan_kwargs(
     fragment_scan_options: object | None,
 ) -> dict[str, object]:
     scan_kwargs: dict[str, object] = {"batch_size": options.batch_size}
-    if options.batch_readahead is not None:
-        scan_kwargs["batch_readahead"] = options.batch_readahead
-    if options.fragment_readahead is not None:
-        scan_kwargs["fragment_readahead"] = options.fragment_readahead
-    if options.cache_metadata is not None:
-        scan_kwargs["cache_metadata"] = options.cache_metadata
-    if options.use_threads is not None:
-        scan_kwargs["use_threads"] = options.use_threads
-    if options.memory_pool is not None:
-        scan_kwargs["memory_pool"] = options.memory_pool
+    optional_kwargs: dict[str, object | None] = {
+        "batch_readahead": options.batch_readahead,
+        "fragment_readahead": options.fragment_readahead,
+        "cache_metadata": options.cache_metadata,
+        "use_threads": options.use_threads,
+        "memory_pool": options.memory_pool,
+        "implicit_ordering": options.implicit_ordering,
+        "require_sequenced_output": options.require_sequenced_output,
+        "schema": schema,
+        "fragment_scan_options": fragment_scan_options,
+    }
+    scan_kwargs.update({key: value for key, value in optional_kwargs.items() if value is not None})
     if options.columns is not None:
-        scan_kwargs["columns"] = list(options.columns)
-    if schema is not None:
-        scan_kwargs["schema"] = schema
-    if fragment_scan_options is not None:
-        scan_kwargs["fragment_scan_options"] = fragment_scan_options
+        if isinstance(options.columns, Mapping):
+            scan_kwargs["columns"] = options.columns
+        else:
+            scan_kwargs["columns"] = list(options.columns)
     return scan_kwargs
 
 

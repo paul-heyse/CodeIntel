@@ -7,8 +7,8 @@ import pyarrow as pa
 from codeintel.build.graphs.assembly import table_rows
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import pk_from_row
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_node_id, cpg_source_pk_json
+from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
-from codeintel.core.serialization.payload import encode_payload
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 PY_BC_CODE_UNITS_TABLE_KEY = "core.py_bc_code_units"
@@ -50,6 +50,7 @@ def cpg2_nodes__py_bc_code_units(code_units: pa.Table) -> pa.Table:
             "exceptiontable_len": row.get("exceptiontable_len"),
             "python_version": row.get("python_version"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         rows.append(
             {
                 "repo": row.get("repo"),
@@ -61,7 +62,8 @@ def cpg2_nodes__py_bc_code_units(code_units: pa.Table) -> pa.Table:
                 "rel_path": row.get("rel_path"),
                 "start_byte": row.get("span_start_byte"),
                 "end_byte": row.get("span_end_byte"),
-                "extras_json": _payload_bytes(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, _ = table_for_rows(CPG_NODES_TABLE_KEY, rows)
@@ -104,6 +106,7 @@ def cpg2_nodes__py_bc_instructions(instructions: pa.Table) -> pa.Table:
             "line_number": row.get("line_number"),
             "pos": row.get("pos"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         rows.append(
             {
                 "repo": row.get("repo"),
@@ -115,7 +118,8 @@ def cpg2_nodes__py_bc_instructions(instructions: pa.Table) -> pa.Table:
                 "rel_path": row.get("rel_path"),
                 "start_byte": row.get("span_start_byte"),
                 "end_byte": row.get("span_end_byte"),
-                "extras_json": _payload_bytes(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, _ = table_for_rows(CPG_NODES_TABLE_KEY, rows)
@@ -145,6 +149,7 @@ def cpg2_nodes__py_bc_blocks(blocks: pa.Table) -> pa.Table:
             "first_instr_index": row.get("first_instr_index"),
             "last_instr_index": row.get("last_instr_index"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         rows.append(
             {
                 "repo": row.get("repo"),
@@ -156,19 +161,12 @@ def cpg2_nodes__py_bc_blocks(blocks: pa.Table) -> pa.Table:
                 "rel_path": row.get("rel_path"),
                 "start_byte": row.get("anchor_span_start_byte"),
                 "end_byte": row.get("anchor_span_end_byte"),
-                "extras_json": _payload_bytes(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, _ = table_for_rows(CPG_NODES_TABLE_KEY, rows)
     return table
-
-
-def _payload_bytes(values: dict[str, object]) -> bytes:
-    encoded = encode_payload(values)
-    if encoded is None:
-        msg = "Expected payload encoding to return bytes"
-        raise ValueError(msg)
-    return encoded
 
 
 __all__ = [

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 
 import pyarrow as pa
@@ -15,15 +14,7 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     identity_keys,
     lookup_keys,
 )
-from codeintel.build.tabular.arrow_ops import (
-    ArrowJoinSpec,
-    JoinFilterClause,
-    arrow_join_tables,
-    build_join_options,
-    iter_array_values,
-    join_filter_expr,
-    normalize_table_for_join,
-)
+from codeintel.build.tabular.arrow_ops import iter_array_values, normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import (
     safe_filter,
@@ -31,8 +22,12 @@ from codeintel.build.tabular.compute_helpers import (
     scalar_from_compute,
 )
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
+from codeintel.build.tabular.conversion import reader_to_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.extras_ops import extras_kv_from_payload
+from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
 from codeintel.core.columnar.rows import empty_table_for_table
-from codeintel.core.serialization.payload import encode_payload
 
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -94,46 +89,98 @@ def cpg2_nodes__syntax_nodes(
     required = set(identity_keys(SYNTAX_NODES_TABLE_KEY))
     if not required.issubset(set(syntax_nodes.column_names)):
         return _empty_node_table()
-    normalized = normalize_table_for_join(
-        _encode_extras_json(syntax_nodes, column_name="extras_json")
-    )
-    anchor_map = normalize_table_for_join(
-        _syntax_anchor_map(normalized, include_source_pk_json=True)
-    )
-    join_spec = ArrowJoinSpec(
-        on=["repo", "commit", "rel_path", "producer", "node_id"],
-        how="left",
-    )
-    join_options = build_join_options(normalized, anchor_map, normalize_inputs=False)
-    joined = arrow_join_tables(
-        normalized,
-        anchor_map,
-        spec=join_spec,
-        options=join_options,
-    )
-    joined = _encode_extras_json(joined, column_name="extras_json")
-    joined = append_constant_columns(
-        joined,
-        {
-            "node_kind": "SYNTAX_NODE",
-            "source_table_key": SYNTAX_NODES_TABLE_KEY,
-        },
-    )
-    selected = ensure_table_columns(
-        joined,
+    base = ensure_table_columns(
+        syntax_nodes,
         (
             "repo",
             "commit",
-            "cpg_node_id",
-            "node_kind",
-            "source_table_key",
-            "source_pk_json",
             "rel_path",
+            "producer",
+            "node_id",
             "start_byte",
             "end_byte",
             "extras_json",
         ),
     )
+    normalized = normalize_table_for_join(base)
+    if "extras_kv" not in normalized.column_names:
+        extras_kv = _extras_kv_column(normalized, column_name="extras_json")
+        normalized = normalized.append_column("extras_kv", extras_kv)
+    anchor_map = normalize_table_for_join(
+        _syntax_anchor_map(normalized, include_source_pk_json=True)
+    )
+    left_plan = (
+        Plan.table(normalized)
+        .project(
+            {
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "rel_path": E.cast(E.field("rel_path"), "string"),
+                "producer": E.cast(E.field("producer"), "string"),
+                "node_id": E.cast(E.field("node_id"), "string"),
+                "start_byte": E.field("start_byte"),
+                "end_byte": E.field("end_byte"),
+                "extras_kv": E.field("extras_kv"),
+            }
+        )
+        .filter(_syntax_key_filter())
+    )
+    right_plan = (
+        Plan.table(anchor_map)
+        .project(
+            {
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "rel_path": E.cast(E.field("rel_path"), "string"),
+                "producer": E.cast(E.field("producer"), "string"),
+                "node_id": E.cast(E.field("node_id"), "string"),
+                "cpg_node_id": E.field("cpg_node_id"),
+                "source_pk_json": E.field("source_pk_json"),
+            }
+        )
+        .filter(_syntax_key_filter())
+    )
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=["repo", "commit", "rel_path", "producer", "node_id"],
+            right_keys=["repo", "commit", "rel_path", "producer", "node_id"],
+            how="left outer",
+            left_output=[
+                "repo",
+                "commit",
+                "rel_path",
+                "producer",
+                "node_id",
+                "start_byte",
+                "end_byte",
+                "extras_kv",
+            ],
+            right_output=["cpg_node_id", "source_pk_json"],
+        ),
+    )
+    joined = reader_to_table(joined.to_reader(use_threads=True))
+    if joined.num_rows != 0:
+        joined = joined.take(
+            stable_sort_indices(
+                joined,
+                sort_keys=[
+                    ("repo", "ascending"),
+                    ("commit", "ascending"),
+                    ("node_id", "ascending"),
+                ],
+            )
+        )
+    joined = append_constant_columns(
+        joined,
+        {
+            "node_kind": "SYNTAX_NODE",
+            "source_table_key": SYNTAX_NODES_TABLE_KEY,
+            "extras": None,
+            "extras_kv": None,
+        },
+    )
+    selected = ensure_table_columns(joined, _CPG_NODE_COLUMNS)
     if diagnostics is not None:
         resolved = _count_valid(selected, "cpg_node_id")
         diagnostics["syntax_nodes"] = SyntaxNodeDiagnostics(
@@ -168,57 +215,118 @@ def cpg2_edges__syntax_edges(
     normalized_edges = normalize_table_for_join(
         canonicalize_for_table(syntax_edges, table_key="core.syntax_edges")
     )
-    parent_left_on = ["parent_node_id" if column == "node_id" else column for column in join_keys]
-    child_left_on = ["child_node_id" if column == "node_id" else column for column in join_keys]
-    parent_join = _join_anchor_with_filter(
-        normalized_edges,
-        anchor_map,
-        spec=ArrowJoinSpec(
-            left_on=parent_left_on,
-            right_on=list(join_keys),
-            how="left",
-        ),
-        filter_field="cpg_node_id",
+    anchor_plan = (
+        Plan.table(anchor_map)
+        .project(
+            {
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "rel_path": E.cast(E.field("rel_path"), "string"),
+                "producer": E.cast(E.field("producer"), "string"),
+                "node_id": E.cast(E.field("node_id"), "string"),
+                "cpg_node_id": E.field("cpg_node_id"),
+            }
+        )
+        .filter(_syntax_key_filter())
     )
-    child_anchor = rename_table_columns(anchor_map, {"cpg_node_id": "cpg_node_id_child"})
-    parent_join = normalize_table_for_join(parent_join)
-    child_anchor = normalize_table_for_join(child_anchor)
-    child_join = _join_anchor_with_filter(
-        parent_join,
-        child_anchor,
-        spec=ArrowJoinSpec(
-            left_on=child_left_on,
-            right_on=list(join_keys),
-            how="left",
-            right_suffix="_child",
-        ),
-        filter_field="cpg_node_id_child",
+    parent_join = (
+        Plan.table(normalized_edges)
+        .project(
+            {
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "rel_path": E.cast(E.field("rel_path"), "string"),
+                "producer": E.cast(E.field("producer"), "string"),
+                "node_id": E.cast(E.field("parent_node_id"), "string"),
+                "child_node_id": E.cast(E.field("child_node_id"), "string"),
+                "child_ordinal": E.field("child_ordinal"),
+            }
+        )
+        .filter(_syntax_key_filter())
+        .hash_join(
+            right=anchor_plan,
+            spec=HashJoinSpec(
+                left_keys=["repo", "commit", "rel_path", "producer", "node_id"],
+                right_keys=["repo", "commit", "rel_path", "producer", "node_id"],
+                how="left outer",
+                left_output=[
+                    "repo",
+                    "commit",
+                    "rel_path",
+                    "producer",
+                    "child_node_id",
+                    "child_ordinal",
+                ],
+                right_output=["cpg_node_id"],
+            ),
+        )
+        .to_reader(use_threads=True)
     )
-    child_join = rename_table_columns(child_join, {"cpg_node_id": "src_cpg_node_id"})
-    if "cpg_node_id_child" in child_join.column_names:
-        child_join = rename_table_columns(child_join, {"cpg_node_id_child": "dst_cpg_node_id"})
+    parent_join = reader_to_table(parent_join)
+    if parent_join.num_rows == 0:
+        return _empty_edge_table()
+    child_join = (
+        Plan.table(parent_join)
+        .project(
+            {
+                "repo": E.field("repo"),
+                "commit": E.field("commit"),
+                "rel_path": E.field("rel_path"),
+                "producer": E.field("producer"),
+                "node_id": E.cast(E.field("child_node_id"), "string"),
+                "child_ordinal": E.field("child_ordinal"),
+                "src_cpg_node_id": E.field("cpg_node_id"),
+            }
+        )
+        .filter(_syntax_key_filter())
+        .hash_join(
+            right=anchor_plan,
+            spec=HashJoinSpec(
+                left_keys=["repo", "commit", "rel_path", "producer", "node_id"],
+                right_keys=["repo", "commit", "rel_path", "producer", "node_id"],
+                how="left outer",
+                left_output=[
+                    "repo",
+                    "commit",
+                    "rel_path",
+                    "child_ordinal",
+                    "src_cpg_node_id",
+                ],
+                right_output=["cpg_node_id"],
+                output_suffix_for_right="_child",
+            ),
+        )
+        .to_reader(use_threads=True)
+    )
+    child_join = reader_to_table(child_join)
+    if child_join.num_rows == 0:
+        return _empty_edge_table()
+    child_join = child_join.take(
+        stable_sort_indices(
+            child_join,
+            sort_keys=[
+                ("repo", "ascending"),
+                ("commit", "ascending"),
+                ("src_cpg_node_id", "ascending"),
+                ("cpg_node_id_child", "ascending"),
+                ("child_ordinal", "ascending"),
+            ],
+        )
+    )
+    child_join = rename_table_columns(
+        child_join,
+        {"cpg_node_id_child": "dst_cpg_node_id", "child_ordinal": "ordinal"},
+    )
     child_join = append_constant_columns(
         child_join,
         {
             "edge_kind": "AST",
             "edge_layer": "SYNTAX",
+            "extras": None,
+            "extras_kv": None,
         },
     )
-    selected = ensure_table_columns(
-        child_join,
-        (
-            "repo",
-            "commit",
-            "src_cpg_node_id",
-            "dst_cpg_node_id",
-            "edge_kind",
-            "edge_layer",
-            "rel_path",
-            "child_ordinal",
-            "extras_json",
-        ),
-    )
-    selected = rename_table_columns(selected, {"child_ordinal": "ordinal"})
+    selected = ensure_table_columns(child_join, _CPG_EDGE_COLUMNS)
 
     def _edge_mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
         return and_kleene(
@@ -239,32 +347,6 @@ def cpg2_edges__syntax_edges(
             dropped_edges=selected.num_rows - resolved,
         )
     return filtered
-
-
-def _join_anchor_with_filter(
-    left: pa.Table,
-    right: pa.Table,
-    *,
-    spec: ArrowJoinSpec,
-    filter_field: str,
-) -> pa.Table:
-    filter_expr = join_filter_expr(
-        left=left,
-        right=right,
-        spec=spec,
-        clause=JoinFilterClause(
-            field=filter_field,
-            predicate=is_valid_expr,
-            side="right",
-        ),
-    )
-    join_options = build_join_options(
-        left,
-        right,
-        filter_expression=filter_expr,
-        normalize_inputs=False,
-    )
-    return arrow_join_tables(left, right, spec=spec, options=join_options)
 
 
 def _count_valid(table: pa.Table, column: str) -> int:
@@ -294,7 +376,8 @@ _CPG_NODE_COLUMNS = (
     "rel_path",
     "start_byte",
     "end_byte",
-    "extras_json",
+    "extras",
+    "extras_kv",
 )
 
 _CPG_EDGE_COLUMNS = (
@@ -306,30 +389,29 @@ _CPG_EDGE_COLUMNS = (
     "edge_layer",
     "rel_path",
     "ordinal",
-    "extras_json",
+    "extras",
+    "extras_kv",
 )
 
 
-def _encode_extras_json(table: pa.Table, *, column_name: str) -> pa.Table:
+def _syntax_key_filter() -> pc.Expression:
+    return (
+        E.is_valid("repo")
+        & E.is_valid("commit")
+        & E.is_valid("rel_path")
+        & E.is_valid("producer")
+        & E.is_valid("node_id")
+    )
+
+
+def _extras_kv_column(table: pa.Table, *, column_name: str) -> pa.Array:
+    map_type = pa.map_(pa.string(), pa.string())
     if column_name not in table.column_names:
-        return table
-    encoded = [
-        _encode_optional_payload(value) for value in iter_array_values(table.column(column_name))
+        return pa.nulls(table.num_rows, type=map_type)
+    values = [
+        extras_kv_from_payload(value) for value in iter_array_values(table.column(column_name))
     ]
-    index = table.schema.get_field_index(column_name)
-    return table.set_column(index, column_name, pa.array(encoded, type=pa.binary()))
-
-
-def _encode_optional_payload(value: object) -> bytes | None:
-    if value is None:
-        return None
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return encode_payload(bytes(value))
-    if isinstance(value, Mapping):
-        return encode_payload(dict(value))
-    if isinstance(value, (str, int, float, bool)):
-        return encode_payload(value)
-    return None
+    return pa.array(values, type=map_type)
 
 
 __all__ = [

@@ -12,17 +12,14 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     canonicalize_for_table,
     identity_keys,
 )
-from codeintel.build.tabular.arrow_ops import (
-    ArrowJoinSpec,
-    JoinFilterClause,
-    arrow_join_tables,
-    build_join_options,
-    join_filter_expr,
-    normalize_table_for_join,
-)
+from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import is_valid_expr, is_valid_mask
+from codeintel.build.tabular.conversion import reader_to_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -64,29 +61,51 @@ def cpg2_nodes__goids(
         include_source_pk_json=True,
     )
     anchors = normalize_table_for_join(anchors)
-    join_spec = ArrowJoinSpec(on=["goid_h128"], how="left")
-    filter_expr = join_filter_expr(
-        left=normalized,
-        right=anchors,
-        spec=join_spec,
-        clause=JoinFilterClause(
-            field="cpg_node_id",
-            predicate=is_valid_expr,
-            side="right",
+    left_plan = (
+        Plan.table(normalized)
+        .project(
+            {
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "rel_path": E.cast(E.field("rel_path"), "string"),
+                "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
+            }
+        )
+        .filter(E.is_valid("goid_h128"))
+    )
+    right_plan = (
+        Plan.table(anchors)
+        .project(
+            {
+                "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
+                "cpg_node_id": E.field("cpg_node_id"),
+                "source_pk_json": E.field("source_pk_json"),
+            }
+        )
+        .filter(E.is_valid("goid_h128"))
+    )
+    joined_plan = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=["goid_h128"],
+            right_keys=["goid_h128"],
+            how="left outer",
+            left_output=["repo", "commit", "rel_path", "goid_h128"],
+            right_output=["cpg_node_id", "source_pk_json"],
         ),
     )
-    join_options = build_join_options(
-        normalized,
-        anchors,
-        filter_expression=filter_expr,
-        normalize_inputs=False,
-    )
-    joined = arrow_join_tables(
-        normalized,
-        anchors,
-        spec=join_spec,
-        options=join_options,
-    )
+    joined = reader_to_table(joined_plan.to_reader(use_threads=True))
+    if joined.num_rows != 0:
+        joined = joined.take(
+            stable_sort_indices(
+                joined,
+                sort_keys=[
+                    ("repo", "ascending"),
+                    ("commit", "ascending"),
+                    ("goid_h128", "ascending"),
+                ],
+            )
+        )
     joined = append_constant_columns(
         joined,
         {
@@ -94,7 +113,8 @@ def cpg2_nodes__goids(
             "source_table_key": GOIDS_TABLE_KEY,
             "start_byte": None,
             "end_byte": None,
-            "extras_json": None,
+            "extras": None,
+            "extras_kv": None,
         },
     )
     selected = joined.select(
@@ -108,7 +128,8 @@ def cpg2_nodes__goids(
             "rel_path",
             "start_byte",
             "end_byte",
-            "extras_json",
+            "extras",
+            "extras_kv",
         ]
     )
     filtered = _filter_valid_nodes(selected)

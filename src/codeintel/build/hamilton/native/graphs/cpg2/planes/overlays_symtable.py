@@ -12,14 +12,15 @@ import pyarrow as pa
 
 from codeintel.build.graphs.assembly import table_rows
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
+from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
-from codeintel.core.serialization.payload import encode_payload
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 AST_NODES_TABLE_KEY = "core.ast_nodes"
 SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbol_information"
 PY_SYM_SCOPES_TABLE_KEY = "core.py_sym_scopes"
 PY_SYM_BINDINGS_TABLE_KEY = "core.py_sym_bindings"
+PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY = "core.py_sym_unresolved_bindings"
 PY_SYM_RESOLUTION_EDGES_TABLE_KEY = "core.py_sym_resolution_edges"
 
 
@@ -72,7 +73,7 @@ def cpg2_edges__py_sym_scope_edges(
             "rel_path": row.get("rel_path"),
             "scope_id": child_scope_id,
         }
-        extras = _row_to_payload({"edge_kind": row.get("edge_kind")})
+        extras_kv = extras_kv_from_mapping({"edge_kind": row.get("edge_kind")})
         owns_ordinal = cpg_edge_ordinal(
             "graph.cpg_edges_scope",
             {
@@ -99,7 +100,8 @@ def cpg2_edges__py_sym_scope_edges(
                 "edge_layer": "SYMBOL",
                 "rel_path": row.get("rel_path"),
                 "ordinal": owns_ordinal,
-                "extras_json": extras,
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
         rows.append(
@@ -112,7 +114,8 @@ def cpg2_edges__py_sym_scope_edges(
                 "edge_layer": "SYMBOL",
                 "rel_path": row.get("rel_path"),
                 "ordinal": parent_ordinal,
-                "extras_json": extras,
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
@@ -219,6 +222,7 @@ def cpg2_edges__py_sym_binding_edges(
             "annotated_here": row.get("annotated_here"),
             "scoping_class": row.get("scoping_class"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         ordinal = cpg_edge_ordinal(
             "graph.cpg_edges_binding",
             {
@@ -236,7 +240,8 @@ def cpg2_edges__py_sym_binding_edges(
                 "edge_layer": "SYMBOL",
                 "rel_path": row.get("rel_path"),
                 "ordinal": ordinal,
-                "extras_json": _row_to_payload(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
@@ -371,11 +376,17 @@ def _py_sym_resolution_edge_row(row: Mapping[str, object]) -> dict[str, object]:
         "rel_path": row.get("rel_path"),
         "binding_id": row.get("dst_binding_id"),
     }
+    dst_table_key = (
+        PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY
+        if _is_unresolved_binding(row)
+        else PY_SYM_BINDINGS_TABLE_KEY
+    )
     extras_values = {
         "kind": row.get("kind"),
         "confidence": row.get("confidence"),
         "reason": row.get("reason"),
     }
+    extras_kv = extras_kv_from_mapping(extras_values)
     ordinal = cpg_edge_ordinal(
         PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
         {"edge_id": row.get("edge_id")},
@@ -384,13 +395,22 @@ def _py_sym_resolution_edge_row(row: Mapping[str, object]) -> dict[str, object]:
         "repo": row.get("repo"),
         "commit": row.get("commit"),
         "src_cpg_node_id": cpg_node_id(PY_SYM_BINDINGS_TABLE_KEY, src_pk),
-        "dst_cpg_node_id": cpg_node_id(PY_SYM_BINDINGS_TABLE_KEY, dst_pk),
+        "dst_cpg_node_id": cpg_node_id(dst_table_key, dst_pk),
         "edge_kind": "RESOLVES_TO",
         "edge_layer": "SYMBOL",
         "rel_path": row.get("rel_path"),
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras_values),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
+
+
+def _is_unresolved_binding(row: Mapping[str, object]) -> bool:
+    dst_binding_id = row.get("dst_binding_id")
+    if isinstance(dst_binding_id, str) and dst_binding_id.endswith(":unknown"):
+        return True
+    kind = row.get("kind")
+    return isinstance(kind, str) and kind == "UNKNOWN"
 
 
 def _namespace_edge_row(
@@ -434,6 +454,7 @@ def _namespace_edge_row(
         "symbol_row_id": row.get("symbol_row_id"),
         "is_ambiguous": row.get("is_ambiguous"),
     }
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_namespace",
         {
@@ -450,7 +471,8 @@ def _namespace_edge_row(
         "edge_layer": "SYMBOL",
         "rel_path": rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -506,6 +528,7 @@ def _binding_symbol_edge_rows(
                 "binding_kind": row.get("binding_kind"),
                 "match_kind": "qualpath",
             }
+            extras_kv = extras_kv_from_mapping(extras_values)
             ordinal = cpg_edge_ordinal(
                 "graph.cpg_edges_binding_symbol",
                 {"binding_id": row.get("binding_id"), "symbol": symbol.get("symbol")},
@@ -520,7 +543,8 @@ def _binding_symbol_edge_rows(
                     "edge_layer": "SYMBOL",
                     "rel_path": row.get("rel_path"),
                     "ordinal": ordinal,
-                    "extras_json": _row_to_payload(extras_values),
+                    "extras": None,
+                    "extras_kv": extras_kv,
                 }
             )
     return rows
@@ -897,6 +921,7 @@ def _ast_binding_edge_row(
         if context.resolution
         else None,
     }
+    extras_kv = extras_kv_from_mapping(extras)
     ordinal = cpg_edge_ordinal(
         "graph.cpg_edges_ast_binding",
         {
@@ -914,7 +939,8 @@ def _ast_binding_edge_row(
         "edge_layer": "SYMBOL",
         "rel_path": context.rel_path,
         "ordinal": ordinal,
-        "extras_json": _row_to_payload(extras),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -1030,14 +1056,6 @@ def _collect_rows(frame: pa.Table, *, columns: Sequence[str]) -> list[dict[str, 
     if not set(columns).issubset(frame.column_names):
         return []
     return [{column: row.get(column) for column in columns} for row in table_rows(frame)]
-
-
-def _row_to_payload(values: Mapping[str, object]) -> bytes:
-    payload = encode_payload(dict(values))
-    if payload is None:
-        msg = "Expected payload encoding to return bytes"
-        raise ValueError(msg)
-    return payload
 
 
 def _empty_edges() -> pa.Table:

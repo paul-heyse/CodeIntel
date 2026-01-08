@@ -3,7 +3,7 @@
   "codeintel": {
     "version": "0.1.0"
   },
-  "commit": "0b956f7cdd8e95b3f2e0063d17b28d59723cc99c",
+  "commit": "3d66517f7e4cd87349578ed43851d06db8ae12f3",
   "duckdb": {
     "connect_env": {
       "enable_profiling": null,
@@ -15,7 +15,7 @@
     "extensions_env": "",
     "read_only": false
   },
-  "generated_at": "2026-01-08T09:11:24.528938+00:00",
+  "generated_at": "2026-01-08T10:34:33.653949+00:00",
   "platform": {
     "machine": "arm64",
     "release": "25.2.0",

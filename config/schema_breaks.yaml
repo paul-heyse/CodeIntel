@@ -1,2 +1,38 @@
 version: 1
-schema_breaks: []
+schema_breaks:
+  - kind: table_column_removed
+    table_key: graph.cpg_call_targets
+    column_name: extras_json
+    old_value: BLOB
+    reason: "Replace extras_json with typed extras struct and extras_kv."
+    owner: "codex"
+  - kind: table_column_removed
+    table_key: graph.cpg_edges
+    column_name: extras_json
+    old_value: BLOB
+    reason: "Replace extras_json with typed extras struct and extras_kv."
+    owner: "codex"
+  - kind: table_column_removed
+    table_key: graph.cpg_edges_arg_to_param
+    column_name: extras_json
+    old_value: BLOB
+    reason: "Replace extras_json with typed extras struct and extras_kv."
+    owner: "codex"
+  - kind: table_column_removed
+    table_key: graph.cpg_edges_calls
+    column_name: extras_json
+    old_value: BLOB
+    reason: "Replace extras_json with typed extras struct and extras_kv."
+    owner: "codex"
+  - kind: table_column_removed
+    table_key: graph.cpg_edges_ret_to_call
+    column_name: extras_json
+    old_value: BLOB
+    reason: "Replace extras_json with typed extras struct and extras_kv."
+    owner: "codex"
+  - kind: table_column_removed
+    table_key: graph.cpg_nodes
+    column_name: extras_json
+    old_value: BLOB
+    reason: "Replace extras_json with typed extras struct and extras_kv."
+    owner: "codex"

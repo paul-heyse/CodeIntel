@@ -397,11 +397,13 @@ outputs:
     materialization: "table"
     table_keys:
       - "graph.cpg_call_targets"
+      - "graph.cpg_call_candidates"
       - "graph.cpg_edges_calls"
       - "graph.cpg_edges_arg_to_param"
       - "graph.cpg_edges_ret_to_call"
     contracts:
       - "graph.cpg_call_targets"
+      - "graph.cpg_call_candidates"
       - "graph.cpg_edges_calls"
       - "graph.cpg_edges_arg_to_param"
       - "graph.cpg_edges_ret_to_call"

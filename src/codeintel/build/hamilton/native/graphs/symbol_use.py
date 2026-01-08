@@ -7,11 +7,7 @@ import sys
 
 import pyarrow as pa
 
-from codeintel.build.graphs.assembly import (
-    empty_reader,
-    reader_for_rows,
-    tabular_to_table,
-)
+from codeintel.build.graphs.assembly import tabular_to_table
 from codeintel.build.graphs.compute.symbols import (
     SymbolOccurrence,
     SymbolUseEdge,
@@ -34,7 +30,9 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
 
@@ -223,22 +221,31 @@ def symbol_use_edges_compute(
         q__core__goids,
     )
     if occurrences_table.num_rows == 0:
-        return empty_reader(SYMBOL_USE_EDGES_TABLE_KEY)
+        return empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
     occurrences = _symbol_occurrences(occurrences_table)
     if not occurrences:
-        return empty_reader(SYMBOL_USE_EDGES_TABLE_KEY)
+        return empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
     module_by_path = _module_by_path(modules_table)
     def_info_by_symbol, def_path_by_symbol = _definition_maps(occurrences)
     edges = build_use_edges(occurrences, def_path_by_symbol, module_by_path)
     if not edges:
-        return empty_reader(SYMBOL_USE_EDGES_TABLE_KEY)
+        return empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
     use_lines_by_symbol_path = _reference_lines_by_symbol_path(occurrences)
     goid_resolver = _goid_resolver(goids_table)
     edges = _attach_goids(edges, def_info_by_symbol, use_lines_by_symbol_path, goid_resolver)
     rows = (dataclasses.asdict(row) for row in edges_to_rows(edges, env.repo, env.commit))
-    return reader_for_rows(SYMBOL_USE_EDGES_TABLE_KEY, rows)
+    table, _ = table_for_rows(SYMBOL_USE_EDGES_TABLE_KEY, rows)
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(
+            table_key=SYMBOL_USE_EDGES_TABLE_KEY,
+            mode="strict",
+            target_name=SYMBOL_USES_TARGET_NAME,
+        ),
+    )
+    return result.good
 
 
 def symbol_use_edges_existing(env: BuildEnv) -> InferableTabularInput:
@@ -265,7 +272,7 @@ def symbol_use_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for symbol use edges.
     """
     _ = env
-    return empty_reader(SYMBOL_USE_EDGES_TABLE_KEY)
+    return empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
 
 
 _MODULE = sys.modules[__name__]

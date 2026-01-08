@@ -14,6 +14,7 @@ IDENTITY_KEY_REGISTRY: dict[str, tuple[str, ...]] = {
     "core.syntax_nodes": ("repo", "commit", "rel_path", "producer", "node_id"),
     "core.ast_nodes": ("hash",),
     "core.scip_symbol_information": ("repo", "commit", "symbol"),
+    "core.scip_external_symbols": ("repo", "commit", "symbol"),
     "core.goids": ("goid_h128",),
     "graph.cfg_blocks": ("function_goid_h128", "block_idx"),
     "graph.import_modules": ("repo", "commit", "module"),
@@ -21,6 +22,7 @@ IDENTITY_KEY_REGISTRY: dict[str, tuple[str, ...]] = {
     "core.ts_trivia": ("repo", "commit", "rel_path", "language", "trivia_id"),
     "core.py_sym_scopes": ("repo", "commit", "rel_path", "scope_id"),
     "core.py_sym_bindings": ("repo", "commit", "rel_path", "binding_id"),
+    "core.py_sym_unresolved_bindings": ("repo", "commit", "rel_path", "binding_id"),
     "core.py_bc_code_units": ("repo", "commit", "rel_path", "code_unit_id"),
     "core.py_bc_instructions": ("repo", "commit", "rel_path", "code_unit_id", "instr_id"),
     "core.py_bc_blocks": ("repo", "commit", "rel_path", "block_id"),
@@ -36,6 +38,7 @@ LOOKUP_KEY_REGISTRY: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "core.ast_nodes": {"hash": ("hash",)},
     "core.scip_symbol_information": {"symbol": ("repo", "commit", "symbol")},
+    "core.scip_external_symbols": {"symbol": ("repo", "commit", "symbol")},
     "core.goids": {"goid_h128": ("goid_h128",)},
     "graph.cfg_blocks": {
         "full": ("function_goid_h128", "block_idx"),
@@ -48,6 +51,9 @@ LOOKUP_KEY_REGISTRY: dict[str, dict[str, tuple[str, ...]]] = {
     "core.py_sym_bindings": {
         "binding_id": ("repo", "commit", "rel_path", "binding_id"),
         "scope_name": ("repo", "commit", "rel_path", "scope_id", "name"),
+    },
+    "core.py_sym_unresolved_bindings": {
+        "binding_id": ("repo", "commit", "rel_path", "binding_id"),
     },
     "core.py_bc_code_units": {"code_unit_id": ("repo", "commit", "rel_path", "code_unit_id")},
     "core.py_bc_instructions": {
@@ -67,8 +73,19 @@ CANONICAL_CASTS: dict[str, Mapping[str, pa.DataType]] = {
         "commit": pa.string(),
         "symbol": pa.string(),
     },
+    "core.scip_external_symbols": {
+        "repo": pa.string(),
+        "commit": pa.string(),
+        "symbol": pa.string(),
+    },
     "core.goids": {"goid_h128": pa.decimal128(38, 0)},
     "graph.import_modules": {"repo": pa.string(), "commit": pa.string(), "module": pa.string()},
+    "core.py_sym_unresolved_bindings": {
+        "repo": pa.string(),
+        "commit": pa.string(),
+        "rel_path": pa.string(),
+        "binding_id": pa.string(),
+    },
     "graph.call_graph_edges": {
         "caller_goid_h128": pa.decimal128(38, 0),
         "callee_goid_h128": pa.decimal128(38, 0),

@@ -13,24 +13,26 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     canonicalize_for_table,
     identity_keys,
 )
-from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal
-from codeintel.build.tabular.arrow_ops import (
-    ArrowJoinSpec,
-    JoinFilterClause,
-    arrow_join_tables,
-    build_join_options,
-    iter_rows,
-    join_filter_expr,
-    normalize_table_for_join,
-)
+from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinals
+from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter, safe_filter_expr
+from codeintel.build.tabular.compute_helpers import (
+    array_from_compute,
+    safe_filter,
+    safe_filter_expr,
+)
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
+from codeintel.build.tabular.conversion import reader_to_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
+from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
+from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.rows import empty_table_for_table
-from codeintel.core.serialization.payload import encode_payload
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbol_information"
+SCIP_EXTERNAL_SYMBOLS_TABLE_KEY = "core.scip_external_symbols"
 GOIDS_TABLE_KEY = "core.goids"
 
 _EXPR_TYPE = getattr(pc, "Expression", None)
@@ -57,6 +59,7 @@ class SymbolGoidDiagnostics:
 def cpg2_edges__scip_symbol_relationships(
     symbol_rels: pa.Table,
     scip_symbols: pa.Table,
+    scip_external_symbols: pa.Table,
     *,
     diagnostics: dict[str, object] | None = None,
 ) -> pa.Table:
@@ -72,83 +75,58 @@ def cpg2_edges__scip_symbol_relationships(
     required = {"repo", "commit", "symbol", "related_symbol", "relationship_kind"}
     if not required.issubset(set(symbol_rels.column_names)):
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
-    rels = normalize_table_for_join(_normalize_symbol_rels(symbol_rels))
-    anchors = normalize_table_for_join(_symbol_anchor_map(scip_symbols))
-    src_anchor = rename_table_columns(anchors, {"cpg_node_id": "src_cpg_node_id"})
-    src_anchor = normalize_table_for_join(src_anchor)
-    join_spec = ArrowJoinSpec(on=["repo", "commit", "symbol"], how="left")
-    filter_expr = join_filter_expr(
-        left=rels,
-        right=src_anchor,
-        spec=join_spec,
-        clause=JoinFilterClause(
-            field="src_cpg_node_id",
-            predicate=is_valid_expr,
-            side="right",
-        ),
-    )
-    join_options = build_join_options(
-        rels,
-        src_anchor,
-        filter_expression=filter_expr,
-        normalize_inputs=False,
-    )
-    joined = arrow_join_tables(
-        rels,
-        src_anchor,
-        spec=join_spec,
-        options=join_options,
-    )
-    dst_anchor = rename_table_columns(
-        anchors,
-        {
-            "symbol": "related_symbol",
-            "cpg_node_id": "dst_cpg_node_id",
-        },
-    )
-    joined = normalize_table_for_join(joined)
-    dst_anchor = normalize_table_for_join(dst_anchor)
-    join_spec = ArrowJoinSpec(on=["repo", "commit", "related_symbol"], how="left")
-    filter_expr = join_filter_expr(
-        left=joined,
-        right=dst_anchor,
-        spec=join_spec,
-        clause=JoinFilterClause(
-            field="dst_cpg_node_id",
-            predicate=is_valid_expr,
-            side="right",
-        ),
-    )
-    join_options = build_join_options(
+    joined = _symbol_relationship_joins(symbol_rels, scip_symbols, scip_external_symbols)
+    ordinals = cpg_edge_ordinals(
         joined,
-        dst_anchor,
-        filter_expression=filter_expr,
-        normalize_inputs=False,
+        table_key="core.scip_symbol_relationships",
+        columns=["symbol", "related_symbol", "relationship_kind"],
     )
-    joined = arrow_join_tables(
+    extras_kv: list[dict[str, str] | None] = []
+    for row in iter_rows(
         joined,
-        dst_anchor,
-        spec=join_spec,
-        options=join_options,
+        [
+            "symbol",
+            "related_symbol",
+            "relationship_kind",
+            "src_cpg_node_id",
+            "src_cpg_node_id_ext",
+            "dst_cpg_node_id",
+            "dst_cpg_node_id_ext",
+        ],
+    ):
+        payload: dict[str, object] = {}
+        if row.get("src_cpg_node_id") is None and row.get("src_cpg_node_id_ext") is not None:
+            payload["src_symbol_origin"] = "external"
+        if row.get("dst_cpg_node_id") is None and row.get("dst_cpg_node_id_ext") is not None:
+            payload["dst_symbol_origin"] = "external"
+        extras_kv.append(extras_kv_from_mapping(payload) if payload else None)
+    joined = _coalesce_column(joined, "src_cpg_node_id", "src_cpg_node_id_ext")
+    joined = _coalesce_column(joined, "dst_cpg_node_id", "dst_cpg_node_id_ext")
+    joined = joined.append_column("ordinal", ordinals)
+    joined = _upsert_column(
+        joined,
+        "extras_kv",
+        pa.array(extras_kv, type=pa.map_(pa.string(), pa.string())),
     )
-    ordinals = [
-        cpg_edge_ordinal(
-            "core.scip_symbol_relationships",
-            {
-                "symbol": row.get("symbol"),
-                "related_symbol": row.get("related_symbol"),
-                "relationship_kind": row.get("relationship_kind"),
-            },
+    if joined.num_rows > 0:
+        joined = joined.take(
+            stable_sort_indices(
+                joined,
+                sort_keys=[
+                    ("repo", "ascending"),
+                    ("commit", "ascending"),
+                    ("symbol", "ascending"),
+                    ("related_symbol", "ascending"),
+                    ("relationship_kind", "ascending"),
+                ],
+            )
         )
-        for row in iter_rows(joined, ["symbol", "related_symbol", "relationship_kind"])
-    ]
-    joined = joined.append_column("ordinal", pa.array(ordinals, type=pa.int64()))
     joined = append_constant_columns(
         joined,
         {
             "edge_layer": "SYMBOL",
             "rel_path": None,
-            "extras_json": None,
+            "extras": None,
         },
     )
     joined = rename_table_columns(joined, {"relationship_kind": "edge_kind"})
@@ -162,7 +140,8 @@ def cpg2_edges__scip_symbol_relationships(
             "edge_layer",
             "rel_path",
             "ordinal",
-            "extras_json",
+            "extras",
+            "extras_kv",
         ]
     )
     filtered = _filter_valid_edges(selected)
@@ -194,6 +173,74 @@ def cpg2_edges__scip_symbol_goid_xref(
     required = {"repo", "commit", "scip_symbol", "goid_h128"}
     if not required.issubset(set(symbol_goid.column_names)):
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
+    joined_table = _symbol_goid_joined_table(symbol_goid, scip_symbols, goids)
+    ordinals = cpg_edge_ordinals(
+        joined_table,
+        table_key="core.scip_symbol_goid_xref",
+        columns=["scip_symbol", "goid_h128"],
+    )
+    extras_fields = [
+        field
+        for field in [
+            "def_rel_path",
+            "def_start_line",
+            "def_start_col",
+            "def_end_line",
+            "def_end_col",
+        ]
+        if field in joined_table.column_names
+    ]
+    extras_kv = [
+        extras_kv_from_mapping(
+            {
+                "def_rel_path": row.get("def_rel_path"),
+                "def_start_line": row.get("def_start_line"),
+                "def_start_col": row.get("def_start_col"),
+                "def_end_line": row.get("def_end_line"),
+                "def_end_col": row.get("def_end_col"),
+            }
+        )
+        for row in iter_rows(joined_table, extras_fields)
+    ]
+    joined = joined_table.append_column("ordinal", ordinals)
+    joined = joined.append_column(
+        "extras_kv",
+        pa.array(extras_kv, type=pa.map_(pa.string(), pa.string())),
+    )
+    joined = append_constant_columns(
+        joined,
+        {"edge_kind": "RESOLVES_TO", "edge_layer": "SYMBOL", "extras": None},
+    )
+    joined = rename_table_columns(joined, {"def_rel_path": "rel_path"})
+    selected = joined.select(
+        [
+            "repo",
+            "commit",
+            "src_cpg_node_id",
+            "dst_cpg_node_id",
+            "edge_kind",
+            "edge_layer",
+            "rel_path",
+            "ordinal",
+            "extras",
+            "extras_kv",
+        ]
+    )
+    filtered = _filter_valid_edges(selected)
+    if diagnostics is not None:
+        diagnostics["scip_symbol_goid"] = SymbolGoidDiagnostics(
+            total_edges=selected.num_rows,
+            resolved_edges=filtered.num_rows,
+            dropped_edges=selected.num_rows - filtered.num_rows,
+        )
+    return filtered
+
+
+def _symbol_goid_joined_table(
+    symbol_goid: pa.Table,
+    scip_symbols: pa.Table,
+    goids: pa.Table,
+) -> pa.Table:
     goid_rows = _normalize_symbol_goid(symbol_goid)
     if "goid_h128" in goid_rows.column_names:
 
@@ -208,6 +255,16 @@ def cpg2_edges__scip_symbol_goid_xref(
             )
         else:
             goid_rows = safe_filter(goid_rows, _goid_mask(goid_rows))
+    goid_rows = append_constant_columns(
+        goid_rows,
+        {
+            "def_rel_path": None,
+            "def_start_line": None,
+            "def_start_col": None,
+            "def_end_line": None,
+            "def_end_col": None,
+        },
+    )
     symbol_anchors = rename_table_columns(
         _symbol_anchor_map(scip_symbols),
         {"symbol": "scip_symbol", "cpg_node_id": "src_cpg_node_id"},
@@ -218,107 +275,77 @@ def cpg2_edges__scip_symbol_goid_xref(
     )
     goid_rows = normalize_table_for_join(goid_rows)
     symbol_anchors = normalize_table_for_join(symbol_anchors)
-    join_spec = ArrowJoinSpec(on=["repo", "commit", "scip_symbol"], how="left")
-    filter_expr = join_filter_expr(
-        left=goid_rows,
-        right=symbol_anchors,
-        spec=join_spec,
-        clause=JoinFilterClause(
-            field="src_cpg_node_id",
-            predicate=is_valid_expr,
-            side="right",
-        ),
-    )
-    join_options = build_join_options(
-        goid_rows,
-        symbol_anchors,
-        filter_expression=filter_expr,
-        normalize_inputs=False,
-    )
-    joined = arrow_join_tables(
-        goid_rows,
-        symbol_anchors,
-        spec=join_spec,
-        options=join_options,
-    )
-    joined = normalize_table_for_join(joined)
     goid_anchors = normalize_table_for_join(goid_anchors)
-    join_spec = ArrowJoinSpec(on=["goid_h128"], how="left")
-    filter_expr = join_filter_expr(
-        left=joined,
-        right=goid_anchors,
-        spec=join_spec,
-        clause=JoinFilterClause(
-            field="dst_cpg_node_id",
-            predicate=is_valid_expr,
-            side="right",
+    goid_project = {
+        "repo": E.cast(E.field("repo"), "string"),
+        "commit": E.cast(E.field("commit"), "string"),
+        "scip_symbol": E.cast(E.field("scip_symbol"), "string"),
+        "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
+        "def_rel_path": E.field("def_rel_path"),
+        "def_start_line": E.field("def_start_line"),
+        "def_start_col": E.field("def_start_col"),
+        "def_end_line": E.field("def_end_line"),
+        "def_end_col": E.field("def_end_col"),
+    }
+    symbol_project = {
+        "repo": E.cast(E.field("repo"), "string"),
+        "commit": E.cast(E.field("commit"), "string"),
+        "scip_symbol": E.cast(E.field("scip_symbol"), "string"),
+        "src_cpg_node_id": E.field("src_cpg_node_id"),
+    }
+    goid_anchor_project = {
+        "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
+        "dst_cpg_node_id": E.field("dst_cpg_node_id"),
+    }
+    symbol_plan = (
+        Plan.table(symbol_anchors)
+        .project(symbol_project)
+        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid("scip_symbol")))
+    )
+    goid_plan = (
+        Plan.table(goid_rows)
+        .project(goid_project)
+        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid("scip_symbol")))
+    )
+    joined = goid_plan.hash_join(
+        right=symbol_plan,
+        spec=HashJoinSpec(
+            left_keys=["repo", "commit", "scip_symbol"],
+            right_keys=["repo", "commit", "scip_symbol"],
+            how="left outer",
+            left_output=list(goid_project.keys()),
+            right_output=["src_cpg_node_id"],
         ),
     )
-    join_options = build_join_options(
-        joined,
-        goid_anchors,
-        filter_expression=filter_expr,
-        normalize_inputs=False,
+    joined = joined.filter(E.is_valid("src_cpg_node_id"))
+    goid_anchor_plan = (
+        Plan.table(goid_anchors).project(goid_anchor_project).filter(E.is_valid("goid_h128"))
     )
-    joined = arrow_join_tables(
-        joined,
-        goid_anchors,
-        spec=join_spec,
-        options=join_options,
+    joined = joined.hash_join(
+        right=goid_anchor_plan,
+        spec=HashJoinSpec(
+            left_keys=["goid_h128"],
+            right_keys=["goid_h128"],
+            how="left outer",
+            left_output=[*goid_project.keys(), "src_cpg_node_id"],
+            right_output=["dst_cpg_node_id"],
+        ),
     )
-    ordinals = [
-        cpg_edge_ordinal(
-            "core.scip_symbol_goid_xref",
-            {"scip_symbol": row.get("scip_symbol"), "goid_h128": row.get("goid_h128")},
+    joined = joined.filter(E.is_valid("dst_cpg_node_id"))
+    joined_table = reader_to_table(joined.to_reader(use_threads=True))
+    if joined_table.num_rows > 0:
+        joined_table = joined_table.take(
+            stable_sort_indices(
+                joined_table,
+                sort_keys=[
+                    ("repo", "ascending"),
+                    ("commit", "ascending"),
+                    ("scip_symbol", "ascending"),
+                    ("goid_h128", "ascending"),
+                ],
+            )
         )
-        for row in iter_rows(joined, ["scip_symbol", "goid_h128"])
-    ]
-    extras = [
-        _encode_extras_payload(
-            {
-                "def_rel_path": row.get("def_rel_path"),
-                "def_start_line": row.get("def_start_line"),
-                "def_start_col": row.get("def_start_col"),
-                "def_end_line": row.get("def_end_line"),
-                "def_end_col": row.get("def_end_col"),
-            }
-        )
-        for row in iter_rows(
-            joined,
-            [
-                "def_rel_path",
-                "def_start_line",
-                "def_start_col",
-                "def_end_line",
-                "def_end_col",
-            ],
-        )
-    ]
-    joined = joined.append_column("ordinal", pa.array(ordinals, type=pa.int64()))
-    joined = joined.append_column("extras_json", pa.array(extras, type=pa.binary()))
-    joined = append_constant_columns(joined, {"edge_kind": "RESOLVES_TO", "edge_layer": "SYMBOL"})
-    joined = rename_table_columns(joined, {"def_rel_path": "rel_path"})
-    selected = joined.select(
-        [
-            "repo",
-            "commit",
-            "src_cpg_node_id",
-            "dst_cpg_node_id",
-            "edge_kind",
-            "edge_layer",
-            "rel_path",
-            "ordinal",
-            "extras_json",
-        ]
-    )
-    filtered = _filter_valid_edges(selected)
-    if diagnostics is not None:
-        diagnostics["scip_symbol_goid"] = SymbolGoidDiagnostics(
-            total_edges=selected.num_rows,
-            resolved_edges=filtered.num_rows,
-            dropped_edges=selected.num_rows - filtered.num_rows,
-        )
-    return filtered
+    return joined_table
 
 
 def _symbol_anchor_map(scip_symbols: pa.Table) -> pa.Table:
@@ -327,6 +354,16 @@ def _symbol_anchor_map(scip_symbols: pa.Table) -> pa.Table:
         normalized,
         table_key=SCIP_SYMBOLS_TABLE_KEY,
         pk_columns=identity_keys(SCIP_SYMBOLS_TABLE_KEY),
+        include_source_pk_json=False,
+    )
+
+
+def _external_symbol_anchor_map(scip_symbols: pa.Table) -> pa.Table:
+    normalized = canonicalize_for_table(scip_symbols, table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
+    return build_anchor_map(
+        normalized,
+        table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+        pk_columns=identity_keys(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
         include_source_pk_json=False,
     )
 
@@ -385,11 +422,112 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
     return safe_filter(table, _edge_mask(table))
 
 
-def _encode_extras_payload(values: dict[str, object]) -> bytes | None:
-    encoded = encode_payload(values)
-    if encoded is None:
-        return None
-    return encoded
+def _coalesce_column(table: pa.Table, column: str, fallback: str) -> pa.Table:
+    if column not in table.column_names or fallback not in table.column_names:
+        return table
+    values = array_from_compute("coalesce", [table[column], table[fallback]])
+    if values is None:
+        return table
+    index = table.schema.get_field_index(column)
+    if index == -1:
+        return table.append_column(column, values)
+    return table.set_column(index, column, values)
+
+
+def _symbol_relationship_joins(
+    symbol_rels: pa.Table,
+    scip_symbols: pa.Table,
+    scip_external_symbols: pa.Table,
+) -> pa.Table:
+    rels = _normalize_symbol_rels(symbol_rels)
+    internal_anchor = _symbol_anchor_map(scip_symbols)
+    external_anchor = _external_symbol_anchor_map(scip_external_symbols)
+    joined = _join_symbol_relationship_anchor(
+        rels,
+        internal_anchor,
+        symbol_field="symbol",
+        id_field="src_cpg_node_id",
+    )
+    joined = _join_symbol_relationship_anchor(
+        joined,
+        external_anchor,
+        symbol_field="symbol",
+        id_field="src_cpg_node_id",
+    )
+    joined = _join_symbol_relationship_anchor(
+        joined,
+        internal_anchor,
+        symbol_field="related_symbol",
+        id_field="dst_cpg_node_id",
+    )
+    return _join_symbol_relationship_anchor(
+        joined,
+        external_anchor,
+        symbol_field="related_symbol",
+        id_field="dst_cpg_node_id",
+    )
+
+
+def _join_symbol_relationship_anchor(
+    left: pa.Table,
+    anchor: pa.Table,
+    *,
+    symbol_field: str,
+    id_field: str,
+) -> pa.Table:
+    if left.num_rows == 0 or anchor.num_rows == 0:
+        return left
+    renamed = anchor
+    if symbol_field != "symbol":
+        renamed = rename_table_columns(renamed, {"symbol": symbol_field})
+    if id_field != "cpg_node_id":
+        renamed = rename_table_columns(renamed, {"cpg_node_id": id_field})
+    left = normalize_table_for_join(left)
+    renamed = normalize_table_for_join(renamed)
+    left_project: dict[str, pc.Expression] = {}
+    for name in left.column_names:
+        if name in {"repo", "commit", symbol_field}:
+            left_project[name] = E.cast(E.field(name), "string")
+        else:
+            left_project[name] = E.field(name)
+    right_project = {
+        "repo": E.cast(E.field("repo"), "string"),
+        "commit": E.cast(E.field("commit"), "string"),
+        symbol_field: E.cast(E.field(symbol_field), "string"),
+        id_field: E.field(id_field),
+    }
+    left_plan = (
+        Plan.table(left)
+        .project(left_project)
+        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid(symbol_field)))
+    )
+    right_plan = (
+        Plan.table(renamed)
+        .project(right_project)
+        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid(symbol_field)))
+    )
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=["repo", "commit", symbol_field],
+            right_keys=["repo", "commit", symbol_field],
+            how="left outer",
+            left_output=list(left_project.keys()),
+            right_output=[id_field],
+        ),
+    )
+    return reader_to_table(joined.to_reader(use_threads=True))
+
+
+def _upsert_column(
+    table: pa.Table,
+    name: str,
+    values: pa.Array | pa.ChunkedArray,
+) -> pa.Table:
+    index = table.schema.get_field_index(name)
+    if index == -1:
+        return table.append_column(name, values)
+    return table.set_column(index, name, values)
 
 
 __all__ = [

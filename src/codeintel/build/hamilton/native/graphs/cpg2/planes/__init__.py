@@ -43,11 +43,13 @@ from codeintel.build.hamilton.native.graphs.cpg2.planes.link import (
 from codeintel.build.hamilton.native.graphs.cpg2.planes.py_sym import (
     cpg2_nodes__py_sym_bindings,
     cpg2_nodes__py_sym_scopes,
+    cpg2_nodes__py_sym_unresolved_bindings,
 )
 from codeintel.build.hamilton.native.graphs.cpg2.planes.scip import (
     ScipNodeDiagnostics,
     ScipOccurrenceDiagnostics,
     cpg2_edges__scip_occurrences,
+    cpg2_nodes__scip_external_symbols,
     cpg2_nodes__scip_symbols,
 )
 from codeintel.build.hamilton.native.graphs.cpg2.planes.symbol import (
@@ -106,6 +108,8 @@ __all__ = [
     "cpg2_nodes__py_inspect_signatures",
     "cpg2_nodes__py_sym_bindings",
     "cpg2_nodes__py_sym_scopes",
+    "cpg2_nodes__py_sym_unresolved_bindings",
+    "cpg2_nodes__scip_external_symbols",
     "cpg2_nodes__scip_symbols",
     "cpg2_nodes__syntax_nodes",
     "cpg2_nodes__ts_tokens",

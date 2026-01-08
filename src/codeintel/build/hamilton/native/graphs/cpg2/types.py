@@ -35,6 +35,26 @@ class _CpgSymbolInputs:
     occ_span: pa.Table
     symbol_rels: pa.Table
     symbol_goid: pa.Table
+    scip_symbols: pa.Table
+    scip_external_symbols: pa.Table
+
+
+@dataclass(frozen=True)
+class _CpgSymbolOccurrenceInputs:
+    occ_syntax: pa.Table
+    occ_span: pa.Table
+
+
+@dataclass(frozen=True)
+class _CpgSymbolRelationInputs:
+    symbol_rels: pa.Table
+    symbol_goid: pa.Table
+
+
+@dataclass(frozen=True)
+class _CpgSymbolTableInputs:
+    scip_symbols: pa.Table
+    scip_external_symbols: pa.Table
 
 
 @dataclass(frozen=True)
@@ -51,9 +71,11 @@ class _CpgNodeCoreInputs:
     syntax_nodes: InferableTabularInput
     ast_nodes: InferableTabularInput
     scip_symbol_information: InferableTabularInput
+    scip_external_symbols: InferableTabularInput
     goids: InferableTabularInput
     py_sym_scopes: InferableTabularInput
     py_sym_bindings: InferableTabularInput
+    py_sym_unresolved_bindings: InferableTabularInput
     py_bc_code_units: InferableTabularInput
     py_bc_instructions: InferableTabularInput
     py_bc_blocks: InferableTabularInput
@@ -68,14 +90,34 @@ class _CpgNodeCoreInputs:
 class _CpgNodeSyntaxInputs:
     syntax_nodes: InferableTabularInput
     ast_nodes: InferableTabularInput
-    scip_symbol_information: InferableTabularInput
     goids: InferableTabularInput
+
+
+@dataclass(frozen=True)
+class _CpgNodeScipInputs:
+    scip_symbol_information: InferableTabularInput
+    scip_external_symbols: InferableTabularInput
+
+
+@dataclass(frozen=True)
+class _CpgNodeSymtableInputs:
+    py_sym_scopes: InferableTabularInput
+    py_sym_bindings: InferableTabularInput
+    py_sym_unresolved_bindings: InferableTabularInput
+
+
+@dataclass(frozen=True)
+class _CpgNodeBytecodeInputs:
+    py_bc_code_units: InferableTabularInput
+    py_bc_instructions: InferableTabularInput
+    py_bc_blocks: InferableTabularInput
 
 
 @dataclass(frozen=True)
 class _CpgNodePyInputs:
     py_sym_scopes: InferableTabularInput
     py_sym_bindings: InferableTabularInput
+    py_sym_unresolved_bindings: InferableTabularInput
     py_bc_code_units: InferableTabularInput
     py_bc_instructions: InferableTabularInput
     py_bc_blocks: InferableTabularInput
@@ -107,9 +149,11 @@ class _CpgNodeCoreLazyFrames:
     syntax_nodes: pa.Table
     ast_nodes: pa.Table
     scip_symbol_information: pa.Table
+    scip_external_symbols: pa.Table
     goids: pa.Table
     py_sym_scopes: pa.Table
     py_sym_bindings: pa.Table
+    py_sym_unresolved_bindings: pa.Table
     py_bc_code_units: pa.Table
     py_bc_instructions: pa.Table
     py_bc_blocks: pa.Table
@@ -248,6 +292,7 @@ __all__ = [
     "_CpgEdgeCoreInputs",
     "_CpgFlowInputs",
     "_CpgLinkInputs",
+    "_CpgNodeBytecodeInputs",
     "_CpgNodeCoreInputs",
     "_CpgNodeCoreLazyFrames",
     "_CpgNodeGraphInputs",
@@ -255,6 +300,8 @@ __all__ = [
     "_CpgNodeInputs",
     "_CpgNodeInspectInputs",
     "_CpgNodePyInputs",
+    "_CpgNodeScipInputs",
+    "_CpgNodeSymtableInputs",
     "_CpgNodeSyntaxInputs",
     "_CpgOverlayBytecodeInputs",
     "_CpgOverlayEdgeInputs",
@@ -265,5 +312,8 @@ __all__ = [
     "_CpgOverlaySymbolInputs",
     "_CpgOverlaySyntaxCallInputs",
     "_CpgSymbolInputs",
+    "_CpgSymbolOccurrenceInputs",
+    "_CpgSymbolRelationInputs",
+    "_CpgSymbolTableInputs",
     "_CpgSyntaxNodeInputs",
 ]

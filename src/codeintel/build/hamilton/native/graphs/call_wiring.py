@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import pyarrow as pa
+import pyarrow.compute as pc
 from intervaltree import IntervalTree
 
 from codeintel.build.graphs.assembly import (
@@ -17,6 +18,7 @@ from codeintel.build.graphs.assembly import (
 )
 from codeintel.build.graphs.assembly import (
     empty_reader,
+    reader_to_table,
     tabular_to_table,
 )
 from codeintel.build.graphs.assembly import (
@@ -29,16 +31,18 @@ from codeintel.build.graphs.assembly import (
     table_rows as _table_rows,
 )
 from codeintel.build.tabular.arrow_ops import (
-    ArrowJoinSpec,
     align_table_to_contract,
-    arrow_join_tables,
-    build_join_options,
     dedupe_table_for_table,
     emit_alignment_report,
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
 from codeintel.build.tabular.compute_helpers import cast_array
 from codeintel.build.tabular.compute_masks import equal_mask
+from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.intervals.span_resolver import MatchKind, SpanResolver
@@ -46,11 +50,13 @@ from codeintel.core.serialization.payload import PayloadValue, decode_payload, e
 
 CALL_WIRING_TARGET_NAME = "call_wiring"
 CPG_CALL_TARGETS_TABLE_KEY = "graph.cpg_call_targets"
+CPG_CALL_CANDIDATES_TABLE_KEY = "graph.cpg_call_candidates"
 CPG_CALL_EDGES_TABLE_KEY = "graph.cpg_edges_calls"
 CPG_ARG_TO_PARAM_EDGES_TABLE_KEY = "graph.cpg_edges_arg_to_param"
 CPG_RET_TO_CALL_EDGES_TABLE_KEY = "graph.cpg_edges_ret_to_call"
 
 _GOID_ARROW_TYPE = pa.decimal128(38, 0)
+_GOID_CAST_TYPE = "decimal128(38,0)"
 _BLOCK_ID_ARROW_TYPE = pa.string()
 _ROLE_DEFINITION = 0x1
 _OVERLAP_CONFIDENCE_THRESHOLD = 3
@@ -476,6 +482,41 @@ def _extras_struct(row: Mapping[str, object], key: str) -> Mapping[str, object] 
     return None
 
 
+def _extras_kv_value(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _extras_kv_from_mapping(values: Mapping[object, object]) -> dict[str, str] | None:
+    if not values:
+        return None
+    extras: dict[str, str] = {}
+    for key, item in values.items():
+        if item is None:
+            continue
+        extras[str(key)] = _extras_kv_value(item)
+    return extras or None
+
+
+def _extras_kv_from_payload(value: object) -> dict[str, str] | None:
+    decoded = decode_payload(value)
+    if decoded is None:
+        return None
+    if isinstance(decoded, Mapping):
+        return _extras_kv_from_mapping(decoded)
+    return {"value": _extras_kv_value(decoded)}
+
+
+def _coerce_extras_kv(value: object) -> dict[str, str] | None:
+    if isinstance(value, Mapping):
+        return _extras_kv_from_mapping(value)
+    return None
+
+
 def _extract_def_info(row: Mapping[str, object]) -> tuple[_DefInfo, str | None, str | None]:
     extras = _extras_struct(row, "extras_json") or {}
     container_def_id = extras.get("container_def_id")
@@ -548,6 +589,12 @@ def _extras_descriptor_obj_is_none(value: object) -> bool | None:
         raw = value.get("descriptor_obj_is_none")
         if isinstance(raw, bool):
             return raw
+        if isinstance(raw, str):
+            normalized = raw.strip().lower()
+            if normalized in {"true", "false"}:
+                return normalized == "true"
+            if normalized in {"1", "0"}:
+                return normalized == "1"
     return None
 
 
@@ -604,22 +651,20 @@ def _cast_table_column(
     return table.set_column(index, column_name, casted)
 
 
-def _call_edge_extras(row: Mapping[str, object]) -> bytes:
-    payload: dict[str, object] = {
-        "binding_kind": row.get("binding_kind"),
-        "target_role": row.get("target_role"),
-        "call_kind": row.get("call_kind"),
-        "origin": row.get("origin"),
-        "augop": row.get("augop"),
-    }
-    extras = decode_payload(row.get("extras_json"))
-    if extras is not None:
-        payload["call_extras"] = extras
-    encoded = encode_payload(payload)
-    if encoded is None:
-        msg = "Expected payload encoding to return bytes"
-        raise ValueError(msg)
-    return encoded
+def _call_candidate_extras_kv(row: Mapping[str, object]) -> dict[str, str] | None:
+    base: dict[str, str] = {}
+    for key in ("binding_kind", "target_role", "call_kind", "origin", "augop"):
+        value = row.get(key)
+        if value is None:
+            continue
+        base[key] = _extras_kv_value(value)
+    extra = _coerce_extras_kv(row.get("extras_kv"))
+    if not base and not extra:
+        return None
+    merged = dict(base)
+    if extra:
+        merged.update(extra)
+    return merged
 
 
 def _rel_path_key(value: object) -> str | None:
@@ -1262,7 +1307,63 @@ def _exit_blocks(cfg_blocks: pa.Table) -> pa.Table:
     return _dedupe_block_table(table, output_column="exit_block_id")
 
 
+def _project_with_goid_cast(table: pa.Table, *, key: str) -> dict[str, pc.Expression]:
+    exprs: dict[str, pc.Expression] = {}
+    for name in table.column_names:
+        if name == key:
+            exprs[name] = E.cast(E.field(name), _GOID_CAST_TYPE)
+        else:
+            exprs[name] = E.field(name)
+    return exprs
+
+
+def _hash_join_block_targets(
+    targets: pa.Table,
+    blocks: pa.Table,
+    *,
+    right_key: str,
+    output_column: str,
+) -> pa.Table:
+    if targets.num_rows == 0 or blocks.num_rows == 0:
+        return targets
+    if "callee_goid_h128" not in targets.column_names:
+        return targets
+    if right_key not in blocks.column_names or output_column not in blocks.column_names:
+        return targets
+    left_exprs = _project_with_goid_cast(targets, key="callee_goid_h128")
+    right_exprs = {
+        right_key: E.cast(E.field(right_key), _GOID_CAST_TYPE),
+        output_column: E.field(output_column),
+    }
+    left_plan = Plan.table(targets).project(left_exprs).filter(E.is_valid("callee_goid_h128"))
+    right_plan = Plan.table(blocks).project(right_exprs).filter(E.is_valid(right_key))
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=["callee_goid_h128"],
+            right_keys=[right_key],
+            how="left outer",
+            left_output=list(left_exprs.keys()),
+            right_output=[output_column],
+        ),
+    )
+    table = reader_to_table(joined.to_reader(use_threads=True))
+    if table.num_rows == 0:
+        return table
+    sort_base = ("repo", "commit", "rel_path", "call_id", "callee_goid_h128")
+    sort_keys = [key for key in sort_base if key in table.column_names]
+    if not sort_keys:
+        return table
+    return table.take(
+        stable_sort_indices(
+            table,
+            sort_keys=[(key, "ascending") for key in sort_keys],
+        )
+    )
+
+
 def _call_target_record(context: _CallTargetRecordContext) -> dict[str, object]:
+    extras_kv = _extras_kv_from_payload(context.extras_json)
     return {
         "repo": context.repo,
         "commit": context.commit,
@@ -1287,7 +1388,8 @@ def _call_target_record(context: _CallTargetRecordContext) -> dict[str, object]:
         "resolution_kind": context.resolution_kind,
         "confidence": context.confidence,
         "candidate_count": context.candidate_count,
-        "extras_json": encode_payload(context.extras_json),
+        "extras": None,
+        "extras_kv": extras_kv,
     }
 
 
@@ -2005,30 +2107,18 @@ def cpg_call_targets(
     exit_table = _cast_table_column(exit_table, "function_goid_h128", _GOID_ARROW_TYPE)
     exit_table = _cast_table_column(exit_table, "exit_block_id", _BLOCK_ID_ARROW_TYPE)
 
-    joined = arrow_join_tables(
+    joined = _hash_join_block_targets(
         targets_table,
         entry_table,
-        spec=ArrowJoinSpec(
-            left_on=["callee_goid_h128"],
-            right_on=["function_goid_h128"],
-            how="left",
-            validate="m:1",
-        ),
-        options=build_join_options(targets_table, entry_table),
+        right_key="function_goid_h128",
+        output_column="entry_block_id",
     )
-    joined = _drop_table_columns(joined, ["function_goid_h128"])
-    joined = arrow_join_tables(
+    joined = _hash_join_block_targets(
         joined,
         exit_table,
-        spec=ArrowJoinSpec(
-            left_on=["callee_goid_h128"],
-            right_on=["function_goid_h128"],
-            how="left",
-            validate="m:1",
-        ),
-        options=build_join_options(joined, exit_table),
+        right_key="function_goid_h128",
+        output_column="exit_block_id",
     )
-    joined = _drop_table_columns(joined, ["function_goid_h128"])
     joined = _rename_table_columns(
         joined,
         {
@@ -2057,42 +2147,187 @@ def cpg_call_targets(
             "resolution_kind",
             "confidence",
             "candidate_count",
-            "extras_json",
+            "extras",
+            "extras_kv",
         ]
     )
     deduped = dedupe_table_for_table(CPG_CALL_TARGETS_TABLE_KEY, joined)
     return _table_to_reader(CPG_CALL_TARGETS_TABLE_KEY, deduped)
 
 
-def cpg_edges_calls(cpg_call_targets: InferableTabularInput) -> InferableTabularInput:
-    """Build CALLS edges from call targets.
+def cpg_call_candidates(cpg_call_targets: InferableTabularInput) -> InferableTabularInput:
+    """Group call targets into per-call candidate lists.
+
+    Returns
+    -------
+    InferableTabularInput
+        Arrow table for graph.cpg_call_candidates.
+    """
+    call_targets = tabular_to_table(cpg_call_targets)
+    grouped: dict[tuple[str, str, str, str, str | None], list[dict[str, object]]] = {}
+    for row in _table_rows(call_targets):
+        repo = _coerce_str(row.get("repo"))
+        commit = _coerce_str(row.get("commit"))
+        rel_path = _coerce_str(row.get("rel_path"))
+        call_id = _coerce_str(row.get("call_id"))
+        if repo is None or commit is None or rel_path is None or call_id is None:
+            continue
+        call_node_id = _coerce_str(row.get("call_node_id"))
+        key = (repo, commit, rel_path, call_id, call_node_id)
+        grouped.setdefault(key, []).append(
+            {
+                "callee_goid_h128": row.get("callee_goid_h128"),
+                "callee_symbol": row.get("callee_symbol"),
+                "callee_def_id": row.get("callee_def_id"),
+                "callee_def_node_id": row.get("callee_def_node_id"),
+                "target_role": row.get("target_role"),
+                "binding_kind": row.get("binding_kind"),
+                "origin": row.get("origin"),
+                "call_kind": row.get("call_kind"),
+                "augop": row.get("augop"),
+                "resolution_kind": row.get("resolution_kind"),
+                "confidence": _coerce_float(row.get("confidence")),
+                "candidate_count": _coerce_int(row.get("candidate_count")),
+                "extras_kv": _call_candidate_extras_kv(row),
+            }
+        )
+    if not grouped:
+        return empty_reader(CPG_CALL_CANDIDATES_TABLE_KEY)
+    rows = [
+        {
+            "repo": repo,
+            "commit": commit,
+            "rel_path": rel_path,
+            "call_id": call_id,
+            "call_node_id": call_node_id,
+            "extras": None,
+            "extras_kv": None,
+            "candidates": candidates,
+        }
+        for (repo, commit, rel_path, call_id, call_node_id), candidates in grouped.items()
+    ]
+    candidates_table, _ = table_for_rows(CPG_CALL_CANDIDATES_TABLE_KEY, rows)
+    return _table_to_reader(CPG_CALL_CANDIDATES_TABLE_KEY, candidates_table)
+
+
+def cpg_edges_calls(
+    cpg_call_candidates: InferableTabularInput,
+    q__graph__cfg_blocks: InferableTabularInput,
+) -> InferableTabularInput:
+    """Build CALLS edges from call candidates.
 
     Returns
     -------
     InferableTabularInput
         Arrow table for graph.cpg_edges_calls.
     """
-    call_targets = tabular_to_table(cpg_call_targets)
-    rows: list[dict[str, object]] = []
-    for row in _table_rows(call_targets):
-        if row.get("callee_entry_block_id") is None:
-            continue
-        rows.append(
+    candidates = tabular_to_table(cpg_call_candidates)
+    if candidates.num_rows == 0:
+        return empty_reader(CPG_CALL_EDGES_TABLE_KEY)
+    exploded = explode_edges(
+        candidates,
+        spec=ExplodeSpec(
+            src_col="call_id",
+            dst_list_col="candidates",
+            repeat_cols=("repo", "commit", "call_node_id", "extras"),
+        ),
+    )
+    if exploded.good.num_rows == 0:
+        return empty_reader(CPG_CALL_EDGES_TABLE_KEY)
+    entry_blocks = _entry_blocks(tabular_to_table(q__graph__cfg_blocks))
+    if entry_blocks.num_rows == 0:
+        return empty_reader(CPG_CALL_EDGES_TABLE_KEY)
+    entry_blocks = _cast_table_column(entry_blocks, "function_goid_h128", _GOID_ARROW_TYPE)
+    entry_blocks = _cast_table_column(entry_blocks, "entry_block_id", _BLOCK_ID_ARROW_TYPE)
+
+    left_plan = (
+        Plan.table(exploded.good)
+        .project(
             {
-                "repo": row.get("repo"),
-                "commit": row.get("commit"),
-                "call_id": row.get("call_id"),
-                "call_node_id": row.get("call_node_id"),
-                "callee_entry_block_id": row.get("callee_entry_block_id"),
-                "edge_kind": "CALLS",
-                "confidence": row.get("confidence"),
-                "extras_json": _call_edge_extras(row),
+                "repo": E.field("repo"),
+                "commit": E.field("commit"),
+                "call_id": E.field("call_id"),
+                "call_node_id": E.field("call_node_id"),
+                "extras": E.field("extras"),
+                "callee_goid_h128": E.cast(
+                    E.field(("candidates", "callee_goid_h128")),
+                    "decimal128(38,0)",
+                ),
+                "confidence": E.field(("candidates", "confidence")),
+                "extras_kv": E.field(("candidates", "extras_kv")),
             }
         )
-    if not rows:
+        .filter(E.is_valid("callee_goid_h128"))
+    )
+    right_plan = (
+        Plan.table(entry_blocks)
+        .project(
+            {
+                "function_goid_h128": E.cast(
+                    E.field("function_goid_h128"),
+                    "decimal128(38,0)",
+                ),
+                "entry_block_id": E.field("entry_block_id"),
+            }
+        )
+        .filter(E.is_valid("function_goid_h128"))
+    )
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=["callee_goid_h128"],
+            right_keys=["function_goid_h128"],
+            how="left outer",
+            left_output=[
+                "repo",
+                "commit",
+                "call_id",
+                "call_node_id",
+                "extras",
+                "confidence",
+                "extras_kv",
+            ],
+            right_output=["entry_block_id"],
+        ),
+    )
+    joined = joined.filter(E.is_valid("entry_block_id"))
+    joined = joined.project(
+        {
+            "repo": E.field("repo"),
+            "commit": E.field("commit"),
+            "call_id": E.field("call_id"),
+            "call_node_id": E.field("call_node_id"),
+            "callee_entry_block_id": E.field("entry_block_id"),
+            "edge_kind": E.scalar("CALLS"),
+            "confidence": E.field("confidence"),
+            "extras": E.field("extras"),
+            "extras_kv": E.field("extras_kv"),
+        }
+    )
+    edges = reader_to_table(joined.to_reader(use_threads=True))
+    if edges.num_rows == 0:
         return empty_reader(CPG_CALL_EDGES_TABLE_KEY)
-    edges_table = dedupe_table_for_table(CPG_CALL_EDGES_TABLE_KEY, pa.Table.from_pylist(rows))
-    return _table_to_reader(CPG_CALL_EDGES_TABLE_KEY, edges_table)
+    edges = edges.take(
+        stable_sort_indices(
+            edges,
+            sort_keys=[
+                ("repo", "ascending"),
+                ("commit", "ascending"),
+                ("call_id", "ascending"),
+                ("call_node_id", "ascending"),
+                ("callee_entry_block_id", "ascending"),
+            ],
+        )
+    )
+    result = finalize_table(
+        edges,
+        spec=FinalizeSpec(
+            table_key=CPG_CALL_EDGES_TABLE_KEY,
+            mode="strict",
+            target_name=CALL_WIRING_TARGET_NAME,
+        ),
+    )
+    return result.good
 
 
 @dataclass(frozen=True, slots=True)
@@ -2168,7 +2403,6 @@ def _explicit_targets_by_call(
             "call_kind": _coerce_str(row.get("call_kind")),
             "augop": row.get("augop"),
             "confidence": _coerce_float(row.get("confidence")) or 0.0,
-            "extras_json": row.get("extras_json"),
         }
         explicit_targets.append(target)
         by_call.setdefault((repo, commit, call_id), []).append(target)
@@ -2276,7 +2510,8 @@ def _explicit_arg_edges(
                 "call_kind": arg.get("call_kind"),
                 "augop": arg.get("augop"),
                 "confidence": confidence,
-                "extras_json": None,
+                "extras": None,
+                "extras_kv": None,
             }
         )
     return edges
@@ -2343,7 +2578,8 @@ def _implicit_receiver_edges(
                 "call_kind": target.get("call_kind"),
                 "augop": target.get("augop"),
                 "confidence": _coerce_float(target.get("confidence")) or 0.0,
-                "extras_json": None,
+                "extras": None,
+                "extras_kv": None,
             }
         )
     return edges
@@ -2401,7 +2637,7 @@ def _implicit_descriptor_edges(
         callee_def_id = _coerce_str(row.get("callee_def_id"))
         if callee_def_id is None:
             continue
-        extras = decode_payload(row.get("extras_json"))
+        extras = _coerce_extras_kv(row.get("extras_kv"))
         descriptor_obj_is_none = _extras_descriptor_obj_is_none(extras)
         for param_ordinal, arg_slot, arg_role in _descriptor_arg_templates(
             binding_kind,
@@ -2429,7 +2665,8 @@ def _implicit_descriptor_edges(
                     "call_kind": call_kind,
                     "augop": row.get("augop"),
                     "confidence": _coerce_float(row.get("confidence")) or 0.0,
-                    "extras_json": None,
+                    "extras": None,
+                    "extras_kv": None,
                 }
             )
     return edges
@@ -2464,10 +2701,8 @@ def cpg_edges_arg_to_param(
     ]
     if not combined_rows:
         return empty_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
-    edges_table = dedupe_table_for_table(
-        CPG_ARG_TO_PARAM_EDGES_TABLE_KEY,
-        pa.Table.from_pylist(combined_rows),
-    )
+    edges_table, _ = table_for_rows(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY, combined_rows)
+    edges_table = dedupe_table_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY, edges_table)
     return _table_to_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY, edges_table)
 
 
@@ -2506,7 +2741,8 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
                 "origin": row.get("origin"),
                 "edge_kind": "RET_TO_CALL",
                 "confidence": confidence * 0.9,
-                "extras_json": encode_payload({"summary_kind": "exit_block"}),
+                "extras": None,
+                "extras_kv": {"summary_kind": "exit_block"},
             }
         )
     if not rows:
@@ -2521,9 +2757,11 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
 __all__ = [
     "CALL_WIRING_TARGET_NAME",
     "CPG_ARG_TO_PARAM_EDGES_TABLE_KEY",
+    "CPG_CALL_CANDIDATES_TABLE_KEY",
     "CPG_CALL_EDGES_TABLE_KEY",
     "CPG_CALL_TARGETS_TABLE_KEY",
     "CPG_RET_TO_CALL_EDGES_TABLE_KEY",
+    "cpg_call_candidates",
     "cpg_call_targets",
     "cpg_edges_arg_to_param",
     "cpg_edges_calls",

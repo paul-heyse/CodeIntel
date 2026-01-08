@@ -12,8 +12,8 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     lookup_keys,
 )
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
+from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.core.columnar.rows import table_for_rows
-from codeintel.core.serialization.payload import decode_payload, encode_payload
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
@@ -76,8 +76,9 @@ def cpg2_edges__call_wiring_calls(
         extras_values = {
             "call_id": row.get("call_id"),
             "confidence": row.get("confidence"),
-            "call_extras": decode_payload(row.get("extras_json")),
+            "call_extras": row.get("extras_kv"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         ordinal = cpg_edge_ordinal(
             "graph.cpg_edges_calls",
             {
@@ -95,7 +96,8 @@ def cpg2_edges__call_wiring_calls(
                 "edge_layer": "FLOW",
                 "rel_path": syntax_info.get("rel_path"),
                 "ordinal": ordinal,
-                "extras_json": _payload_bytes(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
@@ -158,6 +160,7 @@ def cpg2_edges__call_wiring_arg_to_param(
             "augop": row.get("augop"),
             "confidence": row.get("confidence"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         ordinal = cpg_edge_ordinal(
             "graph.cpg_edges_arg_to_param",
             {
@@ -178,7 +181,8 @@ def cpg2_edges__call_wiring_arg_to_param(
                 "edge_layer": "FLOW",
                 "rel_path": src_info.get("rel_path"),
                 "ordinal": ordinal,
-                "extras_json": _payload_bytes(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
@@ -236,8 +240,9 @@ def cpg2_edges__call_wiring_ret_to_call(
             "target_role": row.get("target_role"),
             "call_kind": row.get("call_kind"),
             "origin": row.get("origin"),
-            "summary": row.get("extras_json"),
+            "summary": row.get("extras_kv"),
         }
+        extras_kv = extras_kv_from_mapping(extras_values)
         ordinal = cpg_edge_ordinal(
             "graph.cpg_edges_ret_to_call",
             {"call_id": row.get("call_id"), "exit_block_id": row.get("exit_block_id")},
@@ -252,7 +257,8 @@ def cpg2_edges__call_wiring_ret_to_call(
                 "edge_layer": "FLOW",
                 "rel_path": syntax_info.get("rel_path"),
                 "ordinal": ordinal,
-                "extras_json": _payload_bytes(extras_values),
+                "extras": None,
+                "extras_kv": extras_kv,
             }
         )
     table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
@@ -299,14 +305,6 @@ def _syntax_lookup_key(
     key_columns = lookup_keys(SYNTAX_NODES_TABLE_KEY, "node_id")
     values = {"repo": repo, "commit": commit, "node_id": node_id}
     return tuple(values.get(column) for column in key_columns)
-
-
-def _payload_bytes(values: dict[str, object]) -> bytes:
-    encoded = encode_payload(values)
-    if encoded is None:
-        msg = "Expected payload encoding to return bytes"
-        raise ValueError(msg)
-    return encoded
 
 
 def _record_diagnostics(

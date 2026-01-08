@@ -48,6 +48,7 @@ from codeintel.build.tabular.frames import (
     JoinValidation,
     join_validated,
 )
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import (
     iter_array_values as _iter_array_values,
@@ -1488,8 +1489,10 @@ __all__ = [
     "AlignmentReporter",
     "ArrowJoinOptions",
     "ArrowJoinSpec",
+    "HashJoinSpec",
     "JoinFilterClause",
     "ParquetScanOptions",
+    "Plan",
     "align_reader_to_contract",
     "align_reader_to_contract_context",
     "align_table_to_contract",

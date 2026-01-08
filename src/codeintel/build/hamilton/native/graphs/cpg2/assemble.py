@@ -75,9 +75,11 @@ from codeintel.build.hamilton.native.graphs.cpg2.planes.overlays_symtable import
 from codeintel.build.hamilton.native.graphs.cpg2.planes.py_sym import (
     cpg2_nodes__py_sym_bindings,
     cpg2_nodes__py_sym_scopes,
+    cpg2_nodes__py_sym_unresolved_bindings,
 )
 from codeintel.build.hamilton.native.graphs.cpg2.planes.scip import (
     cpg2_edges__scip_occurrences,
+    cpg2_nodes__scip_external_symbols,
     cpg2_nodes__scip_symbols,
 )
 from codeintel.build.hamilton.native.graphs.cpg2.planes.symbol import (
@@ -102,11 +104,6 @@ from codeintel.build.hamilton.native.graphs.cpg2.types import (
     _CpgNodeInputs,
     _CpgOverlayEdgeInputs,
 )
-from codeintel.build.tabular.arrow_ops import (
-    align_table_to_contract,
-    dedupe_table_for_table,
-    emit_alignment_report,
-)
 from codeintel.build.tabular.compute_helpers import cast_array, scalar_from_compute
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
@@ -114,6 +111,7 @@ from codeintel.build.tabular.compute_masks import (
     is_in_mask,
     is_valid_mask,
 )
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -190,14 +188,15 @@ def assemble_cpg_nodes(tables: Sequence[pa.Table]) -> pa.Table:
     combined = concat_tables_unified(tables)
     combined = _ensure_contract_columns(CPG_NODES_TABLE_KEY, combined)
     combined = _cast_to_contract_types(CPG_NODES_TABLE_KEY, combined)
-    combined = dedupe_table_for_table(CPG_NODES_TABLE_KEY, combined)
-    return align_table_to_contract(
-        CPG_NODES_TABLE_KEY,
+    result = finalize_table(
         combined,
-        target_name=CPG_TARGET_NAME,
-        extras_policy=None,
-        reporter=emit_alignment_report,
+        spec=FinalizeSpec(
+            table_key=CPG_NODES_TABLE_KEY,
+            mode="strict",
+            target_name=CPG_TARGET_NAME,
+        ),
     )
+    return result.good
 
 
 def assemble_cpg_edges(tables: Sequence[pa.Table]) -> pa.Table:
@@ -214,14 +213,15 @@ def assemble_cpg_edges(tables: Sequence[pa.Table]) -> pa.Table:
     combined = concat_tables_unified(tables)
     combined = _ensure_contract_columns(CPG_EDGES_TABLE_KEY, combined)
     combined = _cast_to_contract_types(CPG_EDGES_TABLE_KEY, combined)
-    combined = dedupe_table_for_table(CPG_EDGES_TABLE_KEY, combined)
-    return align_table_to_contract(
-        CPG_EDGES_TABLE_KEY,
+    result = finalize_table(
         combined,
-        target_name=CPG_TARGET_NAME,
-        extras_policy=None,
-        reporter=emit_alignment_report,
+        spec=FinalizeSpec(
+            table_key=CPG_EDGES_TABLE_KEY,
+            mode="strict",
+            target_name=CPG_TARGET_NAME,
+        ),
     )
+    return result.good
 
 
 def edge_integrity_report(
@@ -276,9 +276,11 @@ def _core_lazyframes(inputs: _CpgNodeCoreInputs) -> _CpgNodeCoreLazyFrames:
         syntax_nodes=tabular_to_table(inputs.syntax_nodes),
         ast_nodes=tabular_to_table(inputs.ast_nodes),
         scip_symbol_information=tabular_to_table(inputs.scip_symbol_information),
+        scip_external_symbols=tabular_to_table(inputs.scip_external_symbols),
         goids=tabular_to_table(inputs.goids),
         py_sym_scopes=tabular_to_table(inputs.py_sym_scopes),
         py_sym_bindings=tabular_to_table(inputs.py_sym_bindings),
+        py_sym_unresolved_bindings=tabular_to_table(inputs.py_sym_unresolved_bindings),
         py_bc_code_units=tabular_to_table(inputs.py_bc_code_units),
         py_bc_instructions=tabular_to_table(inputs.py_bc_instructions),
         py_bc_blocks=tabular_to_table(inputs.py_bc_blocks),
@@ -314,9 +316,11 @@ def cpg2_nodes__frames(
         cpg2_nodes__syntax_nodes(core.syntax_nodes),
         cpg2_nodes__ast_nodes(core.ast_nodes, env),
         cpg2_nodes__scip_symbols(core.scip_symbol_information),
+        cpg2_nodes__scip_external_symbols(core.scip_external_symbols),
         cpg2_nodes__goids(core.goids),
         cpg2_nodes__py_sym_scopes(core.py_sym_scopes),
         cpg2_nodes__py_sym_bindings(core.py_sym_bindings),
+        cpg2_nodes__py_sym_unresolved_bindings(core.py_sym_unresolved_bindings),
         cpg2_nodes__py_bc_code_units(core.py_bc_code_units),
         cpg2_nodes__py_bc_instructions(core.py_bc_instructions),
         cpg2_nodes__py_bc_blocks(core.py_bc_blocks),
@@ -349,11 +353,20 @@ def cpg2_edges__frames(
     overlay = cpg_edge_overlay_inputs
     frames = [
         cpg2_edges__syntax_edges(core.symbol.syntax_edges, core.syntax_nodes.syntax_nodes),
-        cpg2_edges__scip_occurrences(core.symbol.occ_syntax, core.symbol.occ_span),
-        cpg2_edges__scip_symbol_relationships(core.symbol.symbol_rels, overlay.scip_symbols),
+        cpg2_edges__scip_occurrences(
+            core.symbol.occ_syntax,
+            core.symbol.occ_span,
+            core.symbol.scip_symbols,
+            core.symbol.scip_external_symbols,
+        ),
+        cpg2_edges__scip_symbol_relationships(
+            core.symbol.symbol_rels,
+            core.symbol.scip_symbols,
+            core.symbol.scip_external_symbols,
+        ),
         cpg2_edges__scip_symbol_goid_xref(
             core.symbol.symbol_goid,
-            overlay.scip_symbols,
+            core.symbol.scip_symbols,
             core.flow.goids,
         ),
         cpg2_edges__call_graph_edges(core.link.call_edges, core.flow.goids),

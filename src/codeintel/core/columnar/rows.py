@@ -33,13 +33,32 @@ class ColumnarRowBuffer:
     table_key: str
     columns: tuple[str, ...]
     column_types: tuple[ColumnType, ...]
+    column_nullable: tuple[bool, ...]
     data: ColumnarRows
     row_count: int = 0
 
     def append(self, row: Mapping[str, object]) -> None:
-        """Append a row mapping to the buffer."""
-        for name, col_type in zip(self.columns, self.column_types, strict=True):
-            self.data[name].append(normalize_row_value_for_type(row[name], col_type))
+        """Append a row mapping to the buffer.
+
+        Raises
+        ------
+        KeyError
+            If a required column is missing from the row mapping.
+        """
+        for name, col_type, nullable in zip(
+            self.columns,
+            self.column_types,
+            self.column_nullable,
+            strict=True,
+        ):
+            if name in row:
+                value = row[name]
+            elif nullable:
+                value = None
+            else:
+                msg = f"Missing required column {name} for {self.table_key}"
+                raise KeyError(msg)
+            self.data[name].append(normalize_row_value_for_type(value, col_type))
         self.row_count += 1
 
     def extend(self, rows: Sequence[Mapping[str, object]]) -> None:
@@ -55,6 +74,7 @@ class ColumnarBatchCollector:
     table_key: str
     columns: tuple[str, ...]
     column_types: tuple[ColumnType, ...]
+    column_nullable: tuple[bool, ...]
     arrow_schema: pa.Schema
     batch_size: int
     batches: list[pa.RecordBatch] = field(default_factory=list)
@@ -68,6 +88,7 @@ class ColumnarBatchCollector:
                 table_key=self.table_key,
                 columns=self.columns,
                 column_types=self.column_types,
+                column_nullable=self.column_nullable,
             )
         self._buffer.append(row)
         self.row_count += 1
@@ -149,10 +170,12 @@ def columnar_buffer_for_table_key(table_key: str) -> ColumnarRowBuffer:
     schema = get_schema_service().require_table_schema(table_key)
     columns = tuple(schema.column_names())
     column_types: tuple[ColumnType, ...] = tuple(column.type for column in schema.columns)
+    column_nullable: tuple[bool, ...] = tuple(column.nullable for column in schema.columns)
     return ColumnarRowBuffer(
         table_key=table_key,
         columns=columns,
         column_types=column_types,
+        column_nullable=column_nullable,
         data={name: [] for name in columns},
     )
 
@@ -186,11 +209,13 @@ def columnar_batch_collector_for_table_key(
     table_schema = schema_service.require_table_schema(table_key)
     columns = tuple(table_schema.column_names())
     column_types: tuple[ColumnType, ...] = tuple(column.type for column in table_schema.columns)
+    column_nullable: tuple[bool, ...] = tuple(column.nullable for column in table_schema.columns)
     arrow_schema = _arrow_schema_for_table(table_key, extras_policy=extras_policy)
     return ColumnarBatchCollector(
         table_key=table_key,
         columns=columns,
         column_types=column_types,
+        column_nullable=column_nullable,
         arrow_schema=arrow_schema,
         batch_size=batch_size,
     )
@@ -334,11 +359,13 @@ def _buffer_from_columns(
     table_key: str,
     columns: tuple[str, ...],
     column_types: tuple[ColumnType, ...],
+    column_nullable: tuple[bool, ...],
 ) -> ColumnarRowBuffer:
     return ColumnarRowBuffer(
         table_key=table_key,
         columns=columns,
         column_types=column_types,
+        column_nullable=column_nullable,
         data={name: [] for name in columns},
     )
 

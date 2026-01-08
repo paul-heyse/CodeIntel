@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -11,6 +12,24 @@ try:
     from pyarrow import acero
 except ImportError:  # pragma: no cover - optional dependency
     acero = None
+
+if TYPE_CHECKING or acero is not None:
+    from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
+else:
+
+    class HashJoinSpec:
+        """Placeholder for HashJoinSpec when pyarrow.acero is unavailable."""
+
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            msg = "pyarrow.acero is unavailable in this environment."
+            raise RuntimeError(msg)
+
+    class Plan:
+        """Placeholder for Plan when pyarrow.acero is unavailable."""
+
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            msg = "pyarrow.acero is unavailable in this environment."
+            raise RuntimeError(msg)
 
 
 def build_exec_plan(
@@ -63,5 +82,7 @@ def build_exec_plan(
 
 
 __all__ = [
+    "HashJoinSpec",
+    "Plan",
     "build_exec_plan",
 ]

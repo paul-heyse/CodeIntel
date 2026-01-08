@@ -284,6 +284,7 @@ def _buffer_for_columns(
     columns: Sequence[str] | None,
 ) -> ColumnarRowBuffer:
     type_by_name = {column.name: column.type for column in table_schema.columns}
+    nullable_by_name = {column.name: column.nullable for column in table_schema.columns}
     resolved_columns = tuple(columns) if columns else tuple(type_by_name)
     default_type: ColumnType = "VARCHAR"
     column_types: tuple[ColumnType, ...] = tuple(
@@ -293,6 +294,7 @@ def _buffer_for_columns(
         table_key=table_schema.table_key,
         columns=resolved_columns,
         column_types=column_types,
+        column_nullable=tuple(nullable_by_name.get(name, True) for name in resolved_columns),
         data={name: [] for name in resolved_columns},
     )
 

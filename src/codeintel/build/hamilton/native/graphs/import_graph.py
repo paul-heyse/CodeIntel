@@ -6,11 +6,7 @@ import ast
 import dataclasses
 from pathlib import Path
 
-from codeintel.build.graphs.assembly import (
-    empty_reader,
-    reader_for_rows,
-    tabular_to_table,
-)
+from codeintel.build.graphs.assembly import tabular_to_table
 from codeintel.build.graphs.compute.imports import (
     ImportAnalysisResult,
     ImportEdge,
@@ -23,7 +19,9 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.graphs.compute_filters import filter_python_modules
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
@@ -129,11 +127,16 @@ def import_modules_compute(
     """
     rows = build_import_module_rows(env.repo, env.commit, import_graph_analysis)
     if not rows:
-        return empty_reader(IMPORT_MODULES_TABLE_KEY)
-    return reader_for_rows(
+        return empty_table_for_table(IMPORT_MODULES_TABLE_KEY)
+    table, _ = table_for_rows(
         IMPORT_MODULES_TABLE_KEY,
         (dataclasses.asdict(row) for row in rows),
     )
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=IMPORT_MODULES_TABLE_KEY, mode="strict"),
+    )
+    return result.good
 
 
 def import_graph_edges_compute(
@@ -151,7 +154,12 @@ def import_graph_edges_compute(
         dataclasses.asdict(row)
         for row in build_import_edge_rows(env.repo, env.commit, import_graph_analysis)
     )
-    return reader_for_rows(IMPORT_GRAPH_EDGES_TABLE_KEY, rows)
+    table, _ = table_for_rows(IMPORT_GRAPH_EDGES_TABLE_KEY, rows)
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=IMPORT_GRAPH_EDGES_TABLE_KEY, mode="strict"),
+    )
+    return result.good
 
 
 def import_modules_existing(env: BuildEnv) -> InferableTabularInput:
@@ -193,7 +201,7 @@ def import_modules_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for import modules.
     """
     _ = env
-    return empty_reader(IMPORT_MODULES_TABLE_KEY)
+    return empty_table_for_table(IMPORT_MODULES_TABLE_KEY)
 
 
 def import_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
@@ -205,7 +213,7 @@ def import_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for import graph edges.
     """
     _ = env
-    return empty_reader(IMPORT_GRAPH_EDGES_TABLE_KEY)
+    return empty_table_for_table(IMPORT_GRAPH_EDGES_TABLE_KEY)
 
 
 __all__ = [

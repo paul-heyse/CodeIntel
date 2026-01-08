@@ -13,6 +13,7 @@ from codeintel.build.hamilton.native.graphs.call_graph import (
 from codeintel.build.hamilton.native.graphs.call_wiring import (
     CALL_WIRING_TARGET_NAME,
     CPG_ARG_TO_PARAM_EDGES_TABLE_KEY,
+    CPG_CALL_CANDIDATES_TABLE_KEY,
     CPG_CALL_EDGES_TABLE_KEY,
     CPG_CALL_TARGETS_TABLE_KEY,
     CPG_RET_TO_CALL_EDGES_TABLE_KEY,
@@ -222,6 +223,11 @@ _CALL_WIRING_TABLE_CONTEXTS = (
         node_name="call_wiring__call_targets_table",
     ),
     TableTargetTableContext(
+        table_key=CPG_CALL_CANDIDATES_TABLE_KEY,
+        base_node="cpg_call_candidates",
+        node_name="call_wiring__call_candidates_table",
+    ),
+    TableTargetTableContext(
         table_key=CPG_CALL_EDGES_TABLE_KEY,
         base_node="cpg_edges_calls",
         node_name="call_wiring__edges_calls_table",
@@ -250,6 +256,7 @@ _CALL_WIRING_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
 )
 attach_table_target_template(_MODULE, spec=_CALL_WIRING_TABLE_TARGET_SPEC)
 call_wiring__call_targets_table = _MODULE.call_wiring__call_targets_table
+call_wiring__call_candidates_table = _MODULE.call_wiring__call_candidates_table
 call_wiring__edges_calls_table = _MODULE.call_wiring__edges_calls_table
 call_wiring__edges_arg_to_param_table = _MODULE.call_wiring__edges_arg_to_param_table
 call_wiring__edges_ret_to_call_table = _MODULE.call_wiring__edges_ret_to_call_table
@@ -300,6 +307,7 @@ __all__ = [
     "call_graph__edges_table",
     "call_graph__nodes_table",
     "call_graph__table_materializations",
+    "call_wiring__call_candidates_table",
     "call_wiring__call_targets_table",
     "call_wiring__edges_arg_to_param_table",
     "call_wiring__edges_calls_table",

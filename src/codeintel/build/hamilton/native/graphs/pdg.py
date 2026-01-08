@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import pyarrow as pa
 
-from codeintel.build.graphs.assembly import (
-    align_table_to_contract,
-    empty_reader,
-    tabular_to_table,
-)
-from codeintel.build.tabular.arrow_ops import dedupe_table_for_table, emit_alignment_report
+from codeintel.build.graphs.assembly import tabular_to_table
 from codeintel.build.tabular.compute_columns import append_constant_columns
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 
 PDG_EDGES_TABLE_KEY = "graph.pdg_edges"
@@ -63,15 +60,17 @@ def pdg_edges(
     cdg_table = _cdg_edges_table(cdg_edges)
     tables = [table for table in (dfg_table, cdg_table) if table.num_rows > 0]
     if not tables:
-        return empty_reader(PDG_EDGES_TABLE_KEY)
+        return empty_table_for_table(PDG_EDGES_TABLE_KEY)
     combined = concat_tables_unified(tables)
-    deduped = dedupe_table_for_table(PDG_EDGES_TABLE_KEY, combined)
-    return align_table_to_contract(
-        PDG_EDGES_TABLE_KEY,
-        deduped,
-        target_name=PDG_TARGET_NAME,
-        reporter=emit_alignment_report,
+    result = finalize_table(
+        combined,
+        spec=FinalizeSpec(
+            table_key=PDG_EDGES_TABLE_KEY,
+            mode="strict",
+            target_name=PDG_TARGET_NAME,
+        ),
     )
+    return result.good
 
 
 __all__ = [
