@@ -238,6 +238,10 @@ def main() -> int:
             ],
         ),
         CommandSpec(
+            name="schema_diff",
+            args=["uv", "run", "python", "-m", "tools.schema_diff"],
+        ),
+        CommandSpec(
             name="cli_registry_preflight",
             args=[
                 "uv",

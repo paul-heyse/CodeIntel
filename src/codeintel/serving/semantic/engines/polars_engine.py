@@ -12,6 +12,7 @@ import pyarrow as pa
 
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
 from codeintel.core.columnar.normalization import normalize_table_for_compute
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.serving.semantic.engines.protocol import QueryExplain
 from codeintel.serving.semantic.guardrails import warn_eager_materialization
 from codeintel.storage.duckdb_explain import normalize_explain_output
@@ -116,7 +117,7 @@ class PolarsExecutablePlan:
         )
         reader = record_batch_reader_from_iterable(record_batches, empty_policy="none")
         if reader is None:
-            return pa.RecordBatchReader.from_batches(arrow_schema, [])
+            return empty_reader_from_schema(arrow_schema)
         return reader
 
     def explain(self) -> QueryExplain:

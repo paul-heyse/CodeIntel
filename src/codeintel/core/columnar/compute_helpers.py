@@ -19,6 +19,7 @@ def call_compute(
     args: Sequence[object],
     *,
     options: pc.FunctionOptions | None = None,
+    **kwargs: object,
 ) -> object | None:
     """Call an Arrow compute kernel and return the raw result.
 
@@ -30,6 +31,8 @@ def call_compute(
         Positional arguments passed to the kernel.
     options
         Optional compute options for the kernel.
+    **kwargs
+        Additional keyword arguments forwarded to ``pyarrow.compute.call_function``.
 
     Returns
     -------
@@ -37,7 +40,7 @@ def call_compute(
         Raw compute result, or None when the kernel fails.
     """
     try:
-        return pc.call_function(name, list(args), options=options)
+        return pc.call_function(name, list(args), options=options, **kwargs)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return None
 
@@ -99,6 +102,7 @@ def array_from_compute(
     args: Sequence[object],
     *,
     options: pc.FunctionOptions | None = None,
+    **kwargs: object,
 ) -> pa.Array | pa.ChunkedArray | None:
     """Compute a kernel result and return it when it is array-like.
 
@@ -107,7 +111,7 @@ def array_from_compute(
     pyarrow.Array | pyarrow.ChunkedArray | None
         Array result or None on failure/unsupported kernels.
     """
-    result = call_compute(name, args, options=options)
+    result = call_compute(name, args, options=options, **kwargs)
     if isinstance(result, (pa.Array, pa.ChunkedArray)):
         return result
     return None
@@ -118,6 +122,7 @@ def scalar_from_compute(
     args: Sequence[object],
     *,
     options: pc.FunctionOptions | None = None,
+    **kwargs: object,
 ) -> object | None:
     """Compute a scalar result and return its Python value when available.
 
@@ -126,7 +131,7 @@ def scalar_from_compute(
     object | None
         Python scalar from the compute kernel, or None on failure.
     """
-    result = call_compute(name, args, options=options)
+    result = call_compute(name, args, options=options, **kwargs)
     if result is None:
         return None
     if isinstance(result, pa.Scalar):

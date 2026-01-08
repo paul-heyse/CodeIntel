@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.polars_collect import (
     PolarsExecutionOptions,
     collect_batches,
     collect_lazyframe,
 )
+from codeintel.core.columnar.readers import record_batch_reader_from_batches
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBRelation
 
@@ -250,7 +250,7 @@ class LazyFrameStream:
                 else:
                     raise
 
-        return pa.RecordBatchReader.from_batches(self.schema, _iter_batches())
+        return record_batch_reader_from_batches(self.schema, _iter_batches())
 
     def to_lazyframe(self) -> PolarsLazyFrame:
         """Return the underlying LazyFrame.
@@ -351,7 +351,7 @@ def stream_from_table(
     RecordBatchReaderStream
         Columnar stream adapter for the table.
     """
-    reader = table_to_reader(table, batch_size=batch_size)
+    reader = _table_to_reader(table, batch_size=batch_size)
     return RecordBatchReaderStream(reader)
 
 
@@ -397,11 +397,28 @@ def coerce_arrow_reader(
         return reader
     table_from_c = _table_from_c_array(value)
     if table_from_c is not None:
-        return table_to_reader(table_from_c, batch_size=batch_size)
+        return _table_to_reader(table_from_c, batch_size=batch_size)
     table = _table_from_interchange(value)
     if table is None:
         return None
-    return table_to_reader(table, batch_size=batch_size)
+    return _table_to_reader(table, batch_size=batch_size)
+
+
+def _table_to_reader(
+    table: pa.Table,
+    *,
+    batch_size: int | None = DEFAULT_ARROW_BATCH_SIZE,
+) -> pa.RecordBatchReader:
+    to_reader = getattr(table, "to_reader", None)
+    if callable(to_reader):
+        if batch_size is None:
+            return to_reader()
+        try:
+            return to_reader(max_chunksize=batch_size)
+        except TypeError:
+            return to_reader()
+    batches = table.to_batches(max_chunksize=batch_size) if batch_size else table.to_batches()
+    return record_batch_reader_from_batches(table.schema, batches)
 
 
 def coerce_arrow_table(value: object) -> pa.Table | None:

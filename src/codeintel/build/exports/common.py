@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.exprs import build_export_relation_plan
 from codeintel.build.schemas import iter_contracts
-from codeintel.build.tabular.arrow_ops import ParquetScanOptions, scan_parquet_dataset
 from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.manifests import dataset_manifest_path
+from codeintel.core.datasets.scanning import ParquetScanOptions, scan_parquet_dataset
 from codeintel.core.errors.taxonomy import ErrorCode
 from codeintel.core.ports.export import ExportRelation
 from codeintel.core.schemas.hashing import schema_digest

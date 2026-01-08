@@ -11,7 +11,8 @@ import msgspec
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.core.columnar.conversion import table_to_reader
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable, table_to_reader
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.columnar.schema_ops import unify_schemas
@@ -103,7 +104,10 @@ def align_reader_to_contract(
                 context=context,
             )
 
-    return pa.RecordBatchReader.from_batches(target_schema, _aligned_batches())
+    aligned = record_batch_reader_from_iterable(_aligned_batches(), empty_policy="none")
+    if aligned is None:
+        return empty_reader_from_schema(target_schema)
+    return aligned
 
 
 def align_table_to_contract(

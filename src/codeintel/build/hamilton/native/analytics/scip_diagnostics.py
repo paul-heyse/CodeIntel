@@ -91,14 +91,20 @@ def _collect_diagnostics_counts(
         message = _normalize_text(row.get("message"))
         rel_path = _normalize_text(row.get("rel_path"))
         summary_counts[severity, source] = summary_counts.get((severity, source), 0) + 1
-        file_counts[rel_path, severity, source] = file_counts.get(
-            (rel_path, severity, source),
-            0,
-        ) + 1
-        message_counts[severity, source, code, message] = message_counts.get(
-            (severity, source, code, message),
-            0,
-        ) + 1
+        file_counts[rel_path, severity, source] = (
+            file_counts.get(
+                (rel_path, severity, source),
+                0,
+            )
+            + 1
+        )
+        message_counts[severity, source, code, message] = (
+            message_counts.get(
+                (severity, source, code, message),
+                0,
+            )
+            + 1
+        )
     return _ScipDiagnosticsCounts(
         summary_counts=summary_counts,
         file_counts=file_counts,

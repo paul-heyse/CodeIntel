@@ -172,10 +172,6 @@ def tabular_to_frame(value: InferableTabularInput) -> pl.DataFrame:
     pl.DataFrame
         DataFrame representation of the input.
 
-    Raises
-    ------
-    TypeError
-        If the input type cannot be coerced into a DataFrame.
     """
     return _core_tabular_to_frame(value)
 
@@ -197,9 +193,7 @@ def _coerce_goid_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
     except (AttributeError, ValueError, pl.exceptions.PolarsError):
         return frame
     goid_columns = [
-        col
-        for col in columns
-        if isinstance(col, str) and _GOID_COLUMN_MARKER in col.lower()
+        col for col in columns if isinstance(col, str) and _GOID_COLUMN_MARKER in col.lower()
     ]
     if not goid_columns:
         return frame

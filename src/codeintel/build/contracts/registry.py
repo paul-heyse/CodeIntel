@@ -9,6 +9,7 @@ from typing import Protocol, TypedDict, TypeVar, Unpack, cast
 
 import pyarrow as pa
 
+from codeintel.build.contracts.policy_registry import apply_policy_overrides
 from codeintel.build.contracts.types import (
     UNSET,
     ContractDescriptor,
@@ -263,11 +264,16 @@ class SchemaBackedContractRegistry:
         table_schema = schema_service.get_table_schema(table_key)
         if table_schema is None:
             return None
+        resolved_overrides = _resolve_policy_overrides(
+            table_key=table_key,
+            target=target,
+            overrides=overrides,
+        )
         return self.resolver.resolve(
             table_schema=table_schema,
             domain=domain,
             target=target,
-            overrides=overrides,
+            overrides=resolved_overrides,
         )
 
     def require_contract(
@@ -287,11 +293,16 @@ class SchemaBackedContractRegistry:
         """
         schema_service = get_schema_service()
         table_schema = schema_service.require_table_schema(table_key)
+        resolved_overrides = _resolve_policy_overrides(
+            table_key=table_key,
+            target=target,
+            overrides=overrides,
+        )
         return self.resolver.resolve(
             table_schema=table_schema,
             domain=domain,
             target=target,
-            overrides=overrides,
+            overrides=resolved_overrides,
         )
 
 
@@ -421,6 +432,11 @@ def contract_for_table(
     -------
     TableContractSpec
         Resolved contract spec.
+
+    Notes
+    -----
+    Prefer `contract_ref_for_table` for import-time safe usage in Hamilton targets.
+    This function resolves immediately and requires a configured SchemaService.
     """
     resolved_overrides = ContractOverrides(
         input_name=input_name,
@@ -469,6 +485,20 @@ def _overrides_from_spec(spec: ContractForTableInput) -> ContractForTableOverrid
     if spec.policy is not UNSET:
         overrides["policy"] = cast("ContractPolicy", spec.policy)
     return overrides
+
+
+def _resolve_policy_overrides(
+    *,
+    table_key: str,
+    target: str,
+    overrides: ContractOverrides | None,
+) -> ContractOverrides:
+    resolved_overrides = overrides or ContractOverrides()
+    return apply_policy_overrides(
+        table_key=table_key,
+        target_name=target,
+        overrides=resolved_overrides,
+    )
 
 
 __all__ = [

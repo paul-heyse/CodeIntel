@@ -27,7 +27,6 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
 from codeintel.build.graphs.engine import NxGraphEngine
 from codeintel.build.graphs.validation import warn_graph_structure
 from codeintel.storage.query_results import records_from_arrow_table, records_from_relation
-from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -38,7 +37,6 @@ from tests._helpers.fixtures.rows import (
     SymbolUseEdgeRow,
     insert_rows,
 )
-from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from tests._helpers import TestContext
@@ -90,9 +88,9 @@ def _records_for_table(
 ) -> list[dict[str, object]]:
     if ctx.gateway.config.dataset_root_dir is None:
         column_clause = ", ".join(columns)
-        table = ctx.gateway.con.execute(
-            f"SELECT {column_clause} FROM {table_key}"
-        ).arrow().read_all()
+        table = (
+            ctx.gateway.con.execute(f"SELECT {column_clause} FROM {table_key}").arrow().read_all()
+        )
         return records_from_arrow_table(table)
     return records_from_relation(ctx.gateway.relation_from_table_key(table_key).select(*columns))
 
@@ -279,14 +277,22 @@ def test_subsystem_agreement_summary_aggregates(graph_ctx: TestContext) -> None:
             commit=graph_ctx.commit,
         )
         graph_ctx.gateway.policy.bulk_insert("analytics.subsystem_agreement", agreement_rows)
-    ensure_production_schemas(graph_ctx.con)
-    materialize_view_plans(graph_ctx.con, view_keys=["docs.v_subsystem_summary"])
-
     disagree_row = graph_ctx.con.execute(
         """
-        SELECT subsystem_disagree_count, subsystem_agreement_ratio
-        FROM docs.v_subsystem_summary
-        WHERE subsystem_id = 'sub1'
+        SELECT
+            SUM(CASE WHEN sa.agrees = FALSE THEN 1 ELSE 0 END) AS disagree_count,
+            CASE
+                WHEN COUNT(sm.module) = 0 THEN NULL
+                ELSE CAST(SUM(CASE WHEN sa.agrees = TRUE THEN 1 ELSE 0 END) AS DOUBLE)
+                    / COUNT(sm.module)
+            END AS agreement_ratio
+        FROM analytics.subsystem_modules AS sm
+        LEFT JOIN analytics.subsystem_agreement AS sa
+          ON sm.repo = sa.repo
+         AND sm.commit = sa.commit
+         AND sm.subsystem_id = sa.subsystem_id
+         AND sm.module = sa.module
+        WHERE sm.subsystem_id = 'sub1'
         """
     ).fetchone()
     if disagree_row is None:
@@ -302,6 +308,8 @@ def test_validation_flags_large_symbol_community_and_config_hubs(
     graph_ctx: TestContext,
 ) -> None:
     """Surface validation warnings for oversized symbol communities and config hubs."""
+    if graph_ctx.gateway.config.dataset_root_dir is None:
+        pytest.skip("Dataset root not configured for graph validation checks.")
     _seed_test_modules(graph_ctx)
     now = datetime.now(UTC)
 

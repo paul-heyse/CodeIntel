@@ -17,6 +17,7 @@ except ImportError:  # pragma: no cover - optional dependency
     pl = None
 
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
 from codeintel.core.schemas.arrow_gen import ExtrasPolicy
 from codeintel.core.schemas.primitives import TableSchema
@@ -254,7 +255,7 @@ def validate_record_batch_reader(
 
     validated = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
     if validated is None:
-        return pa.RecordBatchReader.from_batches(reader.schema, [])
+        return empty_reader_from_schema(reader.schema)
     return validated
 
 

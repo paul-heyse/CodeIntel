@@ -38,7 +38,12 @@ from codeintel.build.tabular.arrow_ops import (
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import constant_array
-from codeintel.build.tabular.compute_helpers import cast_array, safe_filter, take_array
+from codeintel.build.tabular.compute_helpers import (
+    array_from_compute,
+    cast_array,
+    safe_filter,
+    take_array,
+)
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     equal_mask,
@@ -181,11 +186,19 @@ def _if_else(
     left: object,
     right: object,
 ) -> pa.Array | pa.ChunkedArray:
-    return pc.call_function("if_else", [condition, left, right])
+    result = array_from_compute("if_else", [condition, left, right])
+    if result is None:
+        msg = "Arrow compute if_else did not return an array."
+        raise TypeError(msg)
+    return result
 
 
 def _drop_nulls(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
-    return pc.call_function("drop_null", [values])
+    result = array_from_compute("drop_null", [values])
+    if result is None:
+        msg = "Arrow compute drop_null did not return an array."
+        raise TypeError(msg)
+    return result
 
 
 def _path_set(values: pa.Array | pa.ChunkedArray) -> set[str]:
@@ -198,14 +211,22 @@ def _struct_field(
     name: str,
 ) -> pa.Array | pa.ChunkedArray:
     options = pc.StructFieldOptions(name)
-    return pc.call_function("struct_field", [values], options=options)
+    result = array_from_compute("struct_field", [values], options=options)
+    if result is None:
+        msg = "Arrow compute struct_field did not return an array."
+        raise TypeError(msg)
+    return result
 
 
 def _divide(
     left: pa.Array | pa.ChunkedArray,
     right: pa.Array | pa.ChunkedArray,
 ) -> pa.Array | pa.ChunkedArray:
-    return pc.call_function("divide", [left, right])
+    result = array_from_compute("divide", [left, right])
+    if result is None:
+        msg = "Arrow compute divide did not return an array."
+        raise TypeError(msg)
+    return result
 
 
 def _failure_paths(parse_manifest: pa.Table) -> pa.Array | pa.ChunkedArray:

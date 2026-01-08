@@ -18,6 +18,7 @@ from hamilton import graph_types
 from hamilton.caching.stores.file import FileResultStore
 from hamilton.caching.stores.sqlite import SQLiteMetadataStore
 
+from codeintel.build.contracts.policy_registry import configure_contract_policy_registry
 from codeintel.build.contracts.runtime import configure_contract_runtime
 from codeintel.build.hamilton.cache_adapter import (
     CacheAdapterOptions,
@@ -195,7 +196,11 @@ def _ensure_schema_service_for_module_imports(*, env: BuildEnv) -> None:
         provider = _override_schema_provider(env=env)
         schema_service = SchemaService(table_provider=provider)
         set_schema_service(schema_service)
-    configure_contract_runtime(schema_service=schema_service)
+    policy_registry = configure_contract_policy_registry(config=env.config)
+    configure_contract_runtime(
+        schema_service=schema_service,
+        policy_registry=policy_registry,
+    )
     schema_service = get_schema_service()
     required_keys = (
         "analytics.scip_diagnostics_summary",
@@ -295,7 +300,10 @@ def compose_runtime(
             observation_provider=observation_provider,
         )
         configure_contract_service(runtime=runtime_bundle)
-        configure_contract_runtime(schema_service=schema_service)
+        configure_contract_runtime(
+            schema_service=schema_service,
+            policy_registry=configure_contract_policy_registry(config=env.config),
+        )
         _validate_graph_invariants(
             runtime=runtime_bundle,
             mode=_graph_validation_mode(identity.config),

@@ -28,8 +28,11 @@ from codeintel.build.contracts.registry import (
 from codeintel.build.contracts.types import ContractPolicy
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular import array_ops as _array_ops
-from codeintel.build.tabular.compute_helpers import cast_array, scalar_from_compute
-from codeintel.build.tabular.compute_masks import equal_expr
+from codeintel.build.tabular.compute_helpers import (
+    array_from_compute,
+    cast_array,
+    scalar_from_compute,
+)
 from codeintel.build.tabular.conversion import (
     arrow_reader_to_lazyframe,
     lazyframe_to_reader,
@@ -58,7 +61,6 @@ from codeintel.core.columnar.normalization import (
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract as _align_reader
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.columnar.schema_ops import concat_tables_unified as _concat_tables_unified
-from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
     DEFAULT_ARROW_BATCH_SIZE,
@@ -69,8 +71,11 @@ from codeintel.core.constants import (
     DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
     DEFAULT_ARROW_USE_THREADS,
 )
-from codeintel.core.datasets.arrow_store import scan_dataset
-from codeintel.core.datasets.scanner_ops import build_scanner
+from codeintel.core.datasets.scanning import (
+    ParquetScanOptions,
+    scan_parquet_dataset,
+    scan_parquet_table,
+)
 from codeintel.core.schemas.arrow_gen import (
     DEFAULT_EXTRAS_COLUMN,
     ArrowSchemaMetadata,
@@ -131,21 +136,6 @@ class JoinFilterClause:
     field: str
     predicate: Callable[[str], pc.Expression]
     side: JoinFilterSide = "either"
-
-
-@dataclass(frozen=True, slots=True)
-class ParquetScanOptions:
-    columns: Sequence[str] | None = None
-    repo: str | None = None
-    commit: str | None = None
-    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
-    batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
-    fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
-    use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
-    cache_metadata: bool | None = DEFAULT_ARROW_CACHE_METADATA
-    parquet_pre_buffer: bool | None = DEFAULT_ARROW_PARQUET_PRE_BUFFER
-    parquet_use_buffered_stream: bool | None = DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM
-    parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
 
 
 @dataclass(frozen=True, slots=True)
@@ -668,6 +658,35 @@ def normalize_table_for_compute(table: pa.Table) -> pa.Table:
     return normalize_table_for_join(table)
 
 
+def _null_key_stats(
+    table: pa.Table,
+    keys: Sequence[str],
+) -> tuple[bool, int | None]:
+    null_mask: pa.Array | pa.ChunkedArray | None = None
+    for key in keys:
+        key_mask = array_from_compute("is_null", [table[key]])
+        if key_mask is None:
+            msg = "Arrow compute is_null did not return an array."
+            raise TypeError(msg)
+        if null_mask is None:
+            null_mask = key_mask
+        else:
+            combined = array_from_compute("or_kleene", [null_mask, key_mask])
+            if combined is None:
+                msg = "Arrow compute or_kleene did not return an array."
+                raise TypeError(msg)
+            null_mask = combined
+    if null_mask is None:
+        return False, None
+    any_null = scalar_from_compute("any", [null_mask])
+    if not any_null:
+        return False, None
+    null_count = scalar_from_compute("sum", [pc.cast(null_mask, pa.int64())])
+    if isinstance(null_count, int):
+        return True, null_count
+    return True, None
+
+
 def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> None:
     if not keys:
         return
@@ -675,17 +694,11 @@ def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> 
     if missing:
         msg = f"Missing join keys on {label}: {', '.join(missing)}"
         raise ValueError(msg)
-    null_mask: pa.Array | pa.ChunkedArray | None = None
-    for key in keys:
-        key_mask = pc.is_null(table[key])
-        null_mask = key_mask if null_mask is None else pc.or_kleene(null_mask, key_mask)
-    if null_mask is not None:
-        any_null = scalar_from_compute("any", [null_mask])
-        if any_null:
-            null_count = scalar_from_compute("sum", [pc.cast(null_mask, pa.int64())])
-            count_info = f" (rows={null_count})" if isinstance(null_count, int) else ""
-            msg = f"Join validation failed for {label}: NULL keys detected{count_info}"
-            raise ValueError(msg)
+    has_nulls, null_count = _null_key_stats(table, keys)
+    if has_nulls:
+        count_info = f" (rows={null_count})" if isinstance(null_count, int) else ""
+        msg = f"Join validation failed for {label}: NULL keys detected{count_info}"
+        raise ValueError(msg)
     count_source = keys[0]
     grouped = (
         _group_by_table_keys(table, keys).group_by(list(keys)).aggregate([(count_source, "count")])
@@ -1191,7 +1204,7 @@ def align_table_to_contract(
         return table.replace_schema_metadata(plan.contract_schema.metadata)
     if not resolved_policy.coerce_types:
         _assert_schema_types_match(plan.contract_schema, table.schema)
-    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    reader = table_to_reader(table, batch_size=None)
     aligned = _align_reader(reader, plan.contract_schema, extras_policy=plan.extras_policy)
     return reader_to_table(aligned)
 
@@ -1310,84 +1323,6 @@ def concat_tables_unified(tables: Sequence[pa.Table]) -> pa.Table:
         Concatenated Arrow table with a unified schema.
     """
     return _concat_tables_unified(tables)
-
-
-def scan_parquet_dataset(
-    *,
-    dataset_root: Path,
-    table_key: str,
-    snapshot_id: str,
-    options: ParquetScanOptions | None = None,
-) -> pa.RecordBatchReader | None:
-    """Return a RecordBatchReader for a parquet dataset snapshot.
-
-    Returns
-    -------
-    pa.RecordBatchReader | None
-        RecordBatchReader when a dataset snapshot is available, otherwise None.
-    """
-    resolved = options or ParquetScanOptions()
-    try:
-        dataset = scan_dataset(
-            dataset_root=dataset_root,
-            table_key=table_key,
-            snapshot_id=snapshot_id,
-        )
-    except FileNotFoundError:
-        LOG.warning("Dataset snapshot missing for %s@%s", table_key, snapshot_id)
-        return None
-    except (OSError, ValueError, pa.ArrowInvalid) as exc:
-        LOG.warning("Dataset scan failed for %s@%s: %s", table_key, snapshot_id, exc)
-        return None
-
-    names = set(dataset.schema.names)
-    expression: pc.Expression | None = None
-    if resolved.repo is not None and "repo" in names:
-        expression = equal_expr("repo", resolved.repo)
-    if resolved.commit is not None and "commit" in names:
-        commit_expr = equal_expr("commit", resolved.commit)
-        expression = commit_expr if expression is None else expression & commit_expr
-
-    scan_options = DatasetScanOptions(
-        batch_size=resolved.batch_size,
-        batch_readahead=resolved.batch_readahead,
-        fragment_readahead=resolved.fragment_readahead,
-        filter_expression=expression,
-        cache_metadata=resolved.cache_metadata,
-        use_threads=resolved.use_threads,
-        parquet_pre_buffer=resolved.parquet_pre_buffer,
-        parquet_use_buffered_stream=resolved.parquet_use_buffered_stream,
-        parquet_buffer_size=resolved.parquet_buffer_size,
-        columns=tuple(resolved.columns) if resolved.columns is not None else None,
-        unify_schemas=True,
-    )
-    scanner = build_scanner(dataset, options=scan_options)
-    return scanner.to_reader()
-
-
-def scan_parquet_table(
-    *,
-    dataset_root: Path,
-    table_key: str,
-    snapshot_id: str,
-    options: ParquetScanOptions | None = None,
-) -> pa.Table | None:
-    """Return a materialized Arrow Table for a parquet dataset snapshot.
-
-    Returns
-    -------
-    pa.Table | None
-        Materialized Arrow table when available, otherwise None.
-    """
-    reader = scan_parquet_dataset(
-        dataset_root=dataset_root,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
-        options=options,
-    )
-    if reader is None:
-        return None
-    return reader_to_table(reader)
 
 
 def arrow_join_frames(
@@ -1535,6 +1470,7 @@ __all__ = [
     "ArrowJoinOptions",
     "ArrowJoinSpec",
     "JoinFilterClause",
+    "ParquetScanOptions",
     "align_reader_to_contract",
     "align_reader_to_contract_context",
     "align_table_to_contract",

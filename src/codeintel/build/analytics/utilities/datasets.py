@@ -19,6 +19,8 @@ from sqlglot import exp
 
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_columns import append_constant_columns
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.readers import empty_reader_from_schema
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.utilities.persistence import DeleteScope
@@ -419,13 +421,16 @@ def _record_batch_reader_from_rows(
     batch_size: int,
 ) -> pa.RecordBatchReader:
     if not rows:
-        return pa.RecordBatchReader.from_batches(schema, [])
+        return empty_reader_from_schema(schema)
 
     def _iter_batches() -> Iterable[pa.RecordBatch]:
         for chunk in _chunked_rows(rows, batch_size=batch_size):
             yield pa.RecordBatch.from_pylist(chunk, schema=schema)
 
-    return pa.RecordBatchReader.from_batches(schema, _iter_batches())
+    reader = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
+    if reader is None:
+        return empty_reader_from_schema(schema)
+    return reader
 
 
 def _chunked_rows(

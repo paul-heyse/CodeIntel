@@ -17,7 +17,11 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 import polars as pl
 import pyarrow as pa
 
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
+from codeintel.build.tabular.conversion import (
+    arrow_reader_to_lazyframe,
+    record_batch_reader_from_iterable,
+    table_to_reader,
+)
 from codeintel.build.tabular.dedupe_ops import dedupe_tabular
 from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.columnar.schema_alignment import (
@@ -96,7 +100,8 @@ def _empty_frame_from_schema(
         except KeyError:
             return None
         arrow_schema = arrow_contract_for_table_schema(table_schema=table_schema)
-    reader = pa.RecordBatchReader.from_batches(arrow_schema, [])
+    empty_table = pa.Table.from_batches([], schema=arrow_schema)
+    reader = table_to_reader(empty_table, batch_size=None)
     return arrow_reader_to_lazyframe(reader)
 
 
@@ -205,7 +210,11 @@ def _reader_from_columns(
             for name in missing:
                 payload[name] = [None] * row_count
     batch = pa.RecordBatch.from_pydict(payload, schema=schema)
-    return pa.RecordBatchReader.from_batches(batch.schema, [batch])
+    reader = record_batch_reader_from_iterable([batch], empty_policy="error")
+    if reader is None:
+        msg = "Record batch iterable is empty; schema cannot be inferred"
+        raise ValueError(msg)
+    return reader
 
 
 def lazyframe_for_table_columns(

@@ -15,6 +15,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_ops import unify_schemas
 from codeintel.core.config.settings import ArrowScanSettings
@@ -375,22 +376,6 @@ def unify_dataset_schema(
         return unify_schemas(schemas, promote_options=schema_promote_options)
     except (TypeError, ValueError, pa.ArrowInvalid):
         return dataset.schema
-
-
-def empty_reader_from_schema(schema: pa.Schema) -> pa.RecordBatchReader:
-    """Return an empty reader with the provided schema.
-
-    Parameters
-    ----------
-    schema
-        Schema to associate with the empty reader.
-
-    Returns
-    -------
-    pyarrow.RecordBatchReader
-        Reader with no batches and the provided schema.
-    """
-    return pa.RecordBatchReader.from_batches(schema, [])
 
 
 def scan_dataset_reader(

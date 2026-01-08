@@ -27,7 +27,12 @@ from codeintel.build.tabular.arrow_ops import (
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import cast_array, safe_filter, safe_filter_expr
+from codeintel.build.tabular.compute_helpers import (
+    array_from_compute,
+    cast_array,
+    safe_filter,
+    safe_filter_expr,
+)
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.build.tabular.conversion import table_to_frame
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -577,14 +582,17 @@ def _coalesce_rel_path(
     dst_col: str,
     *,
     result_type: pa.DataType | None = None,
-) -> pa.Array:
+) -> pa.Array | pa.ChunkedArray:
     if src_col not in table.column_names or dst_col not in table.column_names:
         null_type = result_type or pa.string()
         return pa.nulls(table.num_rows, type=null_type)
     src = table.column(src_col)
     dst = table.column(dst_col)
     src_valid = is_valid_mask(src)
-    result = pc.call_function("if_else", [src_valid, src, dst])
+    result = array_from_compute("if_else", [src_valid, src, dst])
+    if result is None:
+        msg = "Arrow compute if_else did not return an array."
+        raise TypeError(msg)
     if result_type is None:
         return result
     return cast_array(result, result_type, safe=False)

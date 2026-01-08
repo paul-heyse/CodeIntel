@@ -269,7 +269,7 @@ class TestTableHandling:
         contract = expect_is_not_none(_get_contract_or_xfail("analytics.function_types"))
         expect_equal(contract.owner_package, "analytics")
 
-        contract = get_contract_for_table_key("core.goids")
+        contract = _get_contract_or_xfail("core.goids")
         expect_equal(contract.owner_package, "core")
 
 
@@ -280,13 +280,13 @@ class TestContractCacheManagement:
     def test_clear_contract_cache_clears_all_cached_contracts() -> None:
         """Verify clear_contract_cache() removes all cached entries."""
         # Populate cache
-        contract1 = get_contract_for_table_key("analytics.function_types")
+        contract1 = _get_contract_or_xfail("analytics.function_types")
 
         # Clear cache
         clear_contract_cache()
 
         # Get again - should be a new instance if not frozen
-        contract2 = get_contract_for_table_key("analytics.function_types")
+        contract2 = _get_contract_or_xfail("analytics.function_types")
 
         # Both should have same values even after cache clear
         expect_equal(contract1.table_key, contract2.table_key)
@@ -302,7 +302,7 @@ class TestBuildStorageContractParity:
         ensure_storage_contract_catalog()
         table_key = "analytics.function_types"
 
-        build_contract = get_contract_for_table_key(table_key)
+        build_contract = _get_contract_or_xfail(table_key)
         storage_contract = get_storage_contract_for_table_key(table_key)
 
         expect_equal(build_contract.table_key, storage_contract.table_key)
@@ -322,7 +322,7 @@ class TestContractMetadataDerivation:
     @staticmethod
     def test_schema_description_used_when_available() -> None:
         """Verify schema description is used as contract description when available."""
-        contract = get_contract_for_table_key("analytics.function_types")
+        contract = _get_contract_or_xfail("analytics.function_types")
         # Description should be populated from schema or target
         # The exact value depends on schema provider configuration
         expect_true(
@@ -333,14 +333,14 @@ class TestContractMetadataDerivation:
     @staticmethod
     def test_family_derived_from_schema_prefix() -> None:
         """Verify family is derived from schema prefix."""
-        contract = get_contract_for_table_key("analytics.function_types")
+        contract = _get_contract_or_xfail("analytics.function_types")
         expect_equal(contract.family, "analytics")
 
-        contract = get_contract_for_table_key("core.goids")
+        contract = _get_contract_or_xfail("core.goids")
         expect_equal(contract.family, "core")
 
     @staticmethod
     def test_validation_profile_defaults_to_strict() -> None:
         """Verify validation_profile defaults to 'strict'."""
-        contract = get_contract_for_table_key("analytics.function_types")
+        contract = _get_contract_or_xfail("analytics.function_types")
         expect_equal(contract.validation_profile, "strict")

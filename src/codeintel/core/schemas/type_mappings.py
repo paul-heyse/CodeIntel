@@ -11,7 +11,6 @@ import duckdb
 import pyarrow as pa
 import sqlglot.expressions as exp
 
-from codeintel.core.columnar.conversion import table_to_frame
 from codeintel.core.schemas.arrow_gen import arrow_type_for_column_type
 from codeintel.core.schemas.primitives import (
     COMPLEX_TYPE_BASES,
@@ -30,8 +29,12 @@ else:
 
 try:
     import polars as pl
+    from polars.exceptions import PolarsError as _PolarsError
 except ImportError:  # pragma: no cover
     pl = None
+    _PolarsError = RuntimeError
+
+PolarsError: type[BaseException] = _PolarsError
 
 _DECIMAL_PREFIX = "DECIMAL("
 _MAP_PARAM_COUNT = 2
@@ -277,7 +280,12 @@ def polars_type_from_column_type(column_type: ColumnType) -> PolarsDataType | No
         table = pa.Table.from_arrays([pa.array([], type=arrow_type)], names=["_col"])
     except (TypeError, ValueError):
         return None
-    frame = table_to_frame(table)
+    try:
+        frame = pl.from_arrow(table)
+    except (TypeError, ValueError, PolarsError):
+        return None
+    if isinstance(frame, pl.Series):
+        frame = frame.to_frame()
     return frame.schema.get("_col")
 
 

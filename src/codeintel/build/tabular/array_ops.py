@@ -8,7 +8,12 @@ from typing import Literal
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.build.tabular.compute_helpers import cast_array, scalar_from_compute, take_array
+from codeintel.build.tabular.compute_helpers import (
+    array_from_compute,
+    cast_array,
+    scalar_from_compute,
+    take_array,
+)
 from codeintel.core.columnar import normalization as _core_normalization
 from codeintel.core.columnar import type_normalization as _type_normalization
 
@@ -75,11 +80,20 @@ def index_in(
     -------
     pa.Array | pa.ChunkedArray
         Index positions per input value.
+
+    Raises
+    ------
+    TypeError
+        If Arrow compute kernels fail to return arrays.
     """
     normalized = normalize_string_view_array(values)
     resolved = value_set_array(value_set, like=normalized)
     options = pc.SetLookupOptions(value_set=resolved)
-    return pc.call_function("index_in", [normalized], options=options)
+    result = array_from_compute("index_in", [normalized], options=options)
+    if result is None:
+        msg = "Arrow compute index_in did not return an array."
+        raise TypeError(msg)
+    return result
 
 
 def take_by_key(
@@ -106,18 +120,35 @@ def take_by_key(
     -------
     pa.Array | pa.ChunkedArray
         Values aligned to the key order.
+
+    Raises
+    ------
+    ValueError
+        If keys are missing and ``missing_policy`` is ``"error"``.
+    TypeError
+        If Arrow compute kernels fail to return arrays.
     """
     indices = ensure_array(index_in(keys, value_set=key_set))
-    missing_mask = pc.less(indices, pa.scalar(0))
+    missing_mask = array_from_compute("less", [indices, pa.scalar(0)])
+    if missing_mask is None:
+        msg = "Arrow compute less did not return an array."
+        raise TypeError(msg)
     missing_any = scalar_from_compute("any", [missing_mask])
     if missing_policy == "error" and missing_any:
         msg = "take_by_key missing keys"
         raise ValueError(msg)
-    safe_indices = pc.if_else(missing_mask, pa.scalar(0), indices)
+    safe_indices = array_from_compute("if_else", [missing_mask, pa.scalar(0), indices])
+    if safe_indices is None:
+        msg = "Arrow compute if_else did not return an array."
+        raise TypeError(msg)
     selected = take_array(ensure_array(values), safe_indices)
     if missing_policy == "null":
         nulls = pa.nulls(len(indices), type=values.type)
-        return pc.if_else(missing_mask, nulls, selected)
+        masked = array_from_compute("if_else", [missing_mask, nulls, selected])
+        if masked is None:
+            msg = "Arrow compute if_else did not return an array."
+            raise TypeError(msg)
+        return masked
     return selected
 
 

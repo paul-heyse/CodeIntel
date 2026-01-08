@@ -25,6 +25,7 @@ from codeintel.build.schemas import (
     unified_schema_provider,
 )
 from codeintel.build.target_metadata import build_target_system
+from codeintel.core.schemas.resolution import ResolvedSchemaProvider
 from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 if TYPE_CHECKING:
@@ -94,8 +95,16 @@ def test_unified_provider_is_returned_by_get_schema_provider(
     clear_schema_provider_cache()
     configure_schema_service(runtime=hamilton_runtime)
     provider = get_schema_provider()
-    if not isinstance(provider, UnifiedSchemaProvider):
-        pytest.fail(f"Expected UnifiedSchemaProvider, got {type(provider).__name__}")
+    if isinstance(provider, UnifiedSchemaProvider):
+        return
+    if isinstance(provider, ResolvedSchemaProvider):
+        if isinstance(provider.fallback_provider, UnifiedSchemaProvider):
+            return
+        pytest.fail(
+            "Expected ResolvedSchemaProvider to wrap UnifiedSchemaProvider, "
+            f"got {type(provider.fallback_provider).__name__}"
+        )
+    pytest.fail(f"Expected UnifiedSchemaProvider, got {type(provider).__name__}")
 
 
 def test_unified_provider_has_schema_provider_interface(

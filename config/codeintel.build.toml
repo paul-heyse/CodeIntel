@@ -77,3 +77,53 @@ log_path = "build/logs/hamilton_ui.log"
 environment = "dev"
 team = "codeintel"
 version = "v1"
+
+[contracts]
+default_profile = "default"
+
+[contracts.policy_tables]
+"analytics.config_data_flow" = "lenient"
+"analytics.graph_metrics_functions" = "lenient"
+"analytics.graph_metrics_modules" = "lenient"
+"analytics.graph_metrics_functions_ext" = "lenient"
+"analytics.graph_metrics_modules_ext" = "lenient"
+"graph.cdg_edges" = "strict"
+"graph.cpg_edges_calls" = "strict"
+"graph.cpg_edges_ret_to_call" = "strict"
+
+[contracts.policy_targets]
+call_graph = "strict"
+import_graph = "strict"
+cfg = "strict"
+dfg = "strict"
+cdg = "strict"
+pdg = "strict"
+cpg = "strict"
+call_wiring = "strict"
+goids = "strict"
+symbol_uses = "strict"
+scip = "strict"
+config_data_flow = "lenient"
+config_graph_metrics = "lenient"
+cfg_dfg_metrics = "lenient"
+graph_metrics = "lenient"
+graph_metrics_ext = "lenient"
+symbol_graph_metrics = "lenient"
+graph_stats = "lenient"
+function_effects = "lenient"
+subsystem_agreement = "lenient"
+scip_diagnostics = "lenient"
+scip_external_symbol_usage = "lenient"
+
+[contracts.policy_profiles.default]
+coerce_types = true
+allow_nulls = true
+
+[contracts.policy_profiles.strict]
+extras_policy = "reject"
+coerce_types = false
+
+[contracts.policy_profiles.lenient]
+extras_policy = "retain"
+coerce_types = true
+allow_nulls = true

@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema_alignment import align_table_to_contract
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.schemas.arrow_gen import (
@@ -118,7 +120,10 @@ class ColumnarBatchCollector:
             Reader over the collected RecordBatches.
         """
         self._flush()
-        return pa.RecordBatchReader.from_batches(self.arrow_schema, self.batches)
+        reader = record_batch_reader_from_iterable(self.batches, empty_policy="none")
+        if reader is None:
+            return empty_reader_from_schema(self.arrow_schema)
+        return reader
 
     def _flush(self) -> None:
         if self._buffer is None or self._buffer.row_count == 0:

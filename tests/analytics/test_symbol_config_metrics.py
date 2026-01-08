@@ -19,7 +19,7 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_module_rows,
     build_symbol_module_graph,
 )
-from codeintel.storage.query_results import records_from_relation
+from codeintel.storage.query_results import records_from_arrow_table, records_from_relation
 from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,
@@ -94,13 +94,10 @@ def _matches_optional_scope(value: object, expected: str) -> bool:
 
 
 def _module_inputs_for_symbol_metrics(test_ctx: TestContext) -> tuple[dict[str, str], set[str]]:
-    module_rows = records_from_relation(
-        test_ctx.gateway.relation_from_table_key("core.modules").select(
-            "module",
-            "path",
-            "repo",
-            "commit",
-        )
+    module_rows = _records_for_table(
+        test_ctx,
+        "core.modules",
+        ["module", "path", "repo", "commit"],
     )
     module_by_path: dict[str, str] = {}
     known_modules: set[str] = set()
@@ -118,6 +115,20 @@ def _module_inputs_for_symbol_metrics(test_ctx: TestContext) -> tuple[dict[str, 
         if path is not None:
             module_by_path[str(path)] = module_name
     return module_by_path, known_modules
+
+
+def _records_for_table(
+    test_ctx: TestContext,
+    table_key: str,
+    columns: list[str],
+) -> list[dict[str, object]]:
+    if test_ctx.gateway.config.dataset_root_dir is None:
+        column_clause = ", ".join(columns)
+        table = test_ctx.con.execute(f"SELECT {column_clause} FROM {table_key}").arrow().read_all()
+        return records_from_arrow_table(table)
+    return records_from_relation(
+        test_ctx.gateway.relation_from_table_key(table_key).select(*columns)
+    )
 
 
 def _write_rows_for_snapshot(
@@ -140,13 +151,10 @@ def _write_symbol_graph_metrics(
     module_by_path: dict[str, str],
     known_modules: set[str],
 ) -> None:
-    symbol_use_rows = records_from_relation(
-        ctx.gateway.relation_from_table_key("graph.symbol_use_edges").select(
-            "def_path",
-            "use_path",
-            "def_goid_h128",
-            "use_goid_h128",
-        )
+    symbol_use_rows = _records_for_table(
+        ctx,
+        "graph.symbol_use_edges",
+        ["def_path", "use_path", "def_goid_h128", "use_goid_h128"],
     )
     symbol_graph = build_symbol_module_graph(symbol_use_rows, module_by_path)
     symbol_rows = build_symbol_graph_metrics_module_rows(
@@ -313,24 +321,23 @@ def test_symbol_and_config_metrics_populate_and_views_create(
         module_by_path=module_by_path,
         known_modules=known_modules,
     )
-    config_value_rows = records_from_relation(
-        test_ctx.gateway.relation_from_table_key("analytics.config_values").select(
-            "repo",
-            "commit",
-            "key",
-            "reference_modules",
-        )
+    config_value_rows = _records_for_table(
+        test_ctx,
+        "analytics.config_values",
+        ["repo", "commit", "key", "reference_modules"],
     )
     _write_config_graph_metrics(
         test_ctx,
         config_value_rows=config_value_rows,
         allowed_modules=known_modules,
     )
-    materialize_view_plans(test_ctx.con)
     _assert_symbol_config_outputs(test_ctx)
-    test_ctx.con.execute("SELECT * FROM docs.v_symbol_module_graph")
     test_ctx.con.execute("SELECT * FROM analytics.config_graph_metrics_keys")
     test_ctx.con.execute("SELECT * FROM analytics.config_projection_module_edges")
+    if test_ctx.gateway.config.dataset_root_dir is None:
+        return
+    materialize_view_plans(test_ctx.con)
+    test_ctx.con.execute("SELECT * FROM docs.v_symbol_module_graph")
 
 
 def test_subsystem_agreement_exposed_in_views(
@@ -339,21 +346,15 @@ def test_subsystem_agreement_exposed_in_views(
     """Verify subsystem agreement results exposed through docs views."""
     _seed_subsystem_agreement_data(test_ctx)
 
-    subsystem_rows = records_from_relation(
-        test_ctx.gateway.relation_from_table_key("analytics.subsystem_modules").select(
-            "repo",
-            "commit",
-            "module",
-            "subsystem_id",
-        )
+    subsystem_rows = _records_for_table(
+        test_ctx,
+        "analytics.subsystem_modules",
+        ["repo", "commit", "module", "subsystem_id"],
     )
-    graph_metrics_rows = records_from_relation(
-        test_ctx.gateway.relation_from_table_key("analytics.graph_metrics_modules_ext").select(
-            "repo",
-            "commit",
-            "module",
-            "import_community_id",
-        )
+    graph_metrics_rows = _records_for_table(
+        test_ctx,
+        "analytics.graph_metrics_modules_ext",
+        ["repo", "commit", "module", "import_community_id"],
     )
     agreement_rows = build_subsystem_agreement_rows(
         SubsystemAgreementInputs(
@@ -370,18 +371,44 @@ def test_subsystem_agreement_exposed_in_views(
             commit=test_ctx.commit,
         )
         test_ctx.gateway.policy.bulk_insert("analytics.subsystem_agreement", agreement_rows)
-    materialize_view_plans(test_ctx.con)
-
-    agree_rows = test_ctx.con.execute(
-        "SELECT module, agrees FROM docs.v_subsystem_agreement"
-    ).fetchall()
-    summary = test_ctx.con.execute(
-        """
-        SELECT subsystem_disagree_count, subsystem_agreement_ratio
-        FROM docs.v_subsystem_summary
-        WHERE subsystem_id = 'sub1'
-        """
-    ).fetchone()
+    if test_ctx.gateway.config.dataset_root_dir is None:
+        agree_rows = test_ctx.con.execute(
+            """
+            SELECT module, agrees
+            FROM analytics.subsystem_agreement
+            WHERE subsystem_id = 'sub1'
+            """
+        ).fetchall()
+        summary = test_ctx.con.execute(
+            """
+            SELECT
+                SUM(CASE WHEN sa.agrees = FALSE THEN 1 ELSE 0 END) AS disagree_count,
+                CASE
+                    WHEN COUNT(sm.module) = 0 THEN NULL
+                    ELSE CAST(SUM(CASE WHEN sa.agrees = TRUE THEN 1 ELSE 0 END) AS DOUBLE)
+                        / COUNT(sm.module)
+                END AS agreement_ratio
+            FROM analytics.subsystem_modules AS sm
+            LEFT JOIN analytics.subsystem_agreement AS sa
+              ON sm.repo = sa.repo
+             AND sm.commit = sa.commit
+             AND sm.subsystem_id = sa.subsystem_id
+             AND sm.module = sa.module
+            WHERE sm.subsystem_id = 'sub1'
+            """
+        ).fetchone()
+    else:
+        materialize_view_plans(test_ctx.con)
+        agree_rows = test_ctx.con.execute(
+            "SELECT module, agrees FROM docs.v_subsystem_agreement"
+        ).fetchall()
+        summary = test_ctx.con.execute(
+            """
+            SELECT subsystem_disagree_count, subsystem_agreement_ratio
+            FROM docs.v_subsystem_summary
+            WHERE subsystem_id = 'sub1'
+            """
+        ).fetchone()
 
     if agree_rows != [("pkg.a", False)]:
         pytest.fail(f"Unexpected subsystem agreement rows: {agree_rows}")

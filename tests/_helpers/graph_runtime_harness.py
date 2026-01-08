@@ -653,12 +653,16 @@ def _write_mapping_rows(
 
 def _config_value_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]:
     if ctx.gateway.config.dataset_root_dir is None:
-        table = ctx.gateway.con.execute(
-            """
+        table = (
+            ctx.gateway.con.execute(
+                """
             SELECT repo, commit, config_path, key, reference_paths, reference_modules
             FROM analytics.config_values
             """
-        ).arrow().read_all()
+            )
+            .arrow()
+            .read_all()
+        )
         return records_from_arrow_table(table)
     return records_from_relation(
         ctx.gateway.relation_from_table_key("analytics.config_values").select(
@@ -674,12 +678,16 @@ def _config_value_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object
 
 def _entrypoint_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]:
     if ctx.gateway.config.dataset_root_dir is None:
-        table = ctx.gateway.con.execute(
-            """
+        table = (
+            ctx.gateway.con.execute(
+                """
             SELECT repo, commit, handler_goid_h128
             FROM analytics.entrypoints
             """
-        ).arrow().read_all()
+            )
+            .arrow()
+            .read_all()
+        )
         return records_from_arrow_table(table)
     return records_from_relation(
         ctx.gateway.relation_from_table_key("analytics.entrypoints").select(
@@ -692,12 +700,16 @@ def _entrypoint_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]
 
 def _subsystem_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]:
     if ctx.gateway.config.dataset_root_dir is None:
-        table = ctx.gateway.con.execute(
-            """
+        table = (
+            ctx.gateway.con.execute(
+                """
             SELECT repo, commit, subsystem_id, module
             FROM analytics.subsystem_modules
             """
-        ).arrow().read_all()
+            )
+            .arrow()
+            .read_all()
+        )
         return records_from_arrow_table(table)
     return records_from_relation(
         ctx.gateway.relation_from_table_key("analytics.subsystem_modules").select(
@@ -769,19 +781,27 @@ def _write_graph_metrics(
     active_filters: GraphMetricFilters,
 ) -> Sequence[Mapping[str, object]]:
     if ctx.gateway.config.dataset_root_dir is None:
-        import_table = ctx.gateway.con.execute(
-            """
+        import_table = (
+            ctx.gateway.con.execute(
+                """
             SELECT module, scc_id, component_size, layer
             FROM graph.import_modules
             """
-        ).arrow().read_all()
+            )
+            .arrow()
+            .read_all()
+        )
         import_module_rows = records_from_arrow_table(import_table)
-        symbol_table = ctx.gateway.con.execute(
-            """
+        symbol_table = (
+            ctx.gateway.con.execute(
+                """
             SELECT def_path, use_path
             FROM graph.symbol_use_edges
             """
-        ).arrow().read_all()
+            )
+            .arrow()
+            .read_all()
+        )
         symbol_rows = records_from_arrow_table(symbol_table)
     else:
         import_module_rows = records_from_relation(

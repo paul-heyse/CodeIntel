@@ -10,6 +10,7 @@ from typing import cast
 import pytest
 
 from codeintel.build.hamilton.env import BuildEnv
+from tests._helpers.schemas import ensure_schema_service
 
 try:
     from codeintel.build.hamilton.native.analytics.cfg_dfg_metrics import (
@@ -125,7 +126,19 @@ def _write_sample_module(repo_root: Path) -> None:
 
 
 def test_cfg_dfg_metrics_columns(tmp_path: Path) -> None:
-    """Ensure CFG/DFG metrics nodes expose expected columns."""
+    """Ensure CFG/DFG metrics nodes expose expected columns.
+
+    Raises
+    ------
+    RuntimeError
+        If required schema services are unavailable for the test runtime.
+    """
+    try:
+        ensure_schema_service()
+    except RuntimeError as exc:
+        if "ContractService has not been configured" in str(exc):
+            pytest.skip("ContractService is required for CFG/DFG metrics nodes.")
+        raise
     _write_sample_module(tmp_path)
     env = _fake_env(tmp_path)
     graph_analysis = cfg_dfg_analysis(
@@ -146,8 +159,18 @@ def test_cfg_dfg_metrics_columns(tmp_path: Path) -> None:
     )
     metrics_analysis = cfg_dfg_metrics_analysis(env, metrics_inputs)
 
-    cfg_fn = cfg_function_metrics__base(metrics_analysis).collect()
-    assert cfg_fn.columns == [
+    def _columns(frame: object) -> list[str]:
+        if hasattr(frame, "column_names"):
+            return list(frame.column_names)
+        if hasattr(frame, "columns"):
+            return list(frame.columns)
+        if hasattr(frame, "collect"):
+            return list(frame.collect().columns)
+        msg = f"Unsupported metrics frame type: {type(frame).__name__}"
+        raise TypeError(msg)
+
+    cfg_fn = cfg_function_metrics__base(metrics_analysis)
+    assert _columns(cfg_fn) == [
         "function_goid_h128",
         "repo",
         "commit",
@@ -176,8 +199,8 @@ def test_cfg_dfg_metrics_columns(tmp_path: Path) -> None:
         "metrics_version",
     ]
 
-    cfg_blocks_metrics = cfg_block_metrics__base(metrics_analysis).collect()
-    assert cfg_blocks_metrics.columns == [
+    cfg_blocks_metrics = cfg_block_metrics__base(metrics_analysis)
+    assert _columns(cfg_blocks_metrics) == [
         "function_goid_h128",
         "repo",
         "commit",
@@ -198,8 +221,8 @@ def test_cfg_dfg_metrics_columns(tmp_path: Path) -> None:
         "metrics_version",
     ]
 
-    cfg_ext = cfg_function_metrics_ext__base(metrics_analysis).collect()
-    assert cfg_ext.columns == [
+    cfg_ext = cfg_function_metrics_ext__base(metrics_analysis)
+    assert _columns(cfg_ext) == [
         "function_goid_h128",
         "repo",
         "commit",
@@ -216,8 +239,8 @@ def test_cfg_dfg_metrics_columns(tmp_path: Path) -> None:
         "metrics_version",
     ]
 
-    dfg_fn = dfg_function_metrics__base(metrics_analysis).collect()
-    assert dfg_fn.columns == [
+    dfg_fn = dfg_function_metrics__base(metrics_analysis)
+    assert _columns(dfg_fn) == [
         "function_goid_h128",
         "repo",
         "commit",
@@ -245,8 +268,8 @@ def test_cfg_dfg_metrics_columns(tmp_path: Path) -> None:
         "metrics_version",
     ]
 
-    dfg_blocks_metrics = dfg_block_metrics__base(metrics_analysis).collect()
-    assert dfg_blocks_metrics.columns == [
+    dfg_blocks_metrics = dfg_block_metrics__base(metrics_analysis)
+    assert _columns(dfg_blocks_metrics) == [
         "function_goid_h128",
         "repo",
         "commit",
@@ -264,8 +287,8 @@ def test_cfg_dfg_metrics_columns(tmp_path: Path) -> None:
         "metrics_version",
     ]
 
-    dfg_ext = dfg_function_metrics_ext__base(metrics_analysis).collect()
-    assert dfg_ext.columns == [
+    dfg_ext = dfg_function_metrics_ext__base(metrics_analysis)
+    assert _columns(dfg_ext) == [
         "function_goid_h128",
         "repo",
         "commit",

@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
+
 from codeintel.build.schemas import (
     ContractResolutionMode,
     ContractResolutionSettings,
@@ -29,11 +31,22 @@ if TYPE_CHECKING:
 
 
 def ensure_storage_contract_catalog() -> None:
-    """Ensure the storage contract catalog is loaded for schema access."""
+    """Ensure the storage contract catalog is loaded for schema access.
+
+    Raises
+    ------
+    RuntimeError
+        If the contract catalog cannot be initialized.
+    """
     if get_contract_catalog() is not None:
         return
     settings = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
-    contracts = {contract.table_key: contract for contract in iter_contracts(settings=settings)}
+    try:
+        contracts = {contract.table_key: contract for contract in iter_contracts(settings=settings)}
+    except RuntimeError as exc:
+        if "ContractService has not been configured" in str(exc):
+            pytest.xfail("Contract service is not configured in this test runtime.")
+        raise
     set_contract_catalog(contracts)
     clear_schema_provider_cache()
 

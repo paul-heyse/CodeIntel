@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 import pyarrow as pa
-import pyarrow.compute as pc
+
+from codeintel.build.tabular.compute_helpers import array_from_compute
 
 
 def empty_table(columns: Sequence[str]) -> pa.Table:
@@ -20,6 +21,29 @@ def empty_table(columns: Sequence[str]) -> pa.Table:
     return pa.Table.from_arrays(arrays, names=list(columns))
 
 
+def _empty_constant_array(value: object) -> pa.Array | pa.ChunkedArray:
+    if value is None:
+        return pa.nulls(0)
+    try:
+        return pa.array([], type=pa.scalar(value).type)
+    except (
+        pa.ArrowInvalid,
+        pa.ArrowNotImplementedError,
+        pa.ArrowTypeError,
+        TypeError,
+        ValueError,
+    ):
+        return pa.array([], type=pa.null())
+
+
+def _constant_array_via_compute(value: object, length: int) -> pa.Array | pa.ChunkedArray | None:
+    return array_from_compute(
+        "if_else",
+        [pa.scalar(value=True), pa.scalar(value), pa.scalar(value)],
+        length=length,
+    )
+
+
 def constant_array(value: object, length: int) -> pa.Array | pa.ChunkedArray:
     """Build a constant-valued array with Arrow compute fallbacks.
 
@@ -29,29 +53,13 @@ def constant_array(value: object, length: int) -> pa.Array | pa.ChunkedArray:
         Array of the requested length filled with the constant value.
     """
     if length == 0:
-        if value is None:
-            return pa.nulls(0)
-        try:
-            return pa.array([], type=pa.scalar(value).type)
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            return pa.array([], type=pa.null())
+        return _empty_constant_array(value)
     if value is None:
         return pa.nulls(length)
-    try:
-        true_value = True
-        return pc.call_function(
-            "if_else",
-            [pc.scalar(true_value), pc.scalar(value), pc.scalar(value)],
-            length=length,
-        )
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return pa.array([value] * length)
+    result = _constant_array_via_compute(value, length)
+    if result is not None:
+        return result
+    return pa.array([value] * length)
 
 
 def append_constant_columns(table: pa.Table, constants: Mapping[str, object]) -> pa.Table:

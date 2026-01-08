@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Literal
 import msgspec
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.validation.profiles import (
@@ -188,7 +190,10 @@ def validate_record_batch_reader(
                 _handle_errors(table_key, prefixed, resolved_mode)
             yield batch
 
-    return pa.RecordBatchReader.from_batches(reader.schema, _iter_batches())
+    validated = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
+    if validated is None:
+        return empty_reader_from_schema(reader.schema)
+    return validated
 
 
 def validate_parquet_path(

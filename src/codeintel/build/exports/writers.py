@@ -14,6 +14,7 @@ import pyarrow.parquet as pq
 
 from codeintel.build.tabular.arrow_ops import json_writer_available, write_json_streaming
 from codeintel.build.tabular.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.exports.arrow_ipc import default_ipc_write_options, iter_ipc_stream
 from codeintel.core.exports.serialization import coerce_export_row, coerce_export_value
@@ -158,8 +159,7 @@ def write_jsonl_reader(
         counting_iter = _CountingBatchIterator(_iter_batches(reader))
         writer_reader = record_batch_reader_from_iterable(counting_iter, empty_policy="none")
         if writer_reader is None:
-            empty_reader = pa.RecordBatchReader.from_batches(reader.schema, [])
-            write_json_streaming(empty_reader, output_path)
+            write_json_streaming(empty_reader_from_schema(reader.schema), output_path)
             return 0
         write_json_streaming(writer_reader, output_path)
         return counting_iter.rows
@@ -337,10 +337,9 @@ def write_arrow_reader(
     counting_iter = _CountingBatchIterator(_iter_batches(reader))
     writer_reader = record_batch_reader_from_iterable(counting_iter, empty_policy="none")
     if writer_reader is None:
-        empty_reader = pa.RecordBatchReader.from_batches(reader.schema, [])
         _write_arrow_stream(
             output_path,
-            reader=empty_reader,
+            reader=empty_reader_from_schema(reader.schema),
             metadata=metadata,
             batch_metadata=batch_metadata,
         )
@@ -421,6 +420,20 @@ def _maybe_dictionary_encode_table(
     return pa.Table.from_arrays(arrays, schema=pa.schema(fields, metadata=table.schema.metadata))
 
 
+def maybe_dictionary_encode_table(
+    table: pa.Table,
+    dictionary_columns: Sequence[str] | None,
+) -> pa.Table:
+    """Dictionary-encode string columns when requested.
+
+    Returns
+    -------
+    pa.Table
+        Table with dictionary-encoded columns when possible.
+    """
+    return _maybe_dictionary_encode_table(table, dictionary_columns)
+
+
 def _write_arrow_stream(
     output_path: Path,
     *,
@@ -462,6 +475,7 @@ __all__ = [
     "RecordBatch",
     "RecordBatchReader",
     "default_json_serializer",
+    "maybe_dictionary_encode_table",
     "write_arrow_reader",
     "write_json_array",
     "write_jsonl_reader",

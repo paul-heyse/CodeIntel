@@ -32,6 +32,7 @@ from codeintel.build.hamilton.materializers.path_templates import (
     default_formatter,
     format_path_template,
 )
+from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.ipc import write_ipc_stream
 from codeintel.core.duckdb_types import DuckDBRelation
 from codeintel.core.execution.materialization import (
@@ -319,7 +320,7 @@ def _write_arrow_reader(output_path: Path, reader: pa.RecordBatchReader) -> int:
 
 
 def _write_arrow_table(output_path: Path, table: pa.Table) -> int:
-    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    reader = table_to_reader(table, batch_size=None)
     return _write_arrow_reader(output_path, reader)
 
 

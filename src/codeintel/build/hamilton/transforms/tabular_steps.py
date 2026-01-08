@@ -9,7 +9,6 @@ from typing import cast
 import polars as pl
 import polars.datatypes as pl_datatypes
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.contracts.registry import ContractedTableContext
 from codeintel.build.contracts.types import ContractPolicy
@@ -19,7 +18,7 @@ from codeintel.build.tabular.arrow_ops import (
     align_tabular_to_contract_context,
     emit_alignment_report,
 )
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import array_from_compute, safe_filter
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import TabularInput
@@ -258,8 +257,14 @@ def _valid_mask(table: pa.Table, indices: Sequence[int]) -> pa.Array:
 
 def _clip_table(table: pa.Table, index: int, scalar: pa.Scalar) -> pa.Table:
     column = table.column(index)
-    condition = pc.call_function("greater", [column, scalar])
-    clipped = pc.call_function("if_else", [condition, scalar, column])
+    condition = array_from_compute("greater", [column, scalar])
+    if condition is None:
+        msg = "Arrow compute greater did not return an array."
+        raise TypeError(msg)
+    clipped = array_from_compute("if_else", [condition, scalar, column])
+    if clipped is None:
+        msg = "Arrow compute if_else did not return an array."
+        raise TypeError(msg)
     field = table.schema.field(index)
     return table.set_column(index, field.name, clipped)
 

@@ -9,6 +9,8 @@ import polars as pl
 import pyarrow as pa
 import pyarrow.dataset as pa_ds
 
+from codeintel.core.columnar.readers import record_batch_reader_from_batches
+from codeintel.core.columnar.stream import LazyFrameStream, coerce_arrow_reader
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBRelation
 
@@ -60,7 +62,7 @@ def table_to_reader(
         except TypeError:
             return to_reader()
     batches = table.to_batches(max_chunksize=batch_size) if batch_size else table.to_batches()
-    return pa.RecordBatchReader.from_batches(table.schema, batches)
+    return record_batch_reader_from_batches(table.schema, batches)
 
 
 def reader_to_table(reader: pa.RecordBatchReader | pa.Table) -> pa.Table:
@@ -84,8 +86,6 @@ def lazyframe_to_reader(frame: pl.LazyFrame) -> pa.RecordBatchReader:
     pa.RecordBatchReader
         Reader over streamed record batches.
     """
-    from codeintel.core.columnar.stream import LazyFrameStream
-
     stream = LazyFrameStream(
         frame,
         query_opt_flags=None,
@@ -181,11 +181,7 @@ def tabular_to_frame(value: InferableTabularInput) -> pl.DataFrame:
         result = arrow_reader_to_lazyframe(value.fetch_arrow_reader()).collect()
     elif isinstance(value, Iterable):
         reader = record_batch_reader_from_iterable(value, empty_policy="none")
-        result = (
-            pl.DataFrame()
-            if reader is None
-            else arrow_reader_to_lazyframe(reader).collect()
-        )
+        result = pl.DataFrame() if reader is None else arrow_reader_to_lazyframe(reader).collect()
     else:
         msg = f"Unsupported tabular input type: {type(value).__name__}"
         raise TypeError(msg)
@@ -215,8 +211,6 @@ def tabular_to_arrow_reader(value: InferableTabularInput) -> pa.RecordBatchReade
     RecordBatchReader inputs are single-consume; materialize to a table or
     LazyFrame if reuse is required.
     """
-    from codeintel.core.columnar.stream import coerce_arrow_reader
-
     reader: pa.RecordBatchReader | None = None
     if isinstance(value, pa.RecordBatchReader):
         reader = value
@@ -285,7 +279,7 @@ def _record_batch_reader_from_iterable(
                 raise TypeError(msg)
             yield batch
 
-    return pa.RecordBatchReader.from_batches(first.schema, batch_iter())
+    return record_batch_reader_from_batches(first.schema, batch_iter())
 
 
 def record_batch_reader_from_iterable(
@@ -318,9 +312,7 @@ def _coerce_goid_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
     except (AttributeError, ValueError, pl.exceptions.PolarsError):
         return frame
     goid_columns = [
-        col
-        for col in columns
-        if isinstance(col, str) and _GOID_COLUMN_MARKER in col.lower()
+        col for col in columns if isinstance(col, str) and _GOID_COLUMN_MARKER in col.lower()
     ]
     if not goid_columns:
         return frame
@@ -331,9 +323,7 @@ def _coerce_goid_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
 
 def _coerce_goid_columns_frame(frame: pl.DataFrame) -> pl.DataFrame:
     goid_columns = [
-        col
-        for col in frame.columns
-        if isinstance(col, str) and _GOID_COLUMN_MARKER in col.lower()
+        col for col in frame.columns if isinstance(col, str) and _GOID_COLUMN_MARKER in col.lower()
     ]
     if not goid_columns:
         return frame

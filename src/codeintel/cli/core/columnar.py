@@ -9,6 +9,7 @@ import pyarrow as pa
 
 from codeintel.cli.core.results import ResultBase
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.stream import ColumnarStream, RecordBatchReaderStream
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 
@@ -73,7 +74,7 @@ def _record_batch_reader_from_records(
     batch_iter = _iter_batches(records, batch_size=batch_size)
     reader = record_batch_reader_from_iterable(batch_iter, empty_policy="none")
     if reader is None:
-        return pa.RecordBatchReader.from_batches(pa.schema([]), [])
+        return empty_reader_from_schema(pa.schema([]))
     return reader
 
 

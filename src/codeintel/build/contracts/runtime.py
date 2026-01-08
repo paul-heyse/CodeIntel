@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+from codeintel.build.contracts.policy_registry import (
+    ContractPolicyRegistry,
+    apply_policy_overrides,
+    get_contract_policy_registry,
+)
 from codeintel.build.contracts.ref import ContractRef
 from codeintel.build.contracts.registry import ContractResolver
 from codeintel.build.contracts.types import (
@@ -33,10 +38,10 @@ class _ContractPolicyKey:
 
 @dataclass(frozen=True, slots=True)
 class _ContractOverridesKey:
-    ops_module: ModuleType | None | UnsetType
+    ops_module: ModuleType | UnsetType | None
     columns_to_pass: tuple[str, ...] | UnsetType
     required_cols: tuple[str, ...] | UnsetType
-    clip_column: str | None | UnsetType
+    clip_column: str | UnsetType | None
     policy: _ContractPolicyKey | UnsetType
 
 
@@ -54,6 +59,7 @@ class ContractRuntime:
 
     schema_service: SchemaService
     resolver: ContractResolver = field(default_factory=ContractResolver)
+    policy_registry: ContractPolicyRegistry | None = None
     _cache: dict[_ContractResolutionKey, TableContractSpec] = field(default_factory=dict)
 
     def resolve(self, ref: ContractRef) -> TableContractSpec:
@@ -65,6 +71,12 @@ class ContractRuntime:
             Resolved contract spec derived from schema and overrides.
         """
         resolved_overrides = _resolved_overrides(ref)
+        resolved_overrides = apply_policy_overrides(
+            table_key=ref.table_key,
+            target_name=ref.target_name,
+            overrides=resolved_overrides,
+            registry=self.policy_registry,
+        )
         cache_key = _resolution_key(ref, resolved_overrides)
         cached = self._cache.get(cache_key)
         if cached is not None:
@@ -84,12 +96,17 @@ class ContractRuntime:
 class _ContractRuntimeState:
     runtime: ContractRuntime | None = None
     schema_service_id: int | None = None
+    policy_registry_id: int | None = None
 
 
 _CONTRACT_RUNTIME_STATE = _ContractRuntimeState()
 
 
-def configure_contract_runtime(*, schema_service: SchemaService) -> ContractRuntime:
+def configure_contract_runtime(
+    *,
+    schema_service: SchemaService,
+    policy_registry: ContractPolicyRegistry | None = None,
+) -> ContractRuntime:
     """Configure the global contract runtime for a schema service.
 
     Returns
@@ -98,11 +115,17 @@ def configure_contract_runtime(*, schema_service: SchemaService) -> ContractRunt
         Configured contract runtime for resolving contract refs.
     """
     state = _CONTRACT_RUNTIME_STATE
-    if state.runtime is not None and state.schema_service_id == id(schema_service):
+    resolved_registry = policy_registry or get_contract_policy_registry()
+    if (
+        state.runtime is not None
+        and state.schema_service_id == id(schema_service)
+        and state.policy_registry_id == id(resolved_registry)
+    ):
         return state.runtime
-    runtime = ContractRuntime(schema_service=schema_service)
+    runtime = ContractRuntime(schema_service=schema_service, policy_registry=resolved_registry)
     state.runtime = runtime
     state.schema_service_id = id(schema_service)
+    state.policy_registry_id = id(resolved_registry)
     return runtime
 
 
@@ -118,7 +141,10 @@ def get_contract_runtime() -> ContractRuntime:
     if state.runtime is not None:
         return state.runtime
     schema_service = _fallback_schema_service()
-    return configure_contract_runtime(schema_service=schema_service)
+    return configure_contract_runtime(
+        schema_service=schema_service,
+        policy_registry=get_contract_policy_registry(),
+    )
 
 
 def _fallback_schema_service() -> SchemaService:
@@ -134,10 +160,7 @@ def _resolved_overrides(ref: ContractRef) -> ContractOverrides:
     if overrides.input_name is UNSET:
         return replace(overrides, input_name=ref.input_name)
     if overrides.input_name != ref.input_name:
-        msg = (
-            "ContractRef input_name mismatch: "
-            f"{overrides.input_name!r} != {ref.input_name!r}"
-        )
+        msg = f"ContractRef input_name mismatch: {overrides.input_name!r} != {ref.input_name!r}"
         raise ValueError(msg)
     return overrides
 
@@ -167,17 +190,18 @@ def _overrides_key(overrides: ContractOverrides) -> _ContractOverridesKey:
 def _sequence_key(value: Sequence[str] | UnsetType) -> tuple[str, ...] | UnsetType:
     if value is UNSET:
         return UNSET
-    return tuple(value)
+    return tuple(cast("Sequence[str]", value))
 
 
 def _policy_key(value: ContractPolicy | UnsetType) -> _ContractPolicyKey | UnsetType:
     if value is UNSET:
         return UNSET
+    policy = cast("ContractPolicy", value)
     return _ContractPolicyKey(
-        extras_policy=value.extras_policy,
-        validation_profile=value.validation_profile,
-        coerce_types=value.coerce_types,
-        allow_nulls=value.allow_nulls,
+        extras_policy=policy.extras_policy,
+        validation_profile=policy.validation_profile,
+        coerce_types=policy.coerce_types,
+        allow_nulls=policy.allow_nulls,
     )
 
 

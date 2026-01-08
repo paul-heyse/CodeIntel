@@ -15,7 +15,9 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.build.tabular.compute_helpers import scalar_from_compute
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
 from codeintel.core.columnar.ipc import schema_from_ipc_payload, schema_to_ipc_payload
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema_metadata import merge_field_metadata, merge_metadata
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.hashing.fingerprint import fingerprint
@@ -250,7 +252,10 @@ def instrument_reader_for_observation(
             accumulator.observe_batch(batch)
             yield batch
 
-    return pa.RecordBatchReader.from_batches(reader.schema, _iter_batches())
+    instrumented = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
+    if instrumented is None:
+        return empty_reader_from_schema(reader.schema)
+    return instrumented
 
 
 def observe_batches(

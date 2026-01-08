@@ -10,6 +10,8 @@
 
 ## Scope 1: Enforce NULL key detection in `_ensure_unique_keys`
 
+Status: Completed
+
 ### Plan
 
 - Add a vectorized NULL detection step before uniqueness checks.
@@ -36,9 +38,11 @@ if null_mask is not None:
 ### Target files
 
 - `src/codeintel/build/tabular/arrow_ops.py`
-- `tests/build/tabular/test_arrow_ops.py`
+- `tests/build/test_arrow_ops.py`
 
 ## Scope 2: Preserve schema metadata in dictionary encoding
+
+Status: Completed
 
 ### Plan
 
@@ -67,6 +71,8 @@ return pa.Table.from_arrays(arrays, schema=pa.schema(fields, metadata=table.sche
 
 ## Scope 3: Preserve row counts when dropping all columns
 
+Status: Completed
+
 ### Plan
 
 - If all columns are dropped, return a zero-column table that preserves `num_rows`.
@@ -83,9 +89,11 @@ if not existing:
 ### Target files
 
 - `src/codeintel/build/tabular/table_ops.py`
-- `tests/build/tabular/test_table_ops.py`
+- `tests/build/test_table_ops.py`
 
 ## Scope 4: Guard `take_by_key` against missing keys
+
+Status: Completed
 
 ### Plan
 
@@ -114,9 +122,11 @@ return selected
 ### Target files
 
 - `src/codeintel/build/tabular/array_ops.py`
-- `tests/build/tabular/test_array_ops.py`
+- `tests/build/test_array_ops.py`
 
 ## Scope 5: JSONL fast-path consistency (deferred)
+
+Status: Deferred
 
 ### Plan
 
@@ -139,12 +149,14 @@ if record_type is None and json_writer_available():
 
 ## Scope 6: Migrate conversion helpers to core
 
+Status: Completed
+
 ### Plan
 
 - Create `src/codeintel/core/columnar/conversion.py` with shared helpers:
   `table_to_reader`, `reader_to_table`, `tabular_to_arrow_reader`,
   `tabular_to_arrow_table`, `arrow_reader_to_lazyframe`, `table_to_lazyframe`,
-  `record_batch_reader_from_iterable`.
+  `record_batch_reader_from_iterable`, `table_to_frame`, `tabular_to_frame`.
 - Move or share GOID column coercion so all consumers get consistent decimal casts.
 - Re-export from `src/codeintel/build/tabular/conversion.py` to keep build imports stable.
 - Update all call sites that currently hand-roll conversions or reader wrappers.
@@ -175,6 +187,8 @@ reader = tabular_to_arrow_reader(value)
 - `src/codeintel/core/schemas/type_mappings.py`
 
 ## Scope 7: Merge compute helpers and masks into core
+
+Status: Completed
 
 ### Plan
 
@@ -207,6 +221,8 @@ max_value = scalar_from_compute("max", [table["score"]])
 
 ## Scope 8: Centralize Parquet scan helpers
 
+Status: Partially complete (core helper added + primary call sites updated)
+
 ### Plan
 
 - Move `ParquetScanOptions`, `scan_parquet_dataset`, and `scan_parquet_table` out of
@@ -232,11 +248,15 @@ reader = scan_parquet_dataset(
 
 - `src/codeintel/core/datasets/scanning.py` (new or extended)
 - `src/codeintel/build/tabular/arrow_ops.py`
-- `src/codeintel/build/scopes/snapshot.py`
+- `src/codeintel/build/exports/common.py`
 - `src/codeintel/storage/queries/parquet.py`
-- `src/codeintel/storage/datasets/manifest_index.py`
+- `src/codeintel/storage/datasets/scanning.py`
+- `src/codeintel/build/scopes/snapshot.py` (follow-up if adopting shared helper there)
+- `src/codeintel/storage/datasets/manifest_index.py` (follow-up if adopting shared helper there)
 
 ## Scope 9: Writers/IPC helper convergence (deferred)
+
+Status: Deferred
 
 ### Plan
 

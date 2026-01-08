@@ -19,6 +19,7 @@ import pyarrow.parquet as pq
 
 from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.normalization import normalize_table_for_compute
+from codeintel.core.columnar.readers import record_batch_reader_from_batches
 from codeintel.core.columnar.schema_metadata import decode_metadata, merge_metadata
 from codeintel.core.columnar.streaming import DatasetScanOptions, dataset_for_manifest
 from codeintel.core.datasets.manifests import (
@@ -605,7 +606,7 @@ def _apply_schema_metadata(
         if merged == data.schema.metadata:
             return data
         schema = data.schema.with_metadata(merged)
-        return pa.RecordBatchReader.from_batches(schema, data)
+        return record_batch_reader_from_batches(schema, data)
     return data
 
 

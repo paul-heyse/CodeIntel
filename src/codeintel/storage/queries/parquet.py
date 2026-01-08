@@ -27,6 +27,7 @@ from codeintel.core.columnar.masks import (
 from codeintel.core.columnar.set_ops import is_in_mask
 from codeintel.core.datasets.arrow_store import dataset_stats, scan_dataset
 from codeintel.core.datasets.paths import dataset_snapshot_dir
+from codeintel.core.datasets.scanning import ParquetScanOptions, scan_parquet_table
 from codeintel.core.query_results import ScalarCoercionError
 from codeintel.core.table_key import is_valid_table_key
 from codeintel.storage.query_results import coerce_optional_float
@@ -130,15 +131,13 @@ def safe_count_with_scope(
     int | None
         Row count or None when the dataset is missing.
     """
-    dataset = _open_dataset(
+    options = ParquetScanOptions(repo=snapshot.repo, commit=snapshot.commit)
+    table = scan_parquet_table(
         dataset_root=dataset_root,
         table_key=table_key,
         snapshot_id=snapshot.commit,
+        options=options,
     )
-    if dataset is None:
-        return None
-    filter_expr = _snapshot_filter(dataset.schema, snapshot=snapshot)
-    table = _read_table(dataset, filter_expr=filter_expr)
     if table is None:
         return None
     return table.num_rows
@@ -440,13 +439,6 @@ def _dataset_row_count(dataset: ds.Dataset) -> int | None:
         return None
 
 
-def _snapshot_filter(schema: pa.Schema, *, snapshot: SnapshotRef) -> ds.Expression | None:
-    columns = set(schema.names)
-    if "repo" not in columns or "commit" not in columns:
-        return None
-    return (ds.field("repo") == snapshot.repo) & (ds.field("commit") == snapshot.commit)
-
-
 def _read_table(
     dataset: ds.Dataset,
     *,
@@ -477,7 +469,13 @@ def _table_for_column(
     )
     if dataset is None or column not in dataset.schema.names:
         return None
-    return _read_table(dataset, columns=[column])
+    options = ParquetScanOptions(columns=[column])
+    return scan_parquet_table(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+        options=options,
+    )
 
 
 def _as_int(value: object | None) -> int:

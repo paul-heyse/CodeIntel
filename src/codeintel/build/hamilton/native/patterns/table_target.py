@@ -149,6 +149,7 @@ class TableTargetContext:
             node_name=node_name,
             extra_tags=extra_tags,
         )
+
     @staticmethod
     def build_dataset_table_spec(
         *,
@@ -316,6 +317,7 @@ class TableTargetTableContext:
             input_type=input_type,
             extra_tags=extra_tags,
         )
+
 
 @dataclass(frozen=True, slots=True)
 class MultiTableTargetContext:

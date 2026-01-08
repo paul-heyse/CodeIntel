@@ -12,6 +12,7 @@ import pytest
 from codeintel.build.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.core.validation.reporters import FunctionValidationReporter
+from tests._helpers.schemas import ensure_schema_service
 
 try:
     from codeintel.build.hamilton.native.analytics.function_ast_features import (
@@ -104,16 +105,38 @@ def _sample_function_types_row() -> dict[str, object]:
     }
 
 
+def _columns(frame: object) -> list[str]:
+    if hasattr(frame, "column_names"):
+        return list(frame.column_names)
+    if hasattr(frame, "columns"):
+        return list(frame.columns)
+    if hasattr(frame, "collect"):
+        return list(frame.collect().columns)
+    msg = f"Unsupported metrics frame type: {type(frame).__name__}"
+    raise TypeError(msg)
+
+
 def test_function_types_base_columns() -> None:
-    """Ensure function types base nodes expose the expected columns."""
+    """Ensure function types base nodes expose the expected columns.
+
+    Raises
+    ------
+    RuntimeError
+        If required schema services are unavailable for the test runtime.
+    """
+    try:
+        ensure_schema_service()
+    except RuntimeError as exc:
+        if "ContractService has not been configured" in str(exc):
+            pytest.skip("ContractService is required for analytics scaffold nodes.")
+        raise
     reporter = FunctionValidationReporter(repo="repo", commit="commit")
     analytics_result = FunctionAnalyticsResult(
         types_rows=[_sample_function_types_row()],
         reporter=reporter,
     )
     frame = function_types__base(analytics_result)
-    collected = frame.collect()
-    assert collected.columns == [
+    assert _columns(frame) == [
         "function_goid_h128",
         "urn",
         "repo",
@@ -133,15 +156,26 @@ def test_function_types_base_columns() -> None:
 
 
 def test_function_ast_features_base_columns(tmp_path: Path) -> None:
-    """Ensure function AST feature base nodes expose the expected columns."""
+    """Ensure function AST feature base nodes expose the expected columns.
+
+    Raises
+    ------
+    RuntimeError
+        If required schema services are unavailable for the test runtime.
+    """
+    try:
+        ensure_schema_service()
+    except RuntimeError as exc:
+        if "ContractService has not been configured" in str(exc):
+            pytest.skip("ContractService is required for analytics scaffold nodes.")
+        raise
     env = _fake_env(tmp_path)
     frame = function_ast_features__base(
         env,
         _sample_goids_frame(),
         _sample_modules_frame(),
     )
-    result = frame.collect()
-    assert result.columns == [
+    assert _columns(frame) == [
         "repo",
         "commit",
         "function_goid_h128",

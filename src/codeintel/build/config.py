@@ -55,6 +55,7 @@ CONFIG_FILE_NAME = "config/codeintel.build.toml"
 _ALLOWED_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
     {
         "analytics",
+        "contracts",
         "ingestion",
         "graphs",
         "export",
@@ -591,6 +592,7 @@ def _validate_config_data(data: Mapping[str, Any], *, config_path: Path) -> None
 
     _validate_scope_section(data.get("scope"))
     _validate_variants_section(data.get("variants"))
+    _validate_contracts_section(data.get("contracts"), config_path=config_path)
     _validate_hamilton_section(data.get("hamilton"), config_path=config_path)
     _validate_telemetry_section(data.get("telemetry"), config_path=config_path)
 
@@ -644,6 +646,30 @@ def _validate_variants_section(variants: object) -> None:
         msg = "variants section must be a mapping"
         raise TypeError(msg)
 
+
+def _validate_contracts_section(contracts: object, *, config_path: Path) -> None:
+    if contracts is None:
+        return
+    if not isinstance(contracts, Mapping):
+        msg = f"contracts section must be a mapping in {config_path}"
+        raise TypeError(msg)
+    allowed = {
+        "default_profile",
+        "policy_profiles",
+        "policy_tables",
+        "policy_targets",
+    }
+    unknown = sorted(set(contracts) - allowed)
+    if unknown:
+        msg = f"Unknown contracts config keys in {config_path}: {', '.join(unknown)}"
+        raise ValueError(msg)
+    for key in ("policy_profiles", "policy_tables", "policy_targets"):
+        entry = contracts.get(key)
+        if entry is None:
+            continue
+        if not isinstance(entry, Mapping):
+            msg = f"contracts.{key} must be a mapping in {config_path}"
+            raise TypeError(msg)
 
 def _validate_hamilton_section(hamilton: object, *, config_path: Path) -> None:
     if hamilton is None:

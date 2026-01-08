@@ -52,7 +52,7 @@ Target files (foundation):
 
 ### 1) Lazy Contract Resolution (ContractRef + ContractRuntime)
 
-Status: Proposed
+Status: Completed
 
 Goal:
 - Remove import-time dependency on SchemaService while preserving contract hashes.
@@ -70,6 +70,20 @@ Implementation steps:
 2. Add `ContractRuntime` with cached `resolve(ref)` method.
 3. Update table-target patterns to accept ContractRef, resolve at execution/attach time.
 4. Keep guardrail: validate `contract_hash` once resolved and before materialization.
+
+Completed scope (current implementation):
+- Added `ContractRef` and `contract_ref_for_table` for lazy contract references.
+- Added `ContractRuntime` with cached resolution and a fallback SchemaService.
+- Updated `TableTargetContext`/`TableTargetTableContext` to support `from_contract_ref`.
+- Updated `TableTargetTableSpec` to carry `contract_ref` and resolve it at attach time.
+- Wired `configure_contract_runtime` into runtime composition so refs resolve after schema config.
+- Migrated analytics Hamilton targets to use `contract_ref_for_table` to avoid import‑time
+  resolution.
+- Added ContractRef runtime tests (resolution + table target attachment).
+- Documented deprecation guidance for `contract_for_table`.
+
+Remaining scope (item 1):
+- None. Item 1 is complete.
 
 Representative code pattern:
 ```python
@@ -103,6 +117,7 @@ Target files:
 - `src/codeintel/build/contracts/registry.py`
 - `src/codeintel/build/hamilton/native/patterns/table_target.py`
 - `src/codeintel/runtime/compose.py`
+- `src/codeintel/build/hamilton/native/analytics/*` (ref migration for targets)
 
 ### 2) Contract Policy Registry + Profiles
 
@@ -137,6 +152,13 @@ Target files:
 - `src/codeintel/core/config/settings.py`
 - `src/codeintel/runtime/compose.py`
 - `config/codeintel.build.toml`
+
+Active policy defaults (current config):
+- `default_profile = "default"` (coerce types + allow nulls).
+- `strict` rejects extras and disables coercion; `lenient` retains extras.
+- Strict targets: core graph + ingestion (`call_graph`, `cfg`, `cpg`, `scip`, etc.).
+- Lenient targets: analytics metrics + config graph outputs.
+- Table-level overrides for selected graph edges + analytics graph/config tables.
 
 ### 3) Schema Evolution Classification + Gating
 
@@ -285,4 +307,3 @@ Target files:
 - Schema diff tests with representative breaking and non-breaking changes.
 - Migration tests with real snapshot fixtures.
 - Integration tests for alignment diagnostics emission and persistence.
-
