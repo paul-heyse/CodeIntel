@@ -16,6 +16,7 @@ out_dir="${1:-"${repo_root}/build/scip/proto"}"
 python_bin="${PYTHON_BIN:-python}"
 
 mkdir -p "${out_dir}"
-"${python_bin}" -m grpc_tools.protoc -I "${proto_dir}" --python_out "${out_dir}" "${proto_path}"
+"${python_bin}" -m grpc_tools.protoc -I "${proto_dir}" --python_out "${out_dir}" \
+  --pyi_out "${out_dir}" "${proto_path}"
 
-echo "Generated ${out_dir}/scip_pb2.py"
+echo "Generated ${out_dir}/scip_pb2.py and ${out_dir}/scip_pb2.pyi"

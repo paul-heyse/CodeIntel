@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -12,6 +13,7 @@ from codeintel.ingestion.scip.manifest import ScipShardManifest
 from codeintel.ingestion.scip.models import (
     ScipDiagnostic,
     ScipExternalSymbol,
+    ScipIndexMetadata,
     ScipSymbolInfo,
     ScipSymbolRelationship,
 )
@@ -28,6 +30,7 @@ SCIP_SYMBOL_INFO_TABLE_KEY = "core.scip_symbol_information"
 SCIP_RELATIONSHIPS_TABLE_KEY = "core.scip_symbol_relationships"
 SCIP_DIAGNOSTICS_TABLE_KEY = "core.scip_diagnostics"
 SCIP_EXTERNAL_SYMBOLS_TABLE_KEY = "core.scip_external_symbols"
+SCIP_INDEX_METADATA_TABLE_KEY = "core.scip_index_metadata"
 SCIP_MODULE_STATE_TABLE_KEY = "core.scip_module_state"
 
 
@@ -236,6 +239,30 @@ def build_module_state_rows(
     return buffer.data
 
 
+def build_index_metadata_rows(
+    metadata: ScipIndexMetadata | None,
+    context: ScipRowContext,
+) -> ColumnarRows:
+    """Build rows for core.scip_index_metadata.
+
+    Parameters
+    ----------
+    metadata
+        Parsed index metadata.
+    context
+        Shared row context (repo, commit, created_at).
+
+    Returns
+    -------
+    ColumnarRows
+        Columnar rows for index metadata.
+    """
+    buffer = columnar_buffer_for_table_key(SCIP_INDEX_METADATA_TABLE_KEY)
+    for payload in iter_index_metadata_rows(metadata, context):
+        buffer.append(payload)
+    return buffer.data
+
+
 def iter_symbol_rows(
     documents: Sequence[ScipDocument],
     context: ScipRowContext,
@@ -262,6 +289,29 @@ def iter_symbol_rows(
                 "documentation": sym.documentation,
                 "created_at": context.created_at,
             }
+
+
+def iter_index_metadata_rows(
+    metadata: ScipIndexMetadata | None,
+    context: ScipRowContext,
+) -> Iterator[dict[str, object]]:
+    """Iterate rows for the scip_index_metadata table."""
+    if metadata is None:
+        return
+    tool_arguments = None
+    if metadata.tool_arguments:
+        tool_arguments = json.dumps(list(metadata.tool_arguments), ensure_ascii=True)
+    project_root = metadata.project_root.as_posix() if metadata.project_root else None
+    yield {
+        "repo": context.repo,
+        "commit": context.commit,
+        "project_root": project_root,
+        "text_document_encoding": metadata.text_document_encoding,
+        "tool_name": metadata.tool_name,
+        "tool_version": metadata.tool_version,
+        "tool_arguments": tool_arguments,
+        "created_at": context.created_at,
+    }
 
 
 def iter_occurrence_rows(
@@ -462,6 +512,7 @@ def iter_module_state_rows(
 __all__ = [
     "SCIP_DIAGNOSTICS_TABLE_KEY",
     "SCIP_EXTERNAL_SYMBOLS_TABLE_KEY",
+    "SCIP_INDEX_METADATA_TABLE_KEY",
     "SCIP_MODULE_STATE_TABLE_KEY",
     "SCIP_OCCURRENCES_TABLE_KEY",
     "SCIP_RELATIONSHIPS_TABLE_KEY",
@@ -470,6 +521,7 @@ __all__ = [
     "ScipRowContext",
     "build_diagnostic_rows",
     "build_external_symbol_rows",
+    "build_index_metadata_rows",
     "build_module_state_rows",
     "build_occurrence_rows",
     "build_symbol_information_rows",
@@ -477,6 +529,7 @@ __all__ = [
     "build_symbol_rows",
     "iter_diagnostic_rows",
     "iter_external_symbol_rows",
+    "iter_index_metadata_rows",
     "iter_module_state_rows",
     "iter_occurrence_rows",
     "iter_symbol_information_rows",

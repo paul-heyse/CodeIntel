@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -53,9 +54,21 @@ class ScipExternalSymbol:
     package_version: str | None
 
 
+@dataclass(frozen=True)
+class ScipIndexMetadata:
+    """Metadata captured from the SCIP index header."""
+
+    project_root: Path | None
+    text_document_encoding: str | None
+    tool_name: str | None
+    tool_version: str | None
+    tool_arguments: tuple[str, ...] | None
+
+
 __all__ = [
     "ScipDiagnostic",
     "ScipExternalSymbol",
+    "ScipIndexMetadata",
     "ScipSymbolInfo",
     "ScipSymbolRelationship",
 ]

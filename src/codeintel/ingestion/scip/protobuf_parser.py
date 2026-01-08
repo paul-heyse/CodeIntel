@@ -12,6 +12,7 @@ from codeintel.ingestion.ports.tools import ScipDocument, ScipOccurrence, ScipSy
 from codeintel.ingestion.scip.models import (
     ScipDiagnostic,
     ScipExternalSymbol,
+    ScipIndexMetadata,
     ScipSymbolInfo,
     ScipSymbolRelationship,
 )
@@ -36,6 +37,7 @@ class ScipParsedIndex:
     relationships: tuple[ScipSymbolRelationship, ...]
     diagnostics: tuple[ScipDiagnostic, ...]
     external_symbols: tuple[ScipExternalSymbol, ...]
+    metadata: ScipIndexMetadata | None
     project_root: Path | None
 
 
@@ -98,6 +100,7 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
 
     text_document_encoding: str | None = None
     project_root: Path | None = None
+    metadata_entry: ScipIndexMetadata | None = None
     documents: list[ScipDocument] = []
     symbol_infos: list[ScipSymbolInfo] = []
     relationships: list[ScipSymbolRelationship] = []
@@ -112,6 +115,17 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
                 getattr(metadata, "text_document_encoding", 0)
             )
             project_root = _parse_project_root(getattr(metadata, "project_root", None))
+            tool_info = getattr(metadata, "tool_info", None)
+            tool_name = _normalize_optional_text(getattr(tool_info, "name", None))
+            tool_version = _normalize_optional_text(getattr(tool_info, "version", None))
+            tool_arguments = _normalize_tool_arguments(getattr(tool_info, "arguments", None))
+            metadata_entry = ScipIndexMetadata(
+                project_root=project_root,
+                text_document_encoding=text_document_encoding,
+                tool_name=tool_name,
+                tool_version=tool_version,
+                tool_arguments=tool_arguments,
+            )
             continue
         if field_no == field_numbers.documents:
             doc = module.Document()
@@ -148,6 +162,7 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
         relationships=tuple(relationships),
         diagnostics=tuple(diagnostics),
         external_symbols=tuple(external_symbols),
+        metadata=metadata_entry,
         project_root=project_root,
     )
 
@@ -223,8 +238,30 @@ def rebase_parsed_index(parsed: ScipParsedIndex, repo_root: Path) -> ScipParsedI
         relationships=parsed.relationships,
         diagnostics=tuple(rebased_diagnostics),
         external_symbols=parsed.external_symbols,
+        metadata=parsed.metadata,
         project_root=parsed.project_root,
     )
+
+
+def _normalize_optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
+
+
+def _normalize_tool_arguments(value: object) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        return (normalized,) if normalized else None
+    try:
+        values = [str(item).strip() for item in value]
+    except TypeError:
+        return None
+    entries = [item for item in values if item]
+    return tuple(entries) if entries else None
 
 
 def _parse_project_root(value: str | None) -> Path | None:

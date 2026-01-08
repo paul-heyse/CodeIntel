@@ -22,8 +22,9 @@ from codeintel.ingestion.engine.infrastructure import (
 from codeintel.ingestion.scip.cli import (
     ScipPythonArgs,
     build_scip_python_args,
-    ensure_pip_available,
+    stage_pyright_config,
 )
+from codeintel.ingestion.scip.environment import resolve_environment_json
 from codeintel.ingestion.scip.hash_resolver import FileDigestResolver
 from codeintel.ingestion.scip.index_store import (
     MergeIndexContext,
@@ -107,8 +108,10 @@ class ScipIncrementalConfig:
     timeout_seconds: int
     target_dir: Path | None
     environment_json: Path | None = None
+    pyright_config_path: Path | None = None
     project_version: str | None = None
     project_namespace: str | None = None
+    scip_node_max_old_space_mb: int | None = None
     force_full_rebuild: bool = False
     batch_size: int = 200
     batch_max_bytes: int = 50_000_000
@@ -129,8 +132,10 @@ class _ScipRunConfig:
     target_base: Path
     timeout_seconds: int
     environment_json: Path | None
+    pyright_config_path: Path | None
     project_version: str | None
     project_namespace: str | None
+    scip_node_max_old_space_mb: int | None
 
 
 @dataclass(frozen=True)
@@ -302,6 +307,10 @@ def update_index_incremental(
 def _build_run_context(config: ScipIncrementalConfig) -> _IncrementalRunContext:
     scip_dir = config.output_scip.parent
     scip_dir.mkdir(parents=True, exist_ok=True)
+    env_resolution = resolve_environment_json(
+        environment_json=config.environment_json,
+        scip_dir=scip_dir,
+    )
     manifest_file = manifest_path(scip_dir)
     target_base = resolve_target_base(config.repo_root, config.target_dir)
     run_config = _ScipRunConfig(
@@ -310,9 +319,11 @@ def _build_run_context(config: ScipIncrementalConfig) -> _IncrementalRunContext:
         tool_runner=config.tool_runner,
         target_base=target_base,
         timeout_seconds=config.timeout_seconds,
-        environment_json=config.environment_json,
+        environment_json=env_resolution.environment_json,
+        pyright_config_path=config.pyright_config_path,
         project_version=config.project_version,
         project_namespace=config.project_namespace,
+        scip_node_max_old_space_mb=config.scip_node_max_old_space_mb,
     )
     total_modules = len(config.modules)
     changed_modules = tuple(config.change_set.added) + tuple(config.change_set.modified)
@@ -913,8 +924,6 @@ def _run_scip_python(
     progress_interval = (
         _SCIP_TRACE_PROGRESS_INTERVAL_S if trace_enabled else _SCIP_PROGRESS_INTERVAL_S
     )
-    if run_config.environment_json is None:
-        ensure_pip_available()
     args = build_scip_python_args(
         ScipPythonArgs(
             target_base=run_config.target_base,
@@ -926,20 +935,29 @@ def _run_scip_python(
             project_namespace=run_config.project_namespace,
         )
     )
-    result = asyncio.run(
-        run_config.tool_runner.run_async(
-            ToolName.SCIP_PYTHON,
-            args,
-            options=ToolRunOptions(
-                cwd=run_config.repo_root,
-                output_path=output_scip,
-                timeout_s=float(run_config.timeout_seconds),
-                progress_interval_s=progress_interval,
-                log_prefix=log_prefix,
-                stream_output=trace_enabled,
-            ),
+    env: dict[str, str] | None = None
+    if run_config.scip_node_max_old_space_mb is not None:
+        if run_config.scip_node_max_old_space_mb > 0:
+            env = {"NODE_OPTIONS": f"--max-old-space-size={run_config.scip_node_max_old_space_mb}"}
+    with stage_pyright_config(
+        target_base=run_config.target_base,
+        pyright_config_path=run_config.pyright_config_path,
+    ):
+        result = asyncio.run(
+            run_config.tool_runner.run_async(
+                ToolName.SCIP_PYTHON,
+                args,
+                options=ToolRunOptions(
+                    cwd=run_config.repo_root,
+                    output_path=output_scip,
+                    timeout_s=float(run_config.timeout_seconds),
+                    progress_interval_s=progress_interval,
+                    log_prefix=log_prefix,
+                    stream_output=trace_enabled,
+                    env=env,
+                ),
+            )
         )
-    )
     if not result.ok:
         raise ToolExecutionError(result)
 

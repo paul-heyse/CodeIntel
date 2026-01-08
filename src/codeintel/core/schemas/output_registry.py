@@ -1842,6 +1842,23 @@ SCIP_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
     TableSchema(
         schema="core",
+        name="scip_index_metadata",
+        columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
+            Column("project_root", "VARCHAR"),
+            Column("text_document_encoding", "VARCHAR"),
+            Column("tool_name", "VARCHAR"),
+            Column("tool_version", "VARCHAR"),
+            Column("tool_arguments", "VARCHAR"),
+            Column("created_at", "TIMESTAMP", nullable=False),
+        ],
+        primary_key=("repo", "commit", "created_at"),
+        indexes=(Index("idx_core_scip_index_metadata_repo_commit", ("repo", "commit")),),
+        description="Metadata recorded from SCIP index headers",
+    ),
+    TableSchema(
+        schema="core",
         name="scip_module_state",
         columns=[
             Column("repo", "VARCHAR", nullable=False),
@@ -3864,6 +3881,7 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
         "core.schema_inference_errors",
         "core.scip_diagnostics",
         "core.scip_external_symbols",
+        "core.scip_index_metadata",
         "core.scip_module_state",
         "core.scip_occurrences",
         "core.scip_occurrence_span_xref",

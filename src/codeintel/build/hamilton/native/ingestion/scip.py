@@ -10,6 +10,7 @@ while persistence is DAG-visible via artifact saver nodes.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import sys
@@ -81,6 +82,7 @@ from codeintel.ingestion.ports.tools import ScipDocument, ScipOccurrence
 from codeintel.ingestion.scip import (
     SCIP_DIAGNOSTICS_TABLE_KEY,
     SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+    SCIP_INDEX_METADATA_TABLE_KEY,
     SCIP_MODULE_STATE_TABLE_KEY,
     SCIP_OCCURRENCES_TABLE_KEY,
     SCIP_RELATIONSHIPS_TABLE_KEY,
@@ -91,6 +93,7 @@ from codeintel.ingestion.scip import (
     parse_index,
     rebase_parsed_index,
 )
+from codeintel.ingestion.scip.environment import resolve_environment_json
 from codeintel.ingestion.scip.incremental import (
     ScipIncrementalConfig,
     update_index_incremental,
@@ -145,6 +148,7 @@ SCIP_TABLE_KEYS = (
     SCIP_RELATIONSHIPS_TABLE_KEY,
     SCIP_DIAGNOSTICS_TABLE_KEY,
     SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+    SCIP_INDEX_METADATA_TABLE_KEY,
     SCIP_MODULE_STATE_TABLE_KEY,
 )
 FILE_STATE_TABLE_KEY = "core.file_state"
@@ -220,12 +224,14 @@ class ScipRowPayload:
     relationship_rows: InferableTabularInput
     diagnostic_rows: InferableTabularInput
     external_symbol_rows: InferableTabularInput
+    index_metadata_rows: InferableTabularInput
     symbol_row_count: int
     occurrence_row_count: int
     symbol_info_row_count: int
     relationship_row_count: int
     diagnostic_row_count: int
     external_symbol_row_count: int
+    index_metadata_row_count: int
 
 
 @dataclass(frozen=True)
@@ -293,8 +299,12 @@ def _scip_options_hash(
     *,
     project_version: str | None,
     project_namespace: str | None,
+    environment_json: Path | None,
+    environment_json_hash: str | None,
 ) -> str | None:
     payload = asdict(options)
+    payload["environment_json"] = environment_json
+    payload["environment_json_hash"] = environment_json_hash
     payload["project_name"] = tools_config.scip_project_name
     payload["tool_version"] = tool_version
     payload["project_version"] = project_version
@@ -307,6 +317,16 @@ def _normalize_optional_text(value: str | None) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _hash_file(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    try:
+        payload = path.read_bytes()
+    except OSError:
+        return None
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _resolve_project_version(
@@ -735,6 +755,7 @@ def _apply_file_line_index(
         relationships=parsed.relationships,
         diagnostics=parsed.diagnostics,
         external_symbols=parsed.external_symbols,
+        metadata=parsed.metadata,
         project_root=parsed.project_root,
     )
 
@@ -893,12 +914,45 @@ def _execute_scip_incremental(
         run_config.options.project_namespace,
         default_value=tools_config.scip_project_namespace,
     )
+    scip_dir = output_scip.parent
+    try:
+        env_resolution = resolve_environment_json(
+            environment_json=run_config.options.environment_json,
+            scip_dir=scip_dir,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        telemetry = ScipRunTelemetry.create(
+            identity=ScipRunIdentity(
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
+                run_id=run_id,
+                options_hash=None,
+                project_version=project_version,
+                project_namespace=project_namespace,
+                environment_source=None,
+            )
+        )
+        telemetry.status = "failed"
+        telemetry.error_summary = str(exc)
+        telemetry.total_ms = 0.0
+        _persist_scip_telemetry_safe(env, telemetry)
+        return ScipRunResult(
+            result=ExecutionResult.failed(str(exc)),
+            run_id=run_id,
+            mode=_normalize_scip_run_mode("incremental"),
+        )
+
+    environment_json = env_resolution.environment_json
+    environment_source = env_resolution.source
+    environment_json_hash = _hash_file(environment_json)
     options_hash = _scip_options_hash(
         run_config.options,
         tools_config,
         tool_version,
         project_version=project_version,
         project_namespace=project_namespace,
+        environment_json=environment_json,
+        environment_json_hash=environment_json_hash,
     )
     telemetry = ScipRunTelemetry.create(
         identity=ScipRunIdentity(
@@ -908,6 +962,7 @@ def _execute_scip_incremental(
             options_hash=options_hash,
             project_version=project_version,
             project_namespace=project_namespace,
+            environment_source=environment_source,
         )
     )
     file_state_rows = module_inputs.scan.file_state_rows
@@ -931,11 +986,13 @@ def _execute_scip_incremental(
             tools_config=env.providers.tool_runner.tools_config,
             tool_runner=env.providers.tool_runner,
             scope_paths=run_config.options.scope_paths,
-            environment_json=run_config.options.environment_json,
+            environment_json=environment_json,
+            pyright_config_path=run_config.options.pyright_config_path,
             project_version=project_version,
             project_namespace=project_namespace,
             max_file_size_kb=run_config.options.max_file_size_kb,
             timeout_seconds=run_config.options.timeout_seconds,
+            scip_node_max_old_space_mb=run_config.options.scip_node_max_old_space_mb,
             target_dir=None,
             force_full_rebuild=force_full_rebuild,
             batch_size=run_config.options.batch_size,
@@ -1151,6 +1208,11 @@ def _build_scip_row_payload(
         iter_external_symbol_rows(parsed.external_symbols, row_context),
         extras_policy="retain",
     )
+    index_metadata_rows, index_metadata_row_count = table_for_rows(
+        SCIP_INDEX_METADATA_TABLE_KEY,
+        iter_index_metadata_rows(parsed.metadata, row_context),
+        extras_policy="retain",
+    )
     return ScipRowPayload(
         symbol_rows=symbol_rows,
         occurrence_rows=occurrence_rows,
@@ -1158,12 +1220,14 @@ def _build_scip_row_payload(
         relationship_rows=relationship_rows,
         diagnostic_rows=diagnostic_rows,
         external_symbol_rows=external_symbol_rows,
+        index_metadata_rows=index_metadata_rows,
         symbol_row_count=symbol_row_count,
         occurrence_row_count=occurrence_row_count,
         symbol_info_row_count=symbol_info_row_count,
         relationship_row_count=relationship_row_count,
         diagnostic_row_count=diagnostic_row_count,
         external_symbol_row_count=external_symbol_row_count,
+        index_metadata_row_count=index_metadata_row_count,
     )
 
 
@@ -1178,6 +1242,7 @@ def _scip_table_counts(
         SCIP_RELATIONSHIPS_TABLE_KEY: payload.relationship_row_count,
         SCIP_DIAGNOSTICS_TABLE_KEY: payload.diagnostic_row_count,
         SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: payload.external_symbol_row_count,
+        SCIP_INDEX_METADATA_TABLE_KEY: payload.index_metadata_row_count,
         SCIP_MODULE_STATE_TABLE_KEY: module_state_count,
     }
 
@@ -1238,6 +1303,7 @@ def _build_scip_ingest_result(
         SCIP_RELATIONSHIPS_TABLE_KEY: payload.relationship_rows,
         SCIP_DIAGNOSTICS_TABLE_KEY: payload.diagnostic_rows,
         SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: payload.external_symbol_rows,
+        SCIP_INDEX_METADATA_TABLE_KEY: payload.index_metadata_rows,
         SCIP_MODULE_STATE_TABLE_KEY: module_state_frame,
     }
     return IngestStep(result=result, payload=payload_by_table)
@@ -1353,6 +1419,19 @@ def scip__external_symbol_rows__base(
     return _scip_payload_frame(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
 
 
+def scip__index_metadata_rows__base(
+    t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
+) -> InferableTabularInput:
+    """Return rows for core.scip_index_metadata.
+
+    Returns
+    -------
+    InferableTabularInput
+        Tabular input for core.scip_index_metadata.
+    """
+    return _scip_payload_frame(t__scip__ingest, SCIP_INDEX_METADATA_TABLE_KEY)
+
+
 def scip__module_state_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput:
@@ -1424,6 +1503,11 @@ _SCIP_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
             node_name="scip__external_symbol_rows",
         ),
         TableTargetTableContext(
+            table_key=SCIP_INDEX_METADATA_TABLE_KEY,
+            base_node="scip__index_metadata_rows__base",
+            node_name="scip__index_metadata_rows",
+        ),
+        TableTargetTableContext(
             table_key=SCIP_MODULE_STATE_TABLE_KEY,
             base_node="scip__module_state_rows__base",
             node_name="scip__module_state_rows",
@@ -1437,6 +1521,7 @@ scip__symbol_info_rows = _MODULE.scip__symbol_info_rows
 scip__relationship_rows = _MODULE.scip__relationship_rows
 scip__diagnostic_rows = _MODULE.scip__diagnostic_rows
 scip__external_symbol_rows = _MODULE.scip__external_symbol_rows
+scip__index_metadata_rows = _MODULE.scip__index_metadata_rows
 scip__module_state_rows = _MODULE.scip__module_state_rows
 scip__table_materializations = _MODULE.scip__table_materializations
 

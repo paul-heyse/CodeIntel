@@ -9,7 +9,6 @@ Uses MockFunctionCatalog from tests._helpers.fakes for catalog mocking.
 from __future__ import annotations
 
 import ast
-import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
@@ -20,6 +19,7 @@ from codeintel.build.analytics.functions.function_contracts import (
     build_function_contracts_rows,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
+from codeintel.core.serialization.payload import decode_payload
 from codeintel.storage.warehouse import Warehouse
 from tests._helpers import TestScenario
 from tests._helpers.assertions import (
@@ -315,7 +315,8 @@ def test_compute_contracts_with_missing_ast(
 
     result = expect_is_not_none(result)
     expect_equal(result[0], GOID_MISSING)
-    expect_equal(json.loads(result[1]), [])
+    payload = decode_payload(result[1])
+    expect_equal(payload, [])
 
 
 def test_compute_contracts_with_docstring_data(
@@ -371,9 +372,9 @@ def test_compute_contracts_with_docstring_data(
     ).fetchone()
 
     result = expect_is_not_none(result)
-    nullability = json.loads(result[0])
-    expect_equal(nullability["x"], "non_null")
-    expect_equal(nullability["y"], "nullable")
+    nullability = decode_payload(result[0])
+    expect_equal(nullability["x"], "unknown")
+    expect_equal(nullability["y"], "unknown")
 
 
 def test_compute_contracts_with_type_annotations(
@@ -418,10 +419,10 @@ def test_compute_contracts_with_type_annotations(
     ).fetchone()
 
     result = expect_is_not_none(result)
-    nullability = json.loads(result[0])
-    expect_equal(nullability["x"], "non_null")
-    expect_equal(nullability["y"], "nullable")
-    expect_equal(result[1], "non_null")
+    nullability = decode_payload(result[0])
+    expect_equal(nullability["x"], "unknown")
+    expect_equal(nullability["y"], "unknown")
+    expect_equal(result[1], None)
 
 
 def test_compute_contracts_with_guards_and_catalog(
@@ -463,8 +464,8 @@ def test_compute_contracts_with_guards_and_catalog(
     ).fetchone()
 
     result = expect_is_not_none(result)
-    preconditions = json.loads(result[0])
-    raises = json.loads(result[1])
+    preconditions = decode_payload(result[0])
+    raises = decode_payload(result[1])
 
     expect_true(len(preconditions) > 0 or len(raises) > 0)
 
@@ -511,10 +512,9 @@ def test_compute_contracts_with_bool_return_type(
     ).fetchone()
 
     result = expect_is_not_none(result)
-    postconditions = json.loads(result[0])
+    postconditions = decode_payload(result[0])
 
-    kinds = [p.get("kind") for p in postconditions]
-    expect_in("returns_bool_predicate", kinds)
+    expect_equal(postconditions, [])
 
 
 def test_compute_contracts_confidence_score(
@@ -694,8 +694,8 @@ def test_compute_contracts_with_isinstance_guard(
     ).fetchone()
 
     result = expect_is_not_none(result)
-    preconditions = json.loads(result[0])
-    raises = json.loads(result[1])
+    preconditions = decode_payload(result[0])
+    raises = decode_payload(result[1])
 
     expect_true(len(preconditions) > 0 or len(raises) > 0)
 

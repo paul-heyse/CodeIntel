@@ -867,6 +867,50 @@ class ScipExternalSymbolRow:
 
 
 @dataclass(frozen=True)
+class ScipIndexMetadataRow:
+    """Row data for core.scip_index_metadata table.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    project_root
+        Project root path from the SCIP metadata.
+    text_document_encoding
+        Text encoding of source files referenced in the index.
+    tool_name
+        Indexer tool name.
+    tool_version
+        Indexer tool version.
+    tool_arguments
+        JSON-encoded tool arguments.
+    created_at
+        Row creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    project_root: str | None
+    text_document_encoding: str | None
+    tool_name: str | None
+    tool_version: str | None
+    tool_arguments: str | None
+    created_at: datetime
+
+    def to_tuple(self) -> tuple[object, ...]:
+        """Serialize to tuple for DuckDB insertion.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Field values in INSERT column order.
+        """
+        return dataclasses.astuple(self)
+
+
+@dataclass(frozen=True)
 class ScipModuleStateRow:
     """Row data for core.scip_module_state table.
 
@@ -920,6 +964,7 @@ __all__ = [
     "ImportModuleRow",
     "ScipDiagnosticRow",
     "ScipExternalSymbolRow",
+    "ScipIndexMetadataRow",
     "ScipModuleStateRow",
     "ScipOccurrenceRow",
     "ScipOccurrenceSpanXrefRow",

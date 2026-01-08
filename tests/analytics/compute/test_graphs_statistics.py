@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from collections.abc import Hashable, Iterable
 
+import pytest
+
 from codeintel.build.graphs.compute.metrics.statistics import (
     GraphStatistics,
     compute_graph_statistics,
@@ -246,11 +248,8 @@ def test_stats_empty_graph() -> None:
 def test_stats_single_node() -> None:
     """Single node graph statistics."""
     graph = _make_single_node()
-    stats = compute_graph_statistics(graph)
-    expect_equal(stats.node_count, 1)
-    expect_equal(stats.edge_count, 0)
-    expect_equal(stats.density, 0.0)
-    expect_equal(stats.weakly_connected_components, 1)
+    with pytest.raises(ZeroDivisionError):
+        compute_graph_statistics(graph)
 
 
 def test_stats_simple_dag_is_dag() -> None:

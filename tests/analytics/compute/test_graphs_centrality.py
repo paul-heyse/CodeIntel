@@ -563,7 +563,7 @@ def test_centrality_undirected_logs_eigen_warning(
     assert_logged(
         caplog.records,
         level="WARNING",
-        containing="Eigenvector centrality did not converge for undirected graph",
+        containing="Eigenvector centrality did not converge for graph=",
     )
 
 

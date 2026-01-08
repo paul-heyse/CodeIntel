@@ -16,6 +16,7 @@ class ScipRunIdentity:
     options_hash: str | None
     project_version: str | None
     project_namespace: str | None
+    environment_source: str | None
 
 
 @dataclass
@@ -38,6 +39,8 @@ class ScipRunTelemetry:
         Project version passed to scip-python.
     project_namespace
         Project namespace passed to scip-python.
+    environment_source
+        Environment discovery source (pip or json).
     tool_version
         Resolved scip-python version string.
     total_modules
@@ -99,6 +102,7 @@ class ScipRunTelemetry:
     options_hash: str | None
     project_version: str | None
     project_namespace: str | None
+    environment_source: str | None
     tool_version: str | None
     total_modules: int
     changed_modules: int
@@ -142,6 +146,7 @@ class ScipRunTelemetry:
             "options_hash": self.options_hash,
             "project_version": self.project_version,
             "project_namespace": self.project_namespace,
+            "environment_source": self.environment_source,
             "tool_version": self.tool_version,
             "total_modules": self.total_modules,
             "changed_modules": self.changed_modules,
@@ -191,6 +196,7 @@ class ScipRunTelemetry:
             options_hash=identity.options_hash,
             project_version=identity.project_version,
             project_namespace=identity.project_namespace,
+            environment_source=identity.environment_source,
             tool_version=None,
             total_modules=0,
             changed_modules=0,

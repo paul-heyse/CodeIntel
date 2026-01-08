@@ -10,6 +10,7 @@ from codeintel.ingestion.scip.protobuf_parser import (
 from codeintel.ingestion.scip.rows import (
     SCIP_DIAGNOSTICS_TABLE_KEY,
     SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+    SCIP_INDEX_METADATA_TABLE_KEY,
     SCIP_MODULE_STATE_TABLE_KEY,
     SCIP_OCCURRENCES_TABLE_KEY,
     SCIP_RELATIONSHIPS_TABLE_KEY,
@@ -18,6 +19,7 @@ from codeintel.ingestion.scip.rows import (
     ScipRowContext,
     build_diagnostic_rows,
     build_external_symbol_rows,
+    build_index_metadata_rows,
     build_module_state_rows,
     build_occurrence_rows,
     build_symbol_information_rows,
@@ -28,6 +30,7 @@ from codeintel.ingestion.scip.rows import (
 __all__ = [
     "SCIP_DIAGNOSTICS_TABLE_KEY",
     "SCIP_EXTERNAL_SYMBOLS_TABLE_KEY",
+    "SCIP_INDEX_METADATA_TABLE_KEY",
     "SCIP_MODULE_STATE_TABLE_KEY",
     "SCIP_OCCURRENCES_TABLE_KEY",
     "SCIP_RELATIONSHIPS_TABLE_KEY",
@@ -37,6 +40,7 @@ __all__ = [
     "ScipRowContext",
     "build_diagnostic_rows",
     "build_external_symbol_rows",
+    "build_index_metadata_rows",
     "build_module_state_rows",
     "build_occurrence_rows",
     "build_symbol_information_rows",

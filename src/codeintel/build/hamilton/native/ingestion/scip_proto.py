@@ -47,6 +47,7 @@ log = logging.getLogger(__name__)
 
 SCIP_PROTO_TARGET = "scip_proto"
 SCIP_PROTO_ARTIFACT = "scip_pb2"
+SCIP_PROTO_PYI_ARTIFACT = "scip_pb2_pyi"
 
 ScipProtoRunResult = ToolStepOutput
 
@@ -94,6 +95,8 @@ def _run_codegen(
         str(proto_path.parent),
         "--python_out",
         str(out_dir),
+        "--pyi_out",
+        str(out_dir),
         str(proto_path),
     ]
     return asyncio.run(
@@ -124,6 +127,7 @@ def t__scip_proto__run(
     proto_path = _proto_path(env.snapshot.repo_root)
     out_dir = _proto_out_dir(env)
     output_path = out_dir / "scip_pb2.py"
+    pyi_output_path = out_dir / "scip_pb2.pyi"
 
     context = ToolRunContext(
         env=env,
@@ -145,7 +149,10 @@ def t__scip_proto__run(
 
         return ScipProtoRunResult(
             result=ExecutionResult.ok(),
-            outputs={SCIP_PROTO_ARTIFACT: output_path},
+            outputs={
+                SCIP_PROTO_ARTIFACT: output_path,
+                SCIP_PROTO_PYI_ARTIFACT: pyi_output_path,
+            },
         )
 
     return run_tool_step(context=context, run=_execute)
@@ -172,6 +179,27 @@ def scip__proto_artifact(t__scip_proto__run: ScipProtoRunResult) -> Path | None:
     return t__scip_proto__run.path_for(SCIP_PROTO_ARTIFACT)
 
 
+@save_artifact(
+    context=SCIP_PROTO_SAVE_CONTEXT,
+    spec=ArtifactSaveSpec(
+        artifact_name=SCIP_PROTO_PYI_ARTIFACT,
+        path_template="{scip_dir}/proto/scip_pb2.pyi",
+    ),
+)
+@tag_compute(domain="ingestion", target=SCIP_PROTO_TARGET, target_="scip__proto_pyi_artifact")
+def scip__proto_pyi_artifact(t__scip_proto__run: ScipProtoRunResult) -> Path | None:
+    """Expose scip_pb2.pyi path for artifact materialization.
+
+    Returns
+    -------
+    Path | None
+        Path to scip_pb2.pyi, or None when codegen failed.
+    """
+    if not t__scip_proto__run.result.success or t__scip_proto__run.result.skipped:
+        return None
+    return t__scip_proto__run.path_for(SCIP_PROTO_PYI_ARTIFACT)
+
+
 @tag_compute(domain="ingestion", target=SCIP_PROTO_TARGET)
 def scip__proto_module_path(
     env: BuildEnv,
@@ -193,6 +221,7 @@ def scip__proto_module_path(
 @tag_helper(domain="ingestion", target=SCIP_PROTO_TARGET)
 def scip_proto__materializations(
     m__artifact__scip_pb2: MaterializationResult,
+    m__artifact__scip_pb2_pyi: MaterializationResult,
 ) -> dict[str, MaterializationResult]:
     """Collect scip proto artifact materializations.
 
@@ -201,7 +230,10 @@ def scip_proto__materializations(
     dict[str, MaterializationResult]
         Mapping of artifact names to materialization results.
     """
-    return {SCIP_PROTO_ARTIFACT: m__artifact__scip_pb2}
+    return {
+        SCIP_PROTO_ARTIFACT: m__artifact__scip_pb2,
+        SCIP_PROTO_PYI_ARTIFACT: m__artifact__scip_pb2_pyi,
+    }
 
 
 @cache(behavior="ignore")

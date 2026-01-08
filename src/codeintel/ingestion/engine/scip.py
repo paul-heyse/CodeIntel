@@ -28,8 +28,9 @@ from codeintel.ingestion.engine.results import ScipDocument, ScipIndexResult, Sc
 from codeintel.ingestion.scip.cli import (
     ScipPythonArgs,
     build_scip_python_args,
-    ensure_pip_available,
+    stage_pyright_config,
 )
+from codeintel.ingestion.scip.environment import resolve_environment_json
 from codeintel.ingestion.scip.index_store import write_index_proto
 from codeintel.ingestion.scip.paths import resolve_target_base
 from codeintel.ingestion.scip.proto import load_generated_module
@@ -129,8 +130,10 @@ class _ScipToolRun:
     target_dir: Path | None
     rel_paths: Sequence[str] | None
     environment_json: Path | None
+    pyright_config_path: Path | None
     project_version: str | None
     project_namespace: str | None
+    scip_node_max_old_space_mb: int | None
     timeout_s: float | None
 
 
@@ -152,8 +155,10 @@ class ScipPlugin(ToolPlugin):
                     "target_dir",
                     "rel_paths",
                     "environment_json",
+                    "pyright_config_path",
                     "project_version",
                     "project_namespace",
+                    "scip_node_max_old_space_mb",
                     "timeout_s",
                 ),
             ),
@@ -169,8 +174,10 @@ class ScipPlugin(ToolPlugin):
         Path | None,
         tuple[str, ...] | None,
         Path | None,
+        Path | None,
         str | None,
         str | None,
+        int | None,
         float | None,
     ]:
         """Validate and extract keyword arguments for run method.
@@ -188,12 +195,15 @@ class ScipPlugin(ToolPlugin):
             Path | None,
             tuple[str, ...] | None,
             Path | None,
+            Path | None,
             str | None,
             str | None,
+            int | None,
             float | None,
         ]
             Tuple of (output_scip, proto_module_path, target_dir, rel_paths,
-            environment_json, project_version, project_namespace, timeout_s).
+            environment_json, pyright_config_path, project_version, project_namespace,
+            scip_node_max_old_space_mb, timeout_s).
 
         Raises
         ------
@@ -206,8 +216,10 @@ class ScipPlugin(ToolPlugin):
         rel_paths_obj = kwargs.get("rel_paths")
         proto_module_obj = kwargs.get("proto_module_path")
         environment_obj = kwargs.get("environment_json")
+        pyright_config_obj = kwargs.get("pyright_config_path")
         project_version_obj = kwargs.get("project_version")
         project_namespace_obj = kwargs.get("project_namespace")
+        node_max_obj = kwargs.get("scip_node_max_old_space_mb")
         timeout_obj = kwargs.get("timeout_s")
 
         if not isinstance(output_scip_obj, Path):
@@ -225,11 +237,17 @@ class ScipPlugin(ToolPlugin):
         if environment_obj is not None and not isinstance(environment_obj, Path):
             message = "scip-python plugin requires environment_json to be Path or None"
             raise TypeError(message)
+        if pyright_config_obj is not None and not isinstance(pyright_config_obj, Path):
+            message = "scip-python plugin requires pyright_config_path to be Path or None"
+            raise TypeError(message)
         if project_version_obj is not None and not isinstance(project_version_obj, str):
             message = "scip-python plugin requires project_version to be str or None"
             raise TypeError(message)
         if project_namespace_obj is not None and not isinstance(project_namespace_obj, str):
             message = "scip-python plugin requires project_namespace to be str or None"
+            raise TypeError(message)
+        if node_max_obj is not None and not isinstance(node_max_obj, int):
+            message = "scip-python plugin requires scip_node_max_old_space_mb to be int or None"
             raise TypeError(message)
         if timeout_obj is not None and not isinstance(timeout_obj, Real):
             message = "scip-python plugin requires timeout_s to be a number or None"
@@ -243,8 +261,10 @@ class ScipPlugin(ToolPlugin):
             target_dir_obj,
             rel_paths,
             environment_obj,
+            pyright_config_obj,
             project_version_obj,
             project_namespace_obj,
+            node_max_obj,
             timeout_s,
         )
 
@@ -271,8 +291,10 @@ class ScipPlugin(ToolPlugin):
             target_dir,
             rel_paths,
             environment_json,
+            pyright_config_path,
             project_version,
             project_namespace,
+            scip_node_max_old_space_mb,
             timeout_s,
         ) = self._validate_kwargs(dict(kwargs))
         run_args = _ScipToolRun(
@@ -280,8 +302,10 @@ class ScipPlugin(ToolPlugin):
             target_dir=target_dir,
             rel_paths=rel_paths,
             environment_json=environment_json,
+            pyright_config_path=pyright_config_path,
             project_version=project_version,
             project_namespace=project_namespace,
+            scip_node_max_old_space_mb=scip_node_max_old_space_mb,
             timeout_s=timeout_s,
         )
 
@@ -367,32 +391,45 @@ class ScipPlugin(ToolPlugin):
             run_args.target_dir,
         )
         await to_thread.run_sync(_mkdir_parents, output_scip.parent)
-
-        if run_args.environment_json is None:
-            ensure_pip_available()
+        env_resolution = resolve_environment_json(
+            environment_json=run_args.environment_json,
+            scip_dir=output_scip.parent,
+        )
+        environment_json = env_resolution.environment_json
         args = build_scip_python_args(
             ScipPythonArgs(
                 target_base=target_base,
                 output_scip=output_scip,
                 project_name=self.tools_config.scip_project_name,
                 target_paths=run_args.rel_paths,
-                environment_json=run_args.environment_json,
+                environment_json=environment_json,
                 project_version=run_args.project_version,
                 project_namespace=run_args.project_namespace,
             )
         )
+        env: dict[str, str] | None = None
+        if run_args.scip_node_max_old_space_mb is not None:
+            if run_args.scip_node_max_old_space_mb > 0:
+                env = {
+                    "NODE_OPTIONS": f"--max-old-space-size={run_args.scip_node_max_old_space_mb}"
+                }
 
-        result = await self.runner.run_async(
-            ToolName.SCIP_PYTHON,
-            args,
-            options=ToolRunOptions(
-                cwd=repo_root,
-                output_path=output_scip,
-                timeout_s=run_args.timeout_s
-                if run_args.timeout_s is not None
-                else self.tools_config.default_timeout_s,
-            ),
-        )
+        with stage_pyright_config(
+            target_base=target_base,
+            pyright_config_path=run_args.pyright_config_path,
+        ):
+            result = await self.runner.run_async(
+                ToolName.SCIP_PYTHON,
+                args,
+                options=ToolRunOptions(
+                    cwd=repo_root,
+                    output_path=output_scip,
+                    timeout_s=run_args.timeout_s
+                    if run_args.timeout_s is not None
+                    else self.tools_config.default_timeout_s,
+                    env=env,
+                ),
+            )
         if not result.ok:
             raise ToolExecutionError(result)
         return result

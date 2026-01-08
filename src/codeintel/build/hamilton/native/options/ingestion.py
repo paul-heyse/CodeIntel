@@ -59,6 +59,8 @@ class ScipIngestOptions:
         Optional prefixes to limit processing to matching files.
     environment_json
         Optional scip-python environment JSON file.
+    pyright_config_path
+        Optional pyrightconfig.json to stage during indexing.
     project_version_mode
         Project version mode: unset, commit, or constant.
     project_version_value
@@ -73,6 +75,8 @@ class ScipIngestOptions:
         Maximum file size to process.
     timeout_seconds
         Timeout for SCIP indexing operation.
+    scip_node_max_old_space_mb
+        Optional Node.js max old space size (MB) for scip-python.
     scip_output_dir
         Directory to write SCIP index files.
     batch_size
@@ -91,6 +95,7 @@ class ScipIngestOptions:
 
     scope_paths: list[str] | None = None
     environment_json: Path | None = None
+    pyright_config_path: Path | None = None
     project_version_mode: str = "unset"
     project_version_value: str | None = None
     project_namespace: str | None = None
@@ -98,6 +103,7 @@ class ScipIngestOptions:
     include_implementations: bool = True
     max_file_size_kb: int = 102400
     timeout_seconds: int = 300
+    scip_node_max_old_space_mb: int | None = None
     scip_output_dir: Path | None = None
     batch_size: int = 200
     batch_max_bytes: int = 50_000_000
