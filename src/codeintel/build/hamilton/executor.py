@@ -65,6 +65,9 @@ from codeintel.build.hamilton.diagnostics import (
 )
 from codeintel.build.hamilton.driver_factory import target_to_node_name
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
+from codeintel.build.hamilton.empty_dataset_issues import (
+    persist_empty_dataset_issues,
+)
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.execution_profiles import (
     apply_dynamic_execution_config,
@@ -1825,6 +1828,11 @@ def _finalize_run(
     ]
     inputs.writer.save_run_targets(env=context.env, run_id=context.run_id, records=records)
     persist_contract_alignment_issues(env=context.env, run_id=context.run_id)
+    persist_empty_dataset_issues(
+        env=context.env,
+        run_id=context.run_id,
+        catalog=catalog,
+    )
     inputs.writer.persist_asset_catalog(
         env=context.env,
         run_id=context.run_id,

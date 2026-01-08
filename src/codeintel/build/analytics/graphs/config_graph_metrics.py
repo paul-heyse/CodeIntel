@@ -299,7 +299,7 @@ def build_config_module_bipartite(
     Parameters
     ----------
     config_value_rows
-        Rows from analytics.config_values.
+        Rows from analytics.config_values or analytics.config_references.
     allowed_modules
         Optional module allowlist to filter reference modules.
     repo

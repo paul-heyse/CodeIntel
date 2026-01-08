@@ -22,6 +22,9 @@ from codeintel.build.hamilton.decision_trace import (
     default_decision_trace_path,
     write_decision_trace,
 )
+from codeintel.build.hamilton.empty_dataset_issues import (
+    EMPTY_DATASET_ISSUES_TABLE_KEY,
+)
 from codeintel.build.hamilton.external_inputs import load_external_inputs_allowlist
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
@@ -138,6 +141,11 @@ def emit_diagnostics(inputs: DiagnosticsInputs) -> None:
         drift_payload=drift_payload,
     )
     _write_contract_alignment_summary(
+        diag_dir=diag_dir,
+        env=inputs.env,
+        run_id=inputs.run_id,
+    )
+    _write_empty_dataset_issues(
         diag_dir=diag_dir,
         env=inputs.env,
         run_id=inputs.run_id,
@@ -475,6 +483,163 @@ def _coerce_count(value: object | None, *, ctx: str) -> int:
 
 def _coerce_optional_count(value: object | None, *, ctx: str) -> int | None:
     return coerce_optional_int(value, ctx=ctx)
+
+
+def _write_empty_dataset_issues(
+    *,
+    diag_dir: Path,
+    env: BuildEnv,
+    run_id: str,
+) -> None:
+    payload = _empty_dataset_issues_payload(env=env, run_id=run_id)
+    _write_json(diag_dir / "empty_dataset_issues.json", payload)
+
+
+def _empty_dataset_issues_payload(
+    *,
+    env: BuildEnv,
+    run_id: str,
+) -> dict[str, object]:
+    payload = _empty_dataset_issues_base_payload(env=env, run_id=run_id)
+    dataset, status = _load_empty_dataset_issues_dataset(env=env)
+    payload.update(status)
+    if dataset is None:
+        return payload
+    columns, missing_columns = _empty_dataset_issues_columns(dataset)
+    if missing_columns:
+        payload["missing_columns"] = missing_columns
+    if "run_id" not in columns:
+        payload["status"] = "missing_columns"
+        return payload
+    issues = _empty_dataset_issues_scan(dataset, run_id=run_id, columns=columns)
+    payload["issue_count"] = len(issues)
+    payload["issues"] = issues
+    return payload
+
+
+def _empty_dataset_issues_base_payload(
+    *,
+    env: BuildEnv,
+    run_id: str,
+) -> dict[str, object]:
+    return {
+        "run_id": run_id,
+        "repo": env.repo,
+        "commit": env.commit,
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "issue_count": 0,
+        "issues": [],
+    }
+
+
+def _load_empty_dataset_issues_dataset(
+    *,
+    env: BuildEnv,
+) -> tuple[ds.Dataset | None, dict[str, object]]:
+    dataset_root = env.paths.dataset_root_dir
+    if dataset_root is None:
+        return None, {"status": "missing_dataset_root"}
+    snapshot_id = env.commit.strip()
+    if not snapshot_id:
+        return None, {"status": "missing_snapshot_id"}
+    try:
+        dataset = scan_dataset(
+            dataset_root=dataset_root,
+            table_key=EMPTY_DATASET_ISSUES_TABLE_KEY,
+            snapshot_id=snapshot_id,
+        )
+    except FileNotFoundError:
+        snapshot_dir = dataset_snapshot_dir(
+            dataset_root,
+            table_key=EMPTY_DATASET_ISSUES_TABLE_KEY,
+            snapshot_id=snapshot_id,
+        )
+        return None, {
+            "status": "missing_dataset",
+            "snapshot_dir": str(snapshot_dir),
+        }
+    except (OSError, ValueError, pa.ArrowInvalid) as exc:
+        return None, {"status": "error", "error": str(exc)}
+    return dataset, {"status": "ok"}
+
+
+def _empty_dataset_issues_columns(dataset: ds.Dataset) -> tuple[list[str], list[str]]:
+    requested_columns = (
+        "run_id",
+        "table_key",
+        "required_min_rows",
+        "row_count",
+        "status",
+        "dependency_chain",
+        "recorded_at",
+    )
+    available_columns = set(dataset.schema.names)
+    missing_columns = [name for name in requested_columns if name not in available_columns]
+    columns = [name for name in requested_columns if name in available_columns]
+    return columns, missing_columns
+
+
+def _empty_dataset_issues_scan(
+    dataset: ds.Dataset,
+    *,
+    run_id: str,
+    columns: Sequence[str],
+) -> list[dict[str, object]]:
+    return [
+        _empty_dataset_issue_row(row, columns=columns)
+        for row in _iter_empty_dataset_issue_rows(dataset, run_id=run_id, columns=columns)
+    ]
+
+
+def _iter_empty_dataset_issue_rows(
+    dataset: ds.Dataset,
+    *,
+    run_id: str,
+    columns: Sequence[str],
+) -> Iterable[Mapping[str, object]]:
+    scanner = _empty_dataset_issues_scanner(dataset, columns=columns)
+    for batch in scanner.to_batches():
+        for row in iter_rows(batch, columns):
+            run_id_value = row.get("run_id")
+            if run_id_value is None or str(run_id_value) != run_id:
+                continue
+            yield row
+
+
+def _empty_dataset_issues_scanner(
+    dataset: ds.Dataset,
+    *,
+    columns: Sequence[str],
+) -> ds.Scanner:
+    scan_settings = get_arrow_scan_settings()
+    return build_scanner(
+        dataset,
+        options=DatasetScanOptions(
+            batch_size=scan_settings.batch_size or DEFAULT_ARROW_BATCH_SIZE,
+            columns=columns,
+            unify_schemas=True,
+        ),
+    )
+
+
+def _empty_dataset_issue_row(
+    row: Mapping[str, object],
+    *,
+    columns: Sequence[str],
+) -> dict[str, object]:
+    issue: dict[str, object] = {}
+    for name in columns:
+        value = row.get(name)
+        if name == "dependency_chain":
+            if isinstance(value, list):
+                issue[name] = [str(item) for item in value]
+            elif value is None:
+                issue[name] = []
+            else:
+                issue[name] = [str(value)]
+        else:
+            issue[name] = _normalize_json_value(value)
+    return issue
 
 
 def _schema_drift_payload(

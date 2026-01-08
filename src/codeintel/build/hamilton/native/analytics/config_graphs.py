@@ -19,6 +19,10 @@ from codeintel.build.analytics.graphs.config_graph_metrics import (
     ConfigGraphMetricsResult,
     compute_config_graph_metrics_result,
 )
+from codeintel.build.analytics.graphs.config_references import (
+    ConfigReferenceInputs,
+    compute_config_reference_rows,
+)
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
@@ -44,6 +48,16 @@ from codeintel.core.paths import normalize_path
 from codeintel.core.spans import normalize_line_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
+
+CONFIG_REFERENCES_TARGET_NAME = "config_references"
+CONFIG_REFERENCES_TABLE_KEY = "analytics.config_references"
+CONFIG_REFERENCES_CONTRACT = contract_ref_for_table(
+    table_key=CONFIG_REFERENCES_TABLE_KEY,
+    target_name=CONFIG_REFERENCES_TARGET_NAME,
+    input_name="config_references__base",
+    required_cols=(),
+    clip_column=None,
+)
 
 CONFIG_DATA_FLOW_TARGET_NAME = "config_data_flow"
 CONFIG_DATA_FLOW_TABLE_KEY = "analytics.config_data_flow"
@@ -110,7 +124,7 @@ class _GoidSpan:
 class ConfigDataFlowFrames:
     """Tabular inputs needed for config data flow computation."""
 
-    config_values: InferableTabularInput
+    config_references: InferableTabularInput
     entrypoints: InferableTabularInput
     call_graph_edges: InferableTabularInput
     call_graph_nodes: InferableTabularInput
@@ -260,8 +274,45 @@ def _function_asts_from_goids(
     return ast_by_goid, missing
 
 
-def config_data_flow_frames(
+def config_references__base(
+    env: BuildEnv,
     q__analytics__config_values: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+) -> pa.Table:
+    """Build config reference rows.
+
+    Returns
+    -------
+    pa.Table
+        Reader containing config reference rows.
+    """
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    config_value_rows = collect_scoped_rows(
+        q__analytics__config_values,
+        ("repo", "commit", "config_path", "key"),
+        scope=scope,
+    )
+    module_rows = collect_scoped_rows(
+        q__core__modules,
+        ("path", "module", "language"),
+        scope=scope,
+        require_scope_columns=False,
+    )
+    rows = compute_config_reference_rows(
+        ConfigReferenceInputs(
+            snapshot=env.snapshot,
+            config_value_rows=config_value_rows,
+            module_rows=module_rows,
+        )
+    )
+    if not rows:
+        return empty_table_for_table(CONFIG_REFERENCES_TABLE_KEY)
+    table, _ = table_for_rows(CONFIG_REFERENCES_TABLE_KEY, rows)
+    return table
+
+
+def config_data_flow_frames(
+    config_references__base: InferableTabularInput,
     q__analytics__entrypoints: InferableTabularInput,
     q__graph__call_graph_edges: InferableTabularInput,
     q__graph__call_graph_nodes: InferableTabularInput,
@@ -275,7 +326,7 @@ def config_data_flow_frames(
         Bundled frame inputs for config data flow computation.
     """
     return ConfigDataFlowFrames(
-        config_values=q__analytics__config_values,
+        config_references=config_references__base,
         entrypoints=q__analytics__entrypoints,
         call_graph_edges=q__graph__call_graph_edges,
         call_graph_nodes=q__graph__call_graph_nodes,
@@ -302,8 +353,8 @@ def config_data_flow__base(
         Reader containing config data flow rows.
     """
     scope = SnapshotScope.from_snapshot(env.snapshot)
-    config_value_rows = collect_scoped_rows(
-        config_data_flow_frames.config_values,
+    config_reference_rows = collect_scoped_rows(
+        config_data_flow_frames.config_references,
         ("repo", "commit", "config_path", "key", "reference_paths"),
         scope=scope,
     )
@@ -337,7 +388,7 @@ def config_data_flow__base(
     result = compute_config_data_flow_result(
         ConfigDataFlowInputs(
             snapshot=env.snapshot,
-            config_value_rows=config_value_rows,
+            config_value_rows=config_reference_rows,
             entrypoint_rows=entrypoint_rows,
             call_graph=call_graph,
             ast_by_goid=ast_map,
@@ -353,7 +404,7 @@ def config_data_flow__base(
 @cache(behavior="default")
 def config_graph_metrics_result(
     env: BuildEnv,
-    q__analytics__config_values: InferableTabularInput,
+    config_references__base: InferableTabularInput,
     q__core__modules: InferableTabularInput,
 ) -> ConfigGraphMetricsResult:
     """Compute config graph metrics result rows.
@@ -364,8 +415,8 @@ def config_graph_metrics_result(
         Computed config graph metrics container.
     """
     scope = SnapshotScope.from_snapshot(env.snapshot)
-    config_value_rows = collect_scoped_rows(
-        q__analytics__config_values,
+    config_reference_rows = collect_scoped_rows(
+        config_references__base,
         ("repo", "commit", "key", "reference_modules"),
         scope=scope,
     )
@@ -382,7 +433,7 @@ def config_graph_metrics_result(
     return compute_config_graph_metrics_result(
         repo=env.repo,
         commit=env.commit,
-        config_value_rows=config_value_rows,
+        config_value_rows=config_reference_rows,
         allowed_modules=allowed_modules,
         runtime=runtime_options,
     )
@@ -465,6 +516,18 @@ def config_projection_module_edges__base(
 
 
 _MODULE = sys.modules[__name__]
+_CONFIG_REFERENCES_TABLE_TARGET_SPEC = build_single_table_target_spec(
+    context=TableTargetContext.from_contract_ref(
+        contract_ref=CONFIG_REFERENCES_CONTRACT,
+        node_name="config_references__table",
+        input_type=pa.Table,
+    )
+)
+attach_table_target_template(_MODULE, spec=_CONFIG_REFERENCES_TABLE_TARGET_SPEC)
+config_references__table = _MODULE.config_references__table
+config_references__table_materializations = _MODULE.config_references__table_materializations
+t__config_references = _MODULE.t__config_references
+
 _CONFIG_DATA_FLOW_TABLE_TARGET_SPEC = build_single_table_target_spec(
     context=TableTargetContext.from_contract_ref(
         contract_ref=CONFIG_DATA_FLOW_CONTRACT,
@@ -527,6 +590,10 @@ __all__ = [
     "config_projection_key_edges__table",
     "config_projection_module_edges__base",
     "config_projection_module_edges__table",
+    "config_references__base",
+    "config_references__table",
+    "config_references__table_materializations",
     "t__config_data_flow",
     "t__config_graph_metrics",
+    "t__config_references",
 ]

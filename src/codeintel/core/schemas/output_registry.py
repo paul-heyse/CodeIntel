@@ -2707,6 +2707,21 @@ EXTERNAL_DEPS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
 CONFIG_DATA_FLOW_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="analytics",
+        name="config_references",
+        columns=[
+            *REPO_COMMIT_COLS,
+            Column("config_path", "VARCHAR", nullable=False),
+            Column("key", "VARCHAR", nullable=False),
+            Column("reference_paths", "BLOB"),
+            Column("reference_modules", "BLOB"),
+            Column("reference_count", "INTEGER", nullable=False),
+            *CREATED_AT_COL,
+        ],
+        primary_key=("repo", "commit", "config_path", "key"),
+        description="Config key references derived from module AST scanning.",
+    ),
+    TableSchema(
+        schema="analytics",
         name="config_data_flow",
         columns=[
             Column("repo", "VARCHAR", nullable=False),

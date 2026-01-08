@@ -140,6 +140,8 @@ File targets:
 
 ## 3. Config reference extraction stage (config_data_flow + config_graph_metrics)
 
+Status: Completed
+
 Goal:
 - Populate `reference_paths` and `reference_modules` so config flow and config
   graph metrics have non-empty inputs.
@@ -201,13 +203,15 @@ def build_config_reference_rows(
 ```
 
 File targets:
-- `src/codeintel/build/analytics/graphs/config_references.py` (new)
-- `src/codeintel/build/hamilton/native/analytics/config_graphs.py`
-- `src/codeintel/build/analytics/graphs/config_data_flow.py`
-- `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
-- `src/codeintel/core/schemas/output_registry.py` (new table)
+- `src/codeintel/build/analytics/graphs/config_references.py` (implemented)
+- `src/codeintel/build/hamilton/native/analytics/config_graphs.py` (implemented)
+- `src/codeintel/build/analytics/graphs/config_data_flow.py` (implemented)
+- `src/codeintel/build/analytics/graphs/config_graph_metrics.py` (implemented)
+- `src/codeintel/core/schemas/output_registry.py` (implemented)
 
 ## 4. Empty dataset guardrails + diagnostics
+
+Status: Completed
 
 Goal:
 - Make empty critical datasets explicit and persist guardrail findings.
@@ -319,10 +323,10 @@ def write_empty_dataset_report(path: Path, dataset: ds.Dataset) -> None:
 ```
 
 File targets:
-- `src/codeintel/core/schemas/table_registry.py` (new `build.empty_dataset_issues`)
-- `src/codeintel/build/hamilton/empty_dataset_issues.py` (new)
-- `src/codeintel/build/hamilton/executor.py` (persist dataset during finalization)
-- `src/codeintel/build/hamilton/diagnostics.py` (write JSON report)
+- `src/codeintel/core/schemas/table_registry.py` (implemented)
+- `src/codeintel/build/hamilton/empty_dataset_issues.py` (implemented)
+- `src/codeintel/build/hamilton/executor.py` (implemented)
+- `src/codeintel/build/hamilton/diagnostics.py` (implemented)
 
 ## Validation and acceptance criteria
 
