@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable, Iterator, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal, cast
@@ -91,7 +90,7 @@ from codeintel.storage.query_results import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Iterable, Iterator, Sequence
     from pathlib import Path
 
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext

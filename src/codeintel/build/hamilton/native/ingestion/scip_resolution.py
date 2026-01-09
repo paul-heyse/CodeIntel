@@ -23,12 +23,8 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.ingestion_normalize import (
     finalize_ingest_reader,
-    finalize_ingest_table,
 )
-from codeintel.build.tabular.arrow_ops import (
-    dedupe_table_for_table,
-    iter_rows,
-)
+from codeintel.build.tabular.arrow_ops import dedupe_table_for_table
 from codeintel.build.tabular.compute_columns import constant_array
 from codeintel.build.tabular.compute_helpers import (
     array_from_compute,
@@ -59,8 +55,6 @@ from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
-from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 
@@ -80,6 +74,7 @@ SCIP_OCCURRENCES_TABLE_KEY = "core.scip_occurrences"
 SCIP_SYMBOL_INFO_TABLE_KEY = "core.scip_symbol_information"
 GOIDS_TABLE_KEY = "core.goids"
 SYNTAX_DEFS_TABLE_KEY = "core.syntax_defs"
+SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
 
 _ROLE_DEFINITION = 0x1
 _ROLE_IMPORT = 0x2
@@ -103,6 +98,12 @@ _JOIN_INT_KEYS = {
     "end_col",
     "start_byte",
     "end_byte",
+    "occ_start_line",
+    "occ_start_col",
+    "occ_end_line",
+    "occ_end_col",
+    "occ_start_byte",
+    "occ_end_byte",
 }
 
 
@@ -123,18 +124,6 @@ _OCCURRENCE_ID_COLUMNS = (
     "occ_end_col",
     "occ_start_byte",
     "occ_end_byte",
-)
-_OCCURRENCE_ID_SCHEMA = pa.schema(
-    [
-        ("rel_path", pa.string()),
-        ("scip_symbol", pa.string()),
-        ("occ_start_line", pa.int64()),
-        ("occ_start_col", pa.int64()),
-        ("occ_end_line", pa.int64()),
-        ("occ_end_col", pa.int64()),
-        ("occ_start_byte", pa.int64()),
-        ("occ_end_byte", pa.int64()),
-    ]
 )
 
 
@@ -175,6 +164,7 @@ def _precheck_join_table(
             table,
             required_non_null=join_keys,
             key_fields=join_keys,
+            stage="join_precheck",
         )
     else:
         result = finalize_table(
@@ -257,12 +247,6 @@ class ScipResolutionFrames:
 
     symbol_goid_xref: pa.Table
     occurrence_span_xref: pa.Table
-
-
-@dataclass(slots=True)
-class _SyntaxNodeIndex:
-    resolver: SpanResolver[str]
-    line_exact: dict[tuple[int, int, int, int], list[str]]
 
 
 def _rename_columns(table: pa.Table, mapping: dict[str, str]) -> pa.Table:
@@ -921,155 +905,251 @@ def _occurrence_span_xref_table(
     )
 
 
-def _stable_occurrence_id(row: dict[str, object]) -> str:
-    values = {name: row.get(name) for name in _OCCURRENCE_ID_COLUMNS}
-    table = pa.Table.from_pylist([values], schema=_OCCURRENCE_ID_SCHEMA)
-    hashed = hash_struct_goid(table, columns=_OCCURRENCE_ID_COLUMNS)
-    value = next(iter_array_values(hashed), None)
-    normalized = normalize_decimal_id(value)
-    if normalized is None:
-        msg = "Failed to normalize SCIP occurrence hash value."
-        raise ValueError(msg)
-    return str(normalized)
+_OCCURRENCE_MATCH_BASE_COLUMNS: tuple[str, ...] = (
+    "repo",
+    "commit",
+    "rel_path",
+    "scip_occurrence_id",
+)
+_OCCURRENCE_MATCH_KEYS: tuple[str, ...] = (
+    "repo",
+    "commit",
+    "rel_path",
+    "producer",
+    "scip_occurrence_id",
+)
+_OCCURRENCE_MATCH_SORT_KEYS: tuple[tuple[str, str], ...] = tuple(
+    (key, "ascending") for key in _OCCURRENCE_MATCH_KEYS
+)
+_OCCURRENCE_SYNTAX_OUTPUT_COLUMNS: tuple[str, ...] = (
+    "repo",
+    "commit",
+    "rel_path",
+    "producer",
+    "scip_symbol",
+    "scip_occurrence_id",
+    "occ_start_byte",
+    "occ_end_byte",
+    "occ_start_line",
+    "occ_start_col",
+    "occ_end_line",
+    "occ_end_col",
+    "syntax_node_id",
+    "match_kind",
+    "candidate_count",
+)
+_OCCURRENCE_BYTE_JOIN_KEYS: tuple[str, ...] = (
+    "repo",
+    "commit",
+    "rel_path",
+    "occ_start_byte",
+    "occ_end_byte",
+)
+_SYNTAX_BYTE_JOIN_KEYS: tuple[str, ...] = (
+    "repo",
+    "commit",
+    "rel_path",
+    "start_byte",
+    "end_byte",
+)
+_OCCURRENCE_LINE_JOIN_KEYS: tuple[str, ...] = (
+    "repo",
+    "commit",
+    "rel_path",
+    "occ_start_line",
+    "occ_start_col",
+    "occ_end_line",
+    "occ_end_col",
+)
+_SYNTAX_LINE_JOIN_KEYS: tuple[str, ...] = (
+    "repo",
+    "commit",
+    "rel_path",
+    "start_line",
+    "start_col",
+    "end_line",
+    "end_col",
+)
 
 
-def _build_syntax_node_indexes(
-    nodes_table: pa.Table,
-) -> dict[tuple[str, str], _SyntaxNodeIndex]:
-    indexes: dict[tuple[str, str], _SyntaxNodeIndex] = {}
-    for row in iter_rows(nodes_table):
-        rel_path = row.get("rel_path")
-        producer = row.get("producer")
-        node_id = row.get("node_id")
-        if not isinstance(rel_path, str) or not isinstance(producer, str):
+def _precheck_join_keys(
+    table: pa.Table,
+    *,
+    join_keys: Sequence[str],
+    table_key: str | None,
+) -> pa.Table:
+    if table.num_rows == 0 or not join_keys:
+        return table
+    result = finalize_join_keys(
+        table,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        result,
+        table_key=table_key,
+        target_name=SCIP_RESOLUTION_TARGET_NAME,
+        join_keys=join_keys,
+    )
+    _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
+    return result.good
+
+
+def _unique_columns(columns: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for name in columns:
+        if name in seen:
             continue
-        if not isinstance(node_id, str):
-            continue
-        key = (rel_path, producer)
-        index = indexes.get(key)
-        if index is None:
-            index = _SyntaxNodeIndex(
-                resolver=SpanResolver.for_bytes(path_normalizer=lambda value: value),
-                line_exact={},
-            )
-            indexes[key] = index
-        start_line = row.get("start_line")
-        start_col = row.get("start_col")
-        end_line = row.get("end_line")
-        end_col = row.get("end_col")
-        if (
-            isinstance(start_line, int)
-            and isinstance(start_col, int)
-            and isinstance(end_line, int)
-            and isinstance(end_col, int)
-        ):
-            line_key = (start_line, start_col, end_line, end_col)
-            index.line_exact.setdefault(line_key, []).append(node_id)
-        start_byte = row.get("start_byte")
-        end_byte = row.get("end_byte")
-        if isinstance(start_byte, int) and isinstance(end_byte, int):
-            index.resolver.add_span(rel_path, start_byte, end_byte, node_id)
-    return indexes
+        seen.add(name)
+        unique.append(name)
+    return unique
 
 
-def _match_occurrence_to_node(
-    index: _SyntaxNodeIndex,
-    rel_path: str,
-    occ_row: dict[str, object],
-) -> tuple[str | None, str, int]:
-    start_byte = occ_row.get("occ_start_byte")
-    end_byte = occ_row.get("occ_end_byte")
-    if (
-        isinstance(start_byte, int)
-        and isinstance(end_byte, int)
-        and start_byte >= 0
-        and end_byte >= 0
-    ):
-        match = index.resolver.resolve(
-            rel_path,
-            start_byte,
-            end_byte,
-            allow_adjacent_point=True,
-        )
-        if match.match_kind != "NONE":
-            return match.payload, match.match_kind, match.candidate_count
-
-    start_line = occ_row.get("occ_start_line")
-    start_col = occ_row.get("occ_start_col")
-    end_line = occ_row.get("occ_end_line")
-    end_col = occ_row.get("occ_end_col")
-    if (
-        isinstance(start_line, int)
-        and isinstance(start_col, int)
-        and isinstance(end_line, int)
-        and isinstance(end_col, int)
-    ):
-        line_key = (start_line, start_col, end_line, end_col)
-        exact = index.line_exact.get(line_key)
-        if exact:
-            return min(exact), "EXACT", len(exact)
-    return None, "NONE", 0
+def _occurrence_syntax_occurrences_table(occurrences_table: pa.Table) -> pa.Table:
+    project = {
+        "repo": E.field("repo"),
+        "commit": E.field("commit"),
+        "rel_path": E.field("rel_path"),
+        "scip_symbol": E.field("scip_symbol"),
+        "occ_start_line": E.field("start_line"),
+        "occ_start_col": E.field("start_col"),
+        "occ_end_line": E.field("end_line"),
+        "occ_end_col": E.field("end_col"),
+        "occ_start_byte": E.field("start_byte"),
+        "occ_end_byte": E.field("end_byte"),
+    }
+    occurrences = materialize_plan(Plan.table(occurrences_table).project(project), use_threads=True)
+    hashed = hash_struct_goid(occurrences, columns=_OCCURRENCE_ID_COLUMNS)
+    occurrence_ids = cast_array(hashed, pa.string(), safe=False)
+    return occurrences.append_column("scip_occurrence_id", occurrence_ids)
 
 
-def _occurrence_syntax_xref_rows(
-    occurrences_table: pa.Table,
-    nodes_table: pa.Table,
-) -> list[dict[str, object]]:
-    if occurrences_table.num_rows == 0 or nodes_table.num_rows == 0:
-        return []
-    indexes = _build_syntax_node_indexes(nodes_table)
-    occurrences_by_path: dict[str, list[dict[str, object]]] = {}
-    for row in iter_rows(occurrences_table):
-        rel_path = row.get("rel_path")
-        if not isinstance(rel_path, str):
-            continue
-        occurrences_by_path.setdefault(rel_path, []).append(row)
+def _occurrence_syntax_producers_table(nodes_table: pa.Table) -> pa.Table:
+    join_keys = ("repo", "commit", "rel_path", "producer")
+    checked = _precheck_join_keys(
+        nodes_table,
+        join_keys=join_keys,
+        table_key=SYNTAX_NODES_TABLE_KEY,
+    )
+    project = {name: E.field(name) for name in join_keys}
+    plan = Plan.table(checked).project(project)
+    plan = plan.aggregate(keys=[E.field(name) for name in join_keys], aggregates=[])
+    plan = plan.order_by(sort_keys=[(name, "ascending") for name in join_keys])
+    return materialize_plan(plan, use_threads=True)
 
-    rows: list[dict[str, object]] = []
-    for (rel_path, producer), index in indexes.items():
-        occ_rows = occurrences_by_path.get(rel_path)
-        if not occ_rows:
-            continue
-        for occ in occ_rows:
-            occ_row = {
-                "occ_start_byte": occ.get("start_byte"),
-                "occ_end_byte": occ.get("end_byte"),
-                "occ_start_line": occ.get("start_line"),
-                "occ_start_col": occ.get("start_col"),
-                "occ_end_line": occ.get("end_line"),
-                "occ_end_col": occ.get("end_col"),
-            }
-            syntax_node_id, match_kind, candidate_count = _match_occurrence_to_node(
-                index,
-                rel_path,
-                occ_row,
-            )
-            rows.append(
-                {
-                    "repo": occ.get("repo"),
-                    "commit": occ.get("commit"),
-                    "rel_path": rel_path,
-                    "producer": producer,
-                    "scip_symbol": occ.get("scip_symbol"),
-                    "scip_occurrence_id": _stable_occurrence_id(
-                        {
-                            **occ_row,
-                            "rel_path": rel_path,
-                            "scip_symbol": occ.get("scip_symbol"),
-                        }
-                    ),
-                    "occ_start_byte": occ_row["occ_start_byte"],
-                    "occ_end_byte": occ_row["occ_end_byte"],
-                    "occ_start_line": occ_row["occ_start_line"],
-                    "occ_start_col": occ_row["occ_start_col"],
-                    "occ_end_line": occ_row["occ_end_line"],
-                    "occ_end_col": occ_row["occ_end_col"],
-                    "syntax_node_id": syntax_node_id,
-                    "match_kind": match_kind,
-                    "candidate_count": candidate_count,
-                }
-            )
-    return rows
+
+def _occurrence_syntax_pairs_table(occurrences: pa.Table, producers: pa.Table) -> pa.Table:
+    join_keys = ("repo", "commit", "rel_path")
+    left_checked = _precheck_join_keys(
+        occurrences,
+        join_keys=join_keys,
+        table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
+    )
+    right_checked = _precheck_join_keys(
+        producers,
+        join_keys=join_keys,
+        table_key=SYNTAX_NODES_TABLE_KEY,
+    )
+    plan = Plan.table(left_checked).hash_join(
+        right=Plan.table(right_checked),
+        spec=HashJoinSpec(
+            left_keys=list(join_keys),
+            right_keys=list(join_keys),
+            how="inner",
+            left_output=list(occurrences.column_names),
+            right_output=["producer"],
+        ),
+    )
+    return materialize_plan(plan, use_threads=True)
+
+
+def _occurrence_syntax_match_table(
+    occurrences: pa.Table,
+    syntax_nodes: pa.Table,
+    *,
+    left_keys: Sequence[str],
+    right_keys: Sequence[str],
+    match_kind: str,
+) -> pa.Table:
+    if occurrences.num_rows == 0 or syntax_nodes.num_rows == 0:
+        return pa.table({})
+    left_checked = _precheck_join_keys(
+        occurrences,
+        join_keys=left_keys,
+        table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
+    )
+    right_checked = _precheck_join_keys(
+        syntax_nodes,
+        join_keys=right_keys,
+        table_key=SYNTAX_NODES_TABLE_KEY,
+    )
+    left_columns = _unique_columns([*_OCCURRENCE_MATCH_BASE_COLUMNS, *left_keys])
+    right_columns = _unique_columns([*right_keys, "producer", "node_id"])
+    left_project = {name: E.field(name) for name in left_columns}
+    right_project = {name: E.field(name) for name in right_columns}
+    left_plan = Plan.table(left_checked).project(left_project)
+    right_plan = Plan.table(right_checked).project(right_project)
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=list(left_keys),
+            right_keys=list(right_keys),
+            how="inner",
+            left_output=list(_OCCURRENCE_MATCH_BASE_COLUMNS),
+            right_output=["producer", "node_id"],
+        ),
+    )
+    grouped = joined.aggregate(
+        keys=[E.field(name) for name in (*_OCCURRENCE_MATCH_BASE_COLUMNS, "producer")],
+        aggregates=[
+            ("node_id", "min", None, "syntax_node_id"),
+            ("node_id", "count", None, "candidate_count"),
+        ],
+    )
+    project = {
+        "repo": E.field("repo"),
+        "commit": E.field("commit"),
+        "rel_path": E.field("rel_path"),
+        "producer": E.field("producer"),
+        "scip_occurrence_id": E.field("scip_occurrence_id"),
+        "syntax_node_id": E.field("syntax_node_id"),
+        "match_kind": E.scalar(match_kind),
+        "candidate_count": E.field("candidate_count"),
+    }
+    return materialize_plan(grouped.project(project), use_threads=True)
+
+
+def _occurrence_syntax_left_anti(left: pa.Table, right: pa.Table) -> pa.Table:
+    if left.num_rows == 0 or right.num_rows == 0:
+        return left
+    plan = Plan.table(left).hash_join(
+        right=Plan.table(right),
+        spec=HashJoinSpec(
+            left_keys=list(_OCCURRENCE_MATCH_KEYS),
+            right_keys=list(_OCCURRENCE_MATCH_KEYS),
+            how="left anti",
+            left_output=list(left.column_names),
+            right_output=[],
+        ),
+    )
+    return materialize_plan(plan, use_threads=True)
+
+
+def _empty_occurrence_match_table(pairs: pa.Table) -> pa.Table:
+    arrays = []
+    names = []
+    for name in _OCCURRENCE_MATCH_KEYS:
+        arrays.append(pa.array([], type=pairs.schema.field(name).type))
+        names.append(name)
+    arrays.append(pa.array([], type=pa.string()))
+    names.append("syntax_node_id")
+    arrays.append(pa.array([], type=pa.string()))
+    names.append("match_kind")
+    arrays.append(pa.array([], type=pa.int64()))
+    names.append("candidate_count")
+    return pa.Table.from_arrays(arrays, names=names)
 
 
 def scip_resolution__frames(
@@ -1168,13 +1248,78 @@ def scip_resolution__occurrence_syntax_xref__base(
         scope=None,
         require_scope_columns=False,
     )
-    rows = _occurrence_syntax_xref_rows(occurrences_table, nodes_table)
-    if not rows:
+    if occurrences_table.num_rows == 0 or nodes_table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
-    table = pa.Table.from_pylist(rows)
-    return finalize_ingest_table(
+
+    occurrences = _occurrence_syntax_occurrences_table(occurrences_table)
+    producers = _occurrence_syntax_producers_table(nodes_table)
+    if occurrences.num_rows == 0 or producers.num_rows == 0:
+        return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
+
+    pairs = _occurrence_syntax_pairs_table(occurrences, producers)
+    if pairs.num_rows == 0:
+        return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
+
+    byte_matches = _occurrence_syntax_match_table(
+        occurrences,
+        nodes_table,
+        left_keys=_OCCURRENCE_BYTE_JOIN_KEYS,
+        right_keys=_SYNTAX_BYTE_JOIN_KEYS,
+        match_kind="EXACT",
+    )
+    line_matches = _occurrence_syntax_match_table(
+        occurrences,
+        nodes_table,
+        left_keys=_OCCURRENCE_LINE_JOIN_KEYS,
+        right_keys=_SYNTAX_LINE_JOIN_KEYS,
+        match_kind="EXACT",
+    )
+    if byte_matches.num_rows == 0:
+        line_unmatched = line_matches
+    else:
+        line_unmatched = _occurrence_syntax_left_anti(line_matches, byte_matches)
+    match_tables = [table for table in (byte_matches, line_unmatched) if table.num_rows > 0]
+    if match_tables:
+        matches = concat_tables_unified(match_tables)
+    else:
+        matches = _empty_occurrence_match_table(pairs)
+
+    joined = Plan.table(pairs).hash_join(
+        right=Plan.table(matches),
+        spec=HashJoinSpec(
+            left_keys=list(_OCCURRENCE_MATCH_KEYS),
+            right_keys=list(_OCCURRENCE_MATCH_KEYS),
+            how="left outer",
+            left_output=list(pairs.column_names),
+            right_output=["syntax_node_id", "match_kind", "candidate_count"],
+        ),
+    )
+    project: dict[str, pc.Expression] = {
+        "repo": E.field("repo"),
+        "commit": E.field("commit"),
+        "rel_path": E.field("rel_path"),
+        "producer": E.field("producer"),
+        "scip_symbol": E.field("scip_symbol"),
+        "scip_occurrence_id": E.field("scip_occurrence_id"),
+        "occ_start_byte": E.field("occ_start_byte"),
+        "occ_end_byte": E.field("occ_end_byte"),
+        "occ_start_line": E.field("occ_start_line"),
+        "occ_start_col": E.field("occ_start_col"),
+        "occ_end_line": E.field("occ_end_line"),
+        "occ_end_col": E.field("occ_end_col"),
+        "syntax_node_id": E.field("syntax_node_id"),
+        "match_kind": E.coalesce([E.field("match_kind"), E.scalar("NONE")]),
+        "candidate_count": E.coalesce([E.field("candidate_count"), E.scalar(0)]),
+    }
+    ordered = (
+        joined.project(project)
+        .order_by(sort_keys=list(_OCCURRENCE_MATCH_SORT_KEYS))
+        .project({name: E.field(name) for name in _OCCURRENCE_SYNTAX_OUTPUT_COLUMNS})
+    )
+    reader = ordered.to_reader(use_threads=True)
+    return finalize_ingest_reader(
         SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
-        table,
+        reader,
         target_name=SCIP_RESOLUTION_TARGET_NAME,
     )
 

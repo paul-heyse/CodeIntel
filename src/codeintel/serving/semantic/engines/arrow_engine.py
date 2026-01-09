@@ -14,6 +14,7 @@ from codeintel.serving.semantic.arrow_plan_builder import ArrowPlanSpec
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
     RelationBuildContext,
+    RelationPlanOptions,
     RelationScanOptions,
     build_relation_plan,
 )
@@ -85,7 +86,13 @@ class ArrowRelationPlan:
     _use_threads: bool
 
     def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
-        """Execute the plan and return a RecordBatchReader."""
+        """Execute the plan and return a RecordBatchReader.
+
+        Returns
+        -------
+        pyarrow.RecordBatchReader
+            Record batch reader for plan results.
+        """
         reader = _fetch_arrow_reader(self._relation, batch_size=batch_size)
         table = reader_to_table(reader)
         return _apply_arrow_plan(
@@ -95,7 +102,13 @@ class ArrowRelationPlan:
         )
 
     def explain(self) -> QueryExplain:
-        """Return an EXPLAIN plan for the underlying DuckDB relation."""
+        """Return an EXPLAIN plan for the underlying DuckDB relation.
+
+        Returns
+        -------
+        QueryExplain
+            Query plan summary for the underlying relation.
+        """
         plan = normalize_explain_output(self._relation.explain())
         return QueryExplain(sql=self._relation.sql_query(), plan=plan)
 
@@ -112,13 +125,32 @@ class ArrowQueryEngine:
     name: str = "arrow"
 
     def can_run(self, query: ServingQuery, *, ctx: EngineContext) -> bool:
-        """Return True when Arrow post-processing can satisfy the query."""
+        """Return True when Arrow post-processing can satisfy the query.
+
+        Returns
+        -------
+        bool
+            True when Arrow post-processing can handle the query.
+        """
+        if self.name != "arrow":
+            return False
         if ctx.warehouse is None:
             return False
         return query.arrow_plan is not None and bool(query.spec.table_key)
 
     def compile(self, query: ServingQuery, *, ctx: EngineContext) -> ExecutablePlan:
-        """Compile a serving query into an Arrow execution plan."""
+        """Compile a serving query into an Arrow execution plan.
+
+        Returns
+        -------
+        ExecutablePlan
+            Executable Arrow post-processing plan.
+
+        Raises
+        ------
+        QueryBuilderError
+            Raised when the query cannot be compiled for Arrow execution.
+        """
         if ctx.warehouse is None:
             msg = f"{self.name} engine requires a warehouse connection"
             raise QueryBuilderError(msg)
@@ -139,8 +171,10 @@ class ArrowQueryEngine:
                     column_types=spec.column_types,
                     contract_schema=contract_schema,
                 ),
-                plan_spec=query.plan_spec,
-                apply_ast=False,
+                options=RelationPlanOptions(
+                    plan_spec=query.plan_spec,
+                    apply_ast=False,
+                ),
             )
             use_threads = _use_threads(ctx.settings)
             return ArrowRelationPlan(

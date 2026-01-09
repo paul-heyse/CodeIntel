@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 from pyarrow import acero
 
-from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.finalize_ops import (
     FinalizeResult,
     FinalizeSpec,
@@ -20,8 +19,16 @@ from codeintel.core.columnar.kernels import SortKey, stable_sort_table
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.validation.schema_constraints import is_list_like
 
-TableThunk = Callable[[], pa.Table]
-PostStep = Callable[[pa.Table], pa.Table]
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from codeintel.core.columnar.dedupe_ops import DedupeTier
+
+    type TableThunk = Callable[[], pa.Table]
+    type PostStep = Callable[[pa.Table], pa.Table]
+else:
+    type TableThunk = object
+    type PostStep = object
 
 
 @dataclass(frozen=True, slots=True)

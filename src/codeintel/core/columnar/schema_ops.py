@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import pyarrow as pa
 
 from codeintel.core.columnar.nested_ops import is_allowed_promotion
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 SchemaPromoteOptions = Literal["default", "permissive"]
 DEFAULT_SCHEMA_PROMOTE_OPTIONS: SchemaPromoteOptions = "permissive"

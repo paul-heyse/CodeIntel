@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow as pa
 
+from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
     FinalizeSpec,
-    finalize_reader_batches,
+    finalize_table,
 )
-from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS
+from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.readers import empty_reader_from_schema
+from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS, DEFAULT_ARROW_USE_THREADS
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetWriteOptions,
     ExistingDataBehavior,
@@ -266,21 +272,60 @@ def _finalize_reader_for_maintenance(
     table_key: str,
     reader: pa.RecordBatchReader,
 ) -> pa.RecordBatchReader:
-    def _finalize_hook(result: FinalizeResult) -> None:
-        _log_finalize_warnings(table_key, result)
-
-    return finalize_reader_batches(
-        reader,
-        spec=FinalizeSpec(
-            table_key=table_key,
-            mode="tolerant",
-            required_non_null=_required_non_null_columns(table_key),
-            dedupe=FinalizeDedupe(enabled=False),
-            context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
-            emit_artifacts=True,
-        ),
-        finalize_hook=_finalize_hook,
+    stable_sort_keys = _stable_sort_keys_for_table(table_key)
+    execution_ctx = _execution_context_for_maintenance(
+        table_key=table_key,
+        stable_sort_keys=stable_sort_keys,
     )
+    order_by = _order_by_for_table(
+        table_key,
+        stable_sort_keys=stable_sort_keys,
+        determinism=execution_ctx.determinism,
+    )
+    dedupe_keys = _dedupe_keys_for_table(table_key)
+    finalize_spec = FinalizeSpec(
+        table_key=table_key,
+        mode="tolerant",
+        required_non_null=_required_non_null_columns(table_key),
+        dedupe=FinalizeDedupe(
+            enabled=False,
+            keys=dedupe_keys,
+            tie_breakers=order_by,
+            tier=execution_ctx.determinism,
+            strategy="order_independent",
+        ),
+        context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
+        emit_artifacts=True,
+        order_by=order_by,
+    )
+
+    def _iter_batches() -> Iterable[pa.RecordBatch]:
+        for batch in reader:
+            if batch.num_rows == 0:
+                continue
+            table = pa.Table.from_batches([batch], schema=batch.schema)
+            captured_result: FinalizeResult | None = None
+
+            def _capture_finalize(input_table: pa.Table) -> pa.Table:
+                nonlocal captured_result
+                captured_result = finalize_table(input_table, spec=finalize_spec)
+                return captured_result.good
+
+            good = run_pipeline(
+                plan=ExecutionPlan(inner=table),
+                finalize=_capture_finalize,
+                ctx=execution_ctx,
+            )
+            if captured_result is None:
+                captured_result = finalize_table(table, spec=finalize_spec)
+                good = captured_result.good
+            _log_finalize_warnings(table_key, captured_result)
+            yield from good.to_batches(max_chunksize=batch.num_rows)
+
+    finalized = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
+    if finalized is None:
+        return empty_reader_from_schema(reader.schema)
+    return finalized
 
 
 def _required_non_null_columns(table_key: str) -> tuple[str, ...]:
@@ -299,6 +344,56 @@ def _stable_sort_keys_for_table(table_key: str) -> tuple[str, ...] | None:
     except RuntimeError:
         return None
     return resolve_stable_sort_keys(schema)
+
+
+def _dedupe_keys_for_table(table_key: str) -> tuple[str, ...]:
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        return ()
+    if schema is None or not schema.primary_key:
+        return ()
+    return tuple(schema.primary_key)
+
+
+def _resolve_combine_chunks_for_table(table_key: str) -> bool:
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        return True
+    if schema is None:
+        return True
+    policy = schema.write_policy
+    if policy is not None and policy.combine_chunks is not None:
+        return policy.combine_chunks
+    return True
+
+
+def _execution_context_for_maintenance(
+    *,
+    table_key: str,
+    stable_sort_keys: tuple[str, ...] | None,
+) -> ExecutionContext:
+    determinism = "throughput" if stable_sort_keys == () else "canonical"
+    return ExecutionContext(
+        use_threads=DEFAULT_ARROW_USE_THREADS,
+        determinism=determinism,
+        combine_chunks=_resolve_combine_chunks_for_table(table_key),
+    )
+
+
+def _order_by_for_table(
+    table_key: str,
+    *,
+    stable_sort_keys: tuple[str, ...] | None,
+    determinism: DedupeTier,
+) -> tuple[SortKey, ...]:
+    if stable_sort_keys:
+        return tuple((key, "ascending") for key in stable_sort_keys)
+    if determinism == "canonical":
+        msg = f"Maintenance finalize requires order_by keys for canonical determinism: {table_key}"
+        raise ValueError(msg)
+    return ()
 
 
 def _log_finalize_warnings(table_key: str, result: FinalizeResult) -> None:

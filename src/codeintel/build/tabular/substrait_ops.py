@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import ModuleType
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -14,14 +15,7 @@ except ImportError:
     _substrait = None
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
-    import pyarrow.compute as pc
-    import pyarrow.dataset as ds
-    from pyarrow import substrait
-
-    from codeintel.core.columnar.plan_ops import ExternalPlanSpec
-    from codeintel.core.columnar.streaming import DatasetScanOptions
+    from codeintel.core.columnar.plan_ops import ExternalPlanRequest
 
 
 def substrait_available() -> bool:
@@ -35,7 +29,7 @@ def substrait_available() -> bool:
     return _substrait is not None
 
 
-def require_substrait() -> substrait:
+def require_substrait() -> ModuleType:
     """Return the Substrait module or raise when unavailable.
 
     Returns
@@ -74,16 +68,28 @@ def run_substrait_plan(plan: bytes | bytearray | memoryview) -> pa.RecordBatchRe
 
 def substrait_plan_runner(
     *,
-    spec: ExternalPlanSpec,
-    dataset: ds.Dataset | None,
-    filter_expr: ds.Expression | None,
-    columns: Sequence[str] | Mapping[str, pc.Expression] | None,
-    scan_options: DatasetScanOptions | None,
-    use_threads: bool | None,
+    request: ExternalPlanRequest,
 ) -> pa.RecordBatchReader:
-    """Execute a Substrait plan via ExternalPlanSpec."""
-    _ = (dataset, filter_expr, columns, scan_options, use_threads)
-    payload = spec.payload
+    """Execute a Substrait plan via ExternalPlanSpec.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Record batch reader for plan results.
+
+    Raises
+    ------
+    TypeError
+        Raised when the payload is not Substrait bytes.
+    """
+    _ = (
+        request.dataset,
+        request.filter_expr,
+        request.columns,
+        request.scan_options,
+        request.use_threads,
+    )
+    payload = request.spec.payload
     if isinstance(payload, (bytes, bytearray, memoryview)):
         return run_substrait_plan(payload)
     msg = "Substrait plan payload must be bytes-like."
@@ -95,7 +101,7 @@ def register_substrait_plan_runner(name: str = "substrait") -> None:
     register_external_plan_runner(name, substrait_plan_runner)
 
 
-def _reader_from_result(result: object) -> pa.RecordBatchReader:
+def _reader_from_result(result: pa.RecordBatchReader | pa.Table) -> pa.RecordBatchReader:
     if isinstance(result, pa.RecordBatchReader):
         return result
     if isinstance(result, pa.Table):

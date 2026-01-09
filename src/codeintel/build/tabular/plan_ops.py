@@ -5,10 +5,12 @@ from __future__ import annotations
 from codeintel.build.tabular.datafusion_ops import register_datafusion_plan_runner
 from codeintel.build.tabular.substrait_ops import register_substrait_plan_runner
 from codeintel.core.columnar.plan_ops import (
+    ExternalPlanRequest,
     ExternalPlanSpec,
     HashJoinSpec,
     JoinType,
     Plan,
+    ScanPlanOptions,
     build_scan_plan,
     list_external_plan_runners,
     materialize_plan,
@@ -26,10 +28,12 @@ def register_default_external_plan_runners() -> None:
 register_default_external_plan_runners()
 
 __all__ = [
+    "ExternalPlanRequest",
     "ExternalPlanSpec",
     "HashJoinSpec",
     "JoinType",
     "Plan",
+    "ScanPlanOptions",
     "build_scan_plan",
     "list_external_plan_runners",
     "materialize_plan",

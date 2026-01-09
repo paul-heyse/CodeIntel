@@ -14,7 +14,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
 import polars as pl
 import pyarrow as pa
@@ -84,6 +84,9 @@ from codeintel.core.schemas.arrow_gen import (
     ExtrasPolicy,
     arrow_contract_for_table_schema,
 )
+
+if TYPE_CHECKING:
+    from typing import Unpack
 
 ensure_array = _array_ops.ensure_array
 index_in = _array_ops.index_in

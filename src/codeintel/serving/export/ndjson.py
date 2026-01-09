@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
 from codeintel.core.columnar.finalize_ops import finalize_table
 from codeintel.core.exports.serialization import coerce_export_row
 from codeintel.storage.query_results import records_from_arrow_batch
@@ -32,6 +34,17 @@ try:
     _MSG_ENCODER: msgspec.json.Encoder | None = msgspec.json.Encoder()
 except ImportError:
     _MSG_ENCODER = None
+
+
+@dataclass(frozen=True, slots=True)
+class NdjsonBatchOptions:
+    """Options for NDJSON batch encoding helpers."""
+
+    cancel_check: Callable[[], None] | None = None
+    batch_hook: Callable[[RecordBatch], None] | None = None
+    finalize_spec: FinalizeSpec | None = None
+    finalize_hook: Callable[[FinalizeResult], None] | None = None
+    execution_ctx: ExecutionContext | None = None
 
 
 def encode_ndjson_line(row: Mapping[str, object]) -> bytes:
@@ -70,10 +83,7 @@ def iter_ndjson_bytes(rows: Iterable[Mapping[str, object]]) -> Iterator[bytes]:
 def iter_ndjson_bytes_from_batches(
     batches: Iterable[RecordBatch],
     *,
-    cancel_check: Callable[[], None] | None = None,
-    batch_hook: Callable[[RecordBatch], None] | None = None,
-    finalize_spec: FinalizeSpec | None = None,
-    finalize_hook: Callable[[FinalizeResult], None] | None = None,
+    options: NdjsonBatchOptions | None = None,
 ) -> Iterator[bytes]:
     """Yield Arrow record batches as UTF-8 JSONL byte chunks.
 
@@ -81,14 +91,8 @@ def iter_ndjson_bytes_from_batches(
     ----------
     batches
         Record batch iterable to serialize as newline-delimited JSON.
-    cancel_check
-        Optional cancellation hook invoked between batches.
-    batch_hook
-        Optional callback invoked for each record batch.
-    finalize_spec
-        Optional finalize spec applied to each batch before serialization.
-    finalize_hook
-        Optional callback invoked with finalize artifacts per batch.
+    options
+        Optional batch encoding options for cancellation, hooks, and finalize settings.
 
     Yields
     ------
@@ -99,6 +103,12 @@ def iter_ndjson_bytes_from_batches(
     -----
     This function uses shared row coercion to ensure consistent export encoding.
     """
+    resolved = options or NdjsonBatchOptions()
+    cancel_check = resolved.cancel_check
+    batch_hook = resolved.batch_hook
+    finalize_spec = resolved.finalize_spec
+    finalize_hook = resolved.finalize_hook
+    execution_ctx = resolved.execution_ctx
     for batch in batches:
         if cancel_check is not None:
             cancel_check()
@@ -112,6 +122,7 @@ def iter_ndjson_bytes_from_batches(
         finalized_batches, finalize_result = _finalize_batches(
             batch,
             finalize_spec=finalize_spec,
+            execution_ctx=execution_ctx,
         )
         if finalize_hook is not None:
             finalize_hook(finalize_result)
@@ -126,10 +137,7 @@ def iter_ndjson_bytes_from_batches(
 def iter_ndjson_bytes_from_reader(
     reader: RecordBatchReader,
     *,
-    cancel_check: Callable[[], None] | None = None,
-    batch_hook: Callable[[RecordBatch], None] | None = None,
-    finalize_spec: FinalizeSpec | None = None,
-    finalize_hook: Callable[[FinalizeResult], None] | None = None,
+    options: NdjsonBatchOptions | None = None,
 ) -> Iterator[bytes]:
     """Yield Arrow record batches from a reader as UTF-8 JSONL byte chunks.
 
@@ -137,27 +145,15 @@ def iter_ndjson_bytes_from_reader(
     ----------
     reader
         Record batch reader to serialize as newline-delimited JSON.
-    cancel_check
-        Optional cancellation hook invoked between batches.
-    batch_hook
-        Optional callback invoked for each record batch.
-    finalize_spec
-        Optional finalize spec applied to each batch before serialization.
-    finalize_hook
-        Optional callback invoked with finalize artifacts per batch.
+    options
+        Optional batch encoding options for cancellation, hooks, and finalize settings.
 
     Yields
     ------
     bytes
         UTF-8 JSONL chunks for each record batch.
     """
-    yield from iter_ndjson_bytes_from_batches(
-        reader,
-        cancel_check=cancel_check,
-        batch_hook=batch_hook,
-        finalize_spec=finalize_spec,
-        finalize_hook=finalize_hook,
-    )
+    yield from iter_ndjson_bytes_from_batches(reader, options=options)
 
 
 def _batch_to_ndjson_bytes(batch: RecordBatch, *, columns: list[str]) -> bytes:
@@ -171,18 +167,35 @@ def _finalize_batches(
     batch: RecordBatch,
     *,
     finalize_spec: FinalizeSpec,
+    execution_ctx: ExecutionContext | None,
 ) -> tuple[list[RecordBatch], FinalizeResult]:
     table = pa.Table.from_batches([batch], schema=batch.schema)
-    result = finalize_table(table, spec=finalize_spec)
-    if result.good.num_rows == 0:
-        return [], result
-    batches = result.good.to_batches(max_chunksize=batch.num_rows)
+    resolved_ctx = execution_ctx or ExecutionContext()
+    captured_result: FinalizeResult | None = None
+
+    def _capture_finalize(input_table: pa.Table) -> pa.Table:
+        nonlocal captured_result
+        captured_result = finalize_table(input_table, spec=finalize_spec)
+        return captured_result.good
+
+    good = run_pipeline(
+        plan=ExecutionPlan(inner=table),
+        finalize=_capture_finalize,
+        ctx=resolved_ctx,
+    )
+    if captured_result is None:
+        captured_result = finalize_table(table, spec=finalize_spec)
+        good = captured_result.good
+    if good.num_rows == 0:
+        return [], captured_result
+    batches = good.to_batches(max_chunksize=batch.num_rows)
     if not batches:
-        return [], result
-    return batches, result
+        return [], captured_result
+    return batches, captured_result
 
 
 __all__ = [
+    "NdjsonBatchOptions",
     "encode_ndjson_line",
     "iter_ndjson_bytes",
     "iter_ndjson_bytes_from_batches",

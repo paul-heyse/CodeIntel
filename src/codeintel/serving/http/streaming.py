@@ -13,10 +13,14 @@ import pyarrow as pa
 from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
-from codeintel.core.columnar.finalize_ops import finalize_reader_batches
+from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.finalize_ops import finalize_table
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.exports import ARROW_IPC_STREAM_MIME, iter_ipc_stream
 from codeintel.serving.export.formats import mime_type_for_export_format
 from codeintel.serving.export.ndjson import (
+    NdjsonBatchOptions,
     iter_ndjson_bytes,
     iter_ndjson_bytes_from_batches,
     iter_ndjson_bytes_from_reader,
@@ -24,6 +28,8 @@ from codeintel.serving.export.ndjson import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping
+
+    from pyarrow import RecordBatch
 
     from codeintel.core.columnar.finalize_ops import FinalizeResult, FinalizeSpec
 
@@ -108,10 +114,13 @@ def ndjson_response_from_batches(
     )
     payload = iter_ndjson_bytes_from_batches(
         batches,
-        cancel_check=resolved.cancel_check,
-        batch_hook=resolved.batch_hook,
-        finalize_spec=resolved.finalize_spec,
-        finalize_hook=resolved.finalize_hook,
+        options=NdjsonBatchOptions(
+            cancel_check=resolved.cancel_check,
+            batch_hook=resolved.batch_hook,
+            finalize_spec=resolved.finalize_spec,
+            finalize_hook=resolved.finalize_hook,
+            execution_ctx=resolved.execution_context,
+        ),
     )
     return StreamingResponse(
         payload,
@@ -161,6 +170,7 @@ class ArrowIpcResponseOptions:
     background: BackgroundTask | None = None
     finalize_spec: FinalizeSpec | None = None
     finalize_hook: Callable[[FinalizeResult], None] | None = None
+    execution_context: ExecutionContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +184,7 @@ class NdjsonBatchResponseOptions:
     batch_hook: Callable[[RecordBatch], None] | None = None
     finalize_spec: FinalizeSpec | None = None
     finalize_hook: Callable[[FinalizeResult], None] | None = None
+    execution_context: ExecutionContext | None = None
 
 
 def arrow_ipc_response(
@@ -204,9 +215,12 @@ def arrow_ipc_response(
         return StreamingResponse(
             iter_ndjson_bytes_from_reader(
                 source,
-                cancel_check=resolved.cancel_check,
-                finalize_spec=resolved.finalize_spec,
-                finalize_hook=resolved.finalize_hook,
+                options=NdjsonBatchOptions(
+                    cancel_check=resolved.cancel_check,
+                    finalize_spec=resolved.finalize_spec,
+                    finalize_hook=resolved.finalize_hook,
+                    execution_ctx=resolved.execution_context,
+                ),
             ),
             media_type=mime_type_for_export_format("jsonl"),
             headers=response_headers,
@@ -224,6 +238,7 @@ def arrow_ipc_response(
                 finalize_spec=resolved.finalize_spec,
                 finalize_hook=resolved.finalize_hook,
                 cancel_check=resolved.cancel_check,
+                execution_ctx=resolved.execution_context,
             )
         payload = iter_ipc_stream(
             reader,
@@ -248,13 +263,40 @@ def _finalized_reader(
     finalize_spec: FinalizeSpec,
     finalize_hook: Callable[[FinalizeResult], None] | None,
     cancel_check: Callable[[], None] | None,
+    execution_ctx: ExecutionContext | None,
 ) -> pa.RecordBatchReader:
-    return finalize_reader_batches(
-        reader,
-        spec=finalize_spec,
-        finalize_hook=finalize_hook,
-        cancel_check=cancel_check,
-    )
+    resolved_ctx = execution_ctx or ExecutionContext()
+
+    def _iter_batches() -> Iterator[RecordBatch]:
+        for batch in reader:
+            if cancel_check is not None:
+                cancel_check()
+            if batch.num_rows == 0:
+                continue
+            table = pa.Table.from_batches([batch], schema=batch.schema)
+            captured_result: FinalizeResult | None = None
+
+            def _capture_finalize(input_table: pa.Table) -> pa.Table:
+                nonlocal captured_result
+                captured_result = finalize_table(input_table, spec=finalize_spec)
+                return captured_result.good
+
+            good = run_pipeline(
+                plan=ExecutionPlan(inner=table),
+                finalize=_capture_finalize,
+                ctx=resolved_ctx,
+            )
+            if captured_result is None:
+                captured_result = finalize_table(table, spec=finalize_spec)
+                good = captured_result.good
+            if finalize_hook is not None:
+                finalize_hook(captured_result)
+            yield from good.to_batches(max_chunksize=batch.num_rows)
+
+    finalized = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
+    if finalized is None:
+        return empty_reader_from_schema(reader.schema)
+    return finalized
 
 
 __all__ = [

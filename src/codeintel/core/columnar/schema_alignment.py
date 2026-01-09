@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import msgspec
 import pyarrow as pa
@@ -27,6 +26,9 @@ from codeintel.core.schemas.arrow_gen import (
 from codeintel.core.serialization.payload import encode_payload
 
 _JSON_ENCODER = msgspec.json.Encoder(order="deterministic")
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @dataclass(frozen=True, slots=True)

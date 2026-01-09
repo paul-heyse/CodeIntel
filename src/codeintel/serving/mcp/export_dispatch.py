@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.serving.export.engine import ExportDelivery, build_export_plan, write_export_file
 from codeintel.serving.export.models import ExportArtifactSpec
-from codeintel.serving.export.ndjson import iter_ndjson_bytes_from_batches
+from codeintel.serving.export.ndjson import NdjsonBatchOptions, iter_ndjson_bytes_from_batches
 from codeintel.serving.mcp.resource_store import ResourceStore
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticExportRequest
@@ -57,7 +57,7 @@ def write_export_to_store(
                     payload.request,
                     cancel_check=payload.cancel_check,
                 ),
-                cancel_check=payload.cancel_check,
+                options=NdjsonBatchOptions(cancel_check=payload.cancel_check),
             ),
             spec=payload.spec,
             export_id=payload.export_id,

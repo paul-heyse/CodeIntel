@@ -396,7 +396,7 @@ _VIEW_REGISTRY_B64 = (
     "rg/IU37Wo/ys92Lqzf+oPqBqH5uYjPNL9gF5KmB6VMD0zGXy5fUBUSUxoEqi7GT7ZfuA1vey/Q/rAyK3JiC3Jmgx1ibdnGmodNEO"
     "IOIkC4iTLDDBzJfXAUSpz4BSn3IIGegASnMKF+39WT+F7JK9P6hBBLT/nL972fxDP/wlW3+SQtbbN/+QhLLZ9p9/md7MNgDRFy3b"
     "f6SStjYAvfzqCzX9oFX7+9///v8DWWF/1g=="
-))
+)
 
 
 def _decode_registry() -> object:

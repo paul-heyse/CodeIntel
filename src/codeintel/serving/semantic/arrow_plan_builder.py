@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-import pyarrow.compute as pc
 from sqlglot import exp
 
 from codeintel.core.columnar.expr_vocab import E
@@ -21,6 +20,8 @@ from codeintel.serving.semantic.specs import SemanticQuerySpec
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    import pyarrow.compute as pc
 
     from codeintel.core.schemas.primitives import ColumnType
 
@@ -40,7 +41,13 @@ def build_arrow_plan_spec(
     spec: SemanticQuerySpec,
     ast: exp.Select,
 ) -> ArrowPlanSpec | None:
-    """Build an Arrow plan spec when the AST stays within the supported subset."""
+    """Build an Arrow plan spec when the AST stays within the supported subset.
+
+    Returns
+    -------
+    ArrowPlanSpec | None
+        Arrow plan spec when supported; otherwise None.
+    """
     if spec.offset:
         return None
     if not _ast_supported(ast):

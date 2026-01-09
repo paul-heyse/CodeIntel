@@ -5,12 +5,18 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal, TypeGuard
+from typing import TYPE_CHECKING, Literal, TypeGuard, cast
 
 import pyarrow as pa
 from sqlglot import exp
 
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.core.columnar.ipc import schema_from_ipc_payload
+from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
+from codeintel.core.columnar.streaming import sample_reader
 from codeintel.core.execution.ids import new_uuid_str
 from codeintel.core.gateway import SchemaIndexProtocol
 from codeintel.core.hashing.fingerprint import fingerprint
@@ -35,6 +41,7 @@ from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
+from codeintel.storage.datasets.manifest_index import dataset_for_entry
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.metadata.catalogs import (
     build_catalog_entry,
@@ -53,10 +60,13 @@ from codeintel.storage.views.diff import diff_sql_structural
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
+    import pyarrow.compute as pc
     from duckdb import DuckDBPyConnection
 
     from codeintel.core.manifests import SchemaManifest, TableProvenance
     from codeintel.core.schemas.primitives import TableSchema
+    from codeintel.storage.datasets.manifest_index import DatasetManifestEntry
+    from codeintel.storage.datasets.registry import DatasetRegistry
     from codeintel.storage.gateway.protocol import ConfigurableGateway
 
 
@@ -74,6 +84,36 @@ def _aliased_table(table_ref: str, alias: str) -> exp.Table:
     aliased = table_expr.copy()
     aliased.set("alias", exp.TableAlias(this=exp.to_identifier(alias)))
     return aliased
+
+
+def _arrow_scan_table(
+    *,
+    entry: DatasetManifestEntry,
+    columns: list[str],
+    filter_expr: pc.Expression | None,
+    order_by: Sequence[SortKey] | None,
+    limit: int | None,
+) -> pa.Table:
+    dataset = dataset_for_entry(entry)
+    plan = build_scan_plan(
+        dataset,
+        options=ScanPlanOptions(
+            columns=columns,
+            filter_expr=filter_expr,
+            implicit_ordering=True,
+            require_sequenced_output=True,
+            order_by=order_by,
+        ),
+    )
+    reader = plan.to_reader(use_threads=True)
+    if limit is not None:
+        reader = sample_reader(reader, max_rows=limit)
+    table = reader_to_table(reader)
+    finalized = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=entry.manifest.table_key, mode="tolerant"),
+    )
+    return finalized.good
 
 
 def _inferred_registry_condition(alias: str) -> exp.Expression:
@@ -582,6 +622,19 @@ class SchemaCatalogTracking:
         config = gateway.config
         self._read_only = bool(config.read_only) if config is not None else False
 
+    def _manifest_entry_for_table(self, table_key: str) -> DatasetManifestEntry | None:
+        config = self._gateway.config
+        if config is None:
+            return None
+        snapshot_id = config.commit
+        if snapshot_id is None:
+            return None
+        datasets = getattr(self._gateway, "datasets", None)
+        if datasets is None:
+            return None
+        registry = cast("DatasetRegistry", datasets)
+        return registry.manifest_entry_for_table(table_key, snapshot_id=snapshot_id)
+
     def record_schema_versions_batch(self, records: Sequence[SchemaVersionRecord]) -> int:
         """Insert schema versions with content-addressed deduplication.
 
@@ -901,40 +954,74 @@ class SchemaCatalogTracking:
             Latest observation record when present; otherwise None.
         """
         observations_ref = meta_table_ref("metadata.schema_observations")
-        try:
-            query = (
-                exp.select(
-                    exp.Column(this=exp.to_identifier("observation_id")),
-                    exp.Column(this=exp.to_identifier("table_key")),
-                    exp.Column(this=exp.to_identifier("repo")),
-                    exp.Column(this=exp.to_identifier("commit")),
-                    exp.Column(this=exp.to_identifier("target_name")),
-                    exp.Column(this=exp.to_identifier("schema_digest")),
-                    exp.Column(this=exp.to_identifier("schema_hash")),
-                    exp.Column(this=exp.to_identifier("arrow_schema_ipc_b64")),
-                    exp.Column(this=exp.to_identifier("column_stats")),
-                    exp.Column(this=exp.to_identifier("dataset_stats")),
-                    exp.Column(this=exp.to_identifier("derived_settings")),
-                    exp.Column(this=exp.to_identifier("drift_summary")),
-                    exp.Column(this=exp.to_identifier("observed_at")),
-                )
-                .from_(table_expr_from_ref(observations_ref))
-                .where(
-                    exp.EQ(
-                        this=exp.Column(this=exp.to_identifier("table_key")),
-                        expression=exp.Placeholder(),
-                    )
-                )
-                .order_by(
-                    exp.Ordered(this=exp.Column(this=exp.to_identifier("observed_at")), desc=True)
-                )
-                .limit(exp.Literal.number(1))
+        entry = self._manifest_entry_for_table(observations_ref)
+        if entry is not None:
+            columns = [
+                "observation_id",
+                "table_key",
+                "repo",
+                "commit",
+                "target_name",
+                "schema_digest",
+                "schema_hash",
+                "arrow_schema_ipc_b64",
+                "column_stats",
+                "dataset_stats",
+                "derived_settings",
+                "drift_summary",
+                "observed_at",
+            ]
+            table = _arrow_scan_table(
+                entry=entry,
+                columns=columns,
+                filter_expr=E.field("table_key") == E.scalar(table_key),
+                order_by=[("observed_at", "descending")],
+                limit=1,
             )
-            row = self._con.execute(render_sql_duckdb(query), [table_key]).fetchone()
-        except DuckDBError:
-            return None
+            reader = table_to_reader(table, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            row = next(iter_tuples_from_arrow_reader(reader), None)
+        else:
+            row = None
+        if row is None:
+            try:
+                query = (
+                    exp.select(
+                        exp.Column(this=exp.to_identifier("observation_id")),
+                        exp.Column(this=exp.to_identifier("table_key")),
+                        exp.Column(this=exp.to_identifier("repo")),
+                        exp.Column(this=exp.to_identifier("commit")),
+                        exp.Column(this=exp.to_identifier("target_name")),
+                        exp.Column(this=exp.to_identifier("schema_digest")),
+                        exp.Column(this=exp.to_identifier("schema_hash")),
+                        exp.Column(this=exp.to_identifier("arrow_schema_ipc_b64")),
+                        exp.Column(this=exp.to_identifier("column_stats")),
+                        exp.Column(this=exp.to_identifier("dataset_stats")),
+                        exp.Column(this=exp.to_identifier("derived_settings")),
+                        exp.Column(this=exp.to_identifier("drift_summary")),
+                        exp.Column(this=exp.to_identifier("observed_at")),
+                    )
+                    .from_(table_expr_from_ref(observations_ref))
+                    .where(
+                        exp.EQ(
+                            this=exp.Column(this=exp.to_identifier("table_key")),
+                            expression=exp.Placeholder(),
+                        )
+                    )
+                    .order_by(
+                        exp.Ordered(
+                            this=exp.Column(this=exp.to_identifier("observed_at")),
+                            desc=True,
+                        )
+                    )
+                    .limit(exp.Literal.number(1))
+                )
+                row = self._con.execute(render_sql_duckdb(query), [table_key]).fetchone()
+            except DuckDBError:
+                return None
         if row is None:
             return None
+        observed_at = row[12]
+        observed_at_value = observed_at if isinstance(observed_at, datetime) else None
         return SchemaObservationRecord(
             observation_id=str(row[0]) if row[0] is not None else None,
             table_key=str(row[1]),
@@ -948,7 +1035,7 @@ class SchemaCatalogTracking:
             dataset_stats=_decode_optional_dataset_stats(row[9]),
             derived_settings=_decode_optional_derived_settings(row[10]),
             drift_summary=_decode_optional_json_dict(row[11]),
-            observed_at=row[12],
+            observed_at=observed_at_value,
         )
 
     def has_contract_arrow_schema(self, *, table_key: str) -> bool:
@@ -1013,6 +1100,20 @@ class SchemaCatalogTracking:
         if limit <= 0:
             return ()
         observations_ref = meta_table_ref("metadata.schema_observations")
+        entry = self._manifest_entry_for_table(observations_ref)
+        if entry is not None:
+            table = _arrow_scan_table(
+                entry=entry,
+                columns=["drift_summary", "observed_at"],
+                filter_expr=E.field("table_key") == E.scalar(table_key),
+                order_by=[("observed_at", "descending")],
+                limit=limit,
+            )
+            reader = table_to_reader(table, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            summaries = [
+                _decode_optional_json_dict(row[0]) for row in iter_tuples_from_arrow_reader(reader)
+            ]
+            return tuple(summaries)
         query = (
             exp.select(exp.Column(this=exp.to_identifier("drift_summary")))
             .from_(table_expr_from_ref(observations_ref))
@@ -1031,9 +1132,10 @@ class SchemaCatalogTracking:
             render_sql_duckdb(query),
             [table_key, limit],
         ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-        summaries: list[dict[str, object] | None] = []
-        for (summary_raw,) in iter_tuples_from_arrow_reader(reader):
-            summaries.append(_decode_optional_json_dict(summary_raw))
+        summaries = [
+            _decode_optional_json_dict(summary_raw)
+            for (summary_raw,) in iter_tuples_from_arrow_reader(reader)
+        ]
         return tuple(summaries)
 
     def _distinct_table_count(

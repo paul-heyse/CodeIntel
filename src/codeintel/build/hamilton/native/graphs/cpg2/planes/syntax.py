@@ -123,34 +123,28 @@ def cpg2_nodes__syntax_nodes(
     anchor_map = normalize_table_for_join(
         _syntax_anchor_map(normalized, include_source_pk_json=True)
     )
-    left_plan = (
-        Plan.table(normalized)
-        .project(
-            {
-                "repo": E.cast(E.field("repo"), "string"),
-                "commit": E.cast(E.field("commit"), "string"),
-                "rel_path": E.cast(E.field("rel_path"), "string"),
-                "producer": E.cast(E.field("producer"), "string"),
-                "node_id": E.cast(E.field("node_id"), "string"),
-                "start_byte": E.field("start_byte"),
-                "end_byte": E.field("end_byte"),
-                "extras_kv": E.field("extras_kv"),
-            }
-        )
+    left_plan = Plan.table(normalized).project(
+        {
+            "repo": E.cast(E.field("repo"), "string"),
+            "commit": E.cast(E.field("commit"), "string"),
+            "rel_path": E.cast(E.field("rel_path"), "string"),
+            "producer": E.cast(E.field("producer"), "string"),
+            "node_id": E.cast(E.field("node_id"), "string"),
+            "start_byte": E.field("start_byte"),
+            "end_byte": E.field("end_byte"),
+            "extras_kv": E.field("extras_kv"),
+        }
     )
-    right_plan = (
-        Plan.table(anchor_map)
-        .project(
-            {
-                "repo": E.cast(E.field("repo"), "string"),
-                "commit": E.cast(E.field("commit"), "string"),
-                "rel_path": E.cast(E.field("rel_path"), "string"),
-                "producer": E.cast(E.field("producer"), "string"),
-                "node_id": E.cast(E.field("node_id"), "string"),
-                "cpg_node_id": E.field("cpg_node_id"),
-                "source_pk_json": E.field("source_pk_json"),
-            }
-        )
+    right_plan = Plan.table(anchor_map).project(
+        {
+            "repo": E.cast(E.field("repo"), "string"),
+            "commit": E.cast(E.field("commit"), "string"),
+            "rel_path": E.cast(E.field("rel_path"), "string"),
+            "producer": E.cast(E.field("producer"), "string"),
+            "node_id": E.cast(E.field("node_id"), "string"),
+            "cpg_node_id": E.field("cpg_node_id"),
+            "source_pk_json": E.field("source_pk_json"),
+        }
     )
     joined = left_plan.hash_join(
         right=right_plan,
@@ -239,18 +233,15 @@ def cpg2_edges__syntax_edges(
         join_keys=join_keys,
     )
     normalized_edges = precheck.good
-    anchor_plan = (
-        Plan.table(anchor_map)
-        .project(
-            {
-                "repo": E.cast(E.field("repo"), "string"),
-                "commit": E.cast(E.field("commit"), "string"),
-                "rel_path": E.cast(E.field("rel_path"), "string"),
-                "producer": E.cast(E.field("producer"), "string"),
-                "node_id": E.cast(E.field("node_id"), "string"),
-                "cpg_node_id": E.field("cpg_node_id"),
-            }
-        )
+    anchor_plan = Plan.table(anchor_map).project(
+        {
+            "repo": E.cast(E.field("repo"), "string"),
+            "commit": E.cast(E.field("commit"), "string"),
+            "rel_path": E.cast(E.field("rel_path"), "string"),
+            "producer": E.cast(E.field("producer"), "string"),
+            "node_id": E.cast(E.field("node_id"), "string"),
+            "cpg_node_id": E.field("cpg_node_id"),
+        }
     )
     parent_join = (
         Plan.table(normalized_edges)

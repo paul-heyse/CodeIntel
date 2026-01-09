@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
@@ -30,7 +30,7 @@ from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable
+    from collections.abc import Hashable, Iterable
 
     from codeintel.build.analytics.compute.graphs import ProjectionMetrics
     from codeintel.build.graphs.runtime.context import GraphContext

@@ -18,14 +18,15 @@ import pyarrow as pa
 from sqlglot import exp
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
+from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
 from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
-from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.kernels import stable_sort_indices
 from codeintel.core.columnar.masks import and_mask, fill_null_false, invert_mask
 from codeintel.core.columnar.normalization import normalize_array
-from codeintel.core.columnar.plan_ops import build_scan_plan
+from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS
@@ -377,29 +378,47 @@ class BuildTracking:
         )
         plan = build_scan_plan(
             dataset,
-            columns=scan_options.projection_columns(),
-            filter_expr=None,
-            implicit_ordering=scan_options.implicit_ordering,
-            require_sequenced_output=scan_options.require_sequenced_output,
-        )
-        use_threads = scan_options.use_threads if scan_options.use_threads is not None else True
-        table = reader_to_table(plan.to_reader(use_threads=use_threads))
-        if table.num_rows == 0:
-            return None
-        finalized = finalize_table(
-            table,
-            spec=FinalizeSpec(
-                table_key=_MANIFEST_TABLE_KEY,
-                mode="tolerant",
-                context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
-                dedupe=FinalizeDedupe(
-                    prefer_columns=("computed_at",),
-                    determinism="stable",
-                    tie_breaker_columns=("input_hash", "output_hash", "options_hash"),
-                ),
+            options=ScanPlanOptions(
+                columns=scan_options.projection_columns(),
+                filter_expr=None,
+                implicit_ordering=scan_options.implicit_ordering,
+                require_sequenced_output=scan_options.require_sequenced_output,
             ),
         )
-        return finalized.good if finalized.good.num_rows else None
+        resolved_threads = (
+            scan_options.use_threads if scan_options.use_threads is not None else True
+        )
+        execution_ctx = ExecutionContext(
+            use_threads=resolved_threads,
+            determinism="canonical",
+            combine_chunks=True,
+        )
+
+        def _read_table() -> pa.Table:
+            return reader_to_table(plan.to_reader(use_threads=resolved_threads))
+
+        finalize_spec = FinalizeSpec(
+            table_key=_MANIFEST_TABLE_KEY,
+            mode="tolerant",
+            context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
+            dedupe=FinalizeDedupe(
+                prefer_columns=("computed_at",),
+                keys=(),
+                tie_breakers=(
+                    ("input_hash", "ascending"),
+                    ("output_hash", "ascending"),
+                    ("options_hash", "ascending"),
+                ),
+                tier="canonical",
+                strategy="first",
+            ),
+        )
+        finalized = run_pipeline(
+            plan=ExecutionPlan(inner=_read_table),
+            finalize=finalize_spec,
+            ctx=execution_ctx,
+        )
+        return finalized if finalized.num_rows else None
 
     @staticmethod
     def _manifest_match_mask(

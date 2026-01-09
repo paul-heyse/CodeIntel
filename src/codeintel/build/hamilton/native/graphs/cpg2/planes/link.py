@@ -100,27 +100,21 @@ def cpg2_nodes__import_modules(
         include_source_pk_json=True,
     )
     anchors = normalize_table_for_join(anchors)
-    left_plan = (
-        Plan.table(normalized)
-        .project(
-            {
-                "repo": E.cast(E.field("repo"), "string"),
-                "commit": E.cast(E.field("commit"), "string"),
-                "module": E.cast(E.field("module"), "string"),
-            }
-        )
+    left_plan = Plan.table(normalized).project(
+        {
+            "repo": E.cast(E.field("repo"), "string"),
+            "commit": E.cast(E.field("commit"), "string"),
+            "module": E.cast(E.field("module"), "string"),
+        }
     )
-    right_plan = (
-        Plan.table(anchors)
-        .project(
-            {
-                "repo": E.cast(E.field("repo"), "string"),
-                "commit": E.cast(E.field("commit"), "string"),
-                "module": E.cast(E.field("module"), "string"),
-                "cpg_node_id": E.field("cpg_node_id"),
-                "source_pk_json": E.field("source_pk_json"),
-            }
-        )
+    right_plan = Plan.table(anchors).project(
+        {
+            "repo": E.cast(E.field("repo"), "string"),
+            "commit": E.cast(E.field("commit"), "string"),
+            "module": E.cast(E.field("module"), "string"),
+            "cpg_node_id": E.field("cpg_node_id"),
+            "source_pk_json": E.field("source_pk_json"),
+        }
     )
     joined = left_plan.hash_join(
         right=right_plan,
@@ -401,14 +395,11 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
         "kind": E.field("kind"),
     }
     edge_plan = Plan.table(normalized_edges).project(edge_project)
-    src_plan = (
-        Plan.table(src_anchor)
-        .project(
-            {
-                "caller_goid_h128": E.cast(E.field("caller_goid_h128"), "decimal128(38,0)"),
-                "src_cpg_node_id": E.field("src_cpg_node_id"),
-            }
-        )
+    src_plan = Plan.table(src_anchor).project(
+        {
+            "caller_goid_h128": E.cast(E.field("caller_goid_h128"), "decimal128(38,0)"),
+            "src_cpg_node_id": E.field("src_cpg_node_id"),
+        }
     )
     joined = edge_plan.hash_join(
         right=src_plan,
@@ -421,14 +412,11 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
         ),
     )
     joined = joined.filter(E.is_valid("src_cpg_node_id"))
-    dst_plan = (
-        Plan.table(dst_anchor)
-        .project(
-            {
-                "callee_goid_h128": E.cast(E.field("callee_goid_h128"), "decimal128(38,0)"),
-                "dst_cpg_node_id": E.field("dst_cpg_node_id"),
-            }
-        )
+    dst_plan = Plan.table(dst_anchor).project(
+        {
+            "callee_goid_h128": E.cast(E.field("callee_goid_h128"), "decimal128(38,0)"),
+            "dst_cpg_node_id": E.field("dst_cpg_node_id"),
+        }
     )
     joined = joined.hash_join(
         right=dst_plan,
@@ -447,11 +435,9 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
         ("caller_goid_h128", "ascending"),
         ("callee_goid_h128", "ascending"),
         ("callsite_path", "ascending"),
+        ("callsite_line", "ascending"),
+        ("callsite_col", "ascending"),
     ]
-    if "callsite_line" in joined.schema.names:
-        sort_keys.append(("callsite_line", "ascending"))
-    if "callsite_col" in joined.schema.names:
-        sort_keys.append(("callsite_col", "ascending"))
     joined = joined.order_by(sort_keys=sort_keys)
     return materialize_plan(joined, use_threads=True)
 
@@ -526,16 +512,13 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         "module_layer": E.field("module_layer"),
     }
     edge_plan = Plan.table(normalized_edges).project(edge_project)
-    src_plan = (
-        Plan.table(src_anchor)
-        .project(
-            {
-                "repo": E.cast(E.field("repo"), "string"),
-                "commit": E.cast(E.field("commit"), "string"),
-                "src_module": E.cast(E.field("src_module"), "string"),
-                "src_cpg_node_id": E.field("src_cpg_node_id"),
-            }
-        )
+    src_plan = Plan.table(src_anchor).project(
+        {
+            "repo": E.cast(E.field("repo"), "string"),
+            "commit": E.cast(E.field("commit"), "string"),
+            "src_module": E.cast(E.field("src_module"), "string"),
+            "src_cpg_node_id": E.field("src_cpg_node_id"),
+        }
     )
     joined = edge_plan.hash_join(
         right=src_plan,
@@ -548,16 +531,13 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         ),
     )
     joined = joined.filter(E.is_valid("src_cpg_node_id"))
-    dst_plan = (
-        Plan.table(dst_anchor)
-        .project(
-            {
-                "repo": E.cast(E.field("repo"), "string"),
-                "commit": E.cast(E.field("commit"), "string"),
-                "dst_module": E.cast(E.field("dst_module"), "string"),
-                "dst_cpg_node_id": E.field("dst_cpg_node_id"),
-            }
-        )
+    dst_plan = Plan.table(dst_anchor).project(
+        {
+            "repo": E.cast(E.field("repo"), "string"),
+            "commit": E.cast(E.field("commit"), "string"),
+            "dst_module": E.cast(E.field("dst_module"), "string"),
+            "dst_cpg_node_id": E.field("dst_cpg_node_id"),
+        }
     )
     joined = joined.hash_join(
         right=dst_plan,
@@ -575,9 +555,8 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         ("commit", "ascending"),
         ("src_module", "ascending"),
         ("dst_module", "ascending"),
+        ("cycle_group", "ascending"),
     ]
-    if "cycle_group" in joined.schema.names:
-        sort_keys.append(("cycle_group", "ascending"))
     joined = joined.order_by(sort_keys=sort_keys)
     return materialize_plan(joined, use_threads=True)
 

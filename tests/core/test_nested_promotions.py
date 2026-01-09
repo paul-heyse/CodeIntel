@@ -32,6 +32,7 @@ def _reset_schema_service(previous: SchemaService | None) -> None:
 
 
 def test_deep_cast_rejects_disallowed_list_promotion() -> None:
+    """Reject disallowed list promotions during deep cast."""
     table = pa.table({"items": [[1, 2], [3]]})
     contract_schema = pa.schema([pa.field("items", pa.list_(pa.string()))])
 
@@ -40,6 +41,7 @@ def test_deep_cast_rejects_disallowed_list_promotion() -> None:
 
 
 def test_finalize_emits_nested_cast_failed() -> None:
+    """Emit nested cast failure codes during finalize."""
     table_schema = TableSchema(
         schema="core",
         name="nested_cast_guardrail",

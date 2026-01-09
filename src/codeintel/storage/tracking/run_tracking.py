@@ -12,8 +12,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+import pyarrow as pa
 from sqlglot import exp
 
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
+from codeintel.core.columnar.streaming import sample_reader
 from codeintel.core.gateway import PipelineStepRecordProtocol
 from codeintel.core.serialization.json import (
     decode_json_dict,
@@ -24,6 +31,7 @@ from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.datasets.manifest_index import dataset_for_entry
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import (
     coerce_datetime,
@@ -39,9 +47,13 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from datetime import datetime
 
+    import pyarrow.compute as pc
     from duckdb import DuckDBPyConnection
 
     from codeintel.core.execution import RunContext
+    from codeintel.storage.datasets import DatasetRegistry
+    from codeintel.storage.datasets.manifest_index import DatasetManifestEntry
+    from codeintel.storage.gateway.config import StorageConfig
 
 PipelineStatus = Literal["running", "succeeded", "failed", "partial"]
 """Status of a pipeline run.
@@ -64,6 +76,36 @@ StepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
 
 _PIPELINE_RUNS_TABLE = meta_table_ref("metadata.pipeline_runs")
 _PIPELINE_STEPS_TABLE = meta_table_ref("metadata.pipeline_steps")
+
+
+def _arrow_scan_table(
+    *,
+    entry: DatasetManifestEntry,
+    columns: list[str],
+    filter_expr: pc.Expression | None,
+    order_by: Sequence[SortKey] | None,
+    limit: int | None,
+) -> pa.Table:
+    dataset = dataset_for_entry(entry)
+    plan = build_scan_plan(
+        dataset,
+        options=ScanPlanOptions(
+            columns=columns,
+            filter_expr=filter_expr,
+            implicit_ordering=True,
+            require_sequenced_output=True,
+            order_by=order_by,
+        ),
+    )
+    reader = plan.to_reader(use_threads=True)
+    if limit is not None:
+        reader = sample_reader(reader, max_rows=limit)
+    table = reader_to_table(reader)
+    finalized = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=entry.manifest.table_key, mode="tolerant"),
+    )
+    return finalized.good
 
 
 def _coerce_row_counts(raw: dict[str, object]) -> dict[str, int]:
@@ -324,6 +366,16 @@ class PipelineRunTracking:
     """
 
     con: DuckDBPyConnection
+    datasets: DatasetRegistry | None = None
+    config: StorageConfig | None = None
+
+    def _manifest_entry_for_table(self, table_key: str) -> DatasetManifestEntry | None:
+        if self.datasets is None or self.config is None:
+            return None
+        snapshot_id = self.config.commit
+        if snapshot_id is None:
+            return None
+        return self.datasets.manifest_entry_for_table(table_key, snapshot_id=snapshot_id)
 
     def start_run(
         self,
@@ -545,6 +597,72 @@ class PipelineRunTracking:
         list[PipelineStepRecord]
             List of step records ordered by module, stage, and name.
         """
+        entry = self._manifest_entry_for_table(_PIPELINE_STEPS_TABLE)
+        if entry is not None:
+            columns = [
+                "run_id",
+                "module",
+                "stage",
+                "name",
+                "started_at",
+                "completed_at",
+                "status",
+                "row_counts",
+                "extra",
+            ]
+            table = _arrow_scan_table(
+                entry=entry,
+                columns=columns,
+                filter_expr=E.field("run_id") == E.scalar(run_id),
+                order_by=[
+                    ("module", "ascending"),
+                    ("stage", "ascending"),
+                    ("name", "ascending"),
+                ],
+                limit=None,
+            )
+            reader = table_to_reader(table, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            results: list[PipelineStepRecord] = []
+            for (
+                run_id_val,
+                module,
+                stage,
+                name,
+                started_at,
+                completed_at,
+                status,
+                row_counts_raw,
+                extra_raw,
+            ) in iter_tuples_from_arrow_reader(reader):
+                row_counts = (
+                    _coerce_row_counts(decode_json_dict(row_counts_raw)) if row_counts_raw else None
+                )
+                extra = decode_json_dict(extra_raw) if extra_raw else None
+                results.append(
+                    PipelineStepRecord(
+                        run_id=coerce_str(run_id_val, ctx="pipeline_steps.run_id"),
+                        module=coerce_literal(
+                            module,
+                            ctx="pipeline_steps.module",
+                            allowed=_MODULE_KIND_VALUES,
+                        ),
+                        stage=coerce_str(stage, ctx="pipeline_steps.stage"),
+                        name=coerce_str(name, ctx="pipeline_steps.name"),
+                        status=coerce_literal(
+                            status,
+                            ctx="pipeline_steps.status",
+                            allowed=_STEP_STATUS_VALUES,
+                        ),
+                        started_at=coerce_datetime(started_at, ctx="pipeline_steps.started_at"),
+                        completed_at=coerce_optional_datetime(
+                            completed_at,
+                            ctx="pipeline_steps.completed_at",
+                        ),
+                        row_counts=row_counts,
+                        extra=extra,
+                    )
+                )
+            return results
         query = (
             exp.select(*_step_select_exprs())
             .from_(table_expr_from_ref(_PIPELINE_STEPS_TABLE))
@@ -674,6 +792,78 @@ class PipelineRunTracking:
         list[PipelineRunRecord]
             List of run records ordered by started_at descending.
         """
+        entry = self._manifest_entry_for_table(_PIPELINE_RUNS_TABLE)
+        if entry is not None:
+            columns = [
+                "run_id",
+                "repo",
+                "commit",
+                "kind",
+                "trigger",
+                "requested_operation",
+                "requested_datasets",
+                "started_at",
+                "completed_at",
+                "status",
+                "error_summary",
+                "pipeline_name",
+            ]
+            table = _arrow_scan_table(
+                entry=entry,
+                columns=columns,
+                filter_expr=None,
+                order_by=[("started_at", "descending")],
+                limit=limit,
+            )
+            reader = table_to_reader(table, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            results: list[PipelineRunRecord] = []
+            for (
+                run_id_val,
+                repo,
+                commit,
+                kind,
+                trigger,
+                requested_operation,
+                requested_datasets_raw,
+                started_at,
+                completed_at,
+                status,
+                error_summary,
+                pipeline_name,
+            ) in iter_tuples_from_arrow_reader(reader):
+                results.append(
+                    PipelineRunRecord(
+                        run_id=coerce_str(run_id_val, ctx="pipeline_runs.run_id"),
+                        repo=coerce_str(repo, ctx="pipeline_runs.repo"),
+                        commit=coerce_str(commit, ctx="pipeline_runs.commit"),
+                        kind=coerce_str(kind, ctx="pipeline_runs.kind"),
+                        trigger=coerce_str(trigger, ctx="pipeline_runs.trigger"),
+                        status=coerce_literal(
+                            status,
+                            ctx="pipeline_runs.status",
+                            allowed=_PIPELINE_STATUS_VALUES,
+                        ),
+                        started_at=coerce_datetime(started_at, ctx="pipeline_runs.started_at"),
+                        completed_at=coerce_optional_datetime(
+                            completed_at,
+                            ctx="pipeline_runs.completed_at",
+                        ),
+                        requested_operation=coerce_optional_str(
+                            requested_operation,
+                            ctx="pipeline_runs.requested_operation",
+                        ),
+                        requested_datasets=deserialize_str_tuple(requested_datasets_raw),
+                        error_summary=coerce_optional_str(
+                            error_summary,
+                            ctx="pipeline_runs.error_summary",
+                        ),
+                        pipeline_name=coerce_optional_str(
+                            pipeline_name,
+                            ctx="pipeline_runs.pipeline_name",
+                        ),
+                    )
+                )
+            return results
         query = (
             exp.select(*_run_select_exprs())
             .from_(table_expr_from_ref(_PIPELINE_RUNS_TABLE))

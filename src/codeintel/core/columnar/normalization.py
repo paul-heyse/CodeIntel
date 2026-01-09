@@ -50,6 +50,8 @@ def normalize_table(table: pa.Table, *, combine_chunks: bool = True) -> pa.Table
     ----------
     table
         Input Arrow table.
+    combine_chunks
+        Whether to combine chunks after dictionary unification.
 
     Returns
     -------

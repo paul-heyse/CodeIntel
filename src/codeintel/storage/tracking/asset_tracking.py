@@ -9,8 +9,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+import pyarrow as pa
 from sqlglot import exp
 
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
+from codeintel.core.columnar.streaming import sample_reader
 from codeintel.core.gateway import (
     AssetLineageEdgeRecordProtocol,
     AssetVersionEventRecordProtocol,
@@ -23,6 +30,7 @@ from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.datasets.manifest_index import dataset_for_entry
 from codeintel.storage.query_results import (
     coerce_optional_datetime,
     coerce_optional_int,
@@ -36,6 +44,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
 
+    import pyarrow.compute as pc
+
+    from codeintel.storage.datasets.manifest_index import DatasetManifestEntry
     from codeintel.storage.gateway.protocol import StorageGateway
 
 
@@ -212,6 +223,12 @@ class AssetTracking:
         self._con = gateway.con
         self._backend = gateway.policy
 
+    def _manifest_entry_for_table(self, table_key: str) -> DatasetManifestEntry | None:
+        snapshot_id = self._gateway.config.commit
+        if snapshot_id is None:
+            return None
+        return self._gateway.datasets.manifest_entry_for_table(table_key, snapshot_id=snapshot_id)
+
     @staticmethod
     def _combine_conditions(conditions: Sequence[exp.Expression]) -> exp.Expression | None:
         if not conditions:
@@ -227,6 +244,36 @@ class AssetTracking:
         aliased = table_expr.copy()
         aliased.set("alias", exp.TableAlias(this=exp.to_identifier(alias)))
         return aliased
+
+    @staticmethod
+    def _arrow_scan_table(
+        *,
+        entry: DatasetManifestEntry,
+        columns: list[str],
+        filter_expr: pc.Expression | None,
+        order_by: Sequence[SortKey] | None,
+        limit: int | None,
+    ) -> pa.Table:
+        dataset = dataset_for_entry(entry)
+        plan = build_scan_plan(
+            dataset,
+            options=ScanPlanOptions(
+                columns=columns,
+                filter_expr=filter_expr,
+                implicit_ordering=True,
+                require_sequenced_output=True,
+                order_by=order_by,
+            ),
+        )
+        reader = plan.to_reader(use_threads=True)
+        if limit is not None:
+            reader = sample_reader(reader, max_rows=limit)
+        table = reader_to_table(reader)
+        finalized = finalize_table(
+            table,
+            spec=FinalizeSpec(table_key=entry.manifest.table_key, mode="tolerant"),
+        )
+        return finalized.good
 
     def record_asset_versions_batch(self, records: Sequence[AssetVersionRecordProtocol]) -> int:
         """Upsert multiple asset version records.
@@ -506,6 +553,23 @@ class AssetTracking:
         str | None
             Resolved version hash, or ``None`` when the alias is unknown.
         """
+        entry = self._manifest_entry_for_table("build.asset_aliases")
+        if entry is not None:
+            table = self._arrow_scan_table(
+                entry=entry,
+                columns=["version_hash"],
+                filter_expr=E.and_(
+                    E.field("alias") == E.scalar(alias),
+                    E.field("asset_kind") == E.scalar(asset_kind),
+                    E.field("asset_key") == E.scalar(asset_key),
+                ),
+                order_by=None,
+                limit=1,
+            )
+            if table.num_rows == 0:
+                return None
+            value = table.column("version_hash")[0].as_py()
+            return str(value) if value is not None else None
         where_expr = self._combine_conditions(
             [
                 exp.EQ(
@@ -641,6 +705,27 @@ class AssetTracking:
         str | None
             Newest version hash, or ``None`` when no versions exist.
         """
+        entry = self._manifest_entry_for_table("build.asset_version_events")
+        if entry is not None:
+            table = self._arrow_scan_table(
+                entry=entry,
+                columns=["version_hash", "recorded_at"],
+                filter_expr=E.and_(
+                    E.field("repo") == E.scalar(repo),
+                    E.field("commit") == E.scalar(commit),
+                    E.field("asset_kind") == E.scalar(asset_kind),
+                    E.field("asset_key") == E.scalar(asset_key),
+                ),
+                order_by=[
+                    ("recorded_at", "descending"),
+                    ("version_hash", "descending"),
+                ],
+                limit=1,
+            )
+            if table.num_rows == 0:
+                return None
+            value = table.column("version_hash")[0].as_py()
+            return str(value) if value is not None else None
         where_expr = self._combine_conditions(
             [
                 exp.EQ(
@@ -687,6 +772,46 @@ class AssetTracking:
         list[RunAssetVersionRecord]
             Run asset version mappings sorted by asset kind/key.
         """
+        entry = self._manifest_entry_for_table("build.run_asset_versions")
+        if entry is not None:
+            columns = [
+                "run_id",
+                "repo",
+                "commit",
+                "asset_kind",
+                "asset_key",
+                "version_hash",
+                "target",
+                "resolution_kind",
+                "recorded_at",
+                "meta",
+            ]
+            table = self._arrow_scan_table(
+                entry=entry,
+                columns=columns,
+                filter_expr=E.field("run_id") == E.scalar(run_id),
+                order_by=[("asset_kind", "ascending"), ("asset_key", "ascending")],
+                limit=None,
+            )
+            reader = table_to_reader(table, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            return [
+                RunAssetVersionRecord(
+                    run_id=coerce_str(row[0], ctx="run_asset_versions.run_id"),
+                    repo=coerce_str(row[1], ctx="run_asset_versions.repo"),
+                    commit=coerce_str(row[2], ctx="run_asset_versions.commit"),
+                    asset_kind=coerce_str(row[3], ctx="run_asset_versions.asset_kind"),
+                    asset_key=coerce_str(row[4], ctx="run_asset_versions.asset_key"),
+                    version_hash=coerce_str(row[5], ctx="run_asset_versions.version_hash"),
+                    target=coerce_optional_str(row[6], ctx="run_asset_versions.target"),
+                    resolution_kind=coerce_str(row[7], ctx="run_asset_versions.resolution_kind"),
+                    recorded_at=coerce_optional_datetime(
+                        row[8],
+                        ctx="run_asset_versions.recorded_at",
+                    ),
+                    meta=decode_json_dict(row[9]) if row[9] else None,
+                )
+                for row in iter_tuples_from_arrow_reader(reader)
+            ]
         query = (
             exp.select(
                 exp.Column(this=exp.to_identifier("run_id")),
@@ -751,6 +876,48 @@ class AssetTracking:
         AssetDiffRecord | None
             Cached diff record when found, otherwise ``None``.
         """
+        entry = self._manifest_entry_for_table("build.asset_diffs")
+        if entry is not None:
+            columns = [
+                "asset_kind",
+                "asset_key",
+                "from_version_hash",
+                "to_version_hash",
+                "diff_kind",
+                "summary",
+                "computed_at",
+                "computed_by_run_id",
+            ]
+            table = self._arrow_scan_table(
+                entry=entry,
+                columns=columns,
+                filter_expr=E.and_(
+                    E.field("asset_kind") == E.scalar(asset_kind),
+                    E.field("asset_key") == E.scalar(asset_key),
+                    E.field("from_version_hash") == E.scalar(from_version_hash),
+                    E.field("to_version_hash") == E.scalar(to_version_hash),
+                    E.field("diff_kind") == E.scalar(diff_kind),
+                ),
+                order_by=None,
+                limit=1,
+            )
+            reader = table_to_reader(table, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            row = next(iter_tuples_from_arrow_reader(reader), None)
+            if row is None:
+                return None
+            return AssetDiffRecord(
+                asset_kind=coerce_str(row[0], ctx="asset_diffs.asset_kind"),
+                asset_key=coerce_str(row[1], ctx="asset_diffs.asset_key"),
+                from_version_hash=coerce_str(row[2], ctx="asset_diffs.from_version_hash"),
+                to_version_hash=coerce_str(row[3], ctx="asset_diffs.to_version_hash"),
+                diff_kind=coerce_str(row[4], ctx="asset_diffs.diff_kind"),
+                summary=decode_json_dict(row[5]) if row[5] else None,
+                computed_at=coerce_optional_datetime(row[6], ctx="asset_diffs.computed_at"),
+                computed_by_run_id=coerce_optional_str(
+                    row[7],
+                    ctx="asset_diffs.computed_by_run_id",
+                ),
+            )
         where_expr = self._combine_conditions(
             [
                 exp.EQ(
@@ -897,6 +1064,47 @@ class AssetTracking:
         list[AssetLineageEdgeRecord]
             Lineage edges with the asset as upstream.
         """
+        entry = self._manifest_entry_for_table("build.asset_lineage")
+        if entry is not None:
+            columns = [
+                "downstream_kind",
+                "downstream_key",
+                "downstream_version",
+                "upstream_kind",
+                "upstream_key",
+                "upstream_version",
+                "edge_kind",
+                "created_at",
+                "meta",
+            ]
+            exprs = [
+                E.field("upstream_kind") == E.scalar(upstream_kind),
+                E.field("upstream_key") == E.scalar(upstream_key),
+            ]
+            if upstream_version:
+                exprs.append(E.field("upstream_version") == E.scalar(upstream_version))
+            table = self._arrow_scan_table(
+                entry=entry,
+                columns=columns,
+                filter_expr=E.and_(*exprs),
+                order_by=None,
+                limit=None,
+            )
+            reader = table_to_reader(table, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            return [
+                AssetLineageEdgeRecord(
+                    downstream_kind=coerce_str(row[0], ctx="asset_lineage.downstream_kind"),
+                    downstream_key=coerce_str(row[1], ctx="asset_lineage.downstream_key"),
+                    downstream_version=coerce_str(row[2], ctx="asset_lineage.downstream_version"),
+                    upstream_kind=coerce_str(row[3], ctx="asset_lineage.upstream_kind"),
+                    upstream_key=coerce_str(row[4], ctx="asset_lineage.upstream_key"),
+                    upstream_version=coerce_str(row[5], ctx="asset_lineage.upstream_version"),
+                    edge_kind=coerce_str(row[6], ctx="asset_lineage.edge_kind"),
+                    created_at=coerce_optional_datetime(row[7], ctx="asset_lineage.created_at"),
+                    meta=decode_json_dict(row[8]) if row[8] else None,
+                )
+                for row in iter_tuples_from_arrow_reader(reader)
+            ]
         conditions: list[exp.Expression] = [
             exp.EQ(
                 this=exp.Column(this=exp.to_identifier("upstream_kind")),
@@ -969,6 +1177,22 @@ class AssetTracking:
         str | None
             Target name, or None if not found.
         """
+        entry = self._manifest_entry_for_table("build.asset_version_events")
+        if entry is not None:
+            table = self._arrow_scan_table(
+                entry=entry,
+                columns=["target", "recorded_at"],
+                filter_expr=E.and_(
+                    E.field("asset_kind") == E.scalar(asset_kind),
+                    E.field("asset_key") == E.scalar(asset_key),
+                ),
+                order_by=[("recorded_at", "descending")],
+                limit=1,
+            )
+            if table.num_rows == 0:
+                return None
+            value = table.column("target")[0].as_py()
+            return str(value) if value is not None else None
         query = (
             exp.select(exp.Column(this=exp.to_identifier("target")))
             .from_(table_expr_from_ref("build.asset_version_events"))
@@ -1062,6 +1286,45 @@ class AssetTracking:
         RunEnvironmentRecord | None
             Environment record, or None if not found.
         """
+        entry = self._manifest_entry_for_table("build.run_environments")
+        if entry is not None:
+            columns = [
+                "run_id",
+                "python_version",
+                "os_name",
+                "os_version",
+                "tool_versions",
+                "config_hash",
+                "git_dirty",
+                "captured_at",
+            ]
+            table = self._arrow_scan_table(
+                entry=entry,
+                columns=columns,
+                filter_expr=E.field("run_id") == E.scalar(run_id),
+                order_by=None,
+                limit=1,
+            )
+            if table.num_rows == 0:
+                return None
+            row = table.slice(0, 1).to_pylist()[0]
+            tool_versions_payload = row.get("tool_versions")
+            tool_versions_raw = (
+                decode_json_dict(tool_versions_payload) if tool_versions_payload else None
+            )
+            tool_versions: dict[str, str] | None = None
+            if tool_versions_raw:
+                tool_versions = {k: str(v) for k, v in tool_versions_raw.items()}
+            return RunEnvironmentRecord(
+                run_id=str(row.get("run_id")),
+                python_version=str(row.get("python_version")),
+                os_name=str(row.get("os_name")),
+                os_version=str(row.get("os_version")),
+                tool_versions=tool_versions,
+                config_hash=str(row.get("config_hash")) if row.get("config_hash") else None,
+                git_dirty=bool(row.get("git_dirty")),
+                captured_at=row.get("captured_at"),
+            )
         query = (
             exp.select(
                 exp.Column(this=exp.to_identifier("run_id")),

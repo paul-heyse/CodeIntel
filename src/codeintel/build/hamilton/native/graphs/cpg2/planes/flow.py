@@ -128,31 +128,25 @@ def cpg2_nodes__cfg_blocks(
         join_keys=["function_goid_h128"],
     )
     goid_ctx = goid_precheck.good
-    block_plan = (
-        Plan.table(normalized_blocks)
-        .project(
-            {
-                "function_goid_h128": E.cast(
-                    E.field("function_goid_h128"),
-                    "decimal128(38,0)",
-                ),
-                "block_idx": E.field("block_idx"),
-                "file_path": E.field("file_path"),
-            }
-        )
+    block_plan = Plan.table(normalized_blocks).project(
+        {
+            "function_goid_h128": E.cast(
+                E.field("function_goid_h128"),
+                "decimal128(38,0)",
+            ),
+            "block_idx": E.field("block_idx"),
+            "file_path": E.field("file_path"),
+        }
     )
-    goid_plan = (
-        Plan.table(goid_ctx)
-        .project(
-            {
-                "function_goid_h128": E.cast(
-                    E.field("function_goid_h128"),
-                    "decimal128(38,0)",
-                ),
-                "repo": E.cast(E.field("repo"), "string"),
-                "commit": E.cast(E.field("commit"), "string"),
-            }
-        )
+    goid_plan = Plan.table(goid_ctx).project(
+        {
+            "function_goid_h128": E.cast(
+                E.field("function_goid_h128"),
+                "decimal128(38,0)",
+            ),
+            "repo": E.cast(E.field("repo"), "string"),
+            "commit": E.cast(E.field("commit"), "string"),
+        }
     )
     joined = block_plan.hash_join(
         right=goid_plan,
@@ -171,19 +165,16 @@ def cpg2_nodes__cfg_blocks(
         include_source_pk_json=True,
     )
     anchors = normalize_table_for_join(anchors)
-    anchor_plan = (
-        Plan.table(anchors)
-        .project(
-            {
-                "function_goid_h128": E.cast(
-                    E.field("function_goid_h128"),
-                    "decimal128(38,0)",
-                ),
-                "block_idx": E.field("block_idx"),
-                "cpg_node_id": E.field("cpg_node_id"),
-                "source_pk_json": E.field("source_pk_json"),
-            }
-        )
+    anchor_plan = Plan.table(anchors).project(
+        {
+            "function_goid_h128": E.cast(
+                E.field("function_goid_h128"),
+                "decimal128(38,0)",
+            ),
+            "block_idx": E.field("block_idx"),
+            "cpg_node_id": E.field("cpg_node_id"),
+            "source_pk_json": E.field("source_pk_json"),
+        }
     )
     joined = joined.hash_join(
         right=anchor_plan,
@@ -268,9 +259,9 @@ def cpg2_edges__cfg_edges(
     normalized_edges = _rename_if_present(normalized_edges, {"edge_kind": "cfg_edge_kind"})
     lookup = _cfg_block_lookup(cfg_blocks, goids)
     anchors = _cfg_block_anchor(cfg_blocks)
-    joined = _join_block_lookup(normalized_edges, lookup)
+    joined = _join_block_lookup(normalized_edges, lookup, table_key="graph.cfg_edges")
     joined = normalize_table_for_join(joined)
-    joined = _join_block_anchors(joined, anchors)
+    joined = _join_block_anchors(joined, anchors, table_key="graph.cfg_edges")
     rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path", result_type=pa.string())
     joined = joined.append_column("rel_path", rel_path)
     repo = _coalesce_rel_path(joined, "src_repo", "dst_repo", result_type=pa.string())
@@ -307,7 +298,10 @@ def cpg2_edges__cfg_edges(
         ]
         if "cfg_edge_kind" in joined.column_names:
             sort_keys.append(("cfg_edge_kind", "ascending"))
-        joined = joined.take(stable_sort_indices(joined, sort_keys=sort_keys))
+        joined = materialize_plan(
+            Plan.table(joined).order_by(sort_keys=sort_keys),
+            use_threads=True,
+        )
     selected = joined.select(
         [
             "repo",
@@ -353,9 +347,9 @@ def cpg2_edges__dfg_edges(
     normalized_edges = _rename_if_present(normalized_edges, {"edge_kind": "dfg_edge_kind"})
     lookup = _cfg_block_lookup(cfg_blocks, goids)
     anchors = _cfg_block_anchor(cfg_blocks)
-    joined = _join_block_lookup(normalized_edges, lookup)
+    joined = _join_block_lookup(normalized_edges, lookup, table_key="graph.dfg_edges")
     joined = normalize_table_for_join(joined)
-    joined = _join_block_anchors(joined, anchors)
+    joined = _join_block_anchors(joined, anchors, table_key="graph.dfg_edges")
     rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path", result_type=pa.string())
     joined = joined.append_column("rel_path", rel_path)
     repo = _coalesce_rel_path(joined, "src_repo", "dst_repo", result_type=pa.string())
@@ -401,7 +395,10 @@ def cpg2_edges__dfg_edges(
                 if name in joined.column_names
             ]
         )
-        joined = joined.take(stable_sort_indices(joined, sort_keys=sort_keys))
+        joined = materialize_plan(
+            Plan.table(joined).order_by(sort_keys=sort_keys),
+            use_threads=True,
+        )
     selected = joined.select(
         [
             "repo",
@@ -447,9 +444,9 @@ def cpg2_edges__cdg_edges(
     normalized_edges = _rename_if_present(normalized_edges, {"edge_kind": "cdg_edge_kind"})
     lookup = _cfg_block_lookup(cfg_blocks, goids)
     anchors = _cfg_block_anchor(cfg_blocks)
-    joined = _join_block_lookup(normalized_edges, lookup)
+    joined = _join_block_lookup(normalized_edges, lookup, table_key="graph.cdg_edges")
     joined = normalize_table_for_join(joined)
-    joined = _join_block_anchors(joined, anchors)
+    joined = _join_block_anchors(joined, anchors, table_key="graph.cdg_edges")
     rel_path = _coalesce_rel_path(joined, "src_rel_path", "dst_rel_path", result_type=pa.string())
     joined = joined.append_column("rel_path", rel_path)
     repo = _coalesce_rel_path(joined, "src_repo", "dst_repo", result_type=pa.string())
@@ -493,7 +490,10 @@ def cpg2_edges__cdg_edges(
                 if name in joined.column_names
             ]
         )
-        joined = joined.take(stable_sort_indices(joined, sort_keys=sort_keys))
+        joined = materialize_plan(
+            Plan.table(joined).order_by(sort_keys=sort_keys),
+            use_threads=True,
+        )
     selected = joined.select(
         [
             "repo",
@@ -579,32 +579,26 @@ def _cfg_block_lookup(cfg_blocks: pa.Table, goids: pa.Table) -> pa.Table:
         join_keys=["function_goid_h128"],
     )
     goid_ctx = goid_precheck.good
-    block_plan = (
-        Plan.table(normalized_blocks)
-        .project(
-            {
-                "function_goid_h128": E.cast(
-                    E.field("function_goid_h128"),
-                    "decimal128(38,0)",
-                ),
-                "block_id": E.cast(E.field("block_id"), "string"),
-                "block_idx": E.field("block_idx"),
-                "file_path": E.field("file_path"),
-            }
-        )
+    block_plan = Plan.table(normalized_blocks).project(
+        {
+            "function_goid_h128": E.cast(
+                E.field("function_goid_h128"),
+                "decimal128(38,0)",
+            ),
+            "block_id": E.cast(E.field("block_id"), "string"),
+            "block_idx": E.field("block_idx"),
+            "file_path": E.field("file_path"),
+        }
     )
-    goid_plan = (
-        Plan.table(goid_ctx)
-        .project(
-            {
-                "function_goid_h128": E.cast(
-                    E.field("function_goid_h128"),
-                    "decimal128(38,0)",
-                ),
-                "repo": E.cast(E.field("repo"), "string"),
-                "commit": E.cast(E.field("commit"), "string"),
-            }
-        )
+    goid_plan = Plan.table(goid_ctx).project(
+        {
+            "function_goid_h128": E.cast(
+                E.field("function_goid_h128"),
+                "decimal128(38,0)",
+            ),
+            "repo": E.cast(E.field("repo"), "string"),
+            "commit": E.cast(E.field("commit"), "string"),
+        }
     )
     joined = block_plan.hash_join(
         right=goid_plan,
@@ -658,9 +652,23 @@ def _normalize_flow_edges(edges: pa.Table) -> pa.Table:
     )
 
 
-def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
+def _join_block_lookup(edges: pa.Table, lookup: pa.Table, *, table_key: str) -> pa.Table:
     if lookup.num_rows == 0:
         return edges
+    edge_keys = ["function_goid_h128", "src_block_id", "dst_block_id"]
+    edge_precheck = finalize_join_keys(
+        edges,
+        required_non_null=edge_keys,
+        key_fields=edge_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        edge_precheck,
+        table_key=table_key,
+        target_name=CPG_TARGET_NAME,
+        join_keys=edge_keys,
+    )
+    edges = edge_precheck.good
     src_lookup = rename_table_columns(
         lookup,
         {
@@ -692,11 +700,7 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
             edge_project[name] = E.cast(E.field(name), "string")
         else:
             edge_project[name] = E.field(name)
-    edge_plan = (
-        Plan.table(edges)
-        .project(edge_project)
-        .filter(E.and_(E.is_valid("function_goid_h128"), E.is_valid("src_block_id")))
-    )
+    edge_plan = Plan.table(edges).project(edge_project)
     src_project = {
         "function_goid_h128": E.cast(E.field("function_goid_h128"), "decimal128(38,0)"),
         "src_block_id": E.cast(E.field("src_block_id"), "string"),
@@ -705,11 +709,7 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
         "src_repo": E.field("src_repo"),
         "src_commit": E.field("src_commit"),
     }
-    src_plan = (
-        Plan.table(src_lookup)
-        .project(src_project)
-        .filter(E.and_(E.is_valid("function_goid_h128"), E.is_valid("src_block_id")))
-    )
+    src_plan = Plan.table(src_lookup).project(src_project)
     joined = edge_plan.hash_join(
         right=src_plan,
         spec=HashJoinSpec(
@@ -720,7 +720,6 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
             right_output=["src_block_idx", "src_rel_path", "src_repo", "src_commit"],
         ),
     )
-    joined = joined.filter(E.and_(E.is_valid("function_goid_h128"), E.is_valid("dst_block_id")))
     dst_project = {
         "function_goid_h128": E.cast(E.field("function_goid_h128"), "decimal128(38,0)"),
         "dst_block_id": E.cast(E.field("dst_block_id"), "string"),
@@ -729,11 +728,7 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
         "dst_repo": E.field("dst_repo"),
         "dst_commit": E.field("dst_commit"),
     }
-    dst_plan = (
-        Plan.table(dst_lookup)
-        .project(dst_project)
-        .filter(E.and_(E.is_valid("function_goid_h128"), E.is_valid("dst_block_id")))
-    )
+    dst_plan = Plan.table(dst_lookup).project(dst_project)
     joined = joined.hash_join(
         right=dst_plan,
         spec=HashJoinSpec(
@@ -753,11 +748,25 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
     return materialize_plan(joined, use_threads=True)
 
 
-def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
+def _join_block_anchors(edges: pa.Table, anchors: pa.Table, *, table_key: str) -> pa.Table:
     if anchors.num_rows == 0:
         return edges
     if "src_block_idx" not in edges.column_names or "dst_block_idx" not in edges.column_names:
         return edges
+    edge_keys = ["function_goid_h128", "src_block_idx", "dst_block_idx"]
+    edge_precheck = finalize_join_keys(
+        edges,
+        required_non_null=edge_keys,
+        key_fields=edge_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        edge_precheck,
+        table_key=table_key,
+        target_name=CPG_TARGET_NAME,
+        join_keys=edge_keys,
+    )
+    edges = edge_precheck.good
     src_anchor = rename_table_columns(
         anchors,
         {"block_idx": "src_block_idx", "cpg_node_id": "src_cpg_node_id"},
@@ -777,21 +786,13 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
             edge_project[name] = E.cast(E.field(name), "int64")
         else:
             edge_project[name] = E.field(name)
-    edge_plan = (
-        Plan.table(edges)
-        .project(edge_project)
-        .filter(E.and_(E.is_valid("function_goid_h128"), E.is_valid("src_block_idx")))
-    )
+    edge_plan = Plan.table(edges).project(edge_project)
     src_project = {
         "function_goid_h128": E.cast(E.field("function_goid_h128"), "decimal128(38,0)"),
         "src_block_idx": E.cast(E.field("src_block_idx"), "int64"),
         "src_cpg_node_id": E.field("src_cpg_node_id"),
     }
-    src_plan = (
-        Plan.table(src_anchor)
-        .project(src_project)
-        .filter(E.and_(E.is_valid("function_goid_h128"), E.is_valid("src_block_idx")))
-    )
+    src_plan = Plan.table(src_anchor).project(src_project)
     joined = edge_plan.hash_join(
         right=src_plan,
         spec=HashJoinSpec(
@@ -802,17 +803,12 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
             right_output=["src_cpg_node_id"],
         ),
     )
-    joined = joined.filter(E.and_(E.is_valid("function_goid_h128"), E.is_valid("dst_block_idx")))
     dst_project = {
         "function_goid_h128": E.cast(E.field("function_goid_h128"), "decimal128(38,0)"),
         "dst_block_idx": E.cast(E.field("dst_block_idx"), "int64"),
         "dst_cpg_node_id": E.field("dst_cpg_node_id"),
     }
-    dst_plan = (
-        Plan.table(dst_anchor)
-        .project(dst_project)
-        .filter(E.and_(E.is_valid("function_goid_h128"), E.is_valid("dst_block_idx")))
-    )
+    dst_plan = Plan.table(dst_anchor).project(dst_project)
     joined = joined.hash_join(
         right=dst_plan,
         spec=HashJoinSpec(

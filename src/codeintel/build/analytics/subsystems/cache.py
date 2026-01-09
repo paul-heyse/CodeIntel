@@ -10,7 +10,7 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.schemas.row_models import columns_for_table_key
 
@@ -44,6 +44,32 @@ def build_subsystem_profile_cache_frame(
     subsystems = _filter_table_by_snapshot(subsystems_frame, snapshot)
     metrics = _filter_table_by_snapshot(subsystem_graph_metrics_frame, snapshot)
     join_keys = ["repo", "commit", "subsystem_id"]
+    subsystems_precheck = finalize_join_keys(
+        subsystems,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        subsystems_precheck,
+        table_key="analytics.subsystems",
+        target_name=None,
+        join_keys=join_keys,
+    )
+    subsystems = subsystems_precheck.good
+    metrics_precheck = finalize_join_keys(
+        metrics,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        metrics_precheck,
+        table_key="analytics.subsystem_graph_metrics",
+        target_name=None,
+        join_keys=join_keys,
+    )
+    metrics = metrics_precheck.good
     left_columns = list(subsystems.column_names)
     right_columns = list(metrics.column_names)
     left_project = {name: E.field(name) for name in left_columns}
@@ -56,17 +82,11 @@ def build_subsystem_profile_cache_frame(
     right_output = [
         name for name in right_columns if name not in join_keys and name not in left_columns
     ]
-    key_filter = E.and_(
-        E.is_valid("repo"),
-        E.is_valid("commit"),
-        E.is_valid("subsystem_id"),
-    )
     joined_plan = (
         Plan.table(subsystems)
         .project(left_project)
-        .filter(key_filter)
         .hash_join(
-            right=Plan.table(metrics).project(right_project).filter(key_filter),
+            right=Plan.table(metrics).project(right_project),
             spec=HashJoinSpec(
                 left_keys=join_keys,
                 right_keys=join_keys,
@@ -76,18 +96,14 @@ def build_subsystem_profile_cache_frame(
             ),
         )
     )
+    joined_plan = joined_plan.order_by(
+        sort_keys=[
+            ("repo", "ascending"),
+            ("commit", "ascending"),
+            ("subsystem_id", "ascending"),
+        ]
+    )
     joined = materialize_plan(joined_plan, use_threads=True)
-    if joined.num_rows > 0:
-        joined = joined.take(
-            stable_sort_indices(
-                joined,
-                sort_keys=[
-                    ("repo", "ascending"),
-                    ("commit", "ascending"),
-                    ("subsystem_id", "ascending"),
-                ],
-            )
-        )
     columns = _profile_cache_columns()
     return _ensure_columns(joined, columns)
 

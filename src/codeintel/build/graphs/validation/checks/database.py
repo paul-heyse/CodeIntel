@@ -9,19 +9,20 @@ Check classes implement CheckProtocol from core/validation.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 import pyarrow as pa
 
-from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_table
+from codeintel.build.graphs.engine.datasets import (
+    SnapshotScanRequest,
+    scan_snapshot_reader,
+)
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.hamilton.native.graphs.cpg.bytecode import instruction_cpg_id
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import FilterExprContext, is_valid_mask
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.query_results import coerce_int, coerce_str
@@ -346,14 +347,13 @@ class BytecodeLoadGlobalBindingCheck(GraphCheckBase):
 # =============================================================================
 
 
-def _scan_snapshot_table(request: SnapshotScanRequest) -> pa.Table | None:
-    table = scan_snapshot_table(request)
-    if table is None:
-        return None
-    if request.repo is None and request.commit is None:
-        return table
-    context = FilterExprContext(repo=request.repo, commit=request.commit)
-    return context.apply(table)
+def _scan_snapshot_reader(request: SnapshotScanRequest) -> pa.RecordBatchReader | None:
+    return scan_snapshot_reader(request)
+
+
+def _iter_rows_from_reader(reader: pa.RecordBatchReader) -> Iterator[dict[str, object]]:
+    for batch in reader:
+        yield from iter_rows(batch)
 
 
 def _function_span_resolver(spans: Sequence[FunctionSpan]) -> SpanResolver[int]:
@@ -363,9 +363,9 @@ def _function_span_resolver(spans: Sequence[FunctionSpan]) -> SpanResolver[int]:
     return resolver
 
 
-def _function_counts_by_path(ast_table: pa.Table) -> dict[str, int]:
+def _function_counts_by_path(rows: Iterable[Mapping[str, object]]) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for row in iter_rows(ast_table):
+    for row in rows:
         if row.get("node_type") not in {"FunctionDef", "AsyncFunctionDef"}:
             continue
         path = row.get("path")
@@ -375,9 +375,9 @@ def _function_counts_by_path(ast_table: pa.Table) -> dict[str, int]:
     return counts
 
 
-def _goid_counts_by_path(goids_table: pa.Table) -> dict[str, int]:
+def _goid_counts_by_path(rows: Iterable[Mapping[str, object]]) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for row in iter_rows(goids_table):
+    for row in rows:
         if row.get("kind") not in {"function", "method"}:
             continue
         path = row.get("rel_path")
@@ -420,7 +420,7 @@ def _warn_missing_function_goids_impl(
     """
     if dataset_root_dir is None:
         return []
-    ast_table = _scan_snapshot_table(
+    ast_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.ast_nodes",
@@ -430,9 +430,9 @@ def _warn_missing_function_goids_impl(
             commit=commit,
         )
     )
-    if ast_table is None:
+    if ast_reader is None:
         return []
-    goids_table = _scan_snapshot_table(
+    goids_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.goids",
@@ -442,10 +442,10 @@ def _warn_missing_function_goids_impl(
             commit=commit,
         )
     )
-    if goids_table is None:
+    if goids_reader is None:
         return []
-    function_counts = _function_counts_by_path(ast_table)
-    goid_counts = _goid_counts_by_path(goids_table)
+    function_counts = _function_counts_by_path(_iter_rows_from_reader(ast_reader))
+    goid_counts = _goid_counts_by_path(_iter_rows_from_reader(goids_reader))
     rows = _missing_function_goid_rows(function_counts, goid_counts)
 
     if not rows:
@@ -489,7 +489,7 @@ def _warn_callsite_span_mismatches_impl(
     span_resolver = _function_span_resolver(catalog.function_spans)
     if dataset_root_dir is None:
         return []
-    table = _scan_snapshot_table(
+    reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="graph.call_graph_edges",
@@ -499,11 +499,9 @@ def _warn_callsite_span_mismatches_impl(
             commit=commit,
         )
     )
-    if table is None:
+    if reader is None:
         return []
-    if "callsite_line" in table.column_names:
-        table = safe_filter(table, is_valid_mask(table["callsite_line"]))
-    rows = list(iter_rows(table))
+    rows = [row for row in _iter_rows_from_reader(reader) if row.get("callsite_line") is not None]
 
     mismatches = []
     for row in rows:
@@ -577,7 +575,7 @@ def _warn_orphan_modules_impl(
     """
     if dataset_root_dir is None:
         return []
-    modules_table = _scan_snapshot_table(
+    modules_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.modules",
@@ -587,7 +585,7 @@ def _warn_orphan_modules_impl(
             commit=commit,
         )
     )
-    goids_table = _scan_snapshot_table(
+    goids_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.goids",
@@ -597,7 +595,7 @@ def _warn_orphan_modules_impl(
             commit=commit,
         )
     )
-    if modules_table is None or goids_table is None:
+    if modules_reader is None or goids_reader is None:
         if catalog.module_by_path:
             rows = [(path,) for path in catalog.module_by_path]
             module_count = 0
@@ -605,7 +603,7 @@ def _warn_orphan_modules_impl(
             return []
     else:
         module_goid_counts: dict[str, int] = {}
-        for row in iter_rows(goids_table):
+        for row in _iter_rows_from_reader(goids_reader):
             if row.get("kind") != "module":
                 continue
             rel_path = row.get("rel_path")
@@ -615,7 +613,7 @@ def _warn_orphan_modules_impl(
 
         module_paths = [
             coerce_str(row.get("path"), ctx="orphan_modules.path")
-            for row in iter_rows(modules_table)
+            for row in _iter_rows_from_reader(modules_reader)
             if row.get("path") is not None
         ]
         module_count = len(module_paths)
@@ -669,7 +667,7 @@ def _warn_missing_symtable_resolution_edges_impl(
 ) -> list[dict[str, object]]:
     if dataset_root_dir is None:
         return []
-    bindings_table = _scan_snapshot_table(
+    bindings_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.py_sym_bindings",
@@ -679,7 +677,7 @@ def _warn_missing_symtable_resolution_edges_impl(
             commit=commit,
         )
     )
-    edges_table = _scan_snapshot_table(
+    edges_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.py_sym_resolution_edges",
@@ -689,10 +687,10 @@ def _warn_missing_symtable_resolution_edges_impl(
             commit=commit,
         )
     )
-    if bindings_table is None or edges_table is None:
+    if bindings_reader is None or edges_reader is None:
         return []
-    edge_keys = _symtable_resolution_edge_keys(edges_table)
-    missing = _missing_symtable_resolution_rows(bindings_table, edge_keys)
+    edge_keys = _symtable_resolution_edge_keys(_iter_rows_from_reader(edges_reader))
+    missing = _missing_symtable_resolution_rows(_iter_rows_from_reader(bindings_reader), edge_keys)
     if not missing:
         return []
     log.warning(
@@ -702,9 +700,11 @@ def _warn_missing_symtable_resolution_edges_impl(
     return _symtable_resolution_findings(missing, repo=repo, commit=commit)
 
 
-def _symtable_resolution_edge_keys(edges_table: pa.Table) -> set[tuple[str, str]]:
+def _symtable_resolution_edge_keys(
+    edges_rows: Iterable[Mapping[str, object]],
+) -> set[tuple[str, str]]:
     edge_keys: set[tuple[str, str]] = set()
-    for row in iter_rows(edges_table):
+    for row in edges_rows:
         rel_path = row.get("rel_path")
         src_binding_id = row.get("src_binding_id")
         if isinstance(rel_path, str) and isinstance(src_binding_id, str):
@@ -713,12 +713,12 @@ def _symtable_resolution_edge_keys(edges_table: pa.Table) -> set[tuple[str, str]
 
 
 def _missing_symtable_resolution_rows(
-    bindings_table: pa.Table,
+    bindings_rows: Iterable[Mapping[str, object]],
     edge_keys: set[tuple[str, str]],
 ) -> list[dict[str, object]]:
     ref_kinds = {"global_ref", "nonlocal_ref", "free_ref"}
     missing: list[dict[str, object]] = []
-    for row in iter_rows(bindings_table):
+    for row in bindings_rows:
         if row.get("binding_kind") not in ref_kinds:
             continue
         rel_path = row.get("rel_path")
@@ -727,7 +727,7 @@ def _missing_symtable_resolution_rows(
             continue
         if (rel_path, binding_id) in edge_keys:
             continue
-        missing.append(row)
+        missing.append(dict(row))
     return missing
 
 
@@ -774,7 +774,7 @@ def _warn_symtable_freevar_mismatch_impl(
 ) -> list[dict[str, object]]:
     if dataset_root_dir is None:
         return []
-    scopes_table = _scan_snapshot_table(
+    scopes_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.py_sym_scopes",
@@ -784,7 +784,7 @@ def _warn_symtable_freevar_mismatch_impl(
             commit=commit,
         )
     )
-    partitions_table = _scan_snapshot_table(
+    partitions_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.py_sym_function_partitions",
@@ -794,7 +794,7 @@ def _warn_symtable_freevar_mismatch_impl(
             commit=commit,
         )
     )
-    code_units_table = _scan_snapshot_table(
+    code_units_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.py_bc_code_units",
@@ -804,12 +804,12 @@ def _warn_symtable_freevar_mismatch_impl(
             commit=commit,
         )
     )
-    if scopes_table is None or partitions_table is None or code_units_table is None:
+    if scopes_reader is None or partitions_reader is None or code_units_reader is None:
         return []
-    scope_by_key = _scope_qualpath_map(scopes_table)
-    freevars_by_unit = _freevars_by_unit(code_units_table)
+    scope_by_key = _scope_qualpath_map(_iter_rows_from_reader(scopes_reader))
+    freevars_by_unit = _freevars_by_unit(_iter_rows_from_reader(code_units_reader))
     mismatches = _freevar_mismatches(
-        partitions_table,
+        _iter_rows_from_reader(partitions_reader),
         scope_by_key=scope_by_key,
         freevars_by_unit=freevars_by_unit,
         repo=repo,
@@ -820,9 +820,11 @@ def _warn_symtable_freevar_mismatch_impl(
     return mismatches
 
 
-def _scope_qualpath_map(scopes_table: pa.Table) -> dict[tuple[str, str], str]:
+def _scope_qualpath_map(
+    scopes_rows: Iterable[Mapping[str, object]],
+) -> dict[tuple[str, str], str]:
     scope_by_key: dict[tuple[str, str], str] = {}
-    for row in iter_rows(scopes_table):
+    for row in scopes_rows:
         rel_path = row.get("rel_path")
         scope_id = row.get("scope_id")
         qualpath = row.get("qualpath")
@@ -831,9 +833,11 @@ def _scope_qualpath_map(scopes_table: pa.Table) -> dict[tuple[str, str], str]:
     return scope_by_key
 
 
-def _freevars_by_unit(code_units_table: pa.Table) -> dict[tuple[str, str], list[str]]:
+def _freevars_by_unit(
+    code_unit_rows: Iterable[Mapping[str, object]],
+) -> dict[tuple[str, str], list[str]]:
     freevars_by_unit: dict[tuple[str, str], list[str]] = {}
-    for row in iter_rows(code_units_table):
+    for row in code_unit_rows:
         rel_path = row.get("rel_path")
         qualpath = row.get("qualpath")
         freevars = row.get("freevars")
@@ -846,7 +850,7 @@ def _freevars_by_unit(code_units_table: pa.Table) -> dict[tuple[str, str], list[
 
 
 def _freevar_mismatches(
-    partitions_table: pa.Table,
+    partition_rows: Iterable[Mapping[str, object]],
     *,
     scope_by_key: dict[tuple[str, str], str],
     freevars_by_unit: dict[tuple[str, str], list[str]],
@@ -854,7 +858,7 @@ def _freevar_mismatches(
     commit: str,
 ) -> list[dict[str, object]]:
     mismatches: list[dict[str, object]] = []
-    for row in iter_rows(partitions_table):
+    for row in partition_rows:
         rel_path = row.get("rel_path")
         scope_id = row.get("scope_id")
         frees = row.get("frees")
@@ -898,7 +902,7 @@ def _warn_missing_bytecode_blocks_impl(
 ) -> list[dict[str, object]]:
     if dataset_root_dir is None:
         return []
-    edges_table = _scan_snapshot_table(
+    edges_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.py_bc_cfg_edges",
@@ -908,7 +912,7 @@ def _warn_missing_bytecode_blocks_impl(
             commit=commit,
         )
     )
-    blocks_table = _scan_snapshot_table(
+    blocks_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.py_bc_blocks",
@@ -918,7 +922,7 @@ def _warn_missing_bytecode_blocks_impl(
             commit=commit,
         )
     )
-    if edges_table is None or blocks_table is None:
+    if edges_reader is None or blocks_reader is None:
         return []
     block_keys = {
         (
@@ -926,10 +930,10 @@ def _warn_missing_bytecode_blocks_impl(
             coerce_str(row.get("code_unit_id"), ctx="bytecode_cfg_blocks.code_unit_id"),
             coerce_str(row.get("block_id"), ctx="bytecode_cfg_blocks.block_id"),
         )
-        for row in iter_rows(blocks_table)
+        for row in _iter_rows_from_reader(blocks_reader)
     }
     missing: list[dict[str, object]] = []
-    for row in iter_rows(edges_table):
+    for row in _iter_rows_from_reader(edges_reader):
         rel_path = coerce_str(row.get("rel_path"), ctx="bytecode_cfg_edges.rel_path")
         code_unit_id = coerce_str(row.get("code_unit_id"), ctx="bytecode_cfg_edges.code_unit_id")
         src_block = coerce_str(row.get("src_block_id"), ctx="bytecode_cfg_edges.src_block_id")
@@ -969,7 +973,7 @@ def _warn_defuse_binding_space_mismatch_impl(
 ) -> list[dict[str, object]]:
     if dataset_root_dir is None:
         return []
-    edges_table = _scan_snapshot_table(
+    edges_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="graph.cpg_edges",
@@ -979,7 +983,7 @@ def _warn_defuse_binding_space_mismatch_impl(
             commit=commit,
         )
     )
-    if edges_table is None:
+    if edges_reader is None:
         return []
     expected = {
         "local": {"local", "param"},
@@ -987,7 +991,7 @@ def _warn_defuse_binding_space_mismatch_impl(
         "free": {"free_ref", "nonlocal_ref"},
     }
     mismatches: list[dict[str, object]] = []
-    for row in iter_rows(edges_table):
+    for row in _iter_rows_from_reader(edges_reader):
         edge_kind = row.get("edge_kind")
         if edge_kind not in {"DEFINES_BINDING", "USES_BINDING"}:
             continue
@@ -1052,7 +1056,7 @@ def _warn_missing_defuse_binding_edges_impl(
 ) -> list[dict[str, object]]:
     if request.dataset_root_dir is None:
         return []
-    events_table = _scan_snapshot_table(
+    events_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=request.dataset_root_dir,
             table_key="core.py_bc_defuse_events",
@@ -1070,7 +1074,7 @@ def _warn_missing_defuse_binding_edges_impl(
             commit=request.commit,
         )
     )
-    edges_table = _scan_snapshot_table(
+    edges_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=request.dataset_root_dir,
             table_key="graph.cpg_edges",
@@ -1080,11 +1084,11 @@ def _warn_missing_defuse_binding_edges_impl(
             commit=request.commit,
         )
     )
-    if events_table is None or edges_table is None:
+    if events_reader is None or edges_reader is None:
         return []
-    edges_by_src = _defuse_edges_by_source(list(iter_rows(edges_table)))
+    edges_by_src = _defuse_edges_by_source(list(_iter_rows_from_reader(edges_reader)))
     missing = _missing_defuse_binding_edges(
-        list(iter_rows(events_table)),
+        list(_iter_rows_from_reader(events_reader)),
         edges_by_src=edges_by_src,
         context=_DefuseBindingEventContext(
             repo=request.repo,

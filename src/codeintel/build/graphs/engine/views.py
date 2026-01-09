@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
@@ -22,6 +23,9 @@ from codeintel.build.graphs.rx.policies import weight_policy_for_kind
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 log = logging.getLogger(__name__)
 

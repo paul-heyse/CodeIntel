@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, Protocol
 
@@ -15,6 +15,8 @@ from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import pyarrow.dataset as ds
 
     from codeintel.core.columnar.streaming import DatasetScanOptions
@@ -310,6 +312,8 @@ def materialize_plan(
         Plan to materialize.
     use_threads
         Whether to allow compute parallelism.
+    combine_chunks
+        Whether to combine chunks after materialization.
 
     Returns
     -------
@@ -320,14 +324,21 @@ def materialize_plan(
     return normalize_table_for_compute(reader_to_table(reader), combine_chunks=combine_chunks)
 
 
+@dataclass(frozen=True, slots=True)
+class ScanPlanOptions:
+    """Options for building scan plans."""
+
+    columns: Sequence[str] | Mapping[str, pc.Expression] | None = None
+    filter_expr: pc.Expression | None = None
+    implicit_ordering: bool | None = None
+    require_sequenced_output: bool | None = None
+    order_by: Sequence[tuple[str, str]] | None = None
+
+
 def build_scan_plan(
     dataset: ds.Dataset,
     *,
-    columns: Sequence[str] | Mapping[str, pc.Expression] | None,
-    filter_expr: pc.Expression | None,
-    implicit_ordering: bool | None = None,
-    require_sequenced_output: bool | None = None,
-    order_by: Sequence[tuple[str, str]] | None = None,
+    options: ScanPlanOptions | None = None,
 ) -> Plan:
     """Return a scan plan with explicit project/filter nodes.
 
@@ -335,37 +346,30 @@ def build_scan_plan(
     ----------
     dataset
         Dataset to scan.
-    columns
-        Projection columns or expressions for pushdown and project nodes.
-    filter_expr
-        Filter expression to apply via scan pushdown and filter node.
-    implicit_ordering
-        Whether to request implicit ordering from the scan node.
-    require_sequenced_output
-        Whether to require sequenced output batches from the scan node.
-    order_by
-        Optional order-by keys to apply in the plan.
+    options
+        Scan plan options for projection, filtering, and ordering.
 
     Returns
     -------
     Plan
         Fused scan/project/filter plan for the dataset.
     """
+    resolved = options or ScanPlanOptions()
     plan = Plan.scan(
         dataset,
-        columns=columns,
-        filter_expr=filter_expr,
-        implicit_ordering=implicit_ordering,
-        require_sequenced_output=require_sequenced_output,
+        columns=resolved.columns,
+        filter_expr=resolved.filter_expr,
+        implicit_ordering=resolved.implicit_ordering,
+        require_sequenced_output=resolved.require_sequenced_output,
     )
-    projection = _projection_for_columns(columns)
+    projection = _projection_for_columns(resolved.columns)
     if projection is not None:
         expressions, names = projection
         plan = plan.project(expressions, names=names)
-    if filter_expr is not None:
-        plan = plan.filter(filter_expr)
-    if order_by is not None:
-        plan = plan.order_by(sort_keys=order_by)
+    if resolved.filter_expr is not None:
+        plan = plan.filter(resolved.filter_expr)
+    if resolved.order_by is not None:
+        plan = plan.order_by(sort_keys=resolved.order_by)
     return plan
 
 
@@ -390,35 +394,32 @@ class ExternalPlanSpec:
     metadata: Mapping[str, object] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class ExternalPlanRequest:
+    """Execution request for external plan runners."""
+
+    spec: ExternalPlanSpec
+    dataset: ds.Dataset | None
+    filter_expr: ds.Expression | None
+    columns: Sequence[str] | Mapping[str, pc.Expression] | None
+    scan_options: DatasetScanOptions | None
+    use_threads: bool | None
+
+
 class ExternalPlanRunner(Protocol):
     """Protocol for external plan runners."""
 
     def __call__(
         self,
         *,
-        spec: ExternalPlanSpec,
-        dataset: ds.Dataset | None,
-        filter_expr: ds.Expression | None,
-        columns: Sequence[str] | Mapping[str, pc.Expression] | None,
-        scan_options: DatasetScanOptions | None,
-        use_threads: bool | None,
+        request: ExternalPlanRequest,
     ) -> pa.RecordBatchReader:
         """Execute an external plan and return a record batch reader.
 
         Parameters
         ----------
-        spec
-            External plan specification.
-        dataset
-            Dataset for plan execution.
-        filter_expr
-            Optional dataset filter expression.
-        columns
-            Columns or expression mapping to project.
-        scan_options
-            Dataset scan options for execution.
-        use_threads
-            Whether to enable threaded execution.
+        request
+            External plan execution request.
 
         Returns
         -------
@@ -456,15 +457,7 @@ def list_external_plan_runners() -> tuple[str, ...]:
     return tuple(sorted(_EXTERNAL_PLAN_RUNNERS))
 
 
-def run_external_plan(
-    spec: ExternalPlanSpec,
-    *,
-    dataset: ds.Dataset | None,
-    filter_expr: ds.Expression | None,
-    columns: Sequence[str] | Mapping[str, pc.Expression] | None,
-    scan_options: DatasetScanOptions | None,
-    use_threads: bool | None,
-) -> pa.RecordBatchReader:
+def run_external_plan(request: ExternalPlanRequest) -> pa.RecordBatchReader:
     """Execute an external plan via the registered runner.
 
     Returns
@@ -479,19 +472,12 @@ def run_external_plan(
     TypeError
         Raised when the runner returns an unexpected type.
     """
-    normalized = _normalize_external_engine(spec.engine)
+    normalized = _normalize_external_engine(request.spec.engine)
     runner = _EXTERNAL_PLAN_RUNNERS.get(normalized)
     if runner is None:
         msg = f"No external plan runner registered for engine '{normalized}'."
         raise ValueError(msg)
-    reader = runner(
-        spec=spec,
-        dataset=dataset,
-        filter_expr=filter_expr,
-        columns=columns,
-        scan_options=scan_options,
-        use_threads=use_threads,
-    )
+    reader = runner(request=request)
     if isinstance(reader, pa.RecordBatchReader):
         return reader
     if isinstance(reader, pa.Table):
@@ -503,10 +489,12 @@ def run_external_plan(
 
 
 __all__ = [
+    "ExternalPlanRequest",
     "ExternalPlanRunner",
     "ExternalPlanSpec",
     "HashJoinSpec",
     "Plan",
+    "ScanPlanOptions",
     "build_scan_plan",
     "list_external_plan_runners",
     "materialize_plan",

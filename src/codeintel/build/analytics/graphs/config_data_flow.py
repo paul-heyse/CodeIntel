@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
@@ -26,6 +26,8 @@ from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
 

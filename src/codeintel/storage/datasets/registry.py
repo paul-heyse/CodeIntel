@@ -8,11 +8,12 @@ from typing import TYPE_CHECKING, cast
 
 from sqlglot import exp
 
-from codeintel.core.datasets.manifests import load_dataset_manifest
+from codeintel.core.datasets.manifests import dataset_manifest_path, load_dataset_manifest
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.provider import get_contract_for_table_key
+from codeintel.storage.datasets.manifest_index import DatasetManifestEntry
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import iter_tuples_from_arrow_reader
@@ -157,6 +158,44 @@ class DatasetRegistry:
             Manifest for the table key when available.
         """
         return self.dataset_manifests.get(table_key)
+
+    def manifest_entry_for_table(
+        self,
+        table_key: str,
+        *,
+        snapshot_id: str | None = None,
+    ) -> DatasetManifestEntry | None:
+        """Return a DatasetManifestEntry for a table when metadata is available.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key.
+        snapshot_id
+            Optional snapshot id override (defaults to manifest snapshot).
+
+        Returns
+        -------
+        DatasetManifestEntry | None
+            Manifest entry when the manifest and dataset root exist.
+        """
+        manifest = self.dataset_manifests.get(table_key)
+        if manifest is None:
+            return None
+        dataset_root_dir = self.dataset_root_dir
+        if dataset_root_dir is None:
+            return None
+        resolved_snapshot = snapshot_id or manifest.snapshot_id
+        if manifest.snapshot_id != resolved_snapshot:
+            return None
+        manifest_path = dataset_manifest_path(
+            dataset_root=dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=resolved_snapshot,
+        )
+        if not manifest_path.is_file():
+            return None
+        return DatasetManifestEntry(manifest=manifest, manifest_path=manifest_path)
 
     def with_dataset_root(self, dataset_root_dir: Path | None) -> DatasetRegistry:
         """Return a new registry with dataset root configured.

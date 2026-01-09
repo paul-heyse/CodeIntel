@@ -46,7 +46,6 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_reader,
     finalize_table,
 )
-from codeintel.build.tabular.kernels import stable_sort_indices
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_rows
@@ -1296,7 +1295,13 @@ def _dedupe_block_table(
     if table.num_rows == 0:
         return _empty_table(["function_goid_h128", output_column])
     try:
-        grouped = table.group_by(["function_goid_h128"]).aggregate([("block_id", "min")])
+        grouped = materialize_plan(
+            Plan.table(table).aggregate(
+                keys=[E.field("function_goid_h128")],
+                aggregates=[("block_id", "min", None, "block_id_min")],
+            ),
+            use_threads=True,
+        )
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _dedupe_block_rows(table, output_column=output_column)
     block_column = "block_id_min"
@@ -1305,23 +1310,34 @@ def _dedupe_block_table(
     return grouped.rename_columns(["function_goid_h128", output_column])
 
 
+def _table_from_rows(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    columns: Sequence[str],
+) -> pa.Table:
+    if not rows:
+        return pa.table({name: [] for name in columns})
+    data: dict[str, list[object]] = {name: [] for name in columns}
+    for row in rows:
+        for name in columns:
+            data[name].append(row.get(name))
+    return pa.table(data)
+
+
 def _dedupe_block_rows(table: pa.Table, *, output_column: str) -> pa.Table:
     seen: set[object] = set()
-    rows: list[dict[str, object]] = []
+    keys: list[object] = []
+    values: list[object] = []
     for row in _table_rows(table):
         key = row.get("function_goid_h128")
         if key in seen:
             continue
         seen.add(key)
-        rows.append(
-            {
-                "function_goid_h128": key,
-                output_column: row.get("block_id"),
-            }
-        )
-    if not rows:
+        keys.append(key)
+        values.append(row.get("block_id"))
+    if not keys:
         return _empty_table(["function_goid_h128", output_column])
-    return pa.Table.from_pylist(rows)
+    return pa.table({"function_goid_h128": keys, output_column: values})
 
 
 def _entry_blocks(cfg_blocks: pa.Table) -> pa.Table:
@@ -1394,19 +1410,11 @@ def _hash_join_block_targets(
             right_output=[output_column],
         ),
     )
-    table = materialize_plan(joined, use_threads=True)
-    if table.num_rows == 0:
-        return table
     sort_base = ("repo", "commit", "rel_path", "call_id", "callee_goid_h128")
-    sort_keys = [key for key in sort_base if key in table.column_names]
-    if not sort_keys:
-        return table
-    return table.take(
-        stable_sort_indices(
-            table,
-            sort_keys=[(key, "ascending") for key in sort_keys],
-        )
-    )
+    sort_keys = [key for key in sort_base if key in left_exprs]
+    if sort_keys:
+        joined = joined.order_by(sort_keys=[(key, "ascending") for key in sort_keys])
+    return materialize_plan(joined, use_threads=True)
 
 
 def _call_target_record(context: _CallTargetRecordContext) -> dict[str, object]:
@@ -2792,7 +2800,10 @@ def cpg_edges_arg_to_param(
     )
     if not candidates:
         return empty_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
-    candidate_table = pa.Table.from_pylist(candidates)
+    candidate_table = _table_from_rows(
+        candidates,
+        columns=("repo", "commit", "call_id", "candidates"),
+    )
     exploded = explode_edges(
         candidate_table,
         spec=ExplodeSpec(
@@ -2903,7 +2914,10 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
     )
     if not candidates:
         return empty_reader(CPG_RET_TO_CALL_EDGES_TABLE_KEY)
-    candidate_table = pa.Table.from_pylist(candidates)
+    candidate_table = _table_from_rows(
+        candidates,
+        columns=("repo", "commit", "call_id", "candidates"),
+    )
     exploded = explode_edges(
         candidate_table,
         spec=ExplodeSpec(

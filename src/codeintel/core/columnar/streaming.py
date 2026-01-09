@@ -313,13 +313,13 @@ def dataset_for_manifest(
     if manifest.files:
         paths = [str(dataset_dir / path) for path in manifest.files]
         dataset_kwargs = _dataset_kwargs(
-            format=parquet_format,
+            file_format=parquet_format,
             partitioning=partitioning,
             schema=schema,
         )
         return ds.dataset(paths, **dataset_kwargs)
     dataset_kwargs = _dataset_kwargs(
-        format=parquet_format,
+        file_format=parquet_format,
         partitioning=partitioning,
         schema=schema,
     )
@@ -345,7 +345,7 @@ def dataset_for_path(
     pyarrow.dataset.Dataset
         Dataset constructed for the directory path.
     """
-    dataset_kwargs = _dataset_kwargs(format="parquet", schema=schema)
+    dataset_kwargs = _dataset_kwargs(file_format="parquet", schema=schema)
     return ds.dataset(str(dataset_dir), **dataset_kwargs)
 
 
@@ -452,7 +452,7 @@ def scan_dataset_reader(
     if not dataset_dir.is_dir():
         return None
     try:
-        dataset = ds.dataset(str(dataset_dir), **_dataset_kwargs(format="parquet"))
+        dataset = ds.dataset(str(dataset_dir), **_dataset_kwargs(file_format="parquet"))
         resolved = options or DatasetScanOptions()
         scanner = build_scanner(dataset, options=resolved)
         return scanner.to_reader()
@@ -503,7 +503,7 @@ def scan_dataset_lazyframe(
                 row_index_name=row_index_name,
                 row_index_offset=row_index_offset,
             )
-        dataset = ds.dataset(str(dataset_dir), **_dataset_kwargs(format="parquet"))
+        dataset = ds.dataset(str(dataset_dir), **_dataset_kwargs(file_format="parquet"))
         return pl.scan_pyarrow_dataset(dataset, batch_size=resolved_batch_size)
     except (OSError, ValueError, pa.ArrowInvalid):
         return None
@@ -789,9 +789,7 @@ def _merge_scan_columns(
         merged.update(columns)
         return merged
     names = list(provenance_columns)
-    for name in columns:
-        if name not in provenance:
-            names.append(name)
+    names.extend(name for name in columns if name not in provenance)
     return names
 
 
@@ -804,12 +802,12 @@ def _dataset_discovery_kwargs() -> dict[str, object]:
 
 def _dataset_kwargs(
     *,
-    format: ds.FileFormat | None = None,
+    file_format: ds.FileFormat | None = None,
     partitioning: ds.Partitioning | str | None = None,
     schema: pa.Schema | None = None,
 ) -> dict[str, object]:
     kwargs: dict[str, object] = {
-        "format": format,
+        "format": file_format,
         "partitioning": partitioning,
         "schema": schema,
     }

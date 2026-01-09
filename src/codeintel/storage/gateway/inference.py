@@ -76,7 +76,7 @@ class InferenceGateway:
         self.core = CoreTables(self)
         self.docs = DocsViews(self)
         self.graph = GraphTables(self)
-        self.runs = PipelineRunTracking(self.con)
+        self.runs = PipelineRunTracking(self.con, datasets=self.datasets, config=self.config)
         self.schemas = SchemaCatalogTracking(self)
 
     def close(self) -> None:

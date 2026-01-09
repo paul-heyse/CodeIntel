@@ -29,7 +29,7 @@ from codeintel.core.columnar.masks import (
     filter_valid,
     is_valid_mask,
 )
-from codeintel.core.columnar.plan_ops import build_scan_plan
+from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
 from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.datasets.arrow_store import dataset_stats, scan_dataset
 from codeintel.core.datasets.paths import dataset_snapshot_dir
@@ -470,18 +470,19 @@ def _dataset_row_count(
     counter = getattr(dataset, "count_rows", None)
     if callable(counter):
         try:
-            if filter_expr is None:
-                return int(counter())
-            return int(counter(filter=filter_expr))
+            raw_count = counter() if filter_expr is None else counter(filter=filter_expr)
+            return _as_int(raw_count)
         except (pa.ArrowInvalid, pa.ArrowTypeError, OSError, ValueError):
             pass
     try:
         plan = build_scan_plan(
             dataset,
-            columns=None,
-            filter_expr=filter_expr,
-            implicit_ordering=True,
-            require_sequenced_output=True,
+            options=ScanPlanOptions(
+                columns=None,
+                filter_expr=filter_expr,
+                implicit_ordering=True,
+                require_sequenced_output=True,
+            ),
         )
         counted = plan.aggregate(
             keys=[],
@@ -493,8 +494,6 @@ def _dataset_row_count(
     if table.num_rows == 0 or "row_count" not in table.column_names:
         return None
     value = table.column("row_count")[0]
-    if isinstance(value, pa.Scalar):
-        return _as_int(value)
     return _as_int(value)
 
 
@@ -523,10 +522,12 @@ def _read_table(
     try:
         plan = build_scan_plan(
             dataset,
-            columns=list(columns) if columns is not None else None,
-            filter_expr=filter_expr,
-            implicit_ordering=True,
-            require_sequenced_output=True,
+            options=ScanPlanOptions(
+                columns=list(columns) if columns is not None else None,
+                filter_expr=filter_expr,
+                implicit_ordering=True,
+                require_sequenced_output=True,
+            ),
         )
         return plan.to_table(use_threads=True)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
@@ -727,10 +728,12 @@ def _count_non_positive_filtered(dataset: ds.Dataset, *, column: str) -> int | N
     try:
         plan = build_scan_plan(
             dataset,
-            columns=[column],
-            filter_expr=filter_expr,
-            implicit_ordering=True,
-            require_sequenced_output=True,
+            options=ScanPlanOptions(
+                columns=[column],
+                filter_expr=filter_expr,
+                implicit_ordering=True,
+                require_sequenced_output=True,
+            ),
         )
         result = plan.to_table(use_threads=True).num_rows
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):

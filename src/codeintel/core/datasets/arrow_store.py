@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -17,11 +17,17 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
+from codeintel.core.columnar.arrowdsl import (
+    ExecutionContext,
+    ExecutionPlan,
+    apply_deterministic_order,
+    run_pipeline,
+)
 from codeintel.core.columnar.compute_helpers import combine_table_chunks
 from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.kernels import stable_sort_indices
+from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.normalization import normalize_table_for_compute
-from codeintel.core.columnar.plan_ops import build_scan_plan
+from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
 from codeintel.core.columnar.readers import record_batch_reader_from_batches
 from codeintel.core.columnar.schema_metadata import decode_metadata, merge_metadata
 from codeintel.core.columnar.streaming import (
@@ -30,6 +36,7 @@ from codeintel.core.columnar.streaming import (
     dataset_for_manifest,
     dataset_for_path,
 )
+from codeintel.core.constants import DEFAULT_ARROW_USE_THREADS
 from codeintel.core.datasets.manifests import (
     dataset_manifest_path,
     read_dataset_manifest,
@@ -130,6 +137,7 @@ class ArrowDatasetWriteOptions:
     manifest_extras: Mapping[str, object] | None = None
     schema_metadata: Mapping[str, object] | None = None
     stable_sort_keys: tuple[str, ...] | None = None
+    combine_chunks: bool | None = None
     max_rows_per_file: int | None = None
     row_group_size: int | None = None
     data_page_size: int | None = None
@@ -194,13 +202,24 @@ def write_dataset(
     start = perf_counter()
     resolved = options or ArrowDatasetWriteOptions()
     stable_sort_keys = _resolve_stable_sort_keys(table_key, options=resolved)
-    if stable_sort_keys is not resolved.stable_sort_keys:
-        resolved = replace(resolved, stable_sort_keys=stable_sort_keys)
+    combine_chunks = _resolve_combine_chunks(table_key, options=resolved)
+    if (
+        stable_sort_keys is not resolved.stable_sort_keys
+        or combine_chunks is not resolved.combine_chunks
+    ):
+        resolved = replace(
+            resolved,
+            stable_sort_keys=stable_sort_keys,
+            combine_chunks=combine_chunks,
+        )
+    execution_ctx = _execution_context_for_write(table_key=table_key, options=resolved)
     configure_arrow_threading()
-    prepared = _apply_dictionary_options(data, resolved)
-    prepared = _apply_schema_metadata(prepared, resolved.schema_metadata)
-    prepared = _apply_stable_sort(prepared, sort_keys=resolved.stable_sort_keys)
-    prepared = _apply_chunk_consolidation(prepared)
+    prepared = _prepare_write_data(
+        data,
+        table_key=table_key,
+        options=resolved,
+        execution_ctx=execution_ctx,
+    )
     _validate_schema_metadata(prepared.schema, table_key=table_key)
     snapshot_dir = dataset_snapshot_dir(
         dataset_root,
@@ -463,10 +482,12 @@ def _plan_scan_reader(
     try:
         plan = build_scan_plan(
             dataset,
-            columns=options.projection_columns(),
-            filter_expr=options.filter_expression,
-            implicit_ordering=options.implicit_ordering,
-            require_sequenced_output=options.require_sequenced_output,
+            options=ScanPlanOptions(
+                columns=options.projection_columns(),
+                filter_expr=options.filter_expression,
+                implicit_ordering=options.implicit_ordering,
+                require_sequenced_output=options.require_sequenced_output,
+            ),
         )
         return plan.to_reader(use_threads=resolved_use_threads)
     except (
@@ -709,55 +730,95 @@ def _apply_schema_metadata(
     return data
 
 
-def _apply_stable_sort(
+def _execution_plan_for_input(data: ArrowDatasetInput) -> ExecutionPlan | None:
+    if isinstance(data, pa.Table):
+        return ExecutionPlan(inner=data)
+    if isinstance(data, pa.RecordBatchReader):
+        return ExecutionPlan(inner=lambda: reader_to_table(data))
+    return None
+
+
+def _requires_table_transform(
     data: ArrowDatasetInput,
     *,
-    sort_keys: Sequence[str] | None,
-) -> ArrowDatasetInput:
-    if not sort_keys:
-        return data
+    options: ArrowDatasetWriteOptions,
+    execution_ctx: ExecutionContext,
+) -> bool:
     if isinstance(data, pa.Table):
-        return _stable_sort_table(data, sort_keys=sort_keys)
-    if isinstance(data, pa.RecordBatchReader):
-        try:
-            table = reader_to_table(data)
-        except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
-            LOG.debug("Stable sort skipped for stream input")
-            return data
-        return _stable_sort_table(table, sort_keys=sort_keys)
-    return data
+        return True
+    if options.dictionary_encode or options.dictionary_encode_columns or options.unify_dictionaries:
+        return True
+    if options.stable_sort_keys and options.stable_sort_keys != ():
+        return True
+    if execution_ctx.determinism == "canonical":
+        return True
+    return execution_ctx.combine_chunks
 
 
-def _stable_sort_table(
+def _prepare_write_data(
+    data: ArrowDatasetInput,
+    *,
+    table_key: str,
+    options: ArrowDatasetWriteOptions,
+    execution_ctx: ExecutionContext,
+) -> ArrowDatasetInput:
+    prepared = _apply_schema_metadata(data, options.schema_metadata)
+    if not _requires_table_transform(prepared, options=options, execution_ctx=execution_ctx):
+        return prepared
+    plan = _execution_plan_for_input(prepared)
+    if plan is None:
+        msg = f"Unsupported write input for table {table_key}"
+        raise TypeError(msg)
+
+    def _apply_dictionary(table: pa.Table) -> pa.Table:
+        return cast("pa.Table", _apply_dictionary_options(table, options))
+
+    post: list[Callable[[pa.Table], pa.Table]] = [
+        _apply_dictionary,
+        lambda table: _apply_stable_sort(
+            table,
+            sort_keys=options.stable_sort_keys,
+            determinism=execution_ctx.determinism,
+        ),
+        lambda table: _apply_chunk_consolidation(
+            table,
+            combine_chunks=execution_ctx.combine_chunks,
+        ),
+    ]
+    return run_pipeline(plan=plan, post=post, ctx=execution_ctx)
+
+
+def _apply_stable_sort(
     table: pa.Table,
     *,
-    sort_keys: Sequence[str],
+    sort_keys: Sequence[str] | None,
+    determinism: DedupeTier,
 ) -> pa.Table:
-    if table.num_rows <= 1:
-        return table
+    if not sort_keys:
+        return apply_deterministic_order(
+            table,
+            sort_keys=(),
+            determinism=determinism,
+        )
     available = [key for key in sort_keys if key in table.column_names]
-    if not available:
-        return table
     resolved_keys: list[tuple[str, Literal["ascending", "descending"]]] = [
         (key, "ascending") for key in available
     ]
-    try:
-        indices = stable_sort_indices(table, sort_keys=resolved_keys)
-    except (
-        pa.ArrowInvalid,
-        pa.ArrowNotImplementedError,
-        pa.ArrowTypeError,
-        TypeError,
-        ValueError,
-    ):
+    return apply_deterministic_order(
+        table,
+        sort_keys=resolved_keys,
+        determinism=determinism,
+    )
+
+
+def _apply_chunk_consolidation(
+    table: pa.Table,
+    *,
+    combine_chunks: bool,
+) -> pa.Table:
+    if not combine_chunks:
         return table
-    return table.take(indices)
-
-
-def _apply_chunk_consolidation(data: ArrowDatasetInput) -> ArrowDatasetInput:
-    if isinstance(data, pa.Table):
-        return combine_table_chunks(data)
-    return data
+    return combine_table_chunks(table)
 
 
 def _resolve_stable_sort_keys(
@@ -774,6 +835,43 @@ def _resolve_stable_sort_keys(
     if policy is not None and policy.stable_sort_keys is not None:
         return policy.stable_sort_keys
     return schema.primary_key or None
+
+
+def _resolve_combine_chunks(
+    table_key: str,
+    *,
+    options: ArrowDatasetWriteOptions,
+) -> bool:
+    if options.combine_chunks is not None:
+        return options.combine_chunks
+    schema = _lookup_table_schema(table_key)
+    if schema is None:
+        return True
+    policy = schema.write_policy
+    if policy is not None and policy.combine_chunks is not None:
+        return policy.combine_chunks
+    return True
+
+
+def _write_determinism(stable_sort_keys: tuple[str, ...] | None) -> DedupeTier:
+    return "throughput" if stable_sort_keys == () else "canonical"
+
+
+def _execution_context_for_write(
+    *,
+    table_key: str,
+    options: ArrowDatasetWriteOptions,
+) -> ExecutionContext:
+    determinism = _write_determinism(options.stable_sort_keys)
+    if determinism == "canonical" and not options.stable_sort_keys:
+        msg = f"Canonical dataset writes require stable_sort_keys or primary key: {table_key}"
+        raise ValueError(msg)
+    combine_chunks = True if options.combine_chunks is None else options.combine_chunks
+    return ExecutionContext(
+        use_threads=DEFAULT_ARROW_USE_THREADS,
+        determinism=determinism,
+        combine_chunks=combine_chunks,
+    )
 
 
 def _lookup_table_schema(table_key: str) -> TableSchema | None:

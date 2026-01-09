@@ -335,6 +335,8 @@ class TableWritePolicy:
         Whether to use a staging relation for writes.
     stable_sort_keys
         Optional stable sort keys for deterministic on-disk ordering.
+    combine_chunks
+        Whether to consolidate chunks before writes when supported.
     """
 
     mode: WriteMode = "replace"
@@ -344,6 +346,7 @@ class TableWritePolicy:
     hash_column: str | None = None
     use_staging: bool = False
     stable_sort_keys: tuple[str, ...] | None = None
+    combine_chunks: bool | None = None
 
 
 @dataclass(frozen=True)

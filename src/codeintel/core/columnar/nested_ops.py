@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
 import pyarrow.compute as pc
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
 
 PromoteOptions = Literal["default", "permissive"]
 

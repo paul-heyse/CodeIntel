@@ -13,8 +13,7 @@ import pyarrow.dataset as ds
 
 from codeintel.build.graphs.assembly import iter_normalized_tuples
 from codeintel.build.scopes.snapshot import SnapshotScanContext
-from codeintel.build.tabular.conversion import reader_to_table
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_reader
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
@@ -347,12 +346,11 @@ def scan_snapshot_table(
     reader = scan_snapshot_reader(request)
     if reader is None:
         return None
-    table = reader_to_table(reader)
-    finalized = finalize_table(
-        table,
+    result = finalize_reader(
+        reader,
         spec=FinalizeSpec(table_key=request.table_key, mode="tolerant"),
     )
-    return finalized.good
+    return result.good
 
 
 def _scan_dataset(dataset_root: Path, table_key: str, snapshot_id: str) -> ds.Dataset | None:

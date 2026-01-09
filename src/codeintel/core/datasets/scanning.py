@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -15,7 +15,7 @@ from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.finalize_ops import FinalizeMode, FinalizeSpec, finalize_table
 from codeintel.core.columnar.masks import equal_expr
 from codeintel.core.columnar.normalization import normalize_table_for_compute
-from codeintel.core.columnar.plan_ops import build_scan_plan
+from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
 from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
@@ -32,6 +32,9 @@ from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.scanner_ops import build_scanner
 
 LOG = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,10 +234,12 @@ def _plan_scan_reader(
     try:
         plan = build_scan_plan(
             dataset,
-            columns=scan_options.projection_columns(),
-            filter_expr=scan_options.filter_expression,
-            implicit_ordering=scan_options.implicit_ordering,
-            require_sequenced_output=scan_options.require_sequenced_output,
+            options=ScanPlanOptions(
+                columns=scan_options.projection_columns(),
+                filter_expr=scan_options.filter_expression,
+                implicit_ordering=scan_options.implicit_ordering,
+                require_sequenced_output=scan_options.require_sequenced_output,
+            ),
         )
         return plan.to_reader(use_threads=resolved_use_threads)
     except (

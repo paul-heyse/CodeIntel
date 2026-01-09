@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
 
@@ -12,6 +11,9 @@ from codeintel.core.columnar.compute_helpers import array_from_compute, call_com
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.kernels import SortKey, hash_struct_ordinal, stable_sort_indices
 from codeintel.core.schemas.service import get_schema_service
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 DedupeDeterminism = Literal["best_effort", "stable", "order_independent"]
 DedupeTier = Literal["canonical", "throughput"]

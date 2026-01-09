@@ -2,20 +2,26 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import polars as pl
 import pyarrow as pa
 
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.compute_helpers import array_from_compute
 from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_reader
-from codeintel.build.tabular.kernels import SortKey, stable_sort_indices
+from codeintel.build.tabular.kernels import SortKey
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.columnar.dedupe_ops import (
+    DedupeLegacy,
+    DedupeSpec,
+)
+from codeintel.core.columnar.dedupe_ops import (
+    dedupe_table_for_table as _dedupe_table_for_table,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.core.schemas.service import SchemaService
 
 
@@ -30,84 +36,58 @@ def _schema_service_optional() -> SchemaService | None:
         return None
 
 
-def _row_index_array(length: int) -> pa.Array | None:
-    try:
-        return pa.array(range(length), type=pa.int64())
-    except (pa.ArrowInvalid, pa.ArrowTypeError):
-        return None
-
-
-def _row_index_name(table: pa.Table, *, base: str) -> str:
-    existing = set(table.column_names)
-    name = base
-    suffix = 1
-    while name in existing:
-        name = f"{base}_{suffix}"
-        suffix += 1
-    return name
-
-
 def _dedupe_sort_columns(
     *,
     available_columns: set[str],
     key_columns: Sequence[str],
     prefer_columns: Sequence[str],
+    tie_breakers: Sequence[SortKey],
 ) -> tuple[list[str], list[bool]]:
-    keys = [name for name in key_columns if name in available_columns]
-    prefer = [name for name in prefer_columns if name in available_columns and name not in keys]
-    columns = [*keys, *prefer]
-    descending = [False] * len(keys) + [True] * len(prefer)
+    used: set[str] = set()
+    columns: list[str] = []
+    descending: list[bool] = []
+    for name in key_columns:
+        if name in available_columns and name not in used:
+            used.add(name)
+            columns.append(name)
+            descending.append(False)
+    for name in prefer_columns:
+        if name in available_columns and name not in used:
+            used.add(name)
+            columns.append(name)
+            descending.append(True)
+    for name, order in tie_breakers:
+        if name in available_columns and name not in used:
+            used.add(name)
+            columns.append(name)
+            descending.append(order == "descending")
     return columns, descending
 
 
-def _sort_table_for_dedupe(
-    table: pa.Table,
-    *,
-    key_columns: Sequence[str],
-    prefer_columns: Sequence[str],
-) -> pa.Table:
-    columns, descending = _dedupe_sort_columns(
-        available_columns=set(table.column_names),
-        key_columns=key_columns,
-        prefer_columns=prefer_columns,
+def _merge_prefer_columns(
+    spec: DedupeSpec | None,
+    prefer_columns: Sequence[str] | None,
+) -> DedupeSpec | None:
+    if spec is None or not prefer_columns or spec.prefer_columns:
+        return spec
+    return DedupeSpec(
+        keys=spec.keys,
+        prefer_columns=tuple(prefer_columns),
+        tie_breakers=spec.tie_breakers,
+        tier=spec.tier,
+        strategy=spec.strategy,
     )
-    if not columns:
-        return table
-    sort_keys: list[SortKey] = []
-    for name, is_desc in zip(columns, descending, strict=True):
-        order: Literal["ascending", "descending"] = "descending" if is_desc else "ascending"
-        sort_keys.append((name, order))
-    try:
-        indices = stable_sort_indices(table, sort_keys=sort_keys, null_placement="at_end")
-    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
-        return table
-    return table.take(indices)
 
 
-def _dedupe_table_via_compute(
-    table: pa.Table,
+def _resolve_prefer_columns(
     *,
-    key_columns: Sequence[str],
-) -> pa.Table | None:
-    if table.num_rows == 0:
-        return table
-    row_index_name = _row_index_name(table, base="_row_index")
-    row_index = _row_index_array(table.num_rows)
-    if row_index is None:
-        return None
-    try:
-        indexed = table.append_column(row_index_name, row_index)
-        grouped = indexed.group_by(list(key_columns)).aggregate([(row_index_name, "min")])
-        index_column = f"{row_index_name}_min"
-        if index_column not in grouped.column_names:
-            return None
-        indices = grouped.column(index_column)
-        mask = array_from_compute("is_in", [row_index, indices])
-        if mask is None:
-            return None
-        return table.filter(mask)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return None
+    prefer_columns: Sequence[str] | None,
+    spec: DedupeSpec | None,
+) -> tuple[Sequence[str], Sequence[SortKey]]:
+    if spec is None:
+        return tuple(prefer_columns or ()), ()
+    prefer = tuple(spec.prefer_columns) if spec.prefer_columns else tuple(prefer_columns or ())
+    return prefer, tuple(spec.tie_breakers)
 
 
 def dedupe_table_for_table(
@@ -115,6 +95,7 @@ def dedupe_table_for_table(
     table: pa.Table,
     *,
     prefer_columns: Sequence[str] | None = None,
+    spec: DedupeSpec | None = None,
 ) -> pa.Table:
     """Return a table with duplicate primary-key rows removed.
 
@@ -123,34 +104,16 @@ def dedupe_table_for_table(
     pa.Table
         Table with duplicate primary-key rows removed.
     """
-    schema_service = _schema_service()
-    schema = schema_service.get_table_schema(table_key)
-    if schema is None or not schema.primary_key:
-        return table
-    key_columns = list(schema.primary_key)
-    prefer = list(prefer_columns or ())
-    table = _sort_table_for_dedupe(
+    resolved_spec = _merge_prefer_columns(spec, prefer_columns)
+    legacy = None
+    if resolved_spec is None and prefer_columns:
+        legacy = DedupeLegacy(prefer_columns=tuple(prefer_columns))
+    return _dedupe_table_for_table(
+        table_key,
         table,
-        key_columns=key_columns,
-        prefer_columns=prefer,
+        spec=resolved_spec,
+        legacy=legacy,
     )
-    try:
-        return table.drop_duplicates(key_columns)
-    except (AttributeError, pa.ArrowNotImplementedError, pa.ArrowTypeError):
-        deduped = _dedupe_table_via_compute(table, key_columns=key_columns)
-        if deduped is not None:
-            return deduped
-        seen: set[tuple[object, ...]] = set()
-        rows: list[dict[str, object]] = []
-        for row in iter_rows(table):
-            key = tuple(row.get(col) for col in key_columns)
-            if key in seen:
-                continue
-            seen.add(key)
-            rows.append(row)
-        if not rows:
-            return pa.Table.from_batches([], schema=table.schema)
-        return pa.Table.from_pylist(rows, schema=table.schema)
 
 
 def _dedupe_lazyframe_for_table(
@@ -158,20 +121,36 @@ def _dedupe_lazyframe_for_table(
     *,
     table_key: str,
     prefer_columns: Sequence[str] | None = None,
+    spec: DedupeSpec | None = None,
 ) -> pl.LazyFrame:
     schema_service = _schema_service_optional()
     schema = schema_service.get_table_schema(table_key) if schema_service is not None else None
-    if schema is None or not schema.primary_key:
+    key_columns = list(spec.keys) if spec is not None and spec.keys else []
+    if not key_columns and schema is not None and schema.primary_key:
+        key_columns = list(schema.primary_key)
+    if not key_columns:
         return frame
-    key_columns = list(schema.primary_key)
     try:
         available = set(frame.collect_schema().names())
     except (AttributeError, pl.exceptions.PolarsError, ValueError):
         available = set()
+    if not available and schema is not None:
+        available = set(schema.column_names())
+    if not available:
+        available = set(key_columns)
+    missing = [name for name in key_columns if name not in available]
+    if missing:
+        msg = f"Deduplication missing key columns: {missing}"
+        raise ValueError(msg)
+    resolved_prefer, tie_breakers = _resolve_prefer_columns(
+        prefer_columns=prefer_columns,
+        spec=spec,
+    )
     columns, descending = _dedupe_sort_columns(
-        available_columns=available if available else set(schema.column_names()),
+        available_columns=available,
         key_columns=key_columns,
-        prefer_columns=list(prefer_columns or ()),
+        prefer_columns=list(resolved_prefer),
+        tie_breakers=tie_breakers,
     )
     if columns:
         frame = frame.sort(by=columns, descending=descending, nulls_last=True)
@@ -183,6 +162,7 @@ def dedupe_tabular(
     value: InferableTabularInput,
     *,
     prefer_columns: Sequence[str] | None = None,
+    spec: DedupeSpec | None = None,
 ) -> pa.Table | pl.DataFrame | pl.LazyFrame:
     """Return a deduplicated tabular object based on table primary keys.
 
@@ -196,24 +176,43 @@ def dedupe_tabular(
             value,
             table_key=table_key,
             prefer_columns=prefer_columns,
+            spec=spec,
         )
     if isinstance(value, pl.DataFrame):
         deduped = _dedupe_lazyframe_for_table(
             value.lazy(),
             table_key=table_key,
             prefer_columns=prefer_columns,
+            spec=spec,
         )
         return deduped.collect()
     if isinstance(value, pa.Table):
-        return dedupe_table_for_table(table_key, value, prefer_columns=prefer_columns)
+        return dedupe_table_for_table(
+            table_key,
+            value,
+            prefer_columns=prefer_columns,
+            spec=spec,
+        )
     if isinstance(value, pa.RecordBatchReader):
         table = reader_to_table(value)
-        return dedupe_table_for_table(table_key, table, prefer_columns=prefer_columns)
+        return dedupe_table_for_table(
+            table_key,
+            table,
+            prefer_columns=prefer_columns,
+            spec=spec,
+        )
     table = reader_to_table(tabular_to_arrow_reader(value))
-    return dedupe_table_for_table(table_key, table, prefer_columns=prefer_columns)
+    return dedupe_table_for_table(
+        table_key,
+        table,
+        prefer_columns=prefer_columns,
+        spec=spec,
+    )
 
 
 __all__ = [
+    "DedupeLegacy",
+    "DedupeSpec",
     "dedupe_table_for_table",
     "dedupe_tabular",
 ]

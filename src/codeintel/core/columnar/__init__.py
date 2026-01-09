@@ -110,9 +110,11 @@ if TYPE_CHECKING:
         normalize_table_for_compute,
     )
     from codeintel.core.columnar.plan_ops import (
+        ExternalPlanRequest,
         ExternalPlanSpec,
         HashJoinSpec,
         Plan,
+        ScanPlanOptions,
         list_external_plan_runners,
         materialize_plan,
         register_external_plan_runner,
@@ -276,7 +278,9 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "ExecutionPlan": ("codeintel.core.columnar.arrowdsl", "ExecutionPlan"),
     "JoinPrecheckSpec": ("codeintel.core.columnar.arrowdsl", "JoinPrecheckSpec"),
     "build_exec_plan": ("codeintel.core.columnar.acero_ops", "build_exec_plan"),
+    "ExternalPlanRequest": ("codeintel.core.columnar.plan_ops", "ExternalPlanRequest"),
     "ExternalPlanSpec": ("codeintel.core.columnar.plan_ops", "ExternalPlanSpec"),
+    "ScanPlanOptions": ("codeintel.core.columnar.plan_ops", "ScanPlanOptions"),
     "E": ("codeintel.core.columnar.expr_vocab", "E"),
     "ExprVocab": ("codeintel.core.columnar.expr_vocab", "ExprVocab"),
     "apply_deterministic_order": (
@@ -443,6 +447,7 @@ __all__ = (
     "ExplodeResult",
     "ExplodeSpec",
     "ExprVocab",
+    "ExternalPlanRequest",
     "ExternalPlanSpec",
     "FinalizeDedupe",
     "FinalizeInvariant",
@@ -457,6 +462,7 @@ __all__ = (
     "NullListPolicy",
     "Plan",
     "RecordBatchReaderStream",
+    "ScanPlanOptions",
     "align_reader_to_contract",
     "and_mask",
     "apply_deterministic_order",

@@ -11,6 +11,7 @@ import pyarrow as pa
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
     RelationBuildContext,
+    RelationPlanOptions,
     RelationScanOptions,
     build_relation_plan,
 )
@@ -199,7 +200,7 @@ class DuckDBQueryEngine:
                     column_types=spec.column_types,
                     contract_schema=contract_schema,
                 ),
-                plan_spec=query.plan_spec,
+                options=RelationPlanOptions(plan_spec=query.plan_spec),
             )
             return DuckDBRelationPlan(
                 _relation=relation,

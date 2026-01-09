@@ -107,6 +107,8 @@ def _write_policy_to_json_obj(policy: TableWritePolicy) -> dict[str, object]:
     }
     if policy.stable_sort_keys is not None:
         payload["stable_sort_keys"] = list(policy.stable_sort_keys)
+    if policy.combine_chunks is not None:
+        payload["combine_chunks"] = policy.combine_chunks
     return payload
 
 
@@ -154,6 +156,12 @@ def _parse_write_policy(value: object) -> TableWritePolicy:
         stable_sort_keys = tuple(
             _require_str(item, field="stable_sort_keys[]") for item in sort_obj
         )
+    combine_value = value.get("combine_chunks")
+    combine_chunks = (
+        _require_bool(combine_value, field="write_policy.combine_chunks")
+        if combine_value is not None
+        else None
+    )
     return TableWritePolicy(
         mode=_parse_write_mode(value.get("mode"), field="write_policy.mode"),
         replace_scope=_parse_replace_scope(value.get("replace_scope"), field="write_policy.scope"),
@@ -165,6 +173,7 @@ def _parse_write_policy(value: object) -> TableWritePolicy:
             field="write_policy.use_staging",
         ),
         stable_sort_keys=stable_sort_keys,
+        combine_chunks=combine_chunks,
     )
 
 

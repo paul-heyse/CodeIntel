@@ -14,7 +14,6 @@ from codeintel.build.hamilton.native.graphs.cpg.constants import (
 from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
-from codeintel.build.tabular.kernels import stable_sort_indices
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
@@ -40,6 +39,7 @@ _DEFAULT_SORT_KEYS: tuple[SortKey, ...] = (
     ("src_cpg_node_id", "ascending"),
     ("dst_cpg_node_id", "ascending"),
     ("edge_kind", "ascending"),
+    ("edge_layer", "ascending"),
     ("ordinal", "ascending"),
 )
 
@@ -89,11 +89,10 @@ def finalize_cpg_edge_rows(
 
     projection = {name: E.field(("edge", name)) for name in _CPG_EDGE_FIELDS}
     plan = Plan.table(exploded.good).project(projection)
-    edges = materialize_plan(plan, use_threads=True)
-
     resolved_sort_keys = sort_keys if sort_keys is not None else _DEFAULT_SORT_KEYS
     if resolved_sort_keys:
-        edges = edges.take(stable_sort_indices(edges, sort_keys=resolved_sort_keys))
+        plan = plan.order_by(sort_keys=list(resolved_sort_keys))
+    edges = materialize_plan(plan, use_threads=True)
 
     result = finalize_table(
         edges,

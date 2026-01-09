@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import pyarrow as pa
 
@@ -15,9 +15,7 @@ except ImportError:
     _datafusion = None
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    from codeintel.core.columnar.plan_ops import ExternalPlanSpec
+    from codeintel.core.columnar.plan_ops import ExternalPlanRequest
 
 
 @runtime_checkable
@@ -49,12 +47,8 @@ class DataFusionSession(Protocol):
         """Register a table in the session catalog."""
         ...
 
-    def register_record_batches(self, name: str, batches: Sequence[pa.RecordBatch]) -> None:
+    def register_record_batches(self, name: str, partitions: list[list[pa.RecordBatch]]) -> None:
         """Register record batches in the session catalog."""
-        ...
-
-    def from_substrait(self, plan: bytes) -> DataFusionDataFrame:
-        """Build a DataFusion frame from a Substrait plan."""
         ...
 
 
@@ -115,7 +109,7 @@ def register_arrow_table(ctx: DataFusionSession, name: str, table: pa.Table) -> 
         return
     register_batches = getattr(ctx, "register_record_batches", None)
     if callable(register_batches):
-        register_batches(name, table.to_batches())
+        register_batches(name, [table.to_batches()])
         return
     msg = "DataFusion context does not support registering Arrow tables."
     raise RuntimeError(msg)
@@ -160,30 +154,42 @@ def run_substrait_plan(
 
     Raises
     ------
-    RuntimeError
+    TypeError
         Raised when the context does not support Substrait execution.
     """
     builder = getattr(ctx, "from_substrait", None)
     if not callable(builder):
         msg = "DataFusion context does not support from_substrait."
-        raise RuntimeError(msg)
+        raise TypeError(msg)
     frame = builder(bytes(plan))
     return _reader_from_frame(frame)
 
 
 def datafusion_plan_runner(
     *,
-    spec: ExternalPlanSpec,
-    dataset: object,
-    filter_expr: object,
-    columns: object,
-    scan_options: object,
-    use_threads: object,
+    request: ExternalPlanRequest,
 ) -> pa.RecordBatchReader:
-    """Execute a DataFusion plan via ExternalPlanSpec."""
-    _ = (dataset, filter_expr, columns, scan_options, use_threads)
+    """Execute a DataFusion plan via ExternalPlanSpec.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Record batch reader for plan results.
+
+    Raises
+    ------
+    TypeError
+        Raised when the payload is not SQL text or Substrait bytes.
+    """
+    _ = (
+        request.dataset,
+        request.filter_expr,
+        request.columns,
+        request.scan_options,
+        request.use_threads,
+    )
     ctx = session_context()
-    payload = spec.payload
+    payload = request.spec.payload
     if isinstance(payload, str):
         return run_sql(ctx, payload)
     if isinstance(payload, (bytes, bytearray, memoryview)):
@@ -204,29 +210,35 @@ def register_datafusion_plan_runner(name: str = "datafusion") -> None:
     register_external_plan_runner(name, datafusion_plan_runner)
 
 
-def _reader_from_frame(frame: object) -> pa.RecordBatchReader:
+def _reader_from_frame(
+    frame: DataFusionDataFrame | pa.RecordBatchReader | pa.Table,
+) -> pa.RecordBatchReader:
     if isinstance(frame, pa.RecordBatchReader):
         return frame
     if isinstance(frame, pa.Table):
-        return pa.RecordBatchReader.from_batches(frame.schema, frame.to_batches())
+        table = cast("pa.Table", frame)
+        return pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
     batches = _batches_from_frame(frame)
     return _reader_from_batches(batches, frame=frame)
 
 
-def _batches_from_frame(frame: object) -> Sequence[pa.RecordBatch]:
+def _batches_from_frame(frame: DataFusionDataFrame) -> Sequence[pa.RecordBatch]:
     to_arrow = getattr(frame, "to_arrow_table", None)
     if callable(to_arrow):
         table = to_arrow()
         if isinstance(table, pa.Table):
-            return table.to_batches()
+            resolved = cast("pa.Table", table)
+            return resolved.to_batches()
     collect = getattr(frame, "collect", None)
     if callable(collect):
         collected = collect()
         if isinstance(collected, pa.Table):
-            return collected.to_batches()
-        if isinstance(collected, Sequence):
-            if all(isinstance(batch, pa.RecordBatch) for batch in collected):
-                return list(collected)
+            resolved = cast("pa.Table", collected)
+            return resolved.to_batches()
+        if isinstance(collected, Sequence) and all(
+            isinstance(batch, pa.RecordBatch) for batch in collected
+        ):
+            return list(collected)
     msg = "DataFusion DataFrame did not yield Arrow batches."
     raise RuntimeError(msg)
 
@@ -234,7 +246,7 @@ def _batches_from_frame(frame: object) -> Sequence[pa.RecordBatch]:
 def _reader_from_batches(
     batches: Sequence[pa.RecordBatch],
     *,
-    frame: object,
+    frame: DataFusionDataFrame | pa.RecordBatchReader | pa.Table,
 ) -> pa.RecordBatchReader:
     if batches:
         return pa.RecordBatchReader.from_batches(batches[0].schema, batches)
@@ -242,7 +254,13 @@ def _reader_from_batches(
     return pa.RecordBatchReader.from_batches(schema, [])
 
 
-def _schema_from_frame(frame: object) -> pa.Schema | None:
+def _schema_from_frame(
+    frame: DataFusionDataFrame | pa.RecordBatchReader | pa.Table,
+) -> pa.Schema | None:
+    if isinstance(frame, pa.Table):
+        return frame.schema
+    if isinstance(frame, pa.RecordBatchReader):
+        return frame.schema
     schema_attr = getattr(frame, "schema", None)
     if callable(schema_attr):
         schema = schema_attr()

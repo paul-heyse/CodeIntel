@@ -112,6 +112,7 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
 )
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -122,6 +123,20 @@ LOG = logging.getLogger(__name__)
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
+_CPG_NODE_SORT_KEYS: tuple[tuple[str, str], ...] = (
+    ("repo", "ascending"),
+    ("commit", "ascending"),
+    ("cpg_node_id", "ascending"),
+)
+_CPG_EDGE_SORT_KEYS: tuple[tuple[str, str], ...] = (
+    ("repo", "ascending"),
+    ("commit", "ascending"),
+    ("src_cpg_node_id", "ascending"),
+    ("dst_cpg_node_id", "ascending"),
+    ("edge_kind", "ascending"),
+    ("edge_layer", "ascending"),
+    ("ordinal", "ascending"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +189,13 @@ def emit_cpg_diagnostics(
         LOG.warning("build.cpg.diagnostics_failed error=%s", exc)
 
 
+def _order_table(table: pa.Table, *, sort_keys: Sequence[tuple[str, str]]) -> pa.Table:
+    if table.num_rows == 0:
+        return table
+    plan = Plan.table(table).order_by(sort_keys=list(sort_keys))
+    return materialize_plan(plan, use_threads=True)
+
+
 def assemble_cpg_nodes(tables: Sequence[pa.Table]) -> pa.Table:
     """Assemble CPG nodes from per-plane tables.
 
@@ -188,6 +210,7 @@ def assemble_cpg_nodes(tables: Sequence[pa.Table]) -> pa.Table:
     combined = concat_tables_unified(tables)
     combined = _ensure_contract_columns(CPG_NODES_TABLE_KEY, combined)
     combined = _cast_to_contract_types(CPG_NODES_TABLE_KEY, combined)
+    combined = _order_table(combined, sort_keys=_CPG_NODE_SORT_KEYS)
     result = finalize_table(
         combined,
         spec=FinalizeSpec(
@@ -213,6 +236,7 @@ def assemble_cpg_edges(tables: Sequence[pa.Table]) -> pa.Table:
     combined = concat_tables_unified(tables)
     combined = _ensure_contract_columns(CPG_EDGES_TABLE_KEY, combined)
     combined = _cast_to_contract_types(CPG_EDGES_TABLE_KEY, combined)
+    combined = _order_table(combined, sort_keys=_CPG_EDGE_SORT_KEYS)
     result = finalize_table(
         combined,
         spec=FinalizeSpec(

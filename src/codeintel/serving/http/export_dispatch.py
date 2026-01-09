@@ -20,8 +20,10 @@ from fastapi.responses import JSONResponse
 from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 
+from codeintel.core.columnar.arrowdsl import ExecutionContext
 from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec
 from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.serving.export.engine import (
@@ -36,7 +38,7 @@ from codeintel.serving.http.streaming import (
 )
 from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.operations.ops import ServingOperations
-from codeintel.serving.semantic.models import SemanticExportRequest
+from codeintel.serving.semantic.models import SemanticExportRequest, SemanticViewDescriptionResponse
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -177,6 +179,43 @@ def _finalize_log_hook(table_key: str) -> Callable[[FinalizeResult], None]:
     return _hook
 
 
+def _export_execution_context(ops: ServingOperations) -> ExecutionContext:
+    use_threads = ops.settings.dataset_use_threads
+    resolved_threads = True if use_threads is None else use_threads
+    return ExecutionContext(
+        use_threads=resolved_threads,
+        determinism="canonical",
+        combine_chunks=True,
+    )
+
+
+def _order_by_sort_keys(order_by: list[str]) -> tuple[SortKey, ...]:
+    keys: list[SortKey] = []
+    for item in order_by:
+        if not item:
+            continue
+        descending = item.startswith("-")
+        column = item[1:] if descending else item
+        keys.append((column, "descending" if descending else "ascending"))
+    return tuple(keys)
+
+
+def _resolve_export_order_by(
+    payload: SemanticExportRequest,
+    view_desc: SemanticViewDescriptionResponse,
+) -> tuple[SortKey, ...]:
+    order_by = payload.order_by or view_desc.defaults.order_by
+    if not order_by and view_desc.primary_key:
+        order_by = list(view_desc.primary_key)
+    if not order_by:
+        msg = (
+            "Export requires order_by for deterministic output when primary_key is missing: "
+            f"{payload.view_id}"
+        )
+        raise ValueError(msg)
+    return _order_by_sort_keys(order_by)
+
+
 def export_hash_headers(
     *,
     query_hash: str,
@@ -219,13 +258,22 @@ async def dispatch_semantic_export(
     if plan.delivery is ExportDelivery.ndjson_stream:
         tracker = _ExportStreamMetrics(metrics=metrics)
         view_desc = ops.describe(payload.view_id)
+        execution_ctx = _export_execution_context(ops)
+        order_by = _resolve_export_order_by(payload, view_desc)
         finalize_spec = FinalizeSpec(
             table_key=view_desc.table_key,
             mode=_finalize_mode(ops.settings.schema_enforcement),
             required_non_null=_required_non_null_columns(view_desc.table_key),
-            dedupe=FinalizeDedupe(enabled=False),
+            dedupe=FinalizeDedupe(
+                enabled=False,
+                keys=tuple(view_desc.primary_key),
+                tie_breakers=order_by,
+                tier="canonical",
+                strategy="order_independent",
+            ),
             key_fields=tuple(view_desc.primary_key),
             context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
+            order_by=order_by,
             emit_artifacts=True,
         )
         response = ndjson_response_from_batches(
@@ -238,6 +286,7 @@ async def dispatch_semantic_export(
                 batch_hook=lambda batch: tracker.record_rows(batch.num_rows),
                 finalize_spec=finalize_spec,
                 finalize_hook=_finalize_log_hook(view_desc.table_key),
+                execution_context=execution_ctx,
             ),
         )
         return ExportDispatchResult(response=response, metrics_row_count=None)

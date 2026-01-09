@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -30,6 +30,8 @@ from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from codeintel.build.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
@@ -230,10 +232,7 @@ def _dependency_call_rows_from_frame(
     rows: list[tuple[object, ...]] = []
     for row in filtered:
         extras = row.get("extras")
-        if isinstance(extras, Mapping):
-            modes = extras.get("modes")
-        else:
-            modes = row.get("modes")
+        modes = extras.get("modes") if isinstance(extras, Mapping) else row.get("modes")
         rows.append(
             (
                 row.get("dep_id"),
