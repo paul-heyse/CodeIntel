@@ -79,7 +79,11 @@ def function_contracts__base(
         scope=scope,
         require_scope_columns=True,
     )
-    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
+    catalog = catalog_provider_from_frames(
+        goids_frame=goids_frame,
+        modules_frame=modules_frame,
+        ctx=env.execution_context,
+    )
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
@@ -94,6 +98,7 @@ def function_contracts__base(
             catalog=catalog,
             docstrings_frame=docstrings_frame,
             function_types_frame=function_types_frame,
+            ctx=env.execution_context,
         ),
     )
     if not rows:

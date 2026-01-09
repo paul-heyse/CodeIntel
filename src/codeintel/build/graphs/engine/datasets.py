@@ -15,11 +15,17 @@ import pyarrow.dataset as ds
 
 from codeintel.build.graphs.assembly import iter_normalized_tuples
 from codeintel.build.scopes.snapshot import SnapshotScanContext
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.execution_context import ExecutionContext, runtime_profile_from_settings
+from codeintel.core.columnar.arrowdsl import (
+    ExecutionPlan,
+    PipelineRunOptions,
+    run_pipeline,
+)
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    runtime_profile_from_settings,
+)
 from codeintel.core.columnar.finalize_ops import (
     FinalizeResult,
-    finalize_reader,
     finalize_spec_for_table,
 )
 from codeintel.core.columnar.ordering import SortDirection, SortKey
@@ -30,7 +36,11 @@ from codeintel.core.columnar.plan_ops import (
 )
 from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
 from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
-from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, scan_dataset, write_dataset
+from codeintel.core.datasets.arrow_store import (
+    ArrowDatasetWriteOptions,
+    scan_dataset,
+    write_dataset,
+)
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
@@ -253,13 +263,27 @@ class GraphRunMetadata:
     scan_profile: str | None
 
     def manifest_extras(self) -> dict[str, object]:
-        """Return a manifest extras payload for this run metadata."""
+        """Return a manifest extras payload for this run metadata.
+
+        Returns
+        -------
+        dict[str, object]
+            Manifest extras payload containing run metadata fields.
+        """
         extras: dict[str, object] = {"determinism_tier": self.determinism_tier}
         if self.runtime_profile is not None:
             extras["runtime_profile"] = self.runtime_profile
         if self.scan_profile is not None:
             extras["scan_profile"] = self.scan_profile
         return extras
+
+
+@dataclass(frozen=True, slots=True)
+class _FinalizeArtifactContext:
+    dataset_root: Path
+    snapshot_id: str
+    base_table_key: str
+    run_metadata: GraphRunMetadata | None
 
 
 def resolve_dataset_root(
@@ -418,12 +442,15 @@ def scan_snapshot_table(
     pyarrow.Table | None
         Arrow table for the dataset snapshot or None when missing.
     """
-    reader = scan_snapshot_reader(request)
-    if reader is None:
+    plan = scan_snapshot_plan(request)
+    if plan is None:
         return None
-    result = finalize_reader(
-        reader,
-        spec=finalize_spec_for_table(request.table_key, mode="tolerant"),
+    use_threads = _resolve_use_threads(request)
+    execution_ctx = _resolve_execution_context(request, use_threads=use_threads)
+    result = run_pipeline(
+        plan=ExecutionPlan.from_plan(plan),
+        finalize=finalize_spec_for_table(request.table_key, mode="tolerant"),
+        options=PipelineRunOptions(ctx=execution_ctx),
     )
     return result.good
 
@@ -433,7 +460,13 @@ def graph_execution_context(
     determinism: DedupeTier,
     provenance: bool,
 ) -> ExecutionContext:
-    """Return an ExecutionContext configured for graph scans."""
+    """Return an ExecutionContext configured for graph scans.
+
+    Returns
+    -------
+    ExecutionContext
+        Execution context configured for graph scan behavior.
+    """
     runtime_profile = _resolve_graph_runtime_profile(default_name="graph_views")
     return ExecutionContext(
         determinism=determinism,
@@ -447,7 +480,13 @@ def graph_run_metadata(
     determinism: DedupeTier,
     execution_ctx: ExecutionContext | None,
 ) -> GraphRunMetadata:
-    """Build graph run metadata from determinism and execution context."""
+    """Build graph run metadata from determinism and execution context.
+
+    Returns
+    -------
+    GraphRunMetadata
+        Run metadata for graph outputs and artifacts.
+    """
     profile = execution_ctx.runtime_profile if execution_ctx is not None else None
     runtime_name = profile.name if profile is not None else None
     scan_profile = profile.scan_profile if profile is not None else None
@@ -467,10 +506,9 @@ def _scan_dataset(dataset_root: Path, table_key: str, snapshot_id: str) -> ds.Da
         )
     except FileNotFoundError:
         LOG.warning("Dataset snapshot missing for %s@%s", table_key, snapshot_id)
-    return None
     except (OSError, ValueError, pa.ArrowInvalid) as exc:
         LOG.warning("Dataset scan failed for %s@%s: %s", table_key, snapshot_id, exc)
-        return None
+    return None
 
 
 def _resolve_columns(
@@ -578,29 +616,26 @@ def persist_finalize_artifacts(
     run_metadata: GraphRunMetadata | None = None,
 ) -> None:
     """Persist finalize artifacts for a graph input table."""
-    _write_finalize_artifact_dataset(
+    context = _FinalizeArtifactContext(
         dataset_root=dataset_root,
         snapshot_id=snapshot_id,
         base_table_key=base_table_key,
+        run_metadata=run_metadata,
+    )
+    _write_finalize_artifact_dataset(
+        context=context,
         artifact="errors",
         table=result.errors,
-        run_metadata=run_metadata,
     )
     _write_finalize_artifact_dataset(
-        dataset_root=dataset_root,
-        snapshot_id=snapshot_id,
-        base_table_key=base_table_key,
+        context=context,
         artifact="alignment",
         table=result.alignment,
-        run_metadata=run_metadata,
     )
     _write_finalize_artifact_dataset(
-        dataset_root=dataset_root,
-        snapshot_id=snapshot_id,
-        base_table_key=base_table_key,
+        context=context,
         artifact="stats",
         table=result.stats,
-        run_metadata=run_metadata,
     )
 
 
@@ -637,14 +672,11 @@ def _resolve_graph_runtime_profile(
 
 def _write_finalize_artifact_dataset(
     *,
-    dataset_root: Path,
-    snapshot_id: str,
-    base_table_key: str,
+    context: _FinalizeArtifactContext,
     artifact: str,
     table: pa.Table,
-    run_metadata: GraphRunMetadata | None,
 ) -> None:
-    artifact_table_key = _finalize_artifact_table_key(base_table_key, artifact)
+    artifact_table_key = _finalize_artifact_table_key(context.base_table_key, artifact)
     try:
         table_schema = table_schema_from_arrow_schema(
             arrow_schema=table.schema,
@@ -652,9 +684,9 @@ def _write_finalize_artifact_dataset(
         )
         manifest_extras = _artifact_manifest_extras(
             table_schema,
-            artifact_for=base_table_key,
+            artifact_for=context.base_table_key,
             artifact_type=artifact,
-            run_metadata=run_metadata,
+            run_metadata=context.run_metadata,
         )
         options = ArrowDatasetWriteOptions(
             partition_columns=_partition_columns_for_schema(table_schema),
@@ -663,16 +695,16 @@ def _write_finalize_artifact_dataset(
             stable_sort_keys=_resolve_manifest_sort_keys(table_schema),
         )
         write_dataset(
-            dataset_root=dataset_root,
+            dataset_root=context.dataset_root,
             table_key=artifact_table_key,
-            snapshot_id=snapshot_id,
+            snapshot_id=context.snapshot_id,
             data=table,
             options=options,
         )
     except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError) as exc:
         LOG.warning(
             "Finalize artifact write failed; table_key=%s artifact=%s error=%s",
-            base_table_key,
+            context.base_table_key,
             artifact,
             exc,
         )
@@ -712,11 +744,16 @@ def _artifact_manifest_extras(
 
 
 __all__ = [
+    "GraphRunMetadata",
     "GraphViewFactory",
     "SnapshotScanRequest",
     "dataset_snapshot_exists",
+    "graph_execution_context",
+    "graph_run_metadata",
+    "persist_finalize_artifacts",
     "resolve_dataset_root",
     "scan_snapshot_plan",
     "scan_snapshot_reader",
+    "scan_snapshot_reader_with_columns",
     "scan_snapshot_table",
 ]

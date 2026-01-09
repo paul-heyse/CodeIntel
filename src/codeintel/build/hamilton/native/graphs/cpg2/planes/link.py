@@ -24,7 +24,7 @@ from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.arrowdsl import join_safe_projection
-from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -207,16 +207,10 @@ def cpg2_edges__call_graph_edges(
         for field in ["resolved_via", "confidence", "kind"]
         if field in joined_table.column_names
     ]
-    extras_kv = [
-        extras_kv_from_mapping(
-            {
-                "resolved_via": row.get("resolved_via"),
-                "confidence": row.get("confidence"),
-                "kind": row.get("kind"),
-            }
-        )
-        for row in iter_rows(joined_table, extras_fields)
-    ]
+    extras_kv: list[dict[str, str] | None] = []
+    for values in iter_tuples(joined_table.to_reader(), columns=extras_fields):
+        mapping = dict(zip(extras_fields, values, strict=False))
+        extras_kv.append(extras_kv_from_mapping(mapping))
     joined = joined_table.append_column("ordinal", ordinals)
     joined = joined.append_column(
         "extras_kv",
@@ -282,17 +276,10 @@ def cpg2_edges__import_graph_edges(
         for field in ["src_fan_out", "dst_fan_in", "cycle_group", "module_layer"]
         if field in joined_table.column_names
     ]
-    extras_kv = [
-        extras_kv_from_mapping(
-            {
-                "src_fan_out": row.get("src_fan_out"),
-                "dst_fan_in": row.get("dst_fan_in"),
-                "cycle_group": row.get("cycle_group"),
-                "module_layer": row.get("module_layer"),
-            }
-        )
-        for row in iter_rows(joined_table, extras_fields)
-    ]
+    extras_kv: list[dict[str, str] | None] = []
+    for values in iter_tuples(joined_table.to_reader(), columns=extras_fields):
+        mapping = dict(zip(extras_fields, values, strict=False))
+        extras_kv.append(extras_kv_from_mapping(mapping))
     joined = joined_table.append_column("ordinal", ordinals)
     joined = joined.append_column(
         "extras_kv",

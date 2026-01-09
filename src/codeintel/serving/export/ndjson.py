@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
+from codeintel.core.columnar.arrowdsl import (
+    ExecutionContext,
+    ExecutionPlan,
+    PipelineRunOptions,
+    run_pipeline,
+)
 from codeintel.core.exports.serialization import coerce_export_row
 from codeintel.storage.query_results import records_from_arrow_batch
 
@@ -173,7 +178,7 @@ def _finalize_batches(
     result = run_pipeline(
         plan=ExecutionPlan.from_table(table),
         finalize=finalize_spec,
-        ctx=resolved_ctx,
+        options=PipelineRunOptions(ctx=resolved_ctx),
     )
     if result.good.num_rows == 0:
         return [], result

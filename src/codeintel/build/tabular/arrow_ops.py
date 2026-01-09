@@ -27,7 +27,6 @@ from codeintel.build.contracts.registry import (
 )
 from codeintel.build.contracts.types import ContractPolicy
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular import array_ops as _array_ops
 from codeintel.build.tabular.compute_helpers import (
     array_from_compute,
     cast_array,
@@ -61,12 +60,22 @@ from codeintel.core.columnar.iter import (
     iter_rows_limit as _iter_rows_limit,
 )
 from codeintel.core.columnar.normalization import (
+    normalize_array as _ensure_array,
     normalize_table_for_compute as _normalize_table_for_compute,
 )
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract as _align_reader
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.columnar.schema_ops import concat_tables_unified as _concat_tables_unified
+from codeintel.core.columnar.set_ops import (
+    index_in as _index_in,
+    take_by_key as _take_by_key,
+    value_set_array as _value_set_array,
+)
 from codeintel.core.columnar.streaming import configure_arrow_threading
+from codeintel.core.columnar.type_normalization import (
+    normalize_binary_view_array as _normalize_binary_view_array,
+    normalize_string_view_array as _normalize_string_view_array,
+)
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
     DEFAULT_ARROW_BATCH_SIZE,
@@ -92,12 +101,12 @@ from codeintel.core.schemas.arrow_gen import (
 if TYPE_CHECKING:
     from typing import Unpack
 
-ensure_array = _array_ops.ensure_array
-index_in = _array_ops.index_in
-normalize_binary_view_array = _array_ops.normalize_binary_view_array
-normalize_string_view_array = _array_ops.normalize_string_view_array
-take_by_key = _array_ops.take_by_key
-value_set_array = _array_ops.value_set_array
+ensure_array = _ensure_array
+index_in = _index_in
+normalize_binary_view_array = _normalize_binary_view_array
+normalize_string_view_array = _normalize_string_view_array
+take_by_key = _take_by_key
+value_set_array = _value_set_array
 
 _ARROW_JOIN_TYPES = {
     "left": "left outer",

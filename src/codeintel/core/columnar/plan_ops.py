@@ -11,12 +11,15 @@ import pyarrow.compute as pc
 from pyarrow import acero
 
 from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.columnar.ordering import OrderingSpec, SortKey
 from codeintel.core.columnar.queryspec import QuerySpec
-from codeintel.core.columnar.streaming import configure_arrow_threading
+from codeintel.core.columnar.streaming import configure_arrow_threading_for_context
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -307,8 +310,13 @@ class Plan:
         -------
         pyarrow.Table
             Materialized table result.
+
+        Notes
+        -----
+        Deprecated. Prefer ``ExecutionPlan.from_plan(plan)`` with an
+        ``ExecutionContext`` to preserve ordering metadata.
         """
-        configure_arrow_threading()
+        configure_arrow_threading_for_context(ctx=None)
         reader = self.declaration.to_reader(use_threads=use_threads)
         return normalize_table_for_compute(reader_to_table(reader))
 
@@ -324,8 +332,13 @@ class Plan:
         -------
         pyarrow.RecordBatchReader
             RecordBatchReader for the plan result.
+
+        Notes
+        -----
+        Deprecated. Prefer ``ExecutionPlan.from_plan(plan)`` with an
+        ``ExecutionContext`` to preserve ordering metadata.
         """
-        configure_arrow_threading()
+        configure_arrow_threading_for_context(ctx=None)
         return self.declaration.to_reader(use_threads=use_threads)
 
 
@@ -404,6 +417,11 @@ def materialize_plan(
     -------
     pyarrow.Table
         Materialized table with compute-normalized chunks.
+
+    Notes
+    -----
+    Deprecated. Prefer ``ExecutionPlan.from_plan(plan)`` with an
+    ``ExecutionContext`` to preserve ordering metadata.
     """
     reader = plan.to_reader(use_threads=use_threads)
     return normalize_table_for_compute(reader_to_table(reader), combine_chunks=combine_chunks)
@@ -443,13 +461,12 @@ def query_plan_options_for_context(
         Query plan options with provenance updated from context.
     """
     resolved = options or QueryPlanOptions()
-    if ctx is None:
-        return resolved
-    provenance = resolved.provenance or ctx.provenance
+    resolved_ctx = resolve_execution_context(ctx)
+    provenance = resolved.provenance or resolved_ctx.provenance
     implicit_ordering = resolved.implicit_ordering
     require_sequenced_output = resolved.require_sequenced_output
-    determinism = ctx.resolve_determinism()
-    profile = ctx.runtime_profile
+    determinism = resolved_ctx.resolve_determinism()
+    profile = resolved_ctx.runtime_profile
     if profile is not None:
         provenance = profile.resolve_provenance(default=provenance)
         implicit_ordering = profile.resolve_implicit_ordering(default=implicit_ordering)

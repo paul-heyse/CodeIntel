@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
 from codeintel.core.schemas.row_models import columns_for_table_key, row_serializer_for_table_schema
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 
@@ -39,6 +40,34 @@ def rows_to_tuples_for_table(
     """
     columns = _columns_for_table(table_key)
     return [_row_tuple(columns, row, table_key=table_key) for row in rows]
+
+
+def buffer_for_table(table_key: str) -> ColumnarRowBuffer:
+    """Return a columnar buffer seeded from the table schema.
+
+    Returns
+    -------
+    ColumnarRowBuffer
+        Buffer ready to accept row mappings.
+    """
+    return columnar_buffer_for_table_key(table_key)
+
+
+def buffer_from_rows(
+    table_key: str,
+    rows: Iterable[Mapping[str, object]],
+) -> ColumnarRowBuffer:
+    """Build a columnar buffer from row mappings.
+
+    Returns
+    -------
+    ColumnarRowBuffer
+        Buffer containing appended rows.
+    """
+    buffer = columnar_buffer_for_table_key(table_key)
+    for row in rows:
+        buffer.append(row)
+    return buffer
 
 
 def _columns_for_table(table_key: str) -> tuple[str, ...]:

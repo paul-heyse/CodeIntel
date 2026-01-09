@@ -23,6 +23,7 @@ from codeintel.build.analytics.compute.evidence.collection import EvidenceCollec
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.build.analytics.utilities.snapshot import require_columns, snapshot_table
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
@@ -90,6 +91,7 @@ class DataModelUsageInputs:
     subsystems_frame: pa.Table | None = None
     function_types_frame: pa.Table | None = None
     missing_goids: set[int] | None = None
+    ctx: ExecutionContext | None = None
 
 
 @dataclass(frozen=True)
@@ -174,11 +176,12 @@ def _param_types_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> dict[int, dict[str, str]]:
     if frame is None or frame.num_rows == 0:
         return {}
     param_types: dict[int, dict[str, str]] = {}
-    for row in _rows_for_snapshot(frame, repo=repo, commit=commit):
+    for row in _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx):
         goid_int = normalize_decimal_id(row.get("function_goid_h128"))
         if goid_int is None:
             continue
@@ -462,11 +465,12 @@ def _load_models_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> list[ModelInfo]:
     if frame is None or frame.num_rows == 0:
         return []
     models: list[ModelInfo] = []
-    for row in _rows_for_snapshot(frame, repo=repo, commit=commit):
+    for row in _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx):
         model_id = row.get("model_id")
         model_name = row.get("model_name")
         module = row.get("module")
@@ -482,13 +486,19 @@ def _subsystem_by_module_from_frames(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> dict[str, tuple[str, str]]:
     mapping: dict[str, tuple[str, str]] = {}
     if subsystem_modules_frame is None or subsystem_modules_frame.num_rows == 0:
         return mapping
-    modules_filtered = _rows_for_snapshot(subsystem_modules_frame, repo=repo, commit=commit)
+    modules_filtered = _rows_for_snapshot(
+        subsystem_modules_frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+    )
     subsystems_filtered = (
-        _rows_for_snapshot(subsystems_frame, repo=repo, commit=commit)
+        _rows_for_snapshot(subsystems_frame, repo=repo, commit=commit, ctx=ctx)
         if subsystems_frame is not None and subsystems_frame.num_rows > 0
         else None
     )
@@ -530,11 +540,11 @@ def _context_for_module(
 def build_data_model_usage_rows(
     snapshot: SnapshotRef,
     inputs: DataModelUsageInputs,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """Build data_model_usage rows without writing to database.
 
     Analyze per-function data model read/write usage patterns and return
-    a columnar LazyFrame suitable for materialization via Hamilton.
+    a ColumnarRowBuffer suitable for materialization via Hamilton.
 
     Parameters
     ----------
@@ -545,18 +555,18 @@ def build_data_model_usage_rows(
 
     Returns
     -------
-    list[dict[str, object]]
-        Row mappings with extras (usage_kinds, evidence, context) and created_at.
+    ColumnarRowBuffer
+        Buffer containing rows with extras (usage_kinds, evidence, context) and created_at.
 
     Notes
     -----
-    This is the pure compute version that returns a LazyFrame without writing.
+    This is the pure compute version that returns a ColumnarRowBuffer without writing.
     Use with the Hamilton materializers to persist.
 
     Examples
     --------
-    >>> frame = build_data_model_usage_rows(snapshot, ...)
-    >>> frame.collect().height > 0
+    >>> buffer = build_data_model_usage_rows(snapshot, ...)
+    >>> buffer.row_count > 0
     True
     """
     max_examples_per_usage = 3
@@ -564,6 +574,7 @@ def build_data_model_usage_rows(
         inputs.models_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     if not models:
         log.info(
@@ -571,7 +582,7 @@ def build_data_model_usage_rows(
             snapshot.repo,
             snapshot.commit,
         )
-        return []
+        return columnar_buffer_for_table_key(DATA_MODEL_USAGE_TABLE_KEY)
 
     model_index = _build_model_index(models)
     subsystem_map = _subsystem_by_module_from_frames(
@@ -579,6 +590,7 @@ def build_data_model_usage_rows(
         inputs.subsystems_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
 
     missing = inputs.missing_goids or set()
@@ -592,6 +604,7 @@ def build_data_model_usage_rows(
         inputs.function_types_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     artifacts = ModelUsageArtifacts(
         ast_by_goid=inputs.ast_by_goid,
@@ -608,11 +621,7 @@ def build_data_model_usage_rows(
         max_examples_per_usage=max_examples_per_usage,
         buffer=buffer,
     )
-    rows: list[dict[str, object]] = []
-    for idx in range(buffer.row_count):
-        row = {name: buffer.data[name][idx] for name in buffer.columns}
-        rows.append(row)
-    return rows
+    return buffer
 
 
 def _rows_for_snapshot(
@@ -620,9 +629,10 @@ def _rows_for_snapshot(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> list[dict[str, object]]:
     require_columns(frame, ("repo", "commit"))
-    filtered = snapshot_table(frame, repo=repo, commit=commit)
+    filtered = snapshot_table(frame, repo=repo, commit=commit, ctx=ctx)
     return list(iter_rows(filtered))
 
 

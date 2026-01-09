@@ -12,9 +12,9 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_spec_for_table,
     finalize_table,
 )
-from codeintel.core.columnar.rows import table_for_rows
+from codeintel.core.columnar.rows import ColumnarRowBuffer, table_for_rows
 
-RowInput = Iterable[Mapping[str, object]] | Iterable[Sequence[object]]
+RowInput = ColumnarRowBuffer | Iterable[Mapping[str, object]] | Iterable[Sequence[object]]
 
 
 def finalize_analytics_result(table_key: str, table: pa.Table) -> FinalizeResult:
@@ -72,7 +72,10 @@ def finalize_analytics_rows(table_key: str, rows: RowInput) -> pa.Table:
     pyarrow.Table
         Contract-aligned analytics table built from row inputs.
     """
-    table, _ = table_for_rows(table_key, rows)
+    if isinstance(rows, ColumnarRowBuffer):
+        table = rows.to_table()
+    else:
+        table, _ = table_for_rows(table_key, rows)
     return finalize_analytics_table(table_key, table)
 
 

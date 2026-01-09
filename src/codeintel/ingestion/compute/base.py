@@ -10,24 +10,23 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
-import pyarrow.dataset as ds
 
-from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
     FinalizeMode,
     FinalizeResult,
+    finalize_reader,
     finalize_spec_for_table,
     finalize_table,
 )
-from codeintel.core.columnar.plan_ops import build_query_plan_for_context, materialize_plan
-from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
 from codeintel.core.query_results import records_from_arrow_table
 from codeintel.core.schemas.service import get_schema_service
+from codeintel.ingestion.compute import queryspecs as ingest_queryspecs
+
+build_ingest_query_spec = ingest_queryspecs.build_ingest_query_spec
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Iterator
 
     from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
@@ -195,27 +194,15 @@ def finalize_arrow_readers(
             dedupe=FinalizeDedupe(enabled=False),
             emit_artifacts=True,
         )
-        table = reader_to_table(reader)
-        table = _apply_ingest_query_plan(table, table_key=table_key)
         try:
-            result = finalize_table(table, spec=spec)
+            result = finalize_reader(reader, spec=spec)
         except ValueError as exc:
             warnings.append(f"{table_key}: {exc}")
-            finalized[table_key] = table
+            finalized[table_key] = pa.Table.from_batches([], schema=reader.schema)
             continue
         finalized[table_key] = result.good
         warnings.extend(_finalize_warnings(table_key, result))
     return finalized, warnings
-
-
-def _apply_ingest_query_plan(table: pa.Table, *, table_key: str) -> pa.Table:
-    spec = build_ingest_query_spec(table_key)
-    try:
-        dataset = ds.dataset(table)
-        plan = build_query_plan_for_context(dataset, spec=spec, ctx=None)
-        return materialize_plan(plan, use_threads=True)
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return table
 
 
 def build_typed_extras(
@@ -246,64 +233,6 @@ def build_typed_extras(
             value = list(value)
         typed[field.name] = value
     return typed
-
-
-def build_ingest_query_spec(
-    table_key: str,
-    *,
-    columns: Sequence[str] | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
-    rel_path: str | None = None,
-) -> QuerySpec:
-    """Build an ingestion-friendly QuerySpec for repo/commit/rel_path scoping.
-
-    Returns
-    -------
-    QuerySpec
-        Query specification with optional repo/commit/path filtering.
-    """
-    resolved_columns = _resolve_query_columns(table_key, columns)
-    predicate = _ingest_scope_predicate(
-        column_names=set(resolved_columns),
-        repo=repo,
-        commit=commit,
-        rel_path=rel_path,
-    )
-    projection = ProjectionSpec(base_cols=tuple(resolved_columns))
-    return QuerySpec(
-        predicate=predicate,
-        pushdown_predicate=predicate,
-        projection=projection,
-    )
-
-
-def _resolve_query_columns(table_key: str, columns: Sequence[str] | None) -> list[str]:
-    if columns is not None:
-        return list(columns)
-    schema = get_schema_service().get_table_schema(table_key)
-    if schema is None:
-        return []
-    return list(schema.column_names())
-
-
-def _ingest_scope_predicate(
-    *,
-    column_names: set[str],
-    repo: str | None,
-    commit: str | None,
-    rel_path: str | None,
-) -> Expression | None:
-    exprs: list[Expression] = []
-    if repo is not None and "repo" in column_names:
-        exprs.append(E.field("repo") == E.scalar(repo))
-    if commit is not None and "commit" in column_names:
-        exprs.append(E.field("commit") == E.scalar(commit))
-    if rel_path is not None and "rel_path" in column_names:
-        exprs.append(E.field("rel_path") == E.scalar(rel_path))
-    if not exprs:
-        return None
-    return E.and_(*exprs)
 
 
 def _finalize_warnings(table_key: str, result: FinalizeResult) -> list[str]:

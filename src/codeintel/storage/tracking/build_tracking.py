@@ -11,16 +11,19 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast
 
 import pyarrow as pa
 from sqlglot import exp
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
-from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
 from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.execution_context import (
+    resolve_execution_context,
+)
 from codeintel.core.columnar.finalize_ops import FinalizeDedupe, finalize_spec_for_table
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.kernels import stable_sort_indices
@@ -388,7 +391,9 @@ class BuildTracking:
         resolved_threads = (
             scan_options.use_threads if scan_options.use_threads is not None else True
         )
-        execution_ctx = ExecutionContext(
+        execution_ctx = resolve_execution_context(None)
+        execution_ctx = replace(
+            execution_ctx,
             use_threads=resolved_threads,
             determinism="canonical",
             combine_chunks=True,
@@ -416,7 +421,7 @@ class BuildTracking:
         result = run_pipeline(
             plan=ExecutionPlan(table_thunk=_read_table),
             finalize=finalize_spec,
-            ctx=execution_ctx,
+            options=PipelineRunOptions(ctx=execution_ctx),
         )
         return result.good if result.good.num_rows else None
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -11,6 +11,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.compute import (
     count_distinct,
     count_non_positive,
@@ -22,6 +23,7 @@ from codeintel.core.columnar.compute_config import (
     DEFAULT_SCALAR_AGG_ALLOW_NULL,
 )
 from codeintel.core.columnar.compute_helpers import call_compute
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.iter import iter_array_values
@@ -29,11 +31,10 @@ from codeintel.core.columnar.masks import (
     filter_valid,
     is_valid_mask,
 )
-from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
-from codeintel.core.columnar.streaming import DatasetScanOptions
+from codeintel.core.columnar.plan_ops import Plan, ScanPlanOptions, build_scan_plan
+from codeintel.core.columnar.streaming import DatasetScanOptions, build_scanner
 from codeintel.core.datasets.arrow_store import dataset_stats, scan_dataset
 from codeintel.core.datasets.paths import dataset_snapshot_dir
-from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.datasets.scanning import ParquetScanOptions, scan_parquet_table
 from codeintel.core.query_results import ScalarCoercionError
 from codeintel.core.table_key import is_valid_table_key
@@ -43,6 +44,12 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 LOG = logging.getLogger(__name__)
+
+
+def _materialize_plan(plan: Plan, *, use_threads: bool) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    execution_ctx = replace(execution_ctx, use_threads=use_threads)
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
 
 
 @dataclass(frozen=True, slots=True)
@@ -488,7 +495,7 @@ def _dataset_row_count(
             keys=[],
             aggregates=[(E.scalar(1), "count", None, "row_count")],
         )
-        table = counted.to_table(use_threads=True)
+        table = _materialize_plan(counted, use_threads=True)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return None
     if table.num_rows == 0 or "row_count" not in table.column_names:
@@ -529,7 +536,7 @@ def _read_table(
                 require_sequenced_output=True,
             ),
         )
-        return plan.to_table(use_threads=True)
+        return _materialize_plan(plan, use_threads=True)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         pass
     try:
@@ -735,7 +742,7 @@ def _count_non_positive_filtered(dataset: ds.Dataset, *, column: str) -> int | N
                 require_sequenced_output=True,
             ),
         )
-        result = plan.to_table(use_threads=True).num_rows
+        result = _materialize_plan(plan, use_threads=True).num_rows
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         result = None
     if result is None:

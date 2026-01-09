@@ -26,6 +26,7 @@ from codeintel.build.analytics.compute.graphs import (
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 MAX_SIMPLE_PATHS = 1000
@@ -119,6 +120,7 @@ def load_cfg_blocks(
     *,
     repo: str | None = None,
     commit: str | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> tuple[dict[int, list[tuple[int, str, int, int]]], dict[int, list[tuple[int, int, str]]]]:
     """
     Load CFG blocks and edges grouped by function GOID.
@@ -131,7 +133,7 @@ def load_cfg_blocks(
     blocks_by_fn: dict[int, list[tuple[int, str, int, int]]] = defaultdict(list)
     edges_by_fn: dict[int, list[tuple[int, int, str]]] = defaultdict(list)
 
-    blocks_table = cfg_blocks_rowset(cfg_blocks_frame, repo=repo, commit=commit)
+    blocks_table = cfg_blocks_rowset(cfg_blocks_frame, repo=repo, commit=commit, ctx=ctx)
     for row in iter_rows(blocks_table):
         fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         if fn_id is None:
@@ -159,7 +161,7 @@ def load_cfg_blocks(
                 )
             )
 
-    edges_table = cfg_edges_rowset(cfg_edges_frame, repo=repo, commit=commit)
+    edges_table = cfg_edges_rowset(cfg_edges_frame, repo=repo, commit=commit, ctx=ctx)
     for row in iter_rows(edges_table):
         fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         if fn_id is None:

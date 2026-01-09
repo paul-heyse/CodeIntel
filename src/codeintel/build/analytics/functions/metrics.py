@@ -28,6 +28,7 @@ from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import materialize_plan
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 from codeintel.core.validation.reporters import FunctionValidationReporter
@@ -285,6 +286,8 @@ def build_function_analytics(
 def _load_goids_from_frame(
     goids_table: pa.Table,
     snapshot: SnapshotRef,
+    *,
+    ctx: ExecutionContext | None = None,
 ) -> dict[str, list[GoidRow]]:
     """Load function GOIDs from an Arrow table.
 
@@ -311,6 +314,7 @@ def _load_goids_from_frame(
         repo=snapshot.repo,
         commit=snapshot.commit,
         columns=GOIDS_REQUIRED_COLUMNS,
+        ctx=ctx,
     )
     plan = plan.filter(E.in_("kind", ["function", "method"]))
     aggregates: list[tuple[str, str, None, str]] = []
@@ -434,6 +438,7 @@ def compute_function_analytics_result_from_tabular(
     snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> FunctionAnalyticsResult:
     """Compute function analytics result from tabular GOID inputs.
 
@@ -458,7 +463,7 @@ def compute_function_analytics_result_from_tabular(
         scope=SnapshotScope.from_snapshot(snapshot),
         require_scope_columns=True,
     )
-    goids_by_file = _load_goids_from_frame(goids_table, snapshot)
+    goids_by_file = _load_goids_from_frame(goids_table, snapshot, ctx=ctx)
     return _compute_from_goids(goids_by_file, snapshot, options=options)
 
 
@@ -544,6 +549,7 @@ def compute_function_analytics_result(
     snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> FunctionAnalyticsResult:
     """
     Compute pure function analytics result without persisting.
@@ -570,6 +576,7 @@ def compute_function_analytics_result(
         goids_input,
         snapshot,
         options=options,
+        ctx=ctx,
     )
 
 
@@ -578,6 +585,7 @@ def compute_function_analytics_result_from_table(
     snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> FunctionAnalyticsResult:
     """Backward-compatible wrapper around tabular analytics computation.
 
@@ -590,4 +598,5 @@ def compute_function_analytics_result_from_table(
         goids_input,
         snapshot,
         options=options,
+        ctx=ctx,
     )

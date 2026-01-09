@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from codeintel.build.analytics.compute.row_builders.context import RowBuildContext
 from codeintel.build.analytics.compute.row_builders.core import (
+    buffer_for_table,
+    buffer_from_rows,
     row_tuple_for_table,
     rows_to_tuples_for_table,
 )
@@ -45,6 +47,8 @@ __all__ = [
     "SymbolFunctionMetricInputs",
     "SymbolMetricInputs",
     "SymbolModuleMetricInputs",
+    "buffer_for_table",
+    "buffer_from_rows",
     "build_function_graph_metric_rows",
     "build_function_metric_ext_rows",
     "build_module_graph_metric_rows",

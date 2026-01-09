@@ -16,8 +16,7 @@ from codeintel.core.datasets.manifests import read_dataset_manifest
 from codeintel.core.datasets.parquet_metadata import metadata_from_schema
 from codeintel.core.queries.filter_compiler import (
     FilterCompilerError,
-    arrow_filter_expression,
-    compile_filter_predicates,
+    arrow_predicate_from_filters,
 )
 from codeintel.core.schemas.schema_catalog_models import DerivedSettingsPayload
 from codeintel.storage.datasets.contracts import (
@@ -203,7 +202,7 @@ def dataset_filter_expression(
     if not filters:
         return None
     try:
-        predicates = compile_filter_predicates(
+        return arrow_predicate_from_filters(
             filters,
             allowed_columns=allowed_columns,
             column_types=column_types,
@@ -211,7 +210,6 @@ def dataset_filter_expression(
     except FilterCompilerError as exc:
         LOG.debug("Dataset filter compilation failed: %s", exc)
         return None
-    return arrow_filter_expression(predicates)
 
 
 def dataset_scanner_for_entry(

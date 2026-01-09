@@ -153,7 +153,7 @@ class TestBuildFunctionGraphMetricRows:
 
         result = build_function_graph_metric_rows(inputs)
 
-        _require(condition=result == [], message="expected empty list for no graph nodes")
+        _require(condition=not result, message="expected empty list for no graph nodes")
 
     @staticmethod
     def test_builds_rows_for_nodes() -> None:
@@ -248,14 +248,14 @@ class TestBuildSubsystemGraphRows:
             message="expected two subsystem rows",
         )
         # Results are in pagerank iteration order (api, core)
-        _require(condition=result[0][2] == "api", message="first subsystem name mismatch")
+        _require(condition=result[0]["subsystem_id"] == "api", message="first subsystem name mismatch")
         _require(
-            condition=result[0][5] == SUBSYSTEM_PAGERANK_API,
+            condition=result[0]["import_pagerank"] == SUBSYSTEM_PAGERANK_API,
             message="first subsystem pagerank mismatch",
         )
-        _require(condition=result[1][2] == "core", message="second subsystem name mismatch")
+        _require(condition=result[1]["subsystem_id"] == "core", message="second subsystem name mismatch")
         _require(
-            condition=result[1][5] == SUBSYSTEM_PAGERANK_CORE,
+            condition=result[1]["import_pagerank"] == SUBSYSTEM_PAGERANK_CORE,
             message="second subsystem pagerank mismatch",
         )
 
@@ -297,8 +297,8 @@ class TestBuildSymbolRows:
             condition=len(result) == SYMBOL_MODULE_ROW_COUNT,
             message="expected two symbol module rows",
         )
-        _require(condition=result[0][2] == "mod_a", message="first module name mismatch")
-        _require(condition=result[1][2] == "mod_b", message="second module name mismatch")
+        _require(condition=result[0]["module"] == "mod_a", message="first module name mismatch")
+        _require(condition=result[1]["module"] == "mod_b", message="second module name mismatch")
 
 
 class TestRowBuildersImport:

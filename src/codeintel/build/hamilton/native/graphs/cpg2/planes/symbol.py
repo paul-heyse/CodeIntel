@@ -27,7 +27,7 @@ from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join
 from codeintel.build.tabular.kernels import stable_sort_indices
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.arrowdsl import join_safe_projection
-from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
@@ -80,22 +80,24 @@ def cpg2_edges__scip_symbol_relationships(
         columns=["symbol", "related_symbol", "relationship_kind"],
     )
     extras_kv: list[dict[str, str] | None] = []
-    for row in iter_rows(
-        joined,
-        [
-            "symbol",
-            "related_symbol",
-            "relationship_kind",
-            "src_cpg_node_id",
-            "src_cpg_node_id_ext",
-            "dst_cpg_node_id",
-            "dst_cpg_node_id_ext",
-        ],
-    ):
+    extras_columns = [
+        "symbol",
+        "related_symbol",
+        "relationship_kind",
+        "src_cpg_node_id",
+        "src_cpg_node_id_ext",
+        "dst_cpg_node_id",
+        "dst_cpg_node_id_ext",
+    ]
+    for values in iter_tuples(joined.to_reader(), columns=extras_columns):
         payload: dict[str, object] = {}
-        if row.get("src_cpg_node_id") is None and row.get("src_cpg_node_id_ext") is not None:
+        src_cpg_node_id = values[3]
+        src_cpg_node_id_ext = values[4]
+        dst_cpg_node_id = values[5]
+        dst_cpg_node_id_ext = values[6]
+        if src_cpg_node_id is None and src_cpg_node_id_ext is not None:
             payload["src_symbol_origin"] = "external"
-        if row.get("dst_cpg_node_id") is None and row.get("dst_cpg_node_id_ext") is not None:
+        if dst_cpg_node_id is None and dst_cpg_node_id_ext is not None:
             payload["dst_symbol_origin"] = "external"
         extras_kv.append(extras_kv_from_mapping(payload) if payload else None)
     joined = _coalesce_column(joined, "src_cpg_node_id", "src_cpg_node_id_ext")
@@ -188,18 +190,10 @@ def cpg2_edges__scip_symbol_goid_xref(
         ]
         if field in joined_table.column_names
     ]
-    extras_kv = [
-        extras_kv_from_mapping(
-            {
-                "def_rel_path": row.get("def_rel_path"),
-                "def_start_line": row.get("def_start_line"),
-                "def_start_col": row.get("def_start_col"),
-                "def_end_line": row.get("def_end_line"),
-                "def_end_col": row.get("def_end_col"),
-            }
-        )
-        for row in iter_rows(joined_table, extras_fields)
-    ]
+    extras_kv: list[dict[str, str] | None] = []
+    for values in iter_tuples(joined_table.to_reader(), columns=extras_fields):
+        mapping = dict(zip(extras_fields, values, strict=False))
+        extras_kv.append(extras_kv_from_mapping(mapping))
     joined = joined_table.append_column("ordinal", ordinals)
     joined = joined.append_column(
         "extras_kv",

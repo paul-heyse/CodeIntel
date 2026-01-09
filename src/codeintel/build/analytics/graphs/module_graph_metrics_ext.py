@@ -30,6 +30,7 @@ from codeintel.build.analytics.graphs.orchestrator import (
 from codeintel.build.graphs.runtime.context import GraphContext
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 from codeintel.build.graphs.rx.store import RxGraphStore
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.compute.graphs import (
@@ -135,7 +136,7 @@ def _module_metric_rows(
     ctx: GraphContext,
     views: GraphViews,
     slices: ModuleGraphSlices,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """Build rows for module-level extended metrics.
 
     Parameters
@@ -153,8 +154,8 @@ def _module_metric_rows(
 
     Returns
     -------
-    list[dict[str, object]]
-        Rows ready for insertion.
+    ColumnarRowBuffer
+        Buffer containing rows ready for insertion.
     """
     centralities = {
         "betweenness": slices.centralities.betweenness,
@@ -194,7 +195,7 @@ def _module_metric_rows(
         structure=structure,
         components=components,
         rich_club=rich_club,
-        nodes=sorted(nodes),
+        nodes=nodes,
     )
     return build_module_metric_ext_rows(inputs)
 
@@ -207,7 +208,7 @@ _MODULE_CONTEXT_FACTORY = GraphContextFactory(
 )
 
 # Configuration for module-level extended metrics
-_MODULE_EXT_CONFIG: ExtendedMetricsConfig[ModuleGraphSlices, dict[str, object]] = (
+_MODULE_EXT_CONFIG: ExtendedMetricsConfig[ModuleGraphSlices, ColumnarRowBuffer] = (
     ExtendedMetricsConfig(
         table_key="analytics.graph_metrics_modules_ext",
         filter_graph=lambda f, g: f.filter_import_graph(g),
@@ -225,7 +226,7 @@ def build_graph_metrics_modules_ext_rows(
     import_graph: GraphInput,
     runtime: GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """Populate analytics.graph_metrics_modules_ext with richer import metrics.
 
     Parameters
@@ -243,8 +244,8 @@ def build_graph_metrics_modules_ext_rows(
 
     Returns
     -------
-    list[dict[str, object]]
-        Rows ready for insertion into analytics.graph_metrics_modules_ext.
+    ColumnarRowBuffer
+        Buffer containing rows for analytics.graph_metrics_modules_ext.
     """
     request = ExtendedMetricsRequest(
         repo=repo,

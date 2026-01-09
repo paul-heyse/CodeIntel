@@ -10,6 +10,7 @@ import pyarrow as pa
 from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
+from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.entrypoints.compute import (
     EntrypointsResult,
     compute_entrypoints_pure,
@@ -284,10 +285,14 @@ def entrypoints_result(
     """
     module_map = _module_map(entrypoint_module_frames.modules_frame)
     if not module_map:
-        return EntrypointsResult(entrypoint_rows=(), test_rows=())
+        return EntrypointsResult(
+            entrypoint_rows=buffer_for_table(ENTRYPOINTS_TABLE_KEY),
+            test_rows=buffer_for_table(ENTRYPOINT_TESTS_TABLE_KEY),
+        )
     catalog = catalog_provider_from_frames(
         goids_frame=entrypoint_module_frames.goids_frame,
         modules_frame=entrypoint_module_frames.modules_frame,
+        ctx=env.execution_context,
     )
     inputs = EntrypointBuildInputs(
         catalog_provider=catalog,
@@ -304,6 +309,7 @@ def entrypoints_result(
         test_catalog_frame=entrypoint_test_frames.test_catalog_frame,
         subsystem_modules_frame=entrypoint_subsystem_frames.subsystem_modules_frame,
         subsystems_frame=entrypoint_subsystem_frames.subsystems_frame,
+        ctx=env.execution_context,
     )
     return compute_entrypoints_pure(
         env.snapshot,

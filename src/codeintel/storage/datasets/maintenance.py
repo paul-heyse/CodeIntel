@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pyarrow as pa
 
-from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
 from codeintel.core.columnar.dedupe_ops import DedupeTier
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -305,7 +309,7 @@ def _finalize_reader_for_maintenance(
             result = run_pipeline(
                 plan=ExecutionPlan.from_table(table),
                 finalize=finalize_spec,
-                ctx=execution_ctx,
+                options=PipelineRunOptions(ctx=execution_ctx),
             )
             _log_finalize_warnings(table_key, result)
             yield from result.good.to_batches(max_chunksize=batch.num_rows)
@@ -353,7 +357,9 @@ def _execution_context_for_maintenance(
     stable_sort_keys: tuple[str, ...] | None,
 ) -> ExecutionContext:
     determinism = "throughput" if stable_sort_keys == () else "canonical"
-    return ExecutionContext(
+    resolved = resolve_execution_context(None)
+    return replace(
+        resolved,
         use_threads=DEFAULT_ARROW_USE_THREADS,
         determinism=determinism,
         combine_chunks=_resolve_combine_chunks_for_table(table_key),

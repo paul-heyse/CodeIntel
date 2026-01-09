@@ -19,6 +19,7 @@ from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import equal_expr, is_in_expr, is_valid_expr
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 
@@ -130,6 +131,7 @@ def cfg_blocks_rowset(
     *,
     repo: str | None = None,
     commit: str | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> pa.Table:
     """Build a grouped rowset of CFG blocks by function.
 
@@ -147,7 +149,7 @@ def cfg_blocks_rowset(
     )
     if not set(required).issubset(table.column_names):
         return pa.Table.from_pylist([])
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required)
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required, ctx=ctx)
     plan = plan.filter(
         E.and_(
             E.is_valid("function_goid_h128"),
@@ -177,6 +179,7 @@ def cfg_edges_rowset(
     *,
     repo: str | None = None,
     commit: str | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> pa.Table:
     """Build a grouped rowset of CFG edges by function.
 
@@ -188,7 +191,7 @@ def cfg_edges_rowset(
     required = ("function_goid_h128", "src_block_id", "dst_block_id", "edge_kind")
     if not set(required).issubset(table.column_names):
         return pa.Table.from_pylist([])
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required)
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required, ctx=ctx)
     plan = plan.filter(
         E.and_(
             E.is_valid("function_goid_h128"),
@@ -220,6 +223,7 @@ def dfg_edges_rowset(
     *,
     repo: str | None = None,
     commit: str | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> pa.Table:
     """Build a grouped rowset of DFG edges by function.
 
@@ -239,7 +243,7 @@ def dfg_edges_rowset(
     )
     if not set(required).issubset(table.column_names):
         return pa.Table.from_pylist([])
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required)
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required, ctx=ctx)
     plan = plan.filter(
         E.and_(
             E.is_valid("function_goid_h128"),
@@ -280,6 +284,7 @@ def load_function_metadata(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None = None,
 ) -> dict[int, tuple[str, str | None, str | None]]:
     """Load function metadata keyed by GOID from tabular frames.
 
@@ -300,7 +305,12 @@ def load_function_metadata(
         Mapping of GOID -> (rel_path, module, qualname).
     """
     module_by_path: dict[str, str] = {}
-    filtered_modules = _module_metadata_table(modules_frame, repo=repo, commit=commit)
+    filtered_modules = _module_metadata_table(
+        modules_frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+    )
     for row in iter_rows(filtered_modules, ("path", "module")):
         path = row.get("path")
         module = row.get("module")
@@ -308,7 +318,7 @@ def load_function_metadata(
             module_by_path[path] = module
 
     metadata: dict[int, tuple[str, str | None, str | None]] = {}
-    filtered_goids = _goid_metadata_table(goids_frame, repo=repo, commit=commit)
+    filtered_goids = _goid_metadata_table(goids_frame, repo=repo, commit=commit, ctx=ctx)
     for row in iter_rows(filtered_goids, ("goid_h128", "rel_path", "qualname")):
         goid = normalize_decimal_id(row.get("goid_h128"))
         if goid is None:
@@ -331,10 +341,11 @@ def _module_metadata_table(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     if "path" not in table.column_names or "module" not in table.column_names:
         return pa.Table.from_batches([], schema=table.schema)
-    plan = snapshot_plan(table, repo=repo, commit=commit)
+    plan = snapshot_plan(table, repo=repo, commit=commit, ctx=ctx)
     plan = plan.filter(E.and_(E.is_valid("path"), E.is_valid("module")))
     plan = plan.project({"path": E.field("path"), "module": E.field("module")})
     plan = plan.aggregate(
@@ -349,11 +360,12 @@ def _goid_metadata_table(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     required = {"goid_h128", "rel_path"}
     if not required.issubset(table.column_names):
         return pa.Table.from_batches([], schema=table.schema)
-    plan = snapshot_plan(table, repo=repo, commit=commit)
+    plan = snapshot_plan(table, repo=repo, commit=commit, ctx=ctx)
     filters: list[Expression] = []
     if "kind" in table.column_names:
         filters.append(E.in_("kind", ["function", "method"]))

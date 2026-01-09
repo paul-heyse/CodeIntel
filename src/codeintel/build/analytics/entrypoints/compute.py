@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.compute.entrypoints.detection import DetectorSettings
+from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.entrypoints.core import (
     ENTRYPOINT_TESTS_COLS,
     ENTRYPOINTS_COLS,
@@ -23,6 +24,7 @@ from codeintel.build.analytics.entrypoints.core import (
     _build_entrypoint_context,
     collect_entrypoint_rows,
 )
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -42,7 +44,7 @@ class EntrypointsResult:
     """Result container for entrypoints computation.
 
     Contains row data for both entrypoint tables without performing writes.
-    The rows are tuples matching the column specifications in the schema.
+    The rows are buffered for columnar materialization.
 
     Attributes
     ----------
@@ -52,8 +54,8 @@ class EntrypointsResult:
         Rows for analytics.entrypoint_tests table.
     """
 
-    entrypoint_rows: tuple[tuple[object, ...], ...]
-    test_rows: tuple[tuple[object, ...], ...]
+    entrypoint_rows: ColumnarRowBuffer
+    test_rows: ColumnarRowBuffer
 
 
 def compute_entrypoints_pure(
@@ -102,6 +104,7 @@ def compute_entrypoints_pure(
         test_catalog_frame=context_inputs.test_catalog_frame,
         subsystem_modules_frame=context_inputs.subsystem_modules_frame,
         subsystems_frame=context_inputs.subsystems_frame,
+        ctx=context_inputs.ctx,
     )
     entrypoint_context = _build_entrypoint_context(
         snapshot,
@@ -115,7 +118,12 @@ def compute_entrypoints_pure(
             snapshot.repo,
             snapshot.commit,
         )
-        return EntrypointsResult(entrypoint_rows=(), test_rows=())
+        entrypoint_rows = buffer_for_table("analytics.entrypoints")
+        test_rows = buffer_for_table("analytics.entrypoint_tests")
+        return EntrypointsResult(
+            entrypoint_rows=entrypoint_rows,
+            test_rows=test_rows,
+        )
 
     effective_settings = inputs.settings or DetectorSettings()
     entrypoint_rows, test_rows = collect_entrypoint_rows(
@@ -126,15 +134,15 @@ def compute_entrypoints_pure(
 
     log.info(
         "entrypoints computed: %d entrypoints, %d entrypoint_test edges for %s@%s",
-        len(entrypoint_rows),
-        len(test_rows),
+        entrypoint_rows.row_count,
+        test_rows.row_count,
         snapshot.repo,
         snapshot.commit,
     )
 
     return EntrypointsResult(
-        entrypoint_rows=tuple(entrypoint_rows),
-        test_rows=tuple(test_rows),
+        entrypoint_rows=entrypoint_rows,
+        test_rows=test_rows,
     )
 
 

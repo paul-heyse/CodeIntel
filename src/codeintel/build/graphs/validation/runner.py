@@ -66,7 +66,11 @@ from codeintel.core.columnar.execution_context import (
 from codeintel.core.columnar.iter import iter_rows_limit
 from codeintel.core.columnar.ordering import OrderingSpec, SortKey
 from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
-from codeintel.core.columnar.run_manifest import RunManifestOptions, write_run_manifest
+from codeintel.core.columnar.run_manifest import (
+    RunManifestOptions,
+    run_manifest_options_for_context,
+    write_run_manifest,
+)
 from codeintel.core.columnar.runtime import apply_runtime_profile
 from codeintel.core.columnar.streaming import ScanTelemetry, scan_telemetry_for_queryspec
 from codeintel.core.constants import DEFAULT_ARROW_USE_THREADS
@@ -386,14 +390,11 @@ def _emit_validation_run_manifest(
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     try:
-        write_run_manifest(
-            output_dir,
+        options = run_manifest_options_for_context(
+            ctx=execution_ctx,
+            ordering=ordering,
+            scan_telemetry=telemetry,
             options=RunManifestOptions(
-                determinism=execution_ctx.determinism,
-                ordering=ordering,
-                scan_telemetry=telemetry,
-                profile_name=_profile_name(execution_ctx),
-                scan_profile=_scan_profile_name(execution_ctx),
                 extras={
                     "table_key": table_key,
                     "snapshot_id": snapshot_id,
@@ -403,6 +404,7 @@ def _emit_validation_run_manifest(
                 filename="run_manifest_graph_validation.json",
             ),
         )
+        write_run_manifest(output_dir, options=options)
     except (OSError, TypeError, ValueError) as exc:
         logging.getLogger(__name__).warning(
             "Graph validation manifest emission failed: %s", exc

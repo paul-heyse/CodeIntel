@@ -27,7 +27,11 @@ def function_analytics_result(
     FunctionAnalyticsResult
         Types rows plus validation reporter.
     """
-    return compute_function_analytics_result_from_tabular(q__core__goids, env.snapshot)
+    return compute_function_analytics_result_from_tabular(
+        q__core__goids,
+        env.snapshot,
+        ctx=env.execution_context,
+    )
 
 
 __all__ = ["function_analytics_result"]

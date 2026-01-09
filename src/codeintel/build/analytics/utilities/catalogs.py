@@ -10,6 +10,7 @@ from codeintel.build.analytics.utilities.snapshot import snapshot_plan, snapshot
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import materialize_plan
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.storage.catalog import CatalogService, build_function_catalog_from_rows
 
 _FUNCTION_KINDS = {"function", "method"}
@@ -21,6 +22,7 @@ def module_map_from_frame(
     *,
     repo: str | None = None,
     commit: str | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> dict[str, str]:
     """Build module mapping from core.modules frame.
 
@@ -35,6 +37,7 @@ def module_map_from_frame(
         repo=repo,
         commit=commit,
         columns=("path", "module"),
+        ctx=ctx,
     )
     for row in _iter_rows_from_source(source):
         path = row.get("path")
@@ -51,6 +54,7 @@ def catalog_provider_from_frames(
     module_map_override: Mapping[str, str] | None = None,
     repo: str | None = None,
     commit: str | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> CatalogService:
     """Build a CatalogService from goids and modules frames.
 
@@ -60,10 +64,11 @@ def catalog_provider_from_frames(
         Catalog provider backed by the input frames.
     """
     module_map = dict(
-        module_map_override or module_map_from_frame(modules_frame, repo=repo, commit=commit)
+        module_map_override
+        or module_map_from_frame(modules_frame, repo=repo, commit=commit, ctx=ctx)
     )
     rows: list[dict[str, object]] = []
-    source = _goids_source(goids_frame, repo=repo, commit=commit)
+    source = _goids_source(goids_frame, repo=repo, commit=commit, ctx=ctx)
     for row in _iter_rows_from_source(source):
         kind = row.get("kind")
         if kind is not None and str(kind) not in _FUNCTION_KINDS:
@@ -96,6 +101,7 @@ def _snapshot_source(
     repo: str | None,
     commit: str | None,
     columns: Sequence[str],
+    ctx: ExecutionContext | None,
 ) -> RowSource:
     if not isinstance(source, pa.Table):
         return source
@@ -106,6 +112,7 @@ def _snapshot_source(
         repo=repo,
         commit=commit,
         columns=columns,
+        ctx=ctx,
     )
 
 
@@ -114,6 +121,7 @@ def _goids_source(
     *,
     repo: str | None,
     commit: str | None,
+    ctx: ExecutionContext | None,
 ) -> RowSource:
     if not isinstance(source, pa.Table):
         return source
@@ -128,7 +136,7 @@ def _goids_source(
     )
     if not set(required).issubset(source.column_names):
         return source
-    plan = snapshot_plan(source, repo=repo, commit=commit, columns=required)
+    plan = snapshot_plan(source, repo=repo, commit=commit, columns=required, ctx=ctx)
     plan = plan.filter(E.in_("kind", sorted(_FUNCTION_KINDS)))
     return materialize_plan(plan, use_threads=True)
 

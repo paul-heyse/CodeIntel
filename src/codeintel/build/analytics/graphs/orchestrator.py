@@ -42,7 +42,6 @@ build_extended_metrics_rows(config, request)
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
@@ -62,6 +61,7 @@ if TYPE_CHECKING:
     from codeintel.build.graphs.runtime.context import GraphContext
 
 log = logging.getLogger(__name__)
+
 
 class GraphFilterProtocol(Protocol):
     """Protocol describing graph filter behaviors."""
@@ -102,7 +102,7 @@ class GraphViews:
 
 
 @dataclass(frozen=True)
-class ExtendedMetricsConfig[TSlices, TRow: Mapping[str, object]]:
+class ExtendedMetricsConfig[TSlices, TRow]:
     """Configuration for extended graph metrics orchestration.
 
     This dataclass captures all the domain-specific callables needed to
@@ -128,7 +128,7 @@ class ExtendedMetricsConfig[TSlices, TRow: Mapping[str, object]]:
     filter_graph: Callable[[GraphFilterProtocol, GraphInput], GraphInput]
     build_context: Callable[[GraphRuntimeOptions, str, str], GraphContext]
     build_slices: Callable[[GraphViews, GraphContext], TSlices]
-    build_rows: Callable[[str, str, GraphContext, GraphViews, TSlices], list[TRow]]
+    build_rows: Callable[[str, str, GraphContext, GraphViews, TSlices], TRow]
 
 
 @dataclass(frozen=True)
@@ -184,7 +184,7 @@ class MetricsPipelineConfig[TSlices, TRow]:
     build_context: Callable[[GraphRuntimeOptions, str, str], GraphContext]
     build_views: Callable[[GraphInput], GraphViews]
     build_slices: Callable[[GraphViews, GraphContext], TSlices]
-    build_rows: Callable[[str, str, GraphContext, GraphViews, TSlices], list[TRow]]
+    build_rows: Callable[[str, str, GraphContext, GraphViews, TSlices], TRow]
 
 
 @dataclass(frozen=True)
@@ -302,10 +302,10 @@ def build_store_views(source_graph: GraphInput) -> GraphViews:
     return GraphViews(graph=graph_store, simple_graph=simple_graph, undirected=undirected)
 
 
-def build_extended_metrics_rows[TSlices, TRow: Mapping[str, object]](
+def build_extended_metrics_rows[TSlices, TRow](
     config: ExtendedMetricsConfig[TSlices, TRow],
     request: ExtendedMetricsRequest,
-) -> list[TRow]:
+) -> TRow:
     """Execute the generic extended graph metrics computation workflow.
 
     Implement the common orchestration pattern for computing extended
@@ -346,7 +346,7 @@ def build_extended_metrics_rows[TSlices, TRow: Mapping[str, object]](
 def build_metrics_pipeline_rows[TSlices, TRow](
     config: MetricsPipelineConfig[TSlices, TRow],
     request: MetricsPipelineRequest,
-) -> list[TRow]:
+) -> TRow:
     """Execute a metrics pipeline for graph analytics.
 
     Parameters
@@ -358,7 +358,7 @@ def build_metrics_pipeline_rows[TSlices, TRow](
 
     Returns
     -------
-    list[TRow]
+    TRow
         Rows produced by the metrics pipeline.
     """
     runtime_opts = request.runtime or GraphRuntimeOptions()

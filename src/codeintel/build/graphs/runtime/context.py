@@ -12,16 +12,19 @@ import sys
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from codeintel.build.graphs.rx.weights import WeightSemantics
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.execution_context import (
     resolve_runtime_profile,
     runtime_profile_from_settings,
 )
-from codeintel.core.columnar.profiles import RuntimeProfile
 from codeintel.core.runtime.loader import load_runtime_settings
+
+if TYPE_CHECKING:
+    from codeintel.core.columnar.dedupe_ops import DedupeTier
+    from codeintel.core.columnar.profiles import RuntimeProfile
 
 DEFAULT_BETWEENNESS_SAMPLE = 500
 DEFAULT_PARALLEL_THRESHOLD = 50
@@ -402,7 +405,7 @@ def _normalize_runtime_profile(
 def _resolve_parallel_threshold(
     profile: RuntimeProfile,
     current: int | None,
-) -> int | None:
+) -> int:
     use_threads = profile.use_threads
     if use_threads is False:
         return sys.maxsize
@@ -416,9 +419,8 @@ def _resolve_rayon_threads(
     current: int | None,
 ) -> int | None:
     resolved = profile.resolve_cpu_threads(default=current)
-    if profile.use_threads is False:
-        if resolved is None or resolved > 1:
-            return 1
+    if profile.use_threads is False and (resolved is None or resolved > 1):
+        return 1
     return resolved
 
 

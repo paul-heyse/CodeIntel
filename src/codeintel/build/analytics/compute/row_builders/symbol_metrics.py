@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from codeintel.build.analytics.compute.row_builders.context import RowBuildContext
+from codeintel.build.analytics.compute.row_builders.core import buffer_for_table
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import as_int
 
 if TYPE_CHECKING:
@@ -37,62 +39,66 @@ SymbolModuleMetricInputs = SymbolMetricInputs[str]
 SymbolFunctionMetricInputs = SymbolMetricInputs[int]
 
 
-def build_symbol_module_rows(inputs: SymbolModuleMetricInputs) -> list[SymbolModuleRow]:
+def build_symbol_module_rows(inputs: SymbolModuleMetricInputs) -> ColumnarRowBuffer:
     """Construct rows for analytics.symbol_graph_metrics_modules.
 
     Returns
     -------
-    list[SymbolModuleRow]
-        Rows ready for insertion into analytics.symbol_graph_metrics_modules.
+    ColumnarRowBuffer
+        Buffer containing rows ready for analytics.symbol_graph_metrics_modules.
     """
-    return [
-        (
-            inputs.row_context.repo,
-            inputs.row_context.commit,
-            module,
-            inputs.centrality["betweenness"].get(module, 0.0),
-            inputs.centrality["closeness"].get(module, 0.0),
-            inputs.centrality["eigenvector"].get(module, 0.0),
-            inputs.centrality["harmonic"].get(module, 0.0),
-            inputs.structure["core_number"].get(module),
-            inputs.structure["constraint"].get(module, 0.0),
-            inputs.structure["effective_size"].get(module, 0.0),
-            inputs.structure["community_id"].get(module),
-            inputs.comp_id.get(module),
-            inputs.comp_size.get(module),
-            inputs.row_context.created_at,
+    buffer = buffer_for_table("analytics.symbol_graph_metrics_modules")
+    for module in inputs.centrality["betweenness"]:
+        buffer.append(
+            {
+                "repo": inputs.row_context.repo,
+                "commit": inputs.row_context.commit,
+                "module": module,
+                "symbol_betweenness": inputs.centrality["betweenness"].get(module, 0.0),
+                "symbol_closeness": inputs.centrality["closeness"].get(module, 0.0),
+                "symbol_eigenvector": inputs.centrality["eigenvector"].get(module, 0.0),
+                "symbol_harmonic": inputs.centrality["harmonic"].get(module, 0.0),
+                "symbol_k_core": inputs.structure["core_number"].get(module),
+                "symbol_constraint": inputs.structure["constraint"].get(module, 0.0),
+                "symbol_effective_size": inputs.structure["effective_size"].get(module, 0.0),
+                "symbol_community_id": inputs.structure["community_id"].get(module),
+                "symbol_component_id": inputs.comp_id.get(module),
+                "symbol_component_size": inputs.comp_size.get(module),
+                "created_at": inputs.row_context.created_at,
+            }
         )
-        for module in inputs.centrality["betweenness"]
-    ]
+    return buffer
 
 
-def build_symbol_function_rows(inputs: SymbolFunctionMetricInputs) -> list[SymbolFunctionRow]:
+def build_symbol_function_rows(inputs: SymbolFunctionMetricInputs) -> ColumnarRowBuffer:
     """Construct rows for analytics.symbol_graph_metrics_functions.
 
     Returns
     -------
-    list[SymbolFunctionRow]
-        Rows ready for insertion into analytics.symbol_graph_metrics_functions.
+    ColumnarRowBuffer
+        Buffer containing rows ready for analytics.symbol_graph_metrics_functions.
     """
-    return [
-        (
-            inputs.row_context.repo,
-            inputs.row_context.commit,
-            as_int(node),
-            inputs.centrality["betweenness"].get(node, 0.0),
-            inputs.centrality["closeness"].get(node, 0.0),
-            inputs.centrality["eigenvector"].get(node, 0.0),
-            inputs.centrality["harmonic"].get(node, 0.0),
-            inputs.structure["core_number"].get(node),
-            inputs.structure["constraint"].get(node, 0.0),
-            inputs.structure["effective_size"].get(node, 0.0),
-            inputs.structure["community_id"].get(node),
-            inputs.comp_id.get(node),
-            inputs.comp_size.get(node),
-            inputs.row_context.created_at,
+    buffer = buffer_for_table("analytics.symbol_graph_metrics_functions")
+    for node in inputs.centrality["betweenness"]:
+        buffer.append(
+            {
+                "repo": inputs.row_context.repo,
+                "commit": inputs.row_context.commit,
+                "function_goid_h128": as_int(node),
+                "symbol_betweenness": inputs.centrality["betweenness"].get(node, 0.0),
+                "symbol_closeness": inputs.centrality["closeness"].get(node, 0.0),
+                "symbol_eigenvector": inputs.centrality["eigenvector"].get(node, 0.0),
+                "symbol_harmonic": inputs.centrality["harmonic"].get(node, 0.0),
+                "symbol_k_core": inputs.structure["core_number"].get(node),
+                "symbol_constraint": inputs.structure["constraint"].get(node, 0.0),
+                "symbol_effective_size": inputs.structure["effective_size"].get(node, 0.0),
+                "symbol_community_id": inputs.structure["community_id"].get(node),
+                "symbol_component_id": inputs.comp_id.get(node),
+                "symbol_component_size": inputs.comp_size.get(node),
+                "created_at": inputs.row_context.created_at,
+            }
         )
-        for node in inputs.centrality["betweenness"]
-    ]
+    return buffer
 
 
 __all__ = [

@@ -16,21 +16,22 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
-from codeintel.core.columnar.arrowdsl import (
-    ExecutionContext,
-    ExecutionPlan,
-    apply_deterministic_order,
-)
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, apply_deterministic_order
 from codeintel.core.columnar.compute_helpers import call_compute, combine_table_chunks
 from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.dedupe_ops import DedupeTier
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
 from codeintel.core.columnar.readers import record_batch_reader_from_batches
 from codeintel.core.columnar.schema_metadata import decode_metadata, merge_metadata
 from codeintel.core.columnar.streaming import (
     DatasetScanOptions,
-    configure_arrow_threading,
+    build_scanner,
+    configure_arrow_threading_for_context,
     dataset_for_manifest,
     dataset_for_path,
 )
@@ -41,7 +42,6 @@ from codeintel.core.datasets.manifests import (
     write_dataset_manifest,
 )
 from codeintel.core.datasets.paths import dataset_snapshot_dir
-from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.core.schemas.arrow_metadata import arrow_schema_hash
 from codeintel.core.schemas.service import get_schema_service
@@ -211,7 +211,7 @@ def write_dataset(
             combine_chunks=combine_chunks,
         )
     execution_ctx = _execution_context_for_write(table_key=table_key, options=resolved)
-    configure_arrow_threading()
+    configure_arrow_threading_for_context(ctx=execution_ctx)
     prepared = _prepare_write_data(
         data,
         table_key=table_key,
@@ -868,7 +868,9 @@ def _execution_context_for_write(
         msg = f"Canonical dataset writes require stable_sort_keys or primary key: {table_key}"
         raise ValueError(msg)
     combine_chunks = True if options.combine_chunks is None else options.combine_chunks
-    return ExecutionContext(
+    resolved = resolve_execution_context(None)
+    return replace(
+        resolved,
         use_threads=DEFAULT_ARROW_USE_THREADS,
         determinism=determinism,
         combine_chunks=combine_chunks,

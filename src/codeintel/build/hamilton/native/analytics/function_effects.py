@@ -74,7 +74,11 @@ def function_effects__base(
         scope=scope,
         require_scope_columns=False,
     )
-    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
+    catalog = catalog_provider_from_frames(
+        goids_frame=goids_frame,
+        modules_frame=modules_frame,
+        ctx=env.execution_context,
+    )
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
@@ -98,6 +102,7 @@ def function_effects__base(
             scope=scope,
             require_scope_columns=False,
         ),
+        ctx=env.execution_context,
     )
     rows = build_function_effects_rows(env.snapshot, inputs=inputs)
     return finalize_analytics_rows(FUNCTION_EFFECTS_TABLE_KEY, rows)

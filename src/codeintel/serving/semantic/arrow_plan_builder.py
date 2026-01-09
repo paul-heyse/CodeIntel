@@ -12,8 +12,7 @@ from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
 from codeintel.core.queries.filter_compiler import (
     FilterCompilerError,
-    arrow_filter_expression,
-    compile_filter_predicates,
+    arrow_predicate_from_filters,
 )
 from codeintel.core.schemas.type_mappings import arrow_type_from_column_type
 from codeintel.serving.semantic.models import FilterSpec
@@ -164,14 +163,13 @@ def _filter_expression(
     if not filters:
         return None
     try:
-        predicates = compile_filter_predicates(
+        expression = arrow_predicate_from_filters(
             filters,
             allowed_columns=allowed_columns,
             column_types=column_types,
         )
     except FilterCompilerError:
         return None
-    expression = arrow_filter_expression(predicates)
     if expression is None:
         return None
     return cast("Expression", expression)

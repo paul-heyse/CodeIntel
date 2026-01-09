@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.utilities.ast import (
     literal_int,
     literal_value,
@@ -19,6 +20,8 @@ from codeintel.build.analytics.utilities.ast import (
 )
 from codeintel.build.analytics.utilities.snapshot import snapshot_table
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
@@ -66,12 +69,13 @@ class FunctionContractInputs:
     docstrings_frame: pa.Table | None = None
     function_types_frame: pa.Table | None = None
     max_conditions_per_func: int = 64
+    ctx: ExecutionContext | None = None
 
 
 def build_function_contracts_rows(
     snapshot: SnapshotRef,
     inputs: FunctionContractInputs,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """
     Build contract rows for `analytics.function_contracts` without persisting.
 
@@ -87,8 +91,8 @@ def build_function_contracts_rows(
 
     Returns
     -------
-    list[dict[str, object]]
-        Contract rows ready for persistence.
+    ColumnarRowBuffer
+        Buffer containing contract rows ready for persistence.
     """
     ast_by_goid = inputs.function_ast_map or {}
 
@@ -101,11 +105,13 @@ def build_function_contracts_rows(
         inputs.docstrings_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     type_map = _type_map_from_frame(
         inputs.function_types_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
 
     return _build_rows(
@@ -122,15 +128,15 @@ def build_function_contracts_rows(
     )
 
 
-def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
+def _build_rows(inputs: _RowInputs) -> ColumnarRowBuffer:
     """Build contract rows from ASTs, docs, and types.
 
     Returns
     -------
-    list[dict[str, object]]
-        Contract rows ready for persistence.
+    ColumnarRowBuffer
+        Buffer containing contract rows ready for persistence.
     """
-    rows: list[dict[str, object]] = []
+    buffer = buffer_for_table("analytics.function_contracts")
     for goid in inputs.goids:
         info = inputs.ast_by_goid.get(goid)
         doc_key = (info.rel_path, info.qualname) if info is not None else None
@@ -138,7 +144,7 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
         type_info = inputs.type_map.get(goid)
 
         if info is None:
-            rows.append(
+            buffer.append(
                 {
                     "repo": inputs.repo,
                     "commit": inputs.commit,
@@ -162,7 +168,7 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
             type_info=type_info,
             max_conditions=inputs.max_conditions_per_func,
         )
-        rows.append(
+        buffer.append(
             {
                 "repo": inputs.repo,
                 "commit": inputs.commit,
@@ -178,7 +184,7 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
                 "created_at": inputs.now,
             }
         )
-    return rows
+    return buffer
 
 
 def _doc_map_from_frame(
@@ -186,6 +192,7 @@ def _doc_map_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> dict[tuple[str, str], dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
@@ -198,6 +205,7 @@ def _doc_map_from_frame(
         repo=repo,
         commit=commit,
         columns=columns,
+        ctx=ctx,
     )
     if table.num_rows == 0:
         return {}
@@ -221,6 +229,7 @@ def _type_map_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
@@ -236,6 +245,7 @@ def _type_map_from_frame(
         repo=repo,
         commit=commit,
         columns=tuple(columns),
+        ctx=ctx,
     )
     if table.num_rows == 0:
         return {}
@@ -263,12 +273,14 @@ def _scoped_table(
     repo: str,
     commit: str,
     columns: Sequence[str],
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     return snapshot_table(
         frame,
         repo=repo,
         commit=commit,
         columns=columns,
+        ctx=ctx,
     )
 
 

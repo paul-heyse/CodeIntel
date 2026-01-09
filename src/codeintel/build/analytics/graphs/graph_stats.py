@@ -10,7 +10,7 @@ from codeintel.build.analytics.compute.graphs import (
     build_projection_graph,
     global_graph_stats,
 )
-from codeintel.build.analytics.compute.row_builders import row_tuple_for_table
+from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.graphs.graph_metrics import GraphMetricFilters
 from codeintel.build.analytics.graphs.orchestrator import (
     MetricsPipelineConfig,
@@ -21,6 +21,7 @@ from codeintel.build.analytics.graphs.orchestrator import (
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -46,7 +47,7 @@ class GraphStatsInputs:
     use_gpu: bool = False
 
 
-def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]:
+def build_graph_stats_rows(inputs: GraphStatsInputs) -> ColumnarRowBuffer:
     """
     Build analytics.graph_stats rows for call/import and related graphs.
 
@@ -57,8 +58,8 @@ def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Rows ready for insertion into analytics.graph_stats.
+    ColumnarRowBuffer
+        Buffer containing rows ready for analytics.graph_stats.
     """
     now = datetime.now(UTC)
 
@@ -106,7 +107,7 @@ def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]
 
     runtime = GraphRuntimeOptions()
     filters = GraphMetricFilters()
-    rows: list[tuple[object, ...]] = []
+    buffer = buffer_for_table(GRAPH_STATS_TABLE_KEY)
 
     def _stats_slices(views: GraphViews, _ctx: GraphContext) -> GlobalGraphStats:
         return global_graph_stats(views.graph)
@@ -119,38 +120,37 @@ def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]
         stats: GlobalGraphStats,
         *,
         graph_name: str,
-    ) -> list[tuple[object, ...]]:
-        return [
-            row_tuple_for_table(
-                GRAPH_STATS_TABLE_KEY,
-                {
-                    "graph_name": graph_name,
-                    "repo": repo,
-                    "commit": commit,
-                    "node_count": stats.node_count,
-                    "edge_count": stats.edge_count,
-                    "weak_component_count": stats.weak_component_count,
-                    "scc_count": stats.scc_count,
-                    "component_layers": stats.component_layers,
-                    "avg_clustering": stats.avg_clustering,
-                    "diameter_estimate": stats.diameter_estimate,
-                    "avg_shortest_path_estimate": stats.avg_shortest_path_estimate,
-                    "created_at": ctx.resolved_now(),
-                },
-            )
-        ]
+    ) -> ColumnarRowBuffer:
+        local_buffer = buffer_for_table(GRAPH_STATS_TABLE_KEY)
+        local_buffer.append(
+            {
+                "graph_name": graph_name,
+                "repo": repo,
+                "commit": commit,
+                "node_count": stats.node_count,
+                "edge_count": stats.edge_count,
+                "weak_component_count": stats.weak_component_count,
+                "scc_count": stats.scc_count,
+                "component_layers": stats.component_layers,
+                "avg_clustering": stats.avg_clustering,
+                "diameter_estimate": stats.diameter_estimate,
+                "avg_shortest_path_estimate": stats.avg_shortest_path_estimate,
+                "created_at": ctx.resolved_now(),
+            }
+        )
+        return local_buffer
 
     def _stats_rows_builder(
         *,
         graph_name: str,
-    ) -> Callable[[str, str, GraphContext, GraphViews, GlobalGraphStats], list[tuple[object, ...]]]:
+    ) -> Callable[[str, str, GraphContext, GraphViews, GlobalGraphStats], ColumnarRowBuffer]:
         def _build_rows(
             repo: str,
             commit: str,
             ctx: GraphContext,
             views: GraphViews,
             stats: GlobalGraphStats,
-        ) -> list[tuple[object, ...]]:
+        ) -> ColumnarRowBuffer:
             return _stats_rows(
                 repo,
                 commit,
@@ -178,6 +178,6 @@ def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]
             runtime=runtime,
             filters=filters,
         )
-        rows.extend(build_metrics_pipeline_rows(config, request))
+        buffer.extend_buffer(build_metrics_pipeline_rows(config, request))
 
-    return rows
+    return buffer

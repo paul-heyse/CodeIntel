@@ -13,7 +13,12 @@ import pyarrow as pa
 from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
-from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
+from codeintel.core.columnar.arrowdsl import (
+    ExecutionContext,
+    ExecutionPlan,
+    PipelineRunOptions,
+    run_pipeline,
+)
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.exports import ARROW_IPC_STREAM_MIME, iter_ipc_stream
@@ -276,7 +281,7 @@ def _finalized_reader(
             result = run_pipeline(
                 plan=ExecutionPlan.from_table(table),
                 finalize=finalize_spec,
-                ctx=resolved_ctx,
+                options=PipelineRunOptions(ctx=resolved_ctx),
             )
             if finalize_hook is not None:
                 finalize_hook(result)

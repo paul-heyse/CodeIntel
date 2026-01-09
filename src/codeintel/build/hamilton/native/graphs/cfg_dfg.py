@@ -20,7 +20,7 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
 from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.arrow_ops import iter_array_values, iter_rows
+from codeintel.build.tabular.arrow_ops import iter_array_values
 from codeintel.build.tabular.compute_helpers import cast_array
 from codeintel.build.tabular.compute_masks import non_empty_string_expr
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
@@ -87,10 +87,10 @@ def _collect_ast_function_keys(
         if isinstance(path, str) and path:
             paths.add(path)
     filtered = filter_function_ast_nodes(ast_nodes_table)
-    for row in iter_rows(filtered):
-        path = row.get("path")
-        name = row.get("name")
-        lineno = row.get("lineno")
+    for path, name, lineno in iter_tuples(
+        filtered.to_reader(),
+        columns=("path", "name", "lineno"),
+    ):
         if not isinstance(path, str) or not path:
             continue
         if not isinstance(name, str) or not name:
@@ -112,17 +112,21 @@ def _collect_goids_by_path(
     if not required.issubset(set(goids_table.column_names)):
         return goids_by_path
     filtered = filter_python_goids(goids_table)
-    for row in iter_rows(filtered):
-        if row.get("kind") not in {"function", "method"}:
+    for values in iter_tuples(
+        filtered.to_reader(),
+        columns=("kind", "rel_path", "qualname", "goid_h128", "start_line", "end_line", "language"),
+    ):
+        kind = values[0]
+        if kind not in {"function", "method"}:
             continue
-        language = row.get("language")
+        language = values[6] if len(values) > 6 else None
         if language not in {None, "python"}:
             continue
-        rel_path = row.get("rel_path")
-        qualname = row.get("qualname")
-        goid_raw = row.get("goid_h128")
-        start_line = row.get("start_line")
-        end_line = row.get("end_line")
+        rel_path = values[1]
+        qualname = values[2]
+        goid_raw = values[3]
+        start_line = values[4]
+        end_line = values[5]
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
             continue
         if not isinstance(start_line, int):
@@ -485,3 +489,4 @@ __all__ = [
     "dfg_edges_empty",
     "dfg_edges_existing",
 ]
+from codeintel.core.columnar.iter import iter_tuples

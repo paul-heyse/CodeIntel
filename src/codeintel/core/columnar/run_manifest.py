@@ -10,6 +10,7 @@ from pathlib import Path
 import pyarrow as pa
 
 from codeintel.core.columnar.dedupe_ops import DedupeTier
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.ordering import OrderingLevel, OrderingSpec, SortKey
 from codeintel.core.columnar.streaming import ScanTelemetry
 from codeintel.core.manifests import ManifestStruct, write_manifest_json
@@ -98,6 +99,53 @@ def write_run_manifest(
     return path
 
 
+def run_manifest_options_for_context(
+    *,
+    ctx: ExecutionContext | None,
+    ordering: OrderingSpec | None,
+    scan_telemetry: ScanTelemetry | None,
+    options: RunManifestOptions | None = None,
+) -> RunManifestOptions:
+    """Return run manifest options with context-derived defaults applied.
+
+    Parameters
+    ----------
+    ctx
+        Optional execution context providing runtime profile defaults.
+    ordering
+        Ordering metadata from the executed plan.
+    scan_telemetry
+        Optional scan telemetry metadata.
+    options
+        Optional base options to overlay.
+
+    Returns
+    -------
+    RunManifestOptions
+        Run manifest options with resolved defaults applied.
+    """
+    resolved = options or RunManifestOptions()
+    determinism = resolved.determinism
+    profile_name = resolved.profile_name
+    scan_profile = resolved.scan_profile
+    if ctx is not None:
+        if determinism is None:
+            determinism = ctx.resolve_determinism()
+        profile = ctx.runtime_profile
+        if profile is not None:
+            profile_name = profile_name or profile.name
+            scan_profile = scan_profile or profile.scan_profile
+    return RunManifestOptions(
+        determinism=determinism,
+        ordering=resolved.ordering or ordering,
+        scan_telemetry=resolved.scan_telemetry or scan_telemetry,
+        profile_name=profile_name,
+        scan_profile=scan_profile,
+        extras=resolved.extras,
+        filename=resolved.filename,
+    )
+
+
 def _ordering_manifest(ordering: OrderingSpec | None) -> OrderingManifest | None:
     if ordering is None:
         return None
@@ -130,5 +178,6 @@ __all__ = [
     "RunManifest",
     "RunManifestOptions",
     "ScanTelemetryManifest",
+    "run_manifest_options_for_context",
     "write_run_manifest",
 ]

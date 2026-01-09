@@ -6,9 +6,10 @@ from collections.abc import Sequence
 
 import pyarrow as pa
 
-from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
+from codeintel.core.columnar.expr_vocab import E, Expression
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.queryspec import PROVENANCE_FIELDS, ProjectionSpec, QuerySpec
 
 
@@ -128,7 +129,8 @@ def snapshot_table(
         columns=columns,
         ctx=ctx,
     )
-    return materialize_plan(plan, use_threads=True)
+    execution_ctx = resolve_execution_context(ctx)
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
 
 
 def snapshot_reader(
@@ -153,8 +155,8 @@ def snapshot_reader(
         columns=columns,
         ctx=ctx,
     )
-    use_threads = ctx.resolve_use_threads() if ctx is not None else True
-    return plan.to_reader(use_threads=use_threads)
+    execution_ctx = resolve_execution_context(ctx)
+    return ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
 
 
 def _snapshot_predicate(

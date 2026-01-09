@@ -12,11 +12,11 @@ import pyarrow as pa
 
 from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_masks import is_valid_expr, non_empty_string_expr
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -353,14 +353,25 @@ def cdg_edges(
 
     missing_goids: Counter[str] = Counter()
     blocks_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
-    for row in iter_rows(blocks_table):
+    block_columns = ("repo", "commit", "function_goid_h128", "block_id", "block_idx")
+    for values in iter_tuples(blocks_table.to_reader(), columns=block_columns):
+        row = dict(zip(block_columns, values, strict=False))
         function_goid = _coerce_goid(row.get("function_goid_h128"))
         if function_goid is None:
             missing_goids["blocks_missing_goid"] += 1
             continue
         blocks_by_goid[function_goid].append(row)
     edges_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
-    for row in iter_rows(edges_table):
+    edge_columns = (
+        "repo",
+        "commit",
+        "function_goid_h128",
+        "src_block_id",
+        "dst_block_id",
+        "edge_kind",
+    )
+    for values in iter_tuples(edges_table.to_reader(), columns=edge_columns):
+        row = dict(zip(edge_columns, values, strict=False))
         function_goid = _coerce_goid(row.get("function_goid_h128"))
         if function_goid is None:
             missing_goids["edges_missing_goid"] += 1

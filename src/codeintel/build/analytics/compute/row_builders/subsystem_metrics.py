@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from codeintel.build.analytics.compute.row_builders.core import buffer_for_table
+from codeintel.core.columnar.rows import ColumnarRowBuffer
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -38,29 +41,31 @@ class SubsystemMetricInputs:
     created_at: datetime
 
 
-def build_subsystem_graph_rows(inputs: SubsystemMetricInputs) -> list[SubsystemMetricRow]:
+def build_subsystem_graph_rows(inputs: SubsystemMetricInputs) -> ColumnarRowBuffer:
     """Construct rows for analytics.subsystem_graph_metrics.
 
     Returns
     -------
-    list[SubsystemMetricRow]
-        Rows ready for insertion into analytics.subsystem_graph_metrics.
+    ColumnarRowBuffer
+        Buffer containing rows ready for analytics.subsystem_graph_metrics.
     """
-    return [
-        (
-            inputs.repo,
-            inputs.commit,
-            subsystem,
-            float(inputs.in_degree.get(subsystem, 0.0)),
-            float(inputs.out_degree.get(subsystem, 0.0)),
-            float(inputs.pagerank.get(subsystem, 0.0)),
-            float(inputs.betweenness.get(subsystem, 0.0)),
-            float(inputs.closeness.get(subsystem, 0.0)),
-            int(inputs.layer.get(subsystem, 0)),
-            inputs.created_at,
+    buffer = buffer_for_table("analytics.subsystem_graph_metrics")
+    for subsystem in inputs.pagerank:
+        buffer.append(
+            {
+                "repo": inputs.repo,
+                "commit": inputs.commit,
+                "subsystem_id": subsystem,
+                "import_in_degree": float(inputs.in_degree.get(subsystem, 0.0)),
+                "import_out_degree": float(inputs.out_degree.get(subsystem, 0.0)),
+                "import_pagerank": float(inputs.pagerank.get(subsystem, 0.0)),
+                "import_betweenness": float(inputs.betweenness.get(subsystem, 0.0)),
+                "import_closeness": float(inputs.closeness.get(subsystem, 0.0)),
+                "import_layer": int(inputs.layer.get(subsystem, 0)),
+                "created_at": inputs.created_at,
+            }
         )
-        for subsystem in inputs.pagerank
-    ]
+    return buffer
 
 
 __all__ = ["SubsystemMetricInputs", "SubsystemMetricRow", "build_subsystem_graph_rows"]

@@ -54,8 +54,12 @@ from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.ordering import OrderingSpec, SortDirection, SortKey
 from codeintel.core.columnar.plan_ops import QueryPlanOptions
 from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
-from codeintel.core.columnar.rows import table_for_rows
-from codeintel.core.columnar.run_manifest import RunManifestOptions, write_run_manifest
+from codeintel.core.columnar.rows import ColumnarRowBuffer, table_for_rows
+from codeintel.core.columnar.run_manifest import (
+    RunManifestOptions,
+    run_manifest_options_for_context,
+    write_run_manifest,
+)
 from codeintel.core.columnar.streaming import ScanTelemetry, scan_telemetry_for_queryspec
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetWriteOptions,
@@ -174,7 +178,12 @@ def persist_scip_diagnostics_rollups(*, env: BuildEnv) -> bool:
         log.info("SCIP diagnostics rollups skipped; source dataset unavailable.")
         return False
 
-    rollups = build_scip_diagnostics_rollups(repo=env.repo, commit=env.commit, rows=table)
+    rollups = build_scip_diagnostics_rollups(
+        repo=env.repo,
+        commit=env.commit,
+        rows=table,
+        ctx=env.execution_context,
+    )
 
     summary_written = _write_dataset_table(
         env=env,
@@ -436,17 +445,18 @@ def _emit_run_manifest(
     )
     determinism = _determinism_for_sort_keys(sort_keys)
     filename = f"run_manifest_{table_key.replace('.', '_')}.json"
-    write_run_manifest(
-        _post_run_output_dir(env),
+    options = run_manifest_options_for_context(
+        ctx=None,
+        ordering=ordering,
+        scan_telemetry=telemetry,
         options=RunManifestOptions(
             determinism=determinism,
-            ordering=ordering,
-            scan_telemetry=telemetry,
             profile_name=env.profile,
             extras={"table_key": table_key, "snapshot_id": env.commit},
             filename=filename,
         ),
     )
+    write_run_manifest(_post_run_output_dir(env), options=options)
 
 
 def _determinism_for_sort_keys(
@@ -527,7 +537,7 @@ def _write_dataset_table(
     *,
     env: BuildEnv,
     table_key: str,
-    rows: Iterable[Mapping[str, object]] | Iterable[Sequence[object]],
+    rows: ColumnarRowBuffer | Iterable[Mapping[str, object]] | Iterable[Sequence[object]],
 ) -> bool:
     dataset_root = env.paths.dataset_root_dir
     if dataset_root is None:
@@ -538,7 +548,10 @@ def _write_dataset_table(
         log.warning("Post-run dataset write skipped; snapshot_id missing.")
         return False
 
-    table, _ = table_for_rows(table_key, rows)
+    if isinstance(rows, ColumnarRowBuffer):
+        table = rows.to_table()
+    else:
+        table, _ = table_for_rows(table_key, rows)
     schema_service = get_schema_service()
     table_schema = schema_service.require_table_schema(table_key)
     result = finalize_analytics_result(table_key, table)

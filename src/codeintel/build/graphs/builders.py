@@ -22,7 +22,6 @@ from codeintel.build.graphs.rx.policies import (
     weight_policy_for_kind,
 )
 from codeintel.build.graphs.rx.store import RxGraphStore
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.columnar.iter import iter_array_values, iter_tuples
@@ -416,17 +415,17 @@ def _call_graph_node_attrs(
     plan = plan.project(projection)
     plan = plan.order_by(sort_keys=[("goid_h128", "ascending")])
     table = materialize_plan(plan, use_threads=True)
-    attrs_by_node: dict[int, dict[str, object]] = {}
     columns = ["goid_h128"]
     if "kind" in table.column_names:
         columns.append("kind")
-    for row in iter_rows(table, columns):
-        node_id = normalize_decimal_id(row.get("goid_h128"))
+    attrs_by_node: dict[int, dict[str, object]] = {}
+    for values in iter_tuples(table_to_reader(table), columns=columns):
+        node_id = normalize_decimal_id(values[0])
         if node_id is None:
             continue
         attrs: dict[str, object] = {}
-        if "kind" in row and row.get("kind") is not None:
-            attrs["kind"] = str(row["kind"])
+        if len(values) > 1 and values[1] is not None:
+            attrs["kind"] = str(values[1])
         attrs_by_node[node_id] = attrs
     return attrs_by_node
 
@@ -478,11 +477,13 @@ def _import_layer_fallback(
     plan = plan.order_by(sort_keys=[("src_module", "ascending")])
     aggregated = materialize_plan(plan, use_threads=True)
     fallback: dict[str, int] = {}
-    for row in iter_rows(aggregated, ["src_module", "module_layer_max"]):
-        module = row.get("src_module")
+    for module, layer in iter_tuples(
+        table_to_reader(aggregated),
+        columns=("src_module", "module_layer_max"),
+    ):
         if module is None:
             continue
-        layer_value = as_int(row.get("module_layer_max"))
+        layer_value = as_int(layer)
         if layer_value is None:
             continue
         fallback[str(module)] = layer_value
@@ -510,23 +511,21 @@ def _import_module_attrs(
     plan = plan.project(projection)
     plan = plan.order_by(sort_keys=[("module", "ascending")])
     table = materialize_plan(plan, use_threads=True)
-    attrs_by_module: dict[str, dict[str, int]] = {}
     columns = list(projection.keys())
-    for row in iter_rows(table, columns):
-        module = row.get("module")
+    attrs_by_module: dict[str, dict[str, int]] = {}
+    for values in iter_tuples(table_to_reader(table), columns=columns):
+        module = values[0]
         if module is None:
             continue
         module_name = str(module)
         attrs: dict[str, int] = {}
-        scc_id = as_int(row.get("scc_id")) if "scc_id" in row else None
-        if scc_id is not None:
-            attrs["scc_id"] = scc_id
-        comp_size = as_int(row.get("component_size")) if "component_size" in row else None
-        if comp_size is not None:
-            attrs["component_size"] = comp_size
-        layer_val = as_int(row.get("layer")) if "layer" in row else None
-        if layer_val is not None:
-            attrs["layer"] = layer_val
+        for name, value in zip(columns[1:], values[1:], strict=False):
+            if value is None:
+                continue
+            coerced = as_int(value)
+            if coerced is None:
+                continue
+            attrs[name] = coerced
         attrs_by_module[module_name] = attrs
     return attrs_by_module
 

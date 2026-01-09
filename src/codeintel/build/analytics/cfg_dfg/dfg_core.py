@@ -28,6 +28,7 @@ from codeintel.build.analytics.graphs.constants import (
 )
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 MAX_SIMPLE_PATHS = 1000
@@ -90,6 +91,7 @@ def load_dfg_edges(
     *,
     repo: str | None = None,
     commit: str | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> dict[int, list[tuple[int, int, str, str, bool, str]]]:
     """
     Load DFG edges grouped by function GOID.
@@ -100,7 +102,7 @@ def load_dfg_edges(
         Mapping of GOID -> edge tuples.
     """
     edges_by_fn: dict[int, list[tuple[int, int, str, str, bool, str]]] = defaultdict(list)
-    edges_table = dfg_edges_rowset(dfg_edges_frame, repo=repo, commit=commit)
+    edges_table = dfg_edges_rowset(dfg_edges_frame, repo=repo, commit=commit, ctx=ctx)
     for row in iter_rows(edges_table):
         fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         if fn_id is None:

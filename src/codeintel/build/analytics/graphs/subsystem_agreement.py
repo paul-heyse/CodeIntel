@@ -7,6 +7,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.core.columnar.rows import ColumnarRowBuffer
+
 log = logging.getLogger(__name__)
 
 
@@ -24,8 +27,8 @@ class SubsystemAgreementInputs:
 
     repo: str
     commit: str
-    subsystem_module_rows: Iterable[Mapping[str, object]]
-    graph_metrics_module_rows: Iterable[Mapping[str, object]]
+    subsystem_module_rows: Iterable[Mapping[str, object]] | ColumnarRowBuffer
+    graph_metrics_module_rows: Iterable[Mapping[str, object]] | ColumnarRowBuffer
 
 
 def build_subsystem_agreement_rows(inputs: SubsystemAgreementInputs) -> list[tuple[object, ...]]:
@@ -54,13 +57,13 @@ def build_subsystem_agreement_rows(inputs: SubsystemAgreementInputs) -> list[tup
 
 
 def _community_by_module(
-    rows: Iterable[Mapping[str, object]],
+    rows: Iterable[Mapping[str, object]] | ColumnarRowBuffer,
     *,
     repo: str,
     commit: str,
 ) -> dict[str, object]:
     community_by_module: dict[str, object] = {}
-    for row in rows:
+    for row in _iter_row_mappings(rows):
         if not _matches_optional_scope(row.get("repo"), repo):
             continue
         if not _matches_optional_scope(row.get("commit"), commit):
@@ -73,7 +76,7 @@ def _community_by_module(
 
 
 def _agreement_rows(
-    rows: Iterable[Mapping[str, object]],
+    rows: Iterable[Mapping[str, object]] | ColumnarRowBuffer,
     *,
     repo: str,
     commit: str,
@@ -81,7 +84,7 @@ def _agreement_rows(
     now: datetime,
 ) -> list[tuple[object, ...]]:
     inserts: list[tuple[object, ...]] = []
-    for row in rows:
+    for row in _iter_row_mappings(rows):
         if not _matches_optional_scope(row.get("repo"), repo):
             continue
         if not _matches_optional_scope(row.get("commit"), commit):
@@ -97,6 +100,16 @@ def _agreement_rows(
         subsystem_value = str(subsystem_id) if subsystem_id is not None else None
         inserts.append((repo, commit, str(module), subsystem_value, community_id, agrees, now))
     return inserts
+
+
+def _iter_row_mappings(
+    rows: Iterable[Mapping[str, object]] | ColumnarRowBuffer,
+) -> Iterable[Mapping[str, object]]:
+    if isinstance(rows, ColumnarRowBuffer):
+        table = rows.to_table()
+        yield from iter_rows(table)
+        return
+    yield from rows
 
 
 def _log_disagreements(

@@ -266,6 +266,7 @@ def config_references__base(
             snapshot=env.snapshot,
             config_value_rows=config_value_rows,
             module_rows=module_rows,
+            ctx=env.execution_context,
         )
     )
     if not rows:
@@ -351,6 +352,7 @@ def config_data_flow__base(
             call_graph=call_graph,
             ast_by_goid=ast_map,
             missing_goids=missing,
+            ctx=env.execution_context,
         )
     )
     if result.rows is None:
@@ -393,6 +395,7 @@ def config_graph_metrics_result(
         config_value_rows=config_reference_rows,
         allowed_modules=allowed_modules,
         runtime=runtime_options,
+        ctx=env.execution_context,
     )
 
 

@@ -18,10 +18,13 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
+from codeintel.build.hamilton.transforms.ingestion_normalize import (
+    finalize_ingest_reader,
+    scoped_table_for_ingest,
+)
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
+from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
@@ -125,10 +128,11 @@ def file_line_index__base(
         Reader of line index rows.
     """
     scope = SnapshotScope.from_snapshot(env.snapshot)
-    modules_table = tabular_to_scoped_table(
+    modules_table = scoped_table_for_ingest(
         q__core__modules,
-        columns=None,
+        table_key="core.modules",
         scope=scope,
+        columns=None,
         require_scope_columns=True,
     )
     if modules_table.num_rows == 0:

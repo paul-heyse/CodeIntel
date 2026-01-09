@@ -19,12 +19,12 @@ from codeintel.build.graphs.compute.imports import (
 )
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
@@ -107,10 +107,10 @@ def import_graph_analysis(
     edges: list[ImportEdge] = []
     repo_root = env.snapshot.repo_root
 
-    for row in iter_rows(modules_table):
-        module_name = row.get("module")
-        rel_path = row.get("path")
-        language = row.get("language")
+    for module_name, rel_path, language in iter_tuples(
+        table_to_reader(modules_table),
+        columns=("module", "path", "language"),
+    ):
         if not isinstance(module_name, str) or not module_name:
             continue
         modules.add(module_name)

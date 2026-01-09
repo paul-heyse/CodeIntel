@@ -14,7 +14,14 @@ from codeintel.build.graphs.assembly.contracts import (
     align_table_to_contract,
     empty_contract_reader,
 )
+from codeintel.build.graphs.assembly.finalize import GraphFinalizeArtifacts, finalize_graph_plan
+from codeintel.build.graphs.assembly.kernels import (
+    ExplodeEdgesResult,
+    explode_edges,
+    explode_edges_with_aligned_lists,
+)
 from codeintel.build.graphs.assembly.ids import payload_bytes, stable_decimal_id, stable_int_hash
+from codeintel.build.graphs.assembly.plan_surface import GraphPlanSurface, graph_plan
 from codeintel.build.graphs.assembly.readers import (
     drop_table_columns,
     ensure_table_columns,
@@ -37,6 +44,13 @@ __all__ = [
     "empty_contract_reader",
     "empty_reader",
     "ensure_table_columns",
+    "ExplodeEdgesResult",
+    "explode_edges",
+    "explode_edges_with_aligned_lists",
+    "GraphPlanSurface",
+    "graph_plan",
+    "GraphFinalizeArtifacts",
+    "finalize_graph_plan",
     "iter_normalized_tuples",
     "payload_bytes",
     "reader_for_columnar_rows",

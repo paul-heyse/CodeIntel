@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -13,7 +13,7 @@ import pyarrow.dataset as ds
 
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
 from codeintel.core.columnar.finalize_ops import (
     FinalizeMode,
     finalize_spec_for_table,
@@ -273,9 +273,9 @@ def _plan_scan_reader(
             ctx=prepared.execution_ctx,
             options=query_plan_options,
         )
-        execution_ctx = prepared.execution_ctx
-        if execution_ctx is None:
-            execution_ctx = ExecutionContext(use_threads=prepared.use_threads)
+        execution_ctx = resolve_execution_context(prepared.execution_ctx)
+        if prepared.execution_ctx is None:
+            execution_ctx = replace(execution_ctx, use_threads=prepared.use_threads)
         return ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
     except (
         pa.ArrowInvalid,

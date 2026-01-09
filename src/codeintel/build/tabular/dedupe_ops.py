@@ -9,7 +9,6 @@ import pyarrow as pa
 
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_reader
-from codeintel.build.tabular.kernels import SortKey
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.dedupe_ops import (
     DedupeLegacy,
@@ -18,6 +17,7 @@ from codeintel.core.columnar.dedupe_ops import (
 from codeintel.core.columnar.dedupe_ops import (
     dedupe_table_for_table as _dedupe_table_for_table,
 )
+from codeintel.core.columnar.kernels import SortKey
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

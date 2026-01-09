@@ -894,6 +894,7 @@ class GraphRuntimePool:
             options.graph_cache_dir,
             options.dataset_root_dir,
             options.features,
+            options.runtime_profile,
         )
 
 

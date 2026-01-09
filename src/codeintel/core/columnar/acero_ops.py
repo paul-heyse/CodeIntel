@@ -1,4 +1,7 @@
-"""Optional helpers for Arrow Acero execution plans."""
+"""Optional helpers for Arrow Acero execution plans.
+
+Deprecated: use ``codeintel.core.columnar.plan_ops`` + ``arrowdsl.run_pipeline`` instead.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +20,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 if TYPE_CHECKING or acero is not None:
     from codeintel.core.columnar.arrowdsl import ExecutionPlan
-    from codeintel.core.columnar.execution_context import ExecutionContext
+    from codeintel.core.columnar.execution_context import resolve_execution_context
     from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
 else:
 
@@ -86,7 +89,7 @@ def build_exec_plan(
         key_exprs = [E.field(name) for name in keys]
         plan = plan.aggregate(keys=key_exprs, aggregates=aggregate_specs)
     exec_plan = ExecutionPlan.from_plan(plan)
-    return exec_plan.to_table(ctx=ExecutionContext())
+    return exec_plan.to_table(ctx=resolve_execution_context(None))
 
 
 __all__ = [

@@ -24,10 +24,11 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_spec_for_table,
     finalize_table,
 )
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.iter import iter_rows
-from codeintel.ingestion.compute.base import build_ingest_query_spec
+from codeintel.ingestion.compute.plan_surface import IngestQuery, ingest_plan_for_table
 
 if TYPE_CHECKING:
     from codeintel.build.tabular.finalize_ops import FinalizeSpec
@@ -223,20 +224,14 @@ def scoped_table_for_ingest(
             raise ValueError(msg)
         return table.select(list(columns)) if columns is not None else table
     projection_columns = tuple(columns) if columns is not None else tuple(table.column_names)
-    spec = build_ingest_query_spec(
-        table_key,
+    query = IngestQuery(
+        table_key=table_key,
         columns=projection_columns,
         repo=scope.repo,
         commit=scope.commit,
     )
-    plan = Plan.table(table)
-    predicate = spec.scan_filter_expression()
-    if predicate is not None:
-        plan = plan.filter(predicate)
-    projection = spec.project_expressions(provenance=False)
-    if projection:
-        plan = plan.project(projection)
-    return materialize_plan(plan, use_threads=True)
+    plan = ingest_plan_for_table(table, query=query)
+    return ExecutionPlan.from_plan(plan).to_table(ctx=ExecutionContext())
 
 
 def normalize_ingest_frame(

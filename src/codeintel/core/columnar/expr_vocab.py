@@ -228,6 +228,64 @@ class ExprVocab:
         msg = "Arrow compute coalesce did not return an expression."
         raise TypeError(msg)
 
+    @staticmethod
+    def if_else(
+        condition: pc.Expression,
+        if_true: pc.Expression,
+        if_false: pc.Expression,
+    ) -> pc.Expression:
+        """Return a conditional expression.
+
+        Parameters
+        ----------
+        condition
+            Boolean expression to test.
+        if_true
+            Expression to return when condition is True.
+        if_false
+            Expression to return when condition is False.
+
+        Returns
+        -------
+        pyarrow.compute.Expression
+            Conditional expression.
+
+        Raises
+        ------
+        TypeError
+            If Arrow does not return an expression.
+        """
+        result = pc.call_function("if_else", [condition, if_true, if_false])
+        if isinstance(result, pc.Expression):
+            return result
+        msg = "Arrow compute if_else did not return an expression."
+        raise TypeError(msg)
+
+    @staticmethod
+    def utf8_trim(expr: pc.Expression) -> pc.Expression:
+        """Return a utf8_trim expression.
+
+        Parameters
+        ----------
+        expr
+            Expression to trim.
+
+        Returns
+        -------
+        pyarrow.compute.Expression
+            Trimmed expression.
+
+        Raises
+        ------
+        TypeError
+            If Arrow does not return an expression.
+        """
+        result = pc.call_function("utf8_trim", [expr])
+        if isinstance(result, pc.Expression):
+            return result
+        msg = "Arrow compute utf8_trim did not return an expression."
+        raise TypeError(msg)
+
 
 E = ExprVocab
 

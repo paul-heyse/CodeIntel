@@ -24,12 +24,12 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -55,9 +55,7 @@ def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
     if not {"path", "module"}.issubset(set(modules_table.column_names)):
         return module_by_path
     filtered = _python_modules_table(modules_table)
-    for row in iter_rows(filtered):
-        path = row.get("path")
-        module = row.get("module")
+    for path, module in iter_tuples(table_to_reader(filtered), columns=("path", "module")):
         if isinstance(path, str) and isinstance(module, str):
             module_by_path[path] = module
     return module_by_path
@@ -70,11 +68,10 @@ def _goid_resolver(
     if goids_table.num_rows == 0 or "rel_path" not in goids_table.column_names:
         return resolver
     filtered = _filtered_goids_table(goids_table)
-    for row in iter_rows(filtered):
-        rel_path = row.get("rel_path")
-        goid_raw = row.get("goid_h128")
-        start_line = row.get("start_line")
-        end_line = row.get("end_line")
+    for rel_path, goid_raw, start_line, end_line in iter_tuples(
+        table_to_reader(filtered),
+        columns=("rel_path", "goid_h128", "start_line", "end_line"),
+    ):
         if not isinstance(rel_path, str):
             continue
         goid_value = normalize_decimal_id(goid_raw)
@@ -108,15 +105,15 @@ def _symbol_occurrences(occurrences_table: pa.Table) -> list[SymbolOccurrence]:
     if not required.issubset(set(occurrences_table.column_names)):
         return occurrences
     filtered = _filtered_occurrences_table(occurrences_table)
-    for row in iter_rows(filtered):
-        symbol = row.get("symbol")
-        rel_path = row.get("rel_path")
-        start_line = row.get("start_line")
+    for symbol, rel_path, start_line, roles in iter_tuples(
+        table_to_reader(filtered),
+        columns=("symbol", "rel_path", "start_line", "roles"),
+    ):
         if not isinstance(symbol, str) or not isinstance(rel_path, str):
             continue
         if not isinstance(start_line, int):
             continue
-        roles = parse_symbol_roles(row.get("roles"))
+        roles = parse_symbol_roles(roles)
         occurrences.append(
             SymbolOccurrence(
                 symbol=symbol,

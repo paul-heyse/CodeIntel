@@ -1,4 +1,7 @@
-"""Dataset scanner helpers for Arrow datasets."""
+"""Dataset scanner helpers for Arrow datasets.
+
+Deprecated: prefer ``codeintel.core.columnar.streaming`` scan helpers directly.
+"""
 
 from __future__ import annotations
 

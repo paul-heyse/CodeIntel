@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.columnar import compute_config as columnar_compute_config
 from codeintel.core.columnar import profiles as columnar_profiles
+from codeintel.core.runtime.loader import load_runtime_settings
 
 if TYPE_CHECKING:
     from codeintel.core.columnar.dedupe_ops import DedupeTier
@@ -60,6 +61,36 @@ def runtime_profile_from_settings(
         Resolved runtime profile when configured.
     """
     return columnar_compute_config.resolve_runtime_profile_from_settings(settings)
+
+
+def resolve_runtime_profile_for_context(
+    ctx: ExecutionContext | None,
+) -> RuntimeProfile | None:
+    """Return the runtime profile for an optional execution context.
+
+    Returns
+    -------
+    RuntimeProfile | None
+        Runtime profile from the context or runtime settings.
+    """
+    if ctx is not None:
+        return ctx.runtime_profile
+    settings = load_runtime_settings().columnar
+    return runtime_profile_from_settings(settings)
+
+
+def resolve_execution_context(ctx: ExecutionContext | None) -> ExecutionContext:
+    """Return an execution context with runtime defaults applied.
+
+    Returns
+    -------
+    ExecutionContext
+        Execution context with runtime profile defaults applied.
+    """
+    if ctx is not None:
+        return ctx
+    profile = resolve_runtime_profile_for_context(None)
+    return ExecutionContext(runtime_profile=profile)
 
 
 @dataclass(frozen=True, slots=True)

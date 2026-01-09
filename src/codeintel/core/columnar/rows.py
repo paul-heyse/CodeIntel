@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -33,7 +33,7 @@ ColumnarRows = dict[str, list[object]]
 
 
 @dataclass(slots=True)
-class ColumnarRowBuffer:
+class ColumnarRowBuffer(Sequence[Mapping[str, object]]):
     """Mutable buffer for building columnar row payloads."""
 
     table_key: str
@@ -42,6 +42,27 @@ class ColumnarRowBuffer:
     column_nullable: tuple[bool, ...]
     data: ColumnarRows
     row_count: int = 0
+
+    def __bool__(self) -> bool:
+        """Return True when the buffer contains rows."""
+        return self.row_count > 0
+
+    def __len__(self) -> int:
+        """Return the number of buffered rows."""
+        return self.row_count
+
+    def __iter__(self) -> Iterator[Mapping[str, object]]:
+        """Iterate buffered rows as mapping payloads."""
+        for index in range(self.row_count):
+            yield self._row_at(index)
+
+    def __getitem__(self, index: int) -> Mapping[str, object]:
+        """Return the buffered row mapping at the requested index."""
+        if index < 0:
+            index += self.row_count
+        if index < 0 or index >= self.row_count:
+            raise IndexError(index)
+        return self._row_at(index)
 
     def append(self, row: Mapping[str, object]) -> None:
         """Append a row mapping to the buffer.
@@ -71,6 +92,48 @@ class ColumnarRowBuffer:
         """Append multiple rows to the buffer."""
         for row in rows:
             self.append(row)
+
+    def extend_buffer(self, buffer: ColumnarRowBuffer) -> None:
+        """Append another columnar buffer with the same table key.
+
+        Raises
+        ------
+        ValueError
+            If the buffer table keys do not match.
+        """
+        if buffer.table_key != self.table_key:
+            msg = f"Buffer table key mismatch: {buffer.table_key} != {self.table_key}"
+            raise ValueError(msg)
+        for name in self.columns:
+            self.data[name].extend(buffer.data[name])
+        self.row_count += buffer.row_count
+
+    def to_rows(self) -> list[dict[str, object]]:
+        """Return buffered rows as a list of mapping payloads."""
+        return [self._row_at(index) for index in range(self.row_count)]
+
+    def to_tuples(self) -> list[tuple[object, ...]]:
+        """Return buffered rows as tuples in column order."""
+        return [
+            tuple(self.data[name][index] for name in self.columns)
+            for index in range(self.row_count)
+        ]
+
+    def to_table(self) -> pa.Table:
+        """Return an Arrow table for the buffered rows.
+
+        Returns
+        -------
+        pa.Table
+            Materialized table with the contract schema.
+        """
+        if self.row_count == 0:
+            return empty_table_for_table(self.table_key)
+        arrow_schema = table_utils.arrow_schema_for_table(self.table_key, extras_policy=None)
+        return pa.Table.from_pydict(self.data, schema=arrow_schema)
+
+    def _row_at(self, index: int) -> dict[str, object]:
+        return {name: self.data[name][index] for name in self.columns}
 
 
 @dataclass(slots=True)

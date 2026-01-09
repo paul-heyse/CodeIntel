@@ -47,6 +47,7 @@ from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.graphs.builders import build_symbol_module_edges
 from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.storage.catalog import FunctionCatalog
 from codeintel.storage.query_results import records_from_arrow_table, records_from_relation
 from tests._helpers.catalogs import seed_goids_for_snapshot
@@ -624,8 +625,10 @@ def build_graph_runtime_harness(tmp_path: Path) -> GraphRuntimeHarness:
 def _write_tuple_rows(
     ctx: GraphRuntimeHarness,
     table_key: str,
-    rows: Sequence[tuple[object, ...]] | None,
+    rows: Sequence[tuple[object, ...]] | ColumnarRowBuffer | None,
 ) -> None:
+    if isinstance(rows, ColumnarRowBuffer):
+        rows = rows.to_tuples()
     if not rows:
         return
     ctx.gateway.policy.delete_for_snapshot(
@@ -639,8 +642,10 @@ def _write_tuple_rows(
 def _write_mapping_rows(
     ctx: GraphRuntimeHarness,
     table_key: str,
-    rows: Sequence[Mapping[str, object]] | None,
+    rows: Sequence[Mapping[str, object]] | ColumnarRowBuffer | None,
 ) -> None:
+    if isinstance(rows, ColumnarRowBuffer):
+        rows = rows.to_rows()
     if not rows:
         return
     ctx.gateway.policy.delete_for_snapshot(

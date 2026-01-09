@@ -13,6 +13,7 @@ import pyarrow as pa
 import rustworkx as rx
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
+from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.build.analytics.utilities.snapshot import snapshot_plan
@@ -21,6 +22,8 @@ from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import materialize_plan
+from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.query_results import coerce_int
 
@@ -146,6 +149,7 @@ class FunctionEffectsInputs:
     missing_goids: set[int] | None = None
     call_graph_edges: pa.Table | None = None
     call_graph_nodes: pa.Table | None = None
+    ctx: ExecutionContext | None = None
 
 
 @dataclass(frozen=True)
@@ -157,6 +161,7 @@ class _EffectInputs:
     missing_goids: set[int] | None = None
     call_graph_edges: pa.Table | None = None
     call_graph_nodes: pa.Table | None = None
+    ctx: ExecutionContext | None = None
 
 
 @dataclass(frozen=True)
@@ -209,7 +214,7 @@ def build_function_effects_rows(
     *,
     options: FunctionEffectsOptions | None = None,
     inputs: FunctionEffectsInputs | None = None,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """
     Build function effects rows without persisting.
 
@@ -227,8 +232,8 @@ def build_function_effects_rows(
 
     Returns
     -------
-    list[dict[str, object]]
-        Effect rows ready for persistence.
+    ColumnarRowBuffer
+        Buffer containing effect rows ready for persistence.
 
     Raises
     ------
@@ -250,11 +255,12 @@ def build_function_effects_rows(
         missing_goids=input_opts.missing_goids,
         call_graph_edges=input_opts.call_graph_edges,
         call_graph_nodes=input_opts.call_graph_nodes,
+        ctx=input_opts.ctx,
     )
     rows = _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
     log.info(
         "function_effects populated: %d rows for %s@%s",
-        len(rows),
+        rows.row_count,
         snapshot.repo,
         snapshot.commit,
     )
@@ -365,7 +371,7 @@ def _build_effect_row(goid: int, context: _EffectRowContext) -> dict[str, object
 def _build_effect_rows(
     inputs: _EffectInputs,
     now: datetime,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     ast_by_goid, missing = _resolve_effect_asts(inputs)
     analyses, direct_flags = _analysis_maps(ast_by_goid, inputs.options)
     all_goids = {span.goid for span in inputs.catalog.catalog().function_spans}
@@ -374,6 +380,7 @@ def _build_effect_rows(
         inputs.call_graph_nodes,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
+        ctx=inputs.ctx,
     )
     transitive_hits = _compute_transitive_effects(
         call_graph,
@@ -384,6 +391,7 @@ def _build_effect_rows(
         inputs.call_graph_edges,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
+        ctx=inputs.ctx,
     )
     if unresolved_calls:
         log.warning(
@@ -401,7 +409,10 @@ def _build_effect_rows(
         transitive_hits=transitive_hits,
         unresolved_calls=unresolved_calls,
     )
-    return [_build_effect_row(goid, row_context) for goid in all_goids]
+    buffer = buffer_for_table("analytics.function_effects")
+    for goid in all_goids:
+        buffer.append(_build_effect_row(goid, row_context))
+    return buffer
 
 
 def _compute_transitive_effects(
@@ -472,11 +483,12 @@ def _unresolved_call_counts_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> dict[int, int]:
     counts: dict[int, int] = {}
     if edges_frame is None or edges_frame.num_rows == 0:
         return counts
-    aggregated = _unresolved_call_rowset(edges_frame, repo=repo, commit=commit)
+    aggregated = _unresolved_call_rowset(edges_frame, repo=repo, commit=commit, ctx=ctx)
     for row in iter_rows(aggregated, ("caller_goid_h128", "unresolved_call_count")):
         goid = normalize_decimal_id(row.get("caller_goid_h128"))
         if goid is None:
@@ -496,10 +508,11 @@ def _call_graph_from_frames(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> GraphInput:
     if edges_frame is None or edges_frame.num_rows == 0:
         return RxGraphStore.directed()
-    rowset = _call_graph_rowset(edges_frame, repo=repo, commit=commit)
+    rowset = _call_graph_rowset(edges_frame, repo=repo, commit=commit, ctx=ctx)
     graph = RxGraphStore.directed()
     for row in iter_rows(rowset, ("caller_goid_h128", "callee_goid_h128")):
         caller = normalize_decimal_id(row.get("caller_goid_h128"))
@@ -512,7 +525,7 @@ def _call_graph_from_frames(
         for callee_id in callee_ids:
             graph.add_weighted_edge(caller_id, callee_id, weight=1.0)
 
-    _ensure_call_graph_nodes(graph, nodes_frame, repo=repo, commit=commit)
+    _ensure_call_graph_nodes(graph, nodes_frame, repo=repo, commit=commit, ctx=ctx)
     return graph
 
 
@@ -521,13 +534,20 @@ def _call_graph_rowset(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     required = ("caller_goid_h128", "callee_goid_h128")
     missing = [name for name in required if name not in edges_frame.column_names]
     if missing:
         msg = f"Missing call graph edge columns: {missing}"
         raise ValueError(msg)
-    plan = snapshot_plan(edges_frame, repo=repo, commit=commit, columns=required)
+    plan = snapshot_plan(
+        edges_frame,
+        repo=repo,
+        commit=commit,
+        columns=required,
+        ctx=ctx,
+    )
     plan = plan.filter(
         E.and_(
             E.is_valid("caller_goid_h128"),
@@ -553,13 +573,20 @@ def _unresolved_call_rowset(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     required = ("caller_goid_h128", "callee_goid_h128")
     missing = [name for name in required if name not in edges_frame.column_names]
     if missing:
         msg = f"Missing call graph edge columns: {missing}"
         raise ValueError(msg)
-    plan = snapshot_plan(edges_frame, repo=repo, commit=commit, columns=required)
+    plan = snapshot_plan(
+        edges_frame,
+        repo=repo,
+        commit=commit,
+        columns=required,
+        ctx=ctx,
+    )
     plan = plan.filter(
         E.and_(
             E.is_valid("caller_goid_h128"),
@@ -582,12 +609,19 @@ def _ensure_call_graph_nodes(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> None:
     if nodes_frame is None or nodes_frame.num_rows == 0:
         return
     if "goid_h128" not in nodes_frame.column_names:
         return
-    plan = snapshot_plan(nodes_frame, repo=repo, commit=commit, columns=("goid_h128",))
+    plan = snapshot_plan(
+        nodes_frame,
+        repo=repo,
+        commit=commit,
+        columns=("goid_h128",),
+        ctx=ctx,
+    )
     plan = plan.filter(E.is_valid("goid_h128"))
     table = materialize_plan(plan, use_threads=True)
     for row in iter_rows(table, ("goid_h128",)):

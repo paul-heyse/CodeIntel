@@ -10,7 +10,12 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 from sqlglot import exp
 
-from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
+from codeintel.core.columnar.arrowdsl import (
+    ExecutionContext,
+    ExecutionPlan,
+    PipelineRunOptions,
+    run_pipeline,
+)
 from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.finalize_ops import FinalizeDedupe, finalize_spec_for_table
 from codeintel.core.columnar.plan_ops import (
@@ -820,9 +825,11 @@ def _finalize_reader_table(
     try:
         result = run_pipeline(
             plan=ExecutionPlan(table_thunk=_read_table),
-            post=[_with_engine_context],
             finalize=finalize_spec,
-            ctx=execution_ctx,
+            options=PipelineRunOptions(
+                post=[_with_engine_context],
+                ctx=execution_ctx,
+            ),
         )
     except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         return None

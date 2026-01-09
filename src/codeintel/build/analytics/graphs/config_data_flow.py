@@ -19,9 +19,10 @@ from codeintel.build.analytics.utilities.ast import call_name, snippet_from_line
 from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 from codeintel.build.graphs.rx.normalize import stable_key
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import materialize_plan
+from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
@@ -265,13 +266,20 @@ def _config_reference_rowset(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     required = {"config_path", "key", "extras"}
     missing = [name for name in required if name not in table.column_names]
     if missing:
         msg = f"Missing config reference columns: {missing}"
         raise ValueError(msg)
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=("config_path", "key", "extras"))
+    plan = snapshot_plan(
+        table,
+        repo=repo,
+        commit=commit,
+        columns=("config_path", "key", "extras"),
+        ctx=ctx,
+    )
     plan = plan.filter(E.and_(E.is_valid("config_path"), E.is_valid("key")))
     plan = plan.project(
         {
@@ -298,11 +306,18 @@ def _entrypoint_rowset(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     if "handler_goid_h128" not in table.column_names:
         msg = "Missing entrypoint column: handler_goid_h128"
         raise ValueError(msg)
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=("handler_goid_h128",))
+    plan = snapshot_plan(
+        table,
+        repo=repo,
+        commit=commit,
+        columns=("handler_goid_h128",),
+        ctx=ctx,
+    )
     plan = plan.filter(E.is_valid("handler_goid_h128"))
     plan = plan.aggregate(keys=[E.field("handler_goid_h128")], aggregates=[])
     return materialize_plan(plan, use_threads=True)
@@ -415,6 +430,7 @@ class ConfigDataFlowInputs:
     call_graph: GraphInput
     ast_by_goid: dict[int, FunctionAst]
     missing_goids: set[int] | None = None
+    ctx: ExecutionContext | None = None
 
 
 def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataFlowResult:
@@ -437,6 +453,7 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
         inputs.config_value_rows,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
+        ctx=inputs.ctx,
     )
     refs_by_path = _config_references_from_rows(
         config_rows,
@@ -455,6 +472,7 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
         inputs.entrypoint_rows,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
+        ctx=inputs.ctx,
     )
     entrypoints = _entrypoints_from_rows(
         entrypoint_rows,
@@ -547,10 +565,20 @@ def _config_reference_rows_from_tabular(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
-        table = _config_reference_rowset(cast("pa.Table", rows), repo=repo, commit=commit)
-        return [dict(row) for row in iter_rows(table)]
+        table = _config_reference_rowset(
+            cast("pa.Table", rows),
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+        )
+        columns = list(table.column_names)
+        return [
+            dict(zip(columns, values, strict=False))
+            for values in iter_tuples(table.to_reader(), columns=columns)
+        ]
     return [dict(row) for row in rows]
 
 
@@ -559,10 +587,20 @@ def _entrypoint_rows_from_tabular(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
-        table = _entrypoint_rowset(cast("pa.Table", rows), repo=repo, commit=commit)
-        return [dict(row) for row in iter_rows(table)]
+        table = _entrypoint_rowset(
+            cast("pa.Table", rows),
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+        )
+        columns = list(table.column_names)
+        return [
+            dict(zip(columns, values, strict=False))
+            for values in iter_tuples(table.to_reader(), columns=columns)
+        ]
     return [dict(row) for row in rows]
 
 

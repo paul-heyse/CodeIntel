@@ -19,6 +19,7 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_module_rows,
     build_symbol_module_graph,
 )
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.storage.query_results import records_from_arrow_table, records_from_relation
 from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.fixtures.rows import (
@@ -137,8 +138,10 @@ def _write_rows_for_snapshot(
     table_key: str,
     repo: str,
     commit: str,
-    rows: Sequence[tuple[object, ...]] | None,
+    rows: Sequence[tuple[object, ...]] | ColumnarRowBuffer | None,
 ) -> None:
+    if isinstance(rows, ColumnarRowBuffer):
+        rows = rows.to_tuples()
     if not rows:
         return
     gateway.policy.delete_for_snapshot(table_key, repo=repo, commit=commit)

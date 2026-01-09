@@ -33,6 +33,7 @@ from codeintel.build.graphs.compute.metrics.components import (
 )
 from codeintel.build.graphs.runtime.context import GraphContext
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store, graph_to_store
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.compute.graphs import (
@@ -131,7 +132,7 @@ def _function_metric_rows(
     ctx: GraphContext,
     views: GraphViews,
     slices: FunctionGraphSlices,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """Build rows for function-level extended metrics.
 
     Parameters
@@ -149,8 +150,8 @@ def _function_metric_rows(
 
     Returns
     -------
-    list[dict[str, object]]
-        Rows ready for insertion.
+    ColumnarRowBuffer
+        Buffer containing rows ready for insertion.
     """
     graph_store = ensure_directed_store(views.graph)
     simple_store = ensure_directed_store(views.simple_graph)
@@ -223,7 +224,7 @@ _FUNCTION_CONTEXT_FACTORY = GraphContextFactory(
 )
 
 # Configuration for function-level extended metrics
-_FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[FunctionGraphSlices, dict[str, object]] = (
+_FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[FunctionGraphSlices, ColumnarRowBuffer] = (
     ExtendedMetricsConfig(
         table_key="analytics.graph_metrics_functions_ext",
         filter_graph=lambda f, g: f.filter_call_graph(g),
@@ -241,7 +242,7 @@ def build_graph_metrics_functions_ext_rows(
     call_graph: GraphInput,
     runtime: GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """Populate analytics.graph_metrics_functions_ext with additional centralities.
 
     Parameters
@@ -259,8 +260,8 @@ def build_graph_metrics_functions_ext_rows(
 
     Returns
     -------
-    list[dict[str, object]]
-        Rows ready for insertion into analytics.graph_metrics_functions_ext.
+    ColumnarRowBuffer
+        Buffer containing rows for analytics.graph_metrics_functions_ext.
     """
     request = ExtendedMetricsRequest(
         repo=repo,

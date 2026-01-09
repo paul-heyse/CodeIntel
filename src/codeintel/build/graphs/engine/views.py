@@ -17,13 +17,16 @@ from typing import TYPE_CHECKING, cast
 import pyarrow as pa
 
 from codeintel.build.graphs.assembly import table_to_reader
+from codeintel.build.graphs.assembly.finalize import (
+    GraphFinalizeArtifacts,
+    finalize_graph_plan,
+)
 from codeintel.build.graphs.engine.datasets import (
     GraphRunMetadata,
     GraphViewFactory,
     GraphViewScanOptions,
     graph_execution_context,
     graph_run_metadata,
-    persist_finalize_artifacts,
 )
 from codeintel.build.graphs.engine.protocol import GraphKind
 from codeintel.build.graphs.rx.build_from_edges import (
@@ -41,10 +44,7 @@ from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
-from codeintel.core.columnar.arrowdsl import ExecutionPlan, run_pipeline
-from codeintel.core.columnar.dedupe_ops import DedupeTier, dedupe_keep_first_after_sort
-from codeintel.core.columnar.execution_context import ExecutionContext
-from codeintel.core.columnar.finalize_ops import finalize_spec_for_table
+from codeintel.core.columnar.dedupe_ops import dedupe_keep_first_after_sort
 from codeintel.core.columnar.iter import iter_array_values, iter_tuples
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.data_models.ids import as_int
@@ -54,6 +54,9 @@ from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
+
+    from codeintel.core.columnar.dedupe_ops import DedupeTier
+    from codeintel.core.columnar.execution_context import ExecutionContext
 
 log = logging.getLogger(__name__)
 
@@ -142,25 +145,15 @@ def _finalize_graph_table(
     table_key: str,
     determinism: DedupeTier,
     ctx: ExecutionContext | None,
-    artifacts: _FinalizeArtifacts | None = None,
+    artifacts: GraphFinalizeArtifacts | None = None,
 ) -> pa.Table:
-    result = run_pipeline(
-        plan=ExecutionPlan.from_plan(plan, determinism=determinism),
-        finalize=finalize_spec_for_table(
-            table_key,
-            mode="tolerant",
-            determinism=determinism,
-        ),
+    result = finalize_graph_plan(
+        plan,
+        table_key=table_key,
+        determinism=determinism,
         ctx=ctx,
+        artifacts=artifacts,
     )
-    if artifacts is not None:
-        persist_finalize_artifacts(
-            dataset_root=artifacts.dataset_root,
-            snapshot_id=artifacts.snapshot_id,
-            base_table_key=table_key,
-            result=result,
-            run_metadata=artifacts.run_metadata,
-        )
     return result.good
 
 
@@ -317,20 +310,13 @@ class _CallGraphInputs:
     run_metadata: GraphRunMetadata
 
 
-@dataclass(frozen=True)
-class _FinalizeArtifacts:
-    dataset_root: Path
-    snapshot_id: str
-    run_metadata: GraphRunMetadata
-
-
 def _artifacts_for_scan(
     factory: GraphViewFactory,
     *,
     determinism: DedupeTier,
     scan_options: GraphViewScanOptions,
-) -> _FinalizeArtifacts:
-    return _FinalizeArtifacts(
+) -> GraphFinalizeArtifacts:
+    return GraphFinalizeArtifacts(
         dataset_root=factory.dataset_root,
         snapshot_id=factory.snapshot_id,
         run_metadata=graph_run_metadata(

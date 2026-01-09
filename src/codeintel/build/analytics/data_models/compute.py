@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
+from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.data_models.core import (
     DATA_MODEL_FIELDS_COLS,
     DATA_MODEL_RELATIONSHIPS_COLS,
@@ -27,6 +27,7 @@ from codeintel.build.analytics.data_models.core import (
     _gather_models_for_path,
     _load_class_metadata,
 )
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.paths import normalize_path
 
 if TYPE_CHECKING:
@@ -48,7 +49,7 @@ class DataModelsResult:
     """Result container for data models computation.
 
     Contains row data for all three data model tables without performing writes.
-    The rows are tuples matching the column specifications in the schema.
+    The rows are buffered for columnar materialization.
 
     Attributes
     ----------
@@ -60,9 +61,9 @@ class DataModelsResult:
         Rows for analytics.data_model_relationships table.
     """
 
-    model_rows: tuple[tuple[object, ...], ...]
-    field_rows: tuple[tuple[object, ...], ...]
-    relationship_rows: tuple[tuple[object, ...], ...]
+    model_rows: ColumnarRowBuffer
+    field_rows: ColumnarRowBuffer
+    relationship_rows: ColumnarRowBuffer
 
 
 @dataclass(frozen=True)
@@ -77,8 +78,8 @@ def _build_model_rows(
     models: list[ModelRecord],
     snapshot: SnapshotRef,
     now: datetime,
-) -> list[tuple[object, ...]]:
-    """Build row tuples for analytics.data_models table.
+) -> ColumnarRowBuffer:
+    """Build buffered rows for analytics.data_models table.
 
     Parameters
     ----------
@@ -91,35 +92,36 @@ def _build_model_rows(
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Row tuples matching DATA_MODELS_COLS.
+    ColumnarRowBuffer
+        Buffer matching DATA_MODELS_COLS.
     """
-    rows = [
-        {
-            "repo": snapshot.repo,
-            "commit": snapshot.commit,
-            "model_id": model.model_id,
-            "goid_h128": model.goid,
-            "model_name": model.model_name,
-            "module": model.module,
-            "rel_path": model.rel_path,
-            "model_kind": model.model_kind,
-            "extras": {"base_classes": list(model.base_classes)},
-            "doc_short": model.doc_short,
-            "doc_long": model.doc_long,
-            "created_at": now,
-        }
-        for model in models
-    ]
-    return rows_to_tuples_for_table(DATA_MODELS_TABLE_KEY, rows)
+    buffer = buffer_for_table(DATA_MODELS_TABLE_KEY)
+    for model in models:
+        buffer.append(
+            {
+                "repo": snapshot.repo,
+                "commit": snapshot.commit,
+                "model_id": model.model_id,
+                "goid_h128": model.goid,
+                "model_name": model.model_name,
+                "module": model.module,
+                "rel_path": model.rel_path,
+                "model_kind": model.model_kind,
+                "extras": {"base_classes": list(model.base_classes)},
+                "doc_short": model.doc_short,
+                "doc_long": model.doc_long,
+                "created_at": now,
+            }
+        )
+    return buffer
 
 
 def _build_field_rows(
     models: list[ModelRecord],
     snapshot: SnapshotRef,
     now: datetime,
-) -> list[tuple[object, ...]]:
-    """Build row tuples for analytics.data_model_fields table.
+) -> ColumnarRowBuffer:
+    """Build buffered rows for analytics.data_model_fields table.
 
     Parameters
     ----------
@@ -132,37 +134,38 @@ def _build_field_rows(
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Row tuples matching DATA_MODEL_FIELDS_COLS.
+    ColumnarRowBuffer
+        Buffer matching DATA_MODEL_FIELDS_COLS.
     """
-    rows = [
-        {
-            "repo": snapshot.repo,
-            "commit": snapshot.commit,
-            "model_id": model.model_id,
-            "field_name": field_spec.name,
-            "field_type": field_spec.type,
-            "required": field_spec.required,
-            "has_default": field_spec.has_default,
-            "default_expr": field_spec.default_expr,
-            "extras": {"constraints": dict(field_spec.constraints)},
-            "source": field_spec.source,
-            "rel_path": model.rel_path,
-            "lineno": field_spec.lineno,
-            "created_at": now,
-        }
-        for model in models
-        for field_spec in model.fields
-    ]
-    return rows_to_tuples_for_table(DATA_MODEL_FIELDS_TABLE_KEY, rows)
+    buffer = buffer_for_table(DATA_MODEL_FIELDS_TABLE_KEY)
+    for model in models:
+        for field_spec in model.fields:
+            buffer.append(
+                {
+                    "repo": snapshot.repo,
+                    "commit": snapshot.commit,
+                    "model_id": model.model_id,
+                    "field_name": field_spec.name,
+                    "field_type": field_spec.type,
+                    "required": field_spec.required,
+                    "has_default": field_spec.has_default,
+                    "default_expr": field_spec.default_expr,
+                    "extras": {"constraints": dict(field_spec.constraints)},
+                    "source": field_spec.source,
+                    "rel_path": model.rel_path,
+                    "lineno": field_spec.lineno,
+                    "created_at": now,
+                }
+            )
+    return buffer
 
 
 def _build_relationship_rows(
     models: list[ModelRecord],
     snapshot: SnapshotRef,
     now: datetime,
-) -> list[tuple[object, ...]]:
-    """Build row tuples for analytics.data_model_relationships table.
+) -> ColumnarRowBuffer:
+    """Build buffered rows for analytics.data_model_relationships table.
 
     Parameters
     ----------
@@ -175,30 +178,31 @@ def _build_relationship_rows(
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Row tuples matching DATA_MODEL_RELATIONSHIPS_COLS.
+    ColumnarRowBuffer
+        Buffer matching DATA_MODEL_RELATIONSHIPS_COLS.
     """
-    rows = [
-        {
-            "repo": snapshot.repo,
-            "commit": snapshot.commit,
-            "source_model_id": model.model_id,
-            "target_model_id": rel.target_model_id,
-            "target_module": rel.target_module,
-            "target_model_name": rel.target_model_name,
-            "field_name": rel.field_name,
-            "relationship_kind": rel.kind,
-            "multiplicity": rel.multiplicity,
-            "via": rel.via,
-            "extras": {"evidence": rel.evidence if rel.evidence else None},
-            "rel_path": rel.rel_path,
-            "lineno": rel.lineno,
-            "created_at": now,
-        }
-        for model in models
-        for rel in model.relationships
-    ]
-    return rows_to_tuples_for_table(DATA_MODEL_RELATIONSHIPS_TABLE_KEY, rows)
+    buffer = buffer_for_table(DATA_MODEL_RELATIONSHIPS_TABLE_KEY)
+    for model in models:
+        for rel in model.relationships:
+            buffer.append(
+                {
+                    "repo": snapshot.repo,
+                    "commit": snapshot.commit,
+                    "source_model_id": model.model_id,
+                    "target_model_id": rel.target_model_id,
+                    "target_module": rel.target_module,
+                    "target_model_name": rel.target_model_name,
+                    "field_name": rel.field_name,
+                    "relationship_kind": rel.kind,
+                    "multiplicity": rel.multiplicity,
+                    "via": rel.via,
+                    "extras": {"evidence": rel.evidence if rel.evidence else None},
+                    "rel_path": rel.rel_path,
+                    "lineno": rel.lineno,
+                    "created_at": now,
+                }
+            )
+    return buffer
 
 
 def load_data_models_inputs(
@@ -245,9 +249,9 @@ def compute_data_models_from_inputs(
             snapshot.commit,
         )
         return DataModelsResult(
-            model_rows=(),
-            field_rows=(),
-            relationship_rows=(),
+            model_rows=buffer_for_table(DATA_MODELS_TABLE_KEY),
+            field_rows=buffer_for_table(DATA_MODEL_FIELDS_TABLE_KEY),
+            relationship_rows=buffer_for_table(DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
         )
 
     metas_by_path: dict[str, list[ClassMeta]] = {}
@@ -286,9 +290,9 @@ def compute_data_models_from_inputs(
     )
 
     return DataModelsResult(
-        model_rows=tuple(model_rows),
-        field_rows=tuple(field_rows),
-        relationship_rows=tuple(relationship_rows),
+        model_rows=model_rows,
+        field_rows=field_rows,
+        relationship_rows=relationship_rows,
     )
 
 

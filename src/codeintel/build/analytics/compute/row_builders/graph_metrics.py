@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.compute.row_builders.context import RowBuildContext
+from codeintel.build.analytics.compute.row_builders.core import buffer_for_table
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.query_results import coerce_optional_int
 
 if TYPE_CHECKING:
@@ -40,7 +42,7 @@ class ModuleGraphMetricInputs:
 
 def build_function_graph_metric_rows(
     inputs: FunctionGraphMetricInputs,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """Construct rows for analytics.graph_metrics_functions.
 
     Parameters
@@ -50,28 +52,30 @@ def build_function_graph_metric_rows(
 
     Returns
     -------
-    list[dict[str, object]]
-        Row dicts ready for graph_metrics_functions insertion.
+    ColumnarRowBuffer
+        Buffer containing rows ready for graph_metrics_functions insertion.
     """
-    return [
-        {
-            "repo": inputs.row_context.repo,
-            "commit": inputs.row_context.commit,
-            "function_goid_h128": int(node),
-            "call_fan_in": len(inputs.stats.in_neighbors.get(node, ())),
-            "call_fan_out": len(inputs.stats.out_neighbors.get(node, ())),
-            "call_in_degree": inputs.stats.in_counts.get(node, 0),
-            "call_out_degree": inputs.stats.out_counts.get(node, 0),
-            "call_pagerank": inputs.centrality["pagerank"].get(node),
-            "call_betweenness": inputs.centrality["betweenness"].get(node),
-            "call_closeness": inputs.centrality["closeness"].get(node),
-            "call_cycle_member": inputs.components.in_cycle.get(node, False),
-            "call_cycle_id": inputs.components.scc_id.get(node),
-            "call_layer": inputs.components.layer.get(node),
-            "created_at": inputs.row_context.created_at,
-        }
-        for node in inputs.graph_nodes
-    ]
+    buffer = buffer_for_table("analytics.graph_metrics_functions")
+    for node in inputs.graph_nodes:
+        buffer.append(
+            {
+                "repo": inputs.row_context.repo,
+                "commit": inputs.row_context.commit,
+                "function_goid_h128": int(node),
+                "call_fan_in": len(inputs.stats.in_neighbors.get(node, ())),
+                "call_fan_out": len(inputs.stats.out_neighbors.get(node, ())),
+                "call_in_degree": inputs.stats.in_counts.get(node, 0),
+                "call_out_degree": inputs.stats.out_counts.get(node, 0),
+                "call_pagerank": inputs.centrality["pagerank"].get(node),
+                "call_betweenness": inputs.centrality["betweenness"].get(node),
+                "call_closeness": inputs.centrality["closeness"].get(node),
+                "call_cycle_member": inputs.components.in_cycle.get(node, False),
+                "call_cycle_id": inputs.components.scc_id.get(node),
+                "call_layer": inputs.components.layer.get(node),
+                "created_at": inputs.row_context.created_at,
+            }
+        )
+    return buffer
 
 
 def component_metadata_from_import_rows(
@@ -149,7 +153,7 @@ def merge_component_metadata(
 
 def build_module_graph_metric_rows(
     inputs: ModuleGraphMetricInputs,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """Construct rows for analytics.graph_metrics_modules.
 
     Parameters
@@ -159,38 +163,41 @@ def build_module_graph_metric_rows(
 
     Returns
     -------
-    list[dict[str, object]]
-        Row dicts ready for graph_metrics_modules insertion.
+    ColumnarRowBuffer
+        Buffer containing rows ready for graph_metrics_modules insertion.
     """
-    return [
-        {
-            "repo": inputs.row_context.repo,
-            "commit": inputs.row_context.commit,
-            "module": module,
-            "import_fan_in": len(inputs.import_stats.in_neighbors.get(module, ())),
-            "import_fan_out": len(inputs.import_stats.out_neighbors.get(module, ())),
-            "import_in_degree": inputs.import_stats.in_counts.get(module, 0),
-            "import_out_degree": inputs.import_stats.out_counts.get(module, 0),
-            "import_pagerank": inputs.centrality["pagerank"].get(module),
-            "import_betweenness": inputs.centrality["betweenness"].get(module),
-            "import_closeness": inputs.centrality["closeness"].get(module),
-            "import_cycle_member": bool(inputs.component_meta["in_cycle"].get(module, False)),
-            "import_cycle_id": (
-                int(component_id)
-                if (component_id := inputs.component_meta["component_id"].get(module)) is not None
-                else None
-            ),
-            "import_layer": (
-                int(layer_val)
-                if (layer_val := inputs.component_meta["layer"].get(module)) is not None
-                else None
-            ),
-            "symbol_fan_in": len(inputs.symbol_inbound.get(module, ())),
-            "symbol_fan_out": len(inputs.symbol_outbound.get(module, ())),
-            "created_at": inputs.row_context.created_at,
-        }
-        for module in sorted(inputs.modules)
-    ]
+    buffer = buffer_for_table("analytics.graph_metrics_modules")
+    for module in inputs.modules:
+        buffer.append(
+            {
+                "repo": inputs.row_context.repo,
+                "commit": inputs.row_context.commit,
+                "module": module,
+                "import_fan_in": len(inputs.import_stats.in_neighbors.get(module, ())),
+                "import_fan_out": len(inputs.import_stats.out_neighbors.get(module, ())),
+                "import_in_degree": inputs.import_stats.in_counts.get(module, 0),
+                "import_out_degree": inputs.import_stats.out_counts.get(module, 0),
+                "import_pagerank": inputs.centrality["pagerank"].get(module),
+                "import_betweenness": inputs.centrality["betweenness"].get(module),
+                "import_closeness": inputs.centrality["closeness"].get(module),
+                "import_cycle_member": bool(inputs.component_meta["in_cycle"].get(module, False)),
+                "import_cycle_id": (
+                    int(component_id)
+                    if (component_id := inputs.component_meta["component_id"].get(module))
+                    is not None
+                    else None
+                ),
+                "import_layer": (
+                    int(layer_val)
+                    if (layer_val := inputs.component_meta["layer"].get(module)) is not None
+                    else None
+                ),
+                "symbol_fan_in": len(inputs.symbol_inbound.get(module, ())),
+                "symbol_fan_out": len(inputs.symbol_outbound.get(module, ())),
+                "created_at": inputs.row_context.created_at,
+            }
+        )
+    return buffer
 
 
 __all__ = [

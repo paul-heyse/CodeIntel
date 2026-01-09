@@ -12,11 +12,14 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.utilities.snapshot import snapshot_plan
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import materialize_plan
+from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.rows import ColumnarRowBuffer
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.paths import normalize_path, safe_relpath
 
 if TYPE_CHECKING:
@@ -24,6 +27,8 @@ if TYPE_CHECKING:
     from codeintel.core.parsing import ParsedModule
 
 log = logging.getLogger(__name__)
+
+CONFIG_REFERENCES_TABLE_KEY = "analytics.config_references"
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +38,7 @@ class ConfigReferenceInputs:
     snapshot: SnapshotRef
     config_value_rows: Sequence[Mapping[str, object]] | pa.Table
     module_rows: Sequence[Mapping[str, object]] | pa.Table
+    ctx: ExecutionContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +53,7 @@ class _ReferenceAccumulator:
     modules: set[str] = field(default_factory=set)
 
 
-def compute_config_reference_rows(inputs: ConfigReferenceInputs) -> list[dict[str, object]]:
+def compute_config_reference_rows(inputs: ConfigReferenceInputs) -> ColumnarRowBuffer:
     """Compute config reference rows from config values and module ASTs.
 
     Parameters
@@ -57,22 +63,24 @@ def compute_config_reference_rows(inputs: ConfigReferenceInputs) -> list[dict[st
 
     Returns
     -------
-    list[dict[str, object]]
-        Rows for analytics.config_references.
+    ColumnarRowBuffer
+        Buffer containing analytics.config_references rows.
     """
     entries, keys = _config_entries_from_tabular(
         inputs.config_value_rows,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
+        ctx=inputs.ctx,
     )
     if not entries or not keys:
-        return []
+        return buffer_for_table(CONFIG_REFERENCES_TABLE_KEY)
 
     modules_by_path = _modules_by_path_from_tabular(
         inputs.module_rows,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
         repo_root=inputs.snapshot.repo_root,
+        ctx=inputs.ctx,
     )
     references = _reference_map(
         keys=keys,
@@ -80,12 +88,12 @@ def compute_config_reference_rows(inputs: ConfigReferenceInputs) -> list[dict[st
         repo_root=inputs.snapshot.repo_root,
     )
     now = datetime.now(tz=UTC)
-    rows: list[dict[str, object]] = []
+    buffer = buffer_for_table(CONFIG_REFERENCES_TABLE_KEY)
     for entry in entries:
         accumulator = references.get(entry.key)
         paths = sorted(accumulator.paths) if accumulator else []
         modules = sorted(accumulator.modules) if accumulator else []
-        rows.append(
+        buffer.append(
             {
                 "repo": inputs.snapshot.repo,
                 "commit": inputs.snapshot.commit,
@@ -99,7 +107,7 @@ def compute_config_reference_rows(inputs: ConfigReferenceInputs) -> list[dict[st
                 "created_at": now,
             }
         )
-    return rows
+    return buffer
 
 
 def _config_entries_from_tabular(
@@ -107,9 +115,10 @@ def _config_entries_from_tabular(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> tuple[list[_ConfigKeyEntry], set[str]]:
     if isinstance(rows, pa.Table):
-        entry_table = _config_entry_rowset(rows, repo=repo, commit=commit)
+        entry_table = _config_entry_rowset(rows, repo=repo, commit=commit, ctx=ctx)
         return _config_entries_from_table(entry_table)
     filtered: list[dict[str, object]] = []
     for row in rows:
@@ -134,13 +143,20 @@ def _config_entry_rowset(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     required = {"config_path", "key"}
     missing = [name for name in required if name not in table.column_names]
     if missing:
         msg = f"Missing config value columns: {missing}"
         raise ValueError(msg)
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=("config_path", "key"))
+    plan = snapshot_plan(
+        table,
+        repo=repo,
+        commit=commit,
+        columns=("config_path", "key"),
+        ctx=ctx,
+    )
     plan = plan.filter(E.and_(E.is_valid("config_path"), E.is_valid("key")))
     plan = plan.order_by(
         sort_keys=[
@@ -186,14 +202,16 @@ def _config_entries_from_table(
     entries: list[_ConfigKeyEntry] = []
     keys: set[str] = set()
     seen: set[tuple[str, str]] = set()
-    for row in iter_rows(table, ("config_path", "keys")):
-        config_path = row.get("config_path")
+    for config_path, key_list in iter_tuples(
+        table.to_reader(),
+        columns=("config_path", "keys"),
+    ):
         if config_path is None:
             continue
         normalized_path = normalize_path(str(config_path).strip())
         if not normalized_path:
             continue
-        for key in _list_values(row.get("keys")):
+        for key in _list_values(key_list):
             key_value = str(key).strip()
             if not key_value:
                 continue
@@ -243,9 +261,10 @@ def _modules_by_path_from_tabular(
     repo: str,
     commit: str,
     repo_root: Path,
+    ctx: ExecutionContext | None,
 ) -> dict[str, set[str]]:
     if isinstance(rows, pa.Table):
-        table = _module_rowset(rows, repo=repo, commit=commit)
+        table = _module_rowset(rows, repo=repo, commit=commit, ctx=ctx)
         return _modules_by_path_from_table(table, repo_root=repo_root)
     return _modules_by_path(rows, repo_root=repo_root)
 
@@ -255,6 +274,7 @@ def _module_rowset(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     required = {"path", "module"}
     missing = [name for name in required if name not in table.column_names]
@@ -264,7 +284,13 @@ def _module_rowset(
     columns = ["path", "module"]
     if "language" in table.column_names:
         columns.append("language")
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=tuple(columns))
+    plan = snapshot_plan(
+        table,
+        repo=repo,
+        commit=commit,
+        columns=tuple(columns),
+        ctx=ctx,
+    )
     filters = [E.is_valid("path"), E.is_valid("module")]
     if "language" in table.column_names:
         filters.append(E.or_(E.is_null("language"), E.field("language") == E.scalar("python")))
@@ -288,14 +314,13 @@ def _modules_by_path_from_table(
     repo_root: Path,
 ) -> dict[str, set[str]]:
     modules_by_path: dict[str, set[str]] = {}
-    for row in iter_rows(table, ("path", "modules")):
-        path = row.get("path")
+    for path, module_list in iter_tuples(table.to_reader(), columns=("path", "modules")):
         if not isinstance(path, str) or not path.strip():
             continue
         rel_path = _normalize_module_path(path, repo_root=repo_root)
         if not rel_path:
             continue
-        for module in _list_values(row.get("modules")):
+        for module in _list_values(module_list):
             module_value = str(module).strip()
             if not module_value:
                 continue

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from codeintel.build.analytics.compute.graphs import centrality_directed
 from codeintel.build.analytics.compute.row_builders import (
     SubsystemMetricInputs,
-    SubsystemMetricRow,
+    buffer_for_table,
     build_subsystem_graph_rows,
 )
 from codeintel.build.analytics.graphs.graph_metrics import build_graph_metric_filters_from_sets
@@ -29,6 +29,7 @@ from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_gra
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 from codeintel.build.graphs.rx.store import RxGraphStore
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.graphs.graph_metrics import GraphMetricFilters
@@ -163,13 +164,13 @@ class SubsystemMetricSlices:
 
 def build_subsystem_graph_metrics_rows(
     inputs: SubsystemGraphMetricInputs,
-) -> list[SubsystemMetricRow]:
+) -> ColumnarRowBuffer:
     """Build subsystem-level condensed import graph metrics rows.
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Row tuples for analytics.subsystem_graph_metrics.
+    ColumnarRowBuffer
+        Buffer containing rows for analytics.subsystem_graph_metrics.
     """
     runtime_opts = inputs.runtime or GraphRuntimeOptions()
     membership_list = _normalize_membership_rows(
@@ -178,11 +179,11 @@ def build_subsystem_graph_metrics_rows(
         commit=inputs.commit,
     )
     if not membership_list:
-        return []
+        return buffer_for_table("analytics.subsystem_graph_metrics")
     active_filters = inputs.filters or _filters_from_memberships(membership_list)
     membership_list = active_filters.filter_subsystem_memberships(membership_list)
     if not membership_list:
-        return []
+        return buffer_for_table("analytics.subsystem_graph_metrics")
     now = datetime.now(UTC)
 
     def _build_context(
@@ -238,9 +239,9 @@ def build_subsystem_graph_metrics_rows(
         ctx: GraphContext,
         _views: GraphViews,
         slices: SubsystemMetricSlices,
-    ) -> list[SubsystemMetricRow]:
+    ) -> ColumnarRowBuffer:
         if slices.node_count == 0:
-            return []
+            return buffer_for_table("analytics.subsystem_graph_metrics")
         return build_subsystem_graph_rows(
             SubsystemMetricInputs(
                 repo=repo,

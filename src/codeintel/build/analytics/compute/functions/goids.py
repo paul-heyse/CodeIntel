@@ -23,6 +23,7 @@ from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import materialize_plan
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 
 if TYPE_CHECKING:
@@ -127,6 +128,7 @@ class FunctionGoidLoader:
         self,
         goids_frame: pa.Table,
         snapshot: SnapshotRef,
+        ctx: ExecutionContext | None = None,
     ) -> None:
         """Initialize the loader.
 
@@ -139,6 +141,7 @@ class FunctionGoidLoader:
         """
         self._goids_frame = goids_frame
         self._snapshot = snapshot
+        self._ctx = ctx
 
     def load_all(self) -> list[FunctionGoid]:
         """Load all function GOIDs for the snapshot.
@@ -158,7 +161,7 @@ class FunctionGoidLoader:
         FunctionGoid
             Each function GOID in the snapshot.
         """
-        frame = _worklist_table(self._goids_frame, self._snapshot)
+        frame = _worklist_table(self._goids_frame, self._snapshot, ctx=self._ctx)
         for record in iter_rows(frame):
             goid_row: GoidRow = {
                 "goid_h128": coerce_int(record["goid_h128"], ctx="goid_h128"),
@@ -203,7 +206,12 @@ class FunctionGoidLoader:
         return (self._snapshot.repo_root / goid.rel_path).resolve()
 
 
-def _worklist_table(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
+def _worklist_table(
+    frame: pa.Table,
+    snapshot: SnapshotRef,
+    *,
+    ctx: ExecutionContext | None,
+) -> pa.Table:
     required = (
         "goid_h128",
         "urn",
@@ -221,6 +229,7 @@ def _worklist_table(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
         repo=snapshot.repo,
         commit=snapshot.commit,
         columns=required,
+        ctx=ctx,
     )
     plan = plan.filter(E.in_("kind", ["function", "method"]))
     aggregates: list[tuple[str, str, None, str]] = []

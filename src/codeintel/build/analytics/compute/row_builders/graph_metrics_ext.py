@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.compute.row_builders.context import RowBuildContext
+from codeintel.build.analytics.compute.row_builders.core import buffer_for_table
 from codeintel.build.analytics.utilities.type_coercion import optional_int
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import as_int
 
 if TYPE_CHECKING:
@@ -45,21 +47,21 @@ class ModuleMetricExtInputs:
 
 def build_function_metric_ext_rows(
     inputs: FunctionMetricExtInputs,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """Construct rows for analytics.graph_metrics_functions_ext.
 
     Returns
     -------
-    list[dict[str, object]]
-        Rows ready for insertion into analytics.graph_metrics_functions_ext.
+    ColumnarRowBuffer
+        Buffer containing rows ready for analytics.graph_metrics_functions_ext insertion.
     """
     created_at = inputs.row_context.created_at
-    rows: list[dict[str, object]] = []
+    buffer = buffer_for_table("analytics.graph_metrics_functions_ext")
     for node in inputs.centralities["betweenness"]:
         goid_value = as_int(node)
         if goid_value is None:
             continue
-        rows.append(
+        buffer.append(
             {
                 "repo": inputs.row_context.repo,
                 "commit": inputs.row_context.commit,
@@ -84,43 +86,49 @@ def build_function_metric_ext_rows(
                 "created_at": created_at,
             }
         )
-    return rows
+    return buffer
 
 
 def build_module_metric_ext_rows(
     inputs: ModuleMetricExtInputs,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     """Construct rows for analytics.graph_metrics_modules_ext.
 
     Returns
     -------
-    list[dict[str, object]]
-        Rows ready for insertion into analytics.graph_metrics_modules_ext.
+    ColumnarRowBuffer
+        Buffer containing rows ready for analytics.graph_metrics_modules_ext insertion.
     """
     created_at = inputs.row_context.created_at
-    return [
-        {
-            "repo": inputs.row_context.repo,
-            "commit": inputs.row_context.commit,
-            "module": module,
-            "import_betweenness": float(inputs.centralities["betweenness"].get(module, 0.0)),
-            "import_closeness": float(inputs.centralities["closeness"].get(module, 0.0)),
-            "import_eigenvector": float(inputs.centralities["eigenvector"].get(module, 0.0)),
-            "import_harmonic": float(inputs.centralities["harmonic"].get(module, 0.0)),
-            "import_k_core": optional_int(inputs.structure["core_number"].get(module)),
-            "import_constraint": float(inputs.structure["constraint"].get(module, 0.0)),
-            "import_effective_size": float(inputs.structure["effective_size"].get(module, 0.0)),
-            "import_rich_club": bool(inputs.rich_club.get(module, False)),
-            "import_shell_index": optional_int(inputs.structure["core_number"].get(module)),
-            "import_community_id": optional_int(inputs.structure["community_id"].get(module)),
-            "import_component_id": optional_int(inputs.components["component_id"].get(module)),
-            "import_component_size": optional_int(inputs.components["component_size"].get(module)),
-            "import_scc_id": optional_int(inputs.components["scc_id"].get(module)),
-            "import_scc_size": optional_int(inputs.components["scc_size"].get(module)),
-            "created_at": created_at,
-        }
-        for module in inputs.nodes
-    ]
+    buffer = buffer_for_table("analytics.graph_metrics_modules_ext")
+    for module in inputs.nodes:
+        buffer.append(
+            {
+                "repo": inputs.row_context.repo,
+                "commit": inputs.row_context.commit,
+                "module": module,
+                "import_betweenness": float(inputs.centralities["betweenness"].get(module, 0.0)),
+                "import_closeness": float(inputs.centralities["closeness"].get(module, 0.0)),
+                "import_eigenvector": float(inputs.centralities["eigenvector"].get(module, 0.0)),
+                "import_harmonic": float(inputs.centralities["harmonic"].get(module, 0.0)),
+                "import_k_core": optional_int(inputs.structure["core_number"].get(module)),
+                "import_constraint": float(inputs.structure["constraint"].get(module, 0.0)),
+                "import_effective_size": float(
+                    inputs.structure["effective_size"].get(module, 0.0)
+                ),
+                "import_rich_club": bool(inputs.rich_club.get(module, False)),
+                "import_shell_index": optional_int(inputs.structure["core_number"].get(module)),
+                "import_community_id": optional_int(inputs.structure["community_id"].get(module)),
+                "import_component_id": optional_int(inputs.components["component_id"].get(module)),
+                "import_component_size": optional_int(
+                    inputs.components["component_size"].get(module)
+                ),
+                "import_scc_id": optional_int(inputs.components["scc_id"].get(module)),
+                "import_scc_size": optional_int(inputs.components["scc_size"].get(module)),
+                "created_at": created_at,
+            }
+        )
+    return buffer
 
 
 __all__ = [

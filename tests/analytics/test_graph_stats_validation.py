@@ -170,7 +170,7 @@ def test_graph_stats_include_symbol_and_config_graphs(graph_ctx: TestContext) ->
             repo=graph_ctx.repo,
             commit=graph_ctx.commit,
         )
-        graph_ctx.gateway.policy.bulk_insert("analytics.graph_stats", stats_rows)
+        graph_ctx.gateway.policy.bulk_insert("analytics.graph_stats", stats_rows.to_tuples())
 
     rows = graph_ctx.query(
         "SELECT graph_name FROM analytics.graph_stats WHERE repo = ? AND commit = ?",

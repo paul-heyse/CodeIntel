@@ -16,8 +16,9 @@ from codeintel.build.analytics.utilities.finalize import (
     finalize_analytics_table as _finalize_analytics_table,
 )
 from codeintel.build.tabular.finalize_ops import FinalizeResult
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 
-RowInput = Iterable[Mapping[str, object]] | Iterable[Sequence[object]]
+RowInput = ColumnarRowBuffer | Iterable[Mapping[str, object]] | Iterable[Sequence[object]]
 
 
 def finalize_analytics_result(table_key: str, table: pa.Table) -> FinalizeResult:

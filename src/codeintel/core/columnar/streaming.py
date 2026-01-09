@@ -14,7 +14,7 @@ import pyarrow.dataset as ds
 
 from codeintel.core.columnar import profiles as columnar_profiles
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
 from codeintel.core.columnar.profiles import DatasetScanOptions, scan_profile_options
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.readers import empty_reader_from_schema
@@ -195,7 +195,8 @@ def configure_arrow_threading_for_context(
     settings
         Optional Arrow scan settings override.
     """
-    profile = ctx.runtime_profile if ctx is not None else None
+    resolved_ctx = resolve_execution_context(ctx)
+    profile = resolved_ctx.runtime_profile
     apply_runtime_profile(profile, settings=settings)
 
 
@@ -330,7 +331,7 @@ def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanne
     """
     scan_settings = _resolve_arrow_scan_settings()
     resolved_options = _merge_scan_options(options, scan_settings)
-    configure_arrow_threading(settings=scan_settings)
+    configure_arrow_threading_for_context(ctx=None, settings=scan_settings)
     schema = _resolve_scan_schema(dataset, resolved_options)
     fragment_scan_options = _parquet_fragment_scan_options(dataset, resolved_options)
     scan_kwargs = _build_scan_kwargs(
@@ -414,13 +415,14 @@ def scan_options_for_queryspec_ctx(
     DatasetScanOptions
         Scan options reflecting query spec and execution context.
     """
+    resolved_ctx = resolve_execution_context(ctx)
     resolved = options or DatasetScanOptions()
-    profile = ctx.runtime_profile if ctx is not None else None
+    profile = resolved_ctx.runtime_profile
     resolved = _apply_runtime_profile_scan_defaults(resolved, profile=profile)
-    provenance = ctx.provenance if ctx is not None else False
+    provenance = resolved_ctx.provenance
     if profile is not None:
         provenance = profile.resolve_provenance(default=provenance)
-    determinism = ctx.resolve_determinism() if ctx is not None else None
+    determinism = resolved_ctx.resolve_determinism()
     if determinism == "canonical":
         provenance = True
     return scan_options_for_queryspec(
@@ -623,7 +625,7 @@ def scan_dataset_lazyframe(
         scan_settings.batch_size,
         default=DEFAULT_ARROW_BATCH_SIZE,
     )
-    configure_arrow_threading(settings=scan_settings)
+    configure_arrow_threading_for_context(ctx=None, settings=scan_settings)
     try:
         if row_index_name:
             return _scan_parquet_with_row_index(

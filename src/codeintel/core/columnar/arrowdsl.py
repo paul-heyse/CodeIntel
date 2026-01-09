@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 from pyarrow import acero
 
 from codeintel.core.columnar.dedupe_ops import DedupeTier, normalize_dedupe_tier
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.finalize_ops import (
     FinalizeResult,
@@ -23,6 +27,11 @@ from codeintel.core.columnar.kernels import SortKey, stable_sort_table
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.columnar.ordering import OrderingSpec
 from codeintel.core.columnar.plan_ops import ExternalPlanRequest, Plan, run_external_plan
+from codeintel.core.columnar.run_manifest import (
+    RunManifestOptions,
+    run_manifest_options_for_context,
+    write_run_manifest,
+)
 from codeintel.core.columnar.streaming import configure_arrow_threading_for_context
 from codeintel.core.validation.schema_constraints import is_list_like
 
@@ -32,6 +41,8 @@ if TYPE_CHECKING:
     type TableThunk = Callable[[], pa.Table]
     type ReaderThunk = Callable[[], pa.RecordBatchReader]
     type PostStep = Callable[[pa.Table], pa.Table]
+
+    from codeintel.core.columnar.streaming import ScanTelemetry
 else:
     type TableThunk = object
     type ReaderThunk = object
@@ -196,12 +207,22 @@ class ExecutionPlan:
         return normalize_table_for_compute(table, combine_chunks=ctx.combine_chunks)
 
 
+@dataclass(frozen=True, slots=True)
+class PipelineRunOptions:
+    """Optional settings for pipeline execution."""
+
+    post: Sequence[PostStep] = ()
+    ctx: ExecutionContext | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
+    scan_telemetry: ScanTelemetry | None = None
+
+
 def run_pipeline(
     *,
     plan: ExecutionPlan,
-    post: Sequence[PostStep] = (),
     finalize: FinalizeSpec,
-    ctx: ExecutionContext | None = None,
+    options: PipelineRunOptions | None = None,
 ) -> FinalizeResult:
     """Execute a plan, apply post steps, and finalize.
 
@@ -210,23 +231,34 @@ def run_pipeline(
     FinalizeResult
         Finalized result containing good rows, errors, and artifacts.
     """
-    resolved_ctx = ctx or ExecutionContext()
+    resolved_options = options or PipelineRunOptions()
+    resolved_ctx = resolve_execution_context(resolved_options.ctx)
     finalize_spec = _resolve_finalize_spec(finalize, plan=plan, ctx=resolved_ctx)
-    if post:
+    if resolved_options.post:
         table = plan.to_table(ctx=resolved_ctx)
-        for step in post:
+        for step in resolved_options.post:
             table = step(table)
-        return finalize_table(table, spec=finalize_spec)
-    reader = plan.to_reader(ctx=resolved_ctx)
-    return finalize_reader(reader, spec=finalize_spec)
+        result = finalize_table(table, spec=finalize_spec)
+    else:
+        reader = plan.to_reader(ctx=resolved_ctx)
+        result = finalize_reader(reader, spec=finalize_spec)
+    if resolved_options.manifest_dir is not None:
+        resolved_options.manifest_dir.mkdir(parents=True, exist_ok=True)
+        options = run_manifest_options_for_context(
+            ctx=resolved_ctx,
+            ordering=finalize_spec.ordering or plan.ordering,
+            scan_telemetry=resolved_options.scan_telemetry,
+            options=resolved_options.manifest_options,
+        )
+        write_run_manifest(resolved_options.manifest_dir, options=options)
+    return result
 
 
 def run_pipeline_good(
     *,
     plan: ExecutionPlan,
-    post: Sequence[PostStep] = (),
     finalize: FinalizeSpec,
-    ctx: ExecutionContext | None = None,
+    options: PipelineRunOptions | None = None,
 ) -> pa.Table:
     """Execute a plan and return only the finalized good rows.
 
@@ -235,7 +267,7 @@ def run_pipeline_good(
     pyarrow.Table
         Finalized table of good rows.
     """
-    return run_pipeline(plan=plan, post=post, finalize=finalize, ctx=ctx).good
+    return run_pipeline(plan=plan, finalize=finalize, options=options).good
 
 
 def _resolve_finalize_spec(
@@ -441,6 +473,7 @@ __all__ = [
     "ExecutionContext",
     "ExecutionPlan",
     "JoinPrecheckSpec",
+    "PipelineRunOptions",
     "apply_deterministic_order",
     "join_safe_projection",
     "list_payload_columns",

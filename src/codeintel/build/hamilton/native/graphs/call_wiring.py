@@ -51,6 +51,7 @@ from codeintel.build.tabular.finalize_ops import (
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import join_safe_projection
+from codeintel.core.columnar.dedupe_ops import dedupe_keep_first_after_sort
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import table_for_rows
@@ -1339,19 +1340,16 @@ def _table_from_rows(
 
 
 def _dedupe_block_rows(table: pa.Table, *, output_column: str) -> pa.Table:
-    seen: set[object] = set()
-    keys: list[object] = []
-    values: list[object] = []
-    for row in _table_rows(table):
-        key = row.get("function_goid_h128")
-        if key in seen:
-            continue
-        seen.add(key)
-        keys.append(key)
-        values.append(row.get("block_id"))
-    if not keys:
+    required = {"function_goid_h128", "block_id"}
+    if table.num_rows == 0 or not required.issubset(set(table.column_names)):
         return _empty_table(["function_goid_h128", output_column])
-    return pa.table({"function_goid_h128": keys, output_column: values})
+    projected = table.select(["function_goid_h128", "block_id"])
+    deduped = dedupe_keep_first_after_sort(
+        projected,
+        key_columns=("function_goid_h128",),
+        tie_breakers=(("block_id", "ascending"),),
+    )
+    return deduped.rename_columns(["function_goid_h128", output_column])
 
 
 def _entry_blocks(cfg_blocks: pa.Table) -> pa.Table:

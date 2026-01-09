@@ -630,10 +630,10 @@ def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
 
 def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
     if ts_nodes.num_rows == 0:
-        return pa.Table.from_pylist([])
+        return _empty_selected(ts_nodes, ["repo", "commit", "rel_path", "language", "node_id"])
     required = {"repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"}
     if not required.issubset(set(ts_nodes.column_names)):
-        return pa.Table.from_pylist([])
+        return _empty_table()
     ts_selected = select_table_columns(
         ts_nodes,
         ["repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"],
@@ -884,29 +884,12 @@ def _group_payloads_by_syntax_node(
         empty_payloads = pa.array([], type=pa.list_(payloads.type))
         return pa.table({"syntax_node_id": empty_nodes, "ts_nodes": empty_payloads})
     if not pa.types.is_string(ids.type):
-        index_by_id: dict[str, list[int]] = {}
-        for idx, node_id in enumerate(iter_array_values(ids)):
-            if not isinstance(node_id, str):
-                continue
-            index_by_id.setdefault(node_id, []).append(idx)
-        if not index_by_id:
+        try:
+            ids = cast_array(ids, pa.string(), safe=True)
+        except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError):
             empty_nodes = pa.array([], type=pa.string())
             empty_payloads = pa.array([], type=pa.list_(payloads.type))
             return pa.table({"syntax_node_id": empty_nodes, "ts_nodes": empty_payloads})
-        keys: list[str] = []
-        indices_flat: list[int] = []
-        offsets: list[int] = [0]
-        for node_id, indices in index_by_id.items():
-            keys.append(node_id)
-            indices_flat.extend(indices)
-            offsets.append(len(indices_flat))
-        offsets_array = pa.array(offsets, type=pa.int64())
-        flat_indices = pa.array(indices_flat, type=pa.int64())
-        flat_payloads = payloads.take(flat_indices)
-        list_array = pa.ListArray.from_arrays(offsets_array, flat_payloads)
-        return pa.table(
-            {"syntax_node_id": pa.array(keys, type=pa.string()), "ts_nodes": list_array}
-        )
     payload_table = pa.Table.from_arrays(
         [ids, payloads],
         names=["syntax_node_id", "ts_payload"],
@@ -1034,11 +1017,11 @@ def _weld_coverage_table(
     ts_nodes: pa.Table,
     xref: pa.Table,
 ) -> pa.Table:
-    if ts_nodes.num_rows == 0:
-        return pa.Table.from_pylist([])
     key_cols = ["repo", "commit", "rel_path", "language"]
     if not set(key_cols).issubset(set(ts_nodes.column_names)):
-        return pa.Table.from_pylist([])
+        return _empty_table()
+    if ts_nodes.num_rows == 0:
+        return _empty_selected(ts_nodes, key_cols)
 
     def _count_by(table: pa.Table, *, count_col: str, name: str) -> pa.Table:
         if table.num_rows == 0:
@@ -1086,13 +1069,36 @@ def _weld_coverage_table(
     )
 
 
+def _empty_table() -> pa.Table:
+    return pa.Table.from_batches([], schema=pa.schema([]))
+
+
+def _empty_selected(table: pa.Table, columns: Sequence[str]) -> pa.Table:
+    existing = [name for name in columns if name in table.column_names]
+    if not existing:
+        return _empty_table()
+    return table.select(existing).slice(0, 0)
+
+
+def _table_from_row_dicts(rows: Sequence[Mapping[str, object]]) -> pa.Table:
+    if not rows:
+        return _empty_table()
+    columns: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for name in row:
+            if name not in seen:
+                seen.add(name)
+                columns.append(name)
+    data = {name: [row.get(name) for row in rows] for name in columns}
+    return pa.table(data)
+
+
 def _reader_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.Table:
     try:
         table, _ = table_for_rows(table_key, rows)
     except (KeyError, RuntimeError):
-        if not rows:
-            return pa.Table.from_batches(pa.schema([]), [])
-        table = pa.Table.from_pylist(rows)
+        table = _table_from_row_dicts(rows)
     return table
 
 
@@ -1100,7 +1106,7 @@ def _empty_reader(table_key: str) -> pa.Table:
     try:
         return empty_table_for_table(table_key)
     except (KeyError, RuntimeError):
-        return pa.Table.from_batches(pa.schema([]), [])
+        return _empty_table()
 
 
 def _reader_from_table(table_key: str, table: pa.Table) -> pa.Table:
@@ -1125,7 +1131,7 @@ def _rename_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
 
 def _ts_nodes_to_syntax_nodes(ts_nodes: pa.Table) -> pa.Table:
     if ts_nodes.num_rows == 0:
-        return pa.Table.from_pylist([])
+        return empty_table_for_table(SYNTAX_NODES_TABLE_KEY)
     columns = [
         "repo",
         "commit",
@@ -1177,7 +1183,7 @@ def _ts_nodes_to_syntax_nodes(ts_nodes: pa.Table) -> pa.Table:
 
 def _ts_edges_to_syntax_edges(ts_edges: pa.Table) -> pa.Table:
     if ts_edges.num_rows == 0:
-        return pa.Table.from_pylist([])
+        return empty_table_for_table(SYNTAX_EDGES_TABLE_KEY)
     columns = [
         "repo",
         "commit",

@@ -231,6 +231,7 @@ json_payload = rx.node_link_json(
 
 ## Scope 7 — Observability alignment for graph inputs
 
+Status: Completed (finalize artifacts persisted + run metadata captured)
 ### Pattern
 ```python
 from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_reader
@@ -254,14 +255,15 @@ stats = result.stats
 - `src/codeintel/build/analytics/graphs/orchestrator.py`
 
 ### Checklist
-- [ ] Persist finalize artifacts for graph inputs in analytics/graph pipelines.
-- [ ] Surface provenance fields for deterministic tie-breaks in canonical tier.
-- [ ] Record run metadata (determinism tier, scan profile) with graph outputs.
+- [x] Persist finalize artifacts for graph inputs in analytics/graph pipelines.
+- [x] Surface provenance fields for deterministic tie-breaks in canonical tier.
+- [x] Record run metadata (determinism tier, scan profile) with graph outputs.
 
 ---
 
 ## Scope 8 — Runtime profile + threading convergence for rustworkx
 
+Status: Completed (runtime profile aligned + determinism metadata encoded)
 ### Pattern
 ```python
 from codeintel.build.graphs.runtime.context import GraphContext
@@ -280,9 +282,9 @@ config = GraphAlgoConfig(
 - `src/codeintel/build/graphs/runtime/runtime.py`
 
 ### Checklist
-- [ ] Align rustworkx threading controls with ExecutionContext/runtime profiles.
-- [ ] Use deterministic seeds and parallel thresholds tied to runtime profile.
-- [ ] Explicitly encode determinism tier into graph metadata.
+- [x] Align rustworkx threading controls with ExecutionContext/runtime profiles.
+- [x] Use deterministic seeds and parallel thresholds tied to runtime profile.
+- [x] Explicitly encode determinism tier into graph metadata.
 
 ---
 

@@ -9,6 +9,11 @@ import pyarrow.dataset as ds
 from sqlglot import exp
 from sqlglot.errors import SqlglotError
 
+from codeintel.core.columnar.queryspec import (
+    ProjectionSpec,
+    QuerySpec,
+    projection_spec_from_columns,
+)
 from codeintel.core.duckdb_types import (
     ColumnExpression,
     ConstantExpression,
@@ -55,6 +60,18 @@ class FilterPredicate:
     op: Op
     value: FilterValue
     column_type: ColumnType | None
+
+
+@dataclass(frozen=True, slots=True)
+class QuerySpecFilterRequest:
+    """Input bundle for building a QuerySpec from filter specs."""
+
+    filters: Sequence[FilterSpecLike]
+    allowed_columns: frozenset[str]
+    projection: ProjectionSpec | None = None
+    columns: Sequence[str] | Mapping[str, ds.Expression] | None = None
+    provenance_columns: Sequence[str] = ()
+    column_types: Mapping[str, ColumnType] | None = None
 
 
 def compile_filter_predicates(
@@ -151,6 +168,92 @@ def arrow_filter_expression(predicates: Sequence[FilterPredicate]) -> ds.Express
     """
     expressions = [_arrow_predicate(pred) for pred in predicates]
     return _combine_arrow([expr for expr in expressions if expr is not None])
+
+
+def arrow_predicate_from_filters(
+    filters: Sequence[FilterSpecLike],
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None = None,
+) -> ds.Expression | None:
+    """Compile filter specs into an Arrow dataset predicate.
+
+    Parameters
+    ----------
+    filters
+        Filter specifications to compile.
+    allowed_columns
+        Allowed column names for filtering.
+    column_types
+        Optional column type mapping for validation.
+
+    Returns
+    -------
+    pyarrow.dataset.Expression | None
+        Dataset predicate expression.
+
+    Raises
+    ------
+    FilterCompilerError
+        Raised when filter compilation fails.
+    """
+    if not filters:
+        return None
+    try:
+        predicates = compile_filter_predicates(
+            filters,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    except FilterCompilerError as exc:
+        raise FilterCompilerError(str(exc)) from exc
+    return arrow_filter_expression(predicates)
+
+
+def queryspec_from_filters(
+    request: QuerySpecFilterRequest,
+) -> QuerySpec | None:
+    """Return a QuerySpec compiled from filter specs and projections.
+
+    Parameters
+    ----------
+    request
+        Bundled filter and projection parameters for QuerySpec creation.
+
+    Returns
+    -------
+    QuerySpec | None
+        QuerySpec when compilation succeeds; otherwise ``None``.
+
+    Raises
+    ------
+    ValueError
+        If both projection and columns are missing.
+    """
+    resolved_projection = request.projection
+    if resolved_projection is None:
+        if request.columns is None:
+            msg = "QuerySpec creation requires projection or columns."
+            raise ValueError(msg)
+        resolved_projection = projection_spec_from_columns(
+            request.columns,
+            provenance_columns=request.provenance_columns,
+        )
+    try:
+        predicate = arrow_predicate_from_filters(
+            request.filters,
+            allowed_columns=request.allowed_columns,
+            column_types=request.column_types,
+        )
+    except FilterCompilerError:
+        if request.filters:
+            return None
+        predicate = None
+    return QuerySpec(
+        predicate=predicate,
+        pushdown_predicate=predicate,
+        projection=resolved_projection,
+    )
 
 
 def polars_filter_expression(predicates: Sequence[FilterPredicate]) -> PolarsExpr | None:
@@ -480,9 +583,12 @@ def _combine_polars(expressions: Sequence[PolarsExpr]) -> PolarsExpr | None:
 __all__ = [
     "FilterCompilerError",
     "FilterPredicate",
+    "QuerySpecFilterRequest",
     "arrow_filter_expression",
+    "arrow_predicate_from_filters",
     "compile_filter_predicates",
     "duckdb_filter_expression",
     "polars_filter_expression",
+    "queryspec_from_filters",
     "sqlglot_filter_expression",
 ]

@@ -24,9 +24,10 @@ from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_gra
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.schemas import get_contract_for_table_key
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import materialize_plan
+from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
@@ -239,13 +240,20 @@ def _config_reference_rowset(
     *,
     repo: str | None,
     commit: str | None,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     required = {"key", "extras"}
     missing = [name for name in required if name not in table.column_names]
     if missing:
         msg = f"Missing config reference columns: {missing}"
         raise ValueError(msg)
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=("key", "extras"))
+    plan = snapshot_plan(
+        table,
+        repo=repo,
+        commit=commit,
+        columns=("key", "extras"),
+        ctx=ctx,
+    )
     plan = plan.filter(E.is_valid("key"))
     plan = plan.project(
         {
@@ -301,10 +309,20 @@ def _rows_from_tabular(
     *,
     repo: str | None,
     commit: str | None,
+    ctx: ExecutionContext | None,
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
-        table = _config_reference_rowset(cast("pa.Table", rows), repo=repo, commit=commit)
-        return [dict(row) for row in iter_rows(table)]
+        table = _config_reference_rowset(
+            cast("pa.Table", rows),
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+        )
+        columns = list(table.column_names)
+        return [
+            dict(zip(columns, values, strict=False))
+            for values in iter_tuples(table.to_reader(), columns=columns)
+        ]
     return [dict(row) for row in rows]
 
 
@@ -329,6 +347,7 @@ def build_config_module_bipartite(
     allowed_modules: set[str] | None = None,
     repo: str | None = None,
     commit: str | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> GraphInput:
     """Build a bipartite graph of config keys to modules from config values rows.
 
@@ -348,7 +367,7 @@ def build_config_module_bipartite(
     GraphInput
         Undirected bipartite graph with config keys and modules.
     """
-    rows = _rows_from_tabular(config_value_rows, repo=repo, commit=commit)
+    rows = _rows_from_tabular(config_value_rows, repo=repo, commit=commit, ctx=ctx)
     return _config_bipartite_from_rows(
         rows,
         allowed_modules=allowed_modules,
@@ -486,6 +505,7 @@ def compute_config_graph_metrics_result(
     config_value_rows: Iterable[Mapping[str, object]] | pa.Table,
     allowed_modules: set[str] | None = None,
     runtime: GraphRuntimeOptions | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> ConfigGraphMetricsResult:
     """Compute config graph metrics rows without persisting.
 
@@ -516,6 +536,7 @@ def compute_config_graph_metrics_result(
         allowed_modules=allowed_modules,
         repo=repo,
         commit=commit,
+        ctx=ctx,
     )
     plan = _build_projection_plan(
         repo=repo,

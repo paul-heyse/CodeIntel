@@ -90,6 +90,7 @@ Implementation checklist:
 ### Scope 03 - Legacy surface retirement (plan-first execution)
 Description:
 Retire legacy plan/scan surfaces and consolidate around Plan + ExecutionPlan.
+Status: In progress (scanner_ops + acero_ops migrated; legacy deprecations pending).
 Pattern:
 ```python
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
@@ -106,7 +107,7 @@ Target files:
 - `src/codeintel/core/datasets/scanner_ops.py`
 Implementation checklist:
 - [ ] Deprecate legacy plan runner entrypoints in favor of ExecutionPlan.
-- [ ] Replace legacy scan helpers with QuerySpec + Plan.
+- [x] Replace legacy scan helpers with QuerySpec + Plan.
 - [ ] Ensure ordering metadata is preserved across all plan surfaces.
 
 ### Scope 04 - Finalize gate upgrades (nested, determinism, artifacts)
@@ -168,6 +169,7 @@ Implementation checklist:
 Description:
 Complete migration of graph pipelines to Plan.filter/project/join with join
 prechecks and finalize ordering for all outputs.
+Status: Completed (plan-first joins + finalize ordering already applied).
 Pattern:
 ```python
 from codeintel.core.columnar.arrowdsl import JoinPrecheckSpec, precheck_join_keys
@@ -191,14 +193,15 @@ Target files:
 - `src/codeintel/build/hamilton/native/graphs/pdg.py`
 - `src/codeintel/build/hamilton/native/graphs/symbol_use.py`
 Implementation checklist:
-- [ ] Replace remaining ad hoc filters/masks with Plan.filter/project.
-- [ ] Apply join prechecks for all join inputs.
-- [ ] Route graph outputs through FinalizeSpec with canonical order_by.
+- [x] Replace remaining ad hoc filters/masks with Plan.filter/project.
+- [x] Apply join prechecks for all join inputs.
+- [x] Route graph outputs through FinalizeSpec with canonical order_by.
 
 ### Scope 07 - CPG2 assembly helpers and relation builders
 Description:
 Replace manual edge construction with explode + struct projection helpers and
 enforce list-free joins.
+Status: Completed (explode + project_struct_fields adopted in CPG2 helpers).
 Pattern:
 ```python
 from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
@@ -214,13 +217,14 @@ Target files:
 - `src/codeintel/build/hamilton/native/graphs/cpg2/planes/*.py`
 - `src/codeintel/build/hamilton/native/graphs/cpg2/ids.py`
 Implementation checklist:
-- [ ] Replace pa.Table.from_pylist edge builds with explode helpers.
-- [ ] Use project_struct_fields for struct projections.
-- [ ] Ensure joins consume list-free inputs or explode beforehand.
+- [x] Replace pa.Table.from_pylist edge builds with explode helpers.
+- [x] Use project_struct_fields for struct projections.
+- [x] Ensure joins consume list-free inputs or explode beforehand.
 
 ### Scope 08 - Ingestion pipelines (Hamilton) to QuerySpec + finalize_reader
 Description:
 Adopt QuerySpec plans for ingestion DAGs and keep readers streaming to finalize.
+Status: Completed (QuerySpec scoping + finalize_reader applied across ingestion DAGs).
 Pattern:
 ```python
 from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_reader
@@ -237,15 +241,17 @@ Target files:
 - `src/codeintel/build/hamilton/native/ingestion/scip_resolution.py`
 - `src/codeintel/build/hamilton/native/ingestion/tree_sitter.py`
 - `src/codeintel/build/hamilton/native/ingestion/ingest_targets.py`
+- `src/codeintel/build/hamilton/native/ingestion/file_line_index.py`
 Implementation checklist:
-- [ ] Replace ad hoc scans with QuerySpec + plan helpers.
-- [ ] Use finalize_reader for streaming ingestion outputs.
-- [ ] Propagate provenance to errors when enabled.
+- [x] Replace ad hoc scans with QuerySpec + plan helpers.
+- [x] Use finalize_reader for streaming ingestion outputs.
+- [x] Propagate provenance to errors when enabled.
 
 ### Scope 09 - Ingestion compute (non-Hamilton) with ColumnarRowBuffer
 Description:
 Replace dict-list assembly with ColumnarRowBuffer and typed extras builders, then
 finalize via reader or table helpers.
+Status: Completed (ColumnarRowBuffer + reader-based finalization in ingestion compute).
 Pattern:
 ```python
 from codeintel.core.columnar.rows import columnar_buffer_for_table_key, table_for_columnar_rows
@@ -263,9 +269,9 @@ Target files:
 - `src/codeintel/ingestion/compute/docstrings_extract.py`
 - `src/codeintel/core/columnar/rows.py`
 Implementation checklist:
-- [ ] Replace dict-list assembly with ColumnarRowBuffer.
-- [ ] Add typed extras struct builders for ingestion metadata.
-- [ ] Prefer reader-based finalization when possible.
+- [x] Replace dict-list assembly with ColumnarRowBuffer.
+- [x] Add typed extras struct builders for ingestion metadata.
+- [x] Prefer reader-based finalization when possible.
 
 ### Scope 10 - Analytics alignment (finalize-first outputs)
 Description:
@@ -365,8 +371,8 @@ Implementation checklist:
 ## Sequencing Recommendation
 1) Runtime profiles + QuerySpec control plane (Scopes 01-02). ✅
 2) Finalize gate + kernel lane consolidation (Scopes 04-05). ✅
-3) Build graph pipelines + CPG2 assembly (Scopes 06-07).
-4) Ingestion pipelines + ingestion compute (Scopes 08-09).
+3) Build graph pipelines + CPG2 assembly (Scopes 06-07). ✅
+4) Ingestion pipelines + ingestion compute (Scopes 08-09). ✅
 5) Analytics alignment + observability artifacts (Scopes 10-11).
 6) Exports/materializers + causal audits (Scopes 12-13).
 

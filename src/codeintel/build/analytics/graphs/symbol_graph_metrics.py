@@ -40,9 +40,10 @@ from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_gra
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 from codeintel.build.graphs.rx.store import RxGraphStore
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping
 
     from codeintel.build.analytics.compute.graphs import (
         CentralityBundle,
@@ -139,7 +140,7 @@ class _SymbolMetricRowConfig[TNode]:
     """Configuration for building symbol graph metric rows."""
 
     graph_name: str
-    build_rows: Callable[[SymbolMetricInputs[TNode]], Sequence[tuple[object, ...]]]
+    build_rows: Callable[[SymbolMetricInputs[TNode]], ColumnarRowBuffer]
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,7 @@ class _SymbolMetricPipelineConfig[TNode]:
     table_key: str
     graph_name: str
     filter_node: Callable[[object, set[TNode]], bool]
-    build_rows: Callable[[SymbolMetricInputs[TNode]], Sequence[tuple[object, ...]]]
+    build_rows: Callable[[SymbolMetricInputs[TNode]], ColumnarRowBuffer]
 
 
 @dataclass(frozen=True)
@@ -225,10 +226,9 @@ def _symbol_metric_rows[TNode](
     slices: SymbolMetricSlices[TNode],
     *,
     row_config: _SymbolMetricRowConfig[TNode],
-) -> list[tuple[object, ...]]:
+) -> ColumnarRowBuffer:
     if slices.node_count == 0:
         log_empty_graph(row_config.graph_name, views.undirected)
-        return []
     metric_inputs = SymbolMetricInputs[TNode](
         row_context=row_context,
         centrality={
@@ -248,14 +248,14 @@ def _symbol_metric_rows[TNode](
         comp_id=slices.comp_id,
         comp_size=slices.comp_size,
     )
-    return list(row_config.build_rows(metric_inputs))
+    return row_config.build_rows(metric_inputs)
 
 
 def _run_symbol_metric_rows[TNode](
     *,
     config: _SymbolMetricPipelineConfig[TNode],
     request: _SymbolMetricPipelineRequest[TNode],
-) -> list[tuple[object, ...]]:
+) -> ColumnarRowBuffer:
     runtime_opts = request.runtime or GraphRuntimeOptions()
     row_config = _SymbolMetricRowConfig(
         graph_name=config.graph_name,
@@ -311,13 +311,13 @@ def build_symbol_graph_metrics_module_rows(
     graph: GraphInput,
     known_modules: set[str] | None = None,
     runtime: GraphRuntimeOptions | None = None,
-) -> list[tuple[object, ...]]:
+) -> ColumnarRowBuffer:
     """Build analytics.symbol_graph_metrics_modules rows from module symbol coupling.
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Row tuples for analytics.symbol_graph_metrics_modules.
+    ColumnarRowBuffer
+        Buffer containing rows for analytics.symbol_graph_metrics_modules.
     """
     return _run_symbol_metric_rows(
         config=_SymbolMetricPipelineConfig(
@@ -343,13 +343,13 @@ def build_symbol_graph_metrics_function_rows(
     graph: GraphInput,
     known_functions: set[int] | None = None,
     runtime: GraphRuntimeOptions | None = None,
-) -> list[tuple[object, ...]]:
+) -> ColumnarRowBuffer:
     """Build analytics.symbol_graph_metrics_functions rows from function symbol coupling.
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Row tuples for analytics.symbol_graph_metrics_functions.
+    ColumnarRowBuffer
+        Buffer containing rows for analytics.symbol_graph_metrics_functions.
     """
     return _run_symbol_metric_rows(
         config=_SymbolMetricPipelineConfig(

@@ -13,12 +13,12 @@ import pyarrow as pa
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.scopes.snapshot import SnapshotScope
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -141,10 +141,14 @@ def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
     if not required.issubset(set(modules_table.column_names)):
         return module_by_path
     filtered = _python_modules_table(modules_table)
-    for row in iter_rows(filtered):
-        rel_path = row.get("path")
-        module_name = row.get("module")
-        language = row.get("language")
+    columns = ["path", "module"]
+    include_language = "language" in filtered.column_names
+    if include_language:
+        columns.append("language")
+    for values in iter_tuples(table_to_reader(filtered), columns=columns):
+        rel_path = values[0]
+        module_name = values[1]
+        language = values[2] if include_language and len(values) > 2 else None
         if language not in {None, "python"}:
             continue
         if not isinstance(rel_path, str) or not rel_path:
@@ -201,11 +205,22 @@ def _call_graph_index_rows(
     if not required.issubset(set(goids_table.column_names)):
         return None
     filtered = _filtered_goids_table(goids_table)
+    columns = ["qualname", "rel_path", "goid_h128"]
+    include_language = "language" in filtered.column_names
+    if include_language:
+        columns.append("language")
     rows: list[dict[str, object]] = []
-    for row in iter_rows(filtered):
-        rel_path = row.get("rel_path")
+    for values in iter_tuples(table_to_reader(filtered), columns=columns):
+        rel_path = values[1]
         if not isinstance(rel_path, str) or rel_path not in module_by_path:
             continue
+        row: dict[str, object] = {
+            "qualname": values[0],
+            "rel_path": rel_path,
+            "goid_h128": values[2],
+        }
+        if include_language and len(values) > 3:
+            row["language"] = values[3]
         rows.append(row)
     return rows or None
 
@@ -321,13 +336,17 @@ def _call_graph_node_rows(
     output_rows: list[dict[str, object]] = []
     matched_defs = 0
     total_defs = 0
-    for row in iter_rows(goids_table):
-        kind = row.get("kind")
+    columns = ["kind", "rel_path", "qualname", "goid_h128"]
+    include_language = "language" in goids_table.column_names
+    if include_language:
+        columns.append("language")
+    for values in iter_tuples(table_to_reader(goids_table), columns=columns):
+        kind = values[0]
         if kind not in _FUNCTION_KINDS:
             continue
         total_defs += 1
-        rel_path = row.get("rel_path")
-        qualname = row.get("qualname")
+        rel_path = values[1]
+        qualname = values[2]
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
             continue
         enrich = function_index.get((rel_path, qualname))
@@ -340,8 +359,8 @@ def _call_graph_node_rows(
             is_public = not last.startswith("_")
         output_rows.append(
             {
-                "goid_h128": row.get("goid_h128"),
-                "language": row.get("language"),
+                "goid_h128": values[3],
+                "language": values[4] if include_language and len(values) > 4 else None,
                 "kind": kind,
                 "arity": int(arity) if isinstance(arity, int) else 0,
                 "is_public": bool(is_public),

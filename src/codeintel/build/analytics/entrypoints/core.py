@@ -24,9 +24,11 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
-from codeintel.build.analytics.compute.row_builders import row_tuple_for_table
+from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.utilities.snapshot import require_columns, snapshot_table
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
@@ -147,6 +149,7 @@ class EntrypointContextInputs:
     test_catalog_frame: pa.Table | None = None
     subsystem_modules_frame: pa.Table | None = None
     subsystems_frame: pa.Table | None = None
+    ctx: ExecutionContext | None = None
 
 
 def collect_entrypoint_rows(
@@ -154,16 +157,16 @@ def collect_entrypoint_rows(
     context: EntryPointContext,
     module_sources: Iterable[EntrypointModuleSource],
     settings: DetectorSettings,
-) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
+) -> tuple[ColumnarRowBuffer, ColumnarRowBuffer]:
     """Collect entrypoint rows from in-memory module sources.
 
     Returns
     -------
-    tuple[list[tuple[object, ...]], list[tuple[object, ...]]]
-        Entry point rows and entrypoint-test edge rows.
+    tuple[ColumnarRowBuffer, ColumnarRowBuffer]
+        Entrypoint and entrypoint-test buffers.
     """
-    entrypoint_rows: list[tuple[object, ...]] = []
-    test_rows: list[tuple[object, ...]] = []
+    entrypoint_rows = buffer_for_table(ENTRYPOINTS_TABLE_KEY)
+    test_rows = buffer_for_table(ENTRYPOINT_TESTS_TABLE_KEY)
 
     for module_source in module_sources:
         candidates = detect_entrypoints(
@@ -173,12 +176,13 @@ def collect_entrypoint_rows(
             settings=settings,
         )
         for cand in candidates:
-            rows = _materialize_candidate(cand, context)
-            if rows is None:
+            result = _materialize_candidate(cand, context)
+            if result is None:
                 continue
-            entry_row, tests_for_entry = rows
+            entry_row, tests_for_entry = result
             entrypoint_rows.append(entry_row)
-            test_rows.extend(tests_for_entry)
+            for test_row in tests_for_entry:
+                test_rows.append(test_row)
     return entrypoint_rows, test_rows
 
 
@@ -191,6 +195,7 @@ def _build_entrypoint_context(
         inputs.modules_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     if not module_ctx:
         catalog_modules = inputs.module_map_override or catalog.catalog().module_by_path
@@ -204,12 +209,14 @@ def _build_entrypoint_context(
         inputs.test_catalog_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     subsystem_by_module, subsystem_names = _subsystem_maps_from_frame(
         inputs.subsystem_modules_frame,
         inputs.subsystems_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     module_map = {path: ctx.module for path, ctx in module_ctx.items()}
     return EntryPointContext(
@@ -228,7 +235,7 @@ def _build_entrypoint_context(
 
 def _materialize_candidate(
     cand: EntryPointCandidate, ctx: EntryPointContext
-) -> tuple[tuple[object, ...], list[tuple[object, ...]]] | None:
+) -> tuple[dict[str, object], list[dict[str, object]]] | None:
     goid = ctx.catalog.lookup_goid(cand.rel_path, cand.lineno, cand.end_lineno, cand.qualname)
     if goid is None:
         log.debug("Unable to resolve GOID for entrypoint %s (%s)", cand.qualname, cand.rel_path)
@@ -260,42 +267,39 @@ def _materialize_candidate(
         }
         extra_payload = {**extra_payload, "ast_features": feature_summary}
 
-    entrypoint_row = row_tuple_for_table(
-        ENTRYPOINTS_TABLE_KEY,
-        {
-            "repo": ctx.repo,
-            "commit": ctx.commit,
-            "entrypoint_id": entrypoint_id,
-            "kind": cand.kind,
-            "framework": cand.framework,
-            "handler_goid_h128": _decimal(goid),
-            "handler_urn": urn,
-            "handler_rel_path": rel_path,
-            "handler_module": module_info.module,
-            "handler_qualname": cand.qualname,
-            "http_method": cand.http_method,
-            "route_path": cand.route_path,
-            "auth_required": cand.auth_required,
-            "command_name": cand.command_name,
-            "schedule": cand.schedule,
-            "trigger": cand.trigger,
-            "subsystem_id": subsystem_id,
-            "subsystem_name": subsystem_name,
-            "extras": {
-                "status_codes": cand.status_codes,
-                "arguments_schema": cand.arguments_schema,
-                "extra": _normalize_json(extra_payload),
-                "tags": _normalize_json(module_info.tags),
-                "owners": _normalize_json(module_info.owners),
-            },
-            "tests_touching": summary.tests_touching,
-            "failing_tests": summary.failing_tests,
-            "slow_tests": summary.slow_tests,
-            "flaky_tests": summary.flaky_tests,
-            "last_test_status": summary.last_test_status,
-            "created_at": ctx.now,
+    entrypoint_row: dict[str, object] = {
+        "repo": ctx.repo,
+        "commit": ctx.commit,
+        "entrypoint_id": entrypoint_id,
+        "kind": cand.kind,
+        "framework": cand.framework,
+        "handler_goid_h128": _decimal(goid),
+        "handler_urn": urn,
+        "handler_rel_path": rel_path,
+        "handler_module": module_info.module,
+        "handler_qualname": cand.qualname,
+        "http_method": cand.http_method,
+        "route_path": cand.route_path,
+        "auth_required": cand.auth_required,
+        "command_name": cand.command_name,
+        "schedule": cand.schedule,
+        "trigger": cand.trigger,
+        "subsystem_id": subsystem_id,
+        "subsystem_name": subsystem_name,
+        "extras": {
+            "status_codes": cand.status_codes,
+            "arguments_schema": cand.arguments_schema,
+            "extra": _normalize_json(extra_payload),
+            "tags": _normalize_json(module_info.tags),
+            "owners": _normalize_json(module_info.owners),
         },
-    )
+        "tests_touching": summary.tests_touching,
+        "failing_tests": summary.failing_tests,
+        "slow_tests": summary.slow_tests,
+        "flaky_tests": summary.flaky_tests,
+        "last_test_status": summary.last_test_status,
+        "created_at": ctx.now,
+    }
     return entrypoint_row, edge_rows
 
 
@@ -336,10 +340,11 @@ def _module_context_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> dict[str, ModuleContext]:
     if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
+    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx)
     context: dict[str, ModuleContext] = {}
     for row in filtered:
         rel_path = row.get("path")
@@ -360,11 +365,12 @@ def _test_meta_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> dict[str, TestMeta]:
     meta: dict[str, TestMeta] = {}
     if frame is None or frame.num_rows == 0:
         return meta
-    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
+    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx)
     for row in filtered:
         test_id = row.get("test_id")
         test_goid_h128 = row.get("test_goid_h128")
@@ -389,6 +395,7 @@ def _subsystem_maps_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> tuple[dict[str, str], dict[str, str]]:
     subsystem_by_module: dict[str, str] = {}
     subsystem_names: dict[str, str] = {}
@@ -397,6 +404,7 @@ def _subsystem_maps_from_frame(
             subsystem_modules_frame,
             repo=repo,
             commit=commit,
+            ctx=ctx,
         )
         for row in filtered:
             module = row.get("module")
@@ -408,7 +416,7 @@ def _subsystem_maps_from_frame(
             )
 
     if subsystems_frame is not None and subsystems_frame.num_rows > 0:
-        filtered = _rows_for_snapshot(subsystems_frame, repo=repo, commit=commit)
+        filtered = _rows_for_snapshot(subsystems_frame, repo=repo, commit=commit, ctx=ctx)
         for row in filtered:
             subsystem_id = row.get("subsystem_id")
             name = row.get("name")
@@ -425,9 +433,10 @@ def _rows_for_snapshot(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> list[dict[str, object]]:
     require_columns(frame, ("repo", "commit"))
-    filtered = snapshot_table(frame, repo=repo, commit=commit)
+    filtered = snapshot_table(frame, repo=repo, commit=commit, ctx=ctx)
     return list(iter_rows(filtered))
 
 
@@ -435,7 +444,7 @@ def _summarize_tests(
     _goid: int,
     _entrypoint_id: str,
     _ctx: EntryPointContext,
-) -> tuple[TestSummary, list[tuple[object, ...]]]:
+) -> tuple[TestSummary, list[dict[str, object]]]:
     return TestSummary(
         tests_touching=0,
         failing_tests=0,

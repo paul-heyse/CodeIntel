@@ -503,7 +503,7 @@ def _write_graph_stats(
             repo=artifacts.graph_inputs.snapshot.repo,
             commit=artifacts.graph_inputs.snapshot.commit,
         )
-        gateway.policy.bulk_insert("analytics.graph_stats", graph_stats_rows)
+        gateway.policy.bulk_insert("analytics.graph_stats", graph_stats_rows.to_tuples())
 
 
 def _run_graph_metrics_for_gateway(

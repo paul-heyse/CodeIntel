@@ -52,6 +52,7 @@ from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
+from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
@@ -167,8 +168,8 @@ class GraphMetricFilters:
 class GraphMetricsRows:
     """Rows for function and module graph metrics."""
 
-    function_rows: list[dict[str, object]]
-    module_rows: list[dict[str, object]]
+    function_rows: ColumnarRowBuffer
+    module_rows: ColumnarRowBuffer
 
 
 @dataclass(frozen=True)
@@ -427,7 +428,6 @@ def _function_metric_slices(
         if node_id is None:
             continue
         graph_nodes.append(node_id)
-    graph_nodes.sort()
     return FunctionMetricSlices(
         stats=stats,
         centrality=centrality,
@@ -442,7 +442,7 @@ def _function_metric_rows(
     ctx: GraphContext,
     _views: GraphViews,
     slices: FunctionMetricSlices,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     row_context = RowBuildContext.from_repo_commit(repo, commit, created_at=ctx.resolved_now())
     rows = build_function_graph_metric_rows(
         FunctionGraphMetricInputs(
@@ -456,7 +456,7 @@ def _function_metric_rows(
     if rows:
         log.info(
             "graph_metrics_functions rows built: %d rows for %s@%s",
-            len(rows),
+            rows.row_count,
             row_context.repo,
             row_context.commit,
         )
@@ -514,7 +514,7 @@ def _module_metric_rows(
     ctx: GraphContext,
     _views: GraphViews,
     slices: ModuleMetricSlices,
-) -> list[dict[str, object]]:
+) -> ColumnarRowBuffer:
     row_context = RowBuildContext.from_repo_commit(repo, commit, created_at=ctx.resolved_now())
     rows = build_module_graph_metric_rows(
         ModuleGraphMetricInputs(
@@ -530,7 +530,7 @@ def _module_metric_rows(
     if rows:
         log.info(
             "graph_metrics_modules rows built: %d rows for %s@%s",
-            len(rows),
+            rows.row_count,
             row_context.repo,
             row_context.commit,
         )

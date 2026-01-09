@@ -62,6 +62,7 @@ from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finali
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
+from codeintel.core.columnar.streaming import DatasetScanOptions, build_scanner
 from codeintel.core.config.settings import BuildSettings
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetManifestRequest,
@@ -75,7 +76,6 @@ from codeintel.core.datasets.manifests import (
     write_dataset_manifest,
 )
 from codeintel.core.datasets.paths import dataset_snapshot_dir
-from codeintel.core.datasets.scanner_ops import ScannerParams, build_scanner
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.hashing.fingerprint import fingerprint
@@ -845,8 +845,8 @@ def _observe_sink_dataset(
     if observation is None:
         return
     try:
-        params = ScannerParams(batch_size=batch_size, unify_schemas=True)
-        scanner = build_scanner(dataset, params=params)
+        options = DatasetScanOptions(batch_size=batch_size, unify_schemas=True)
+        scanner = build_scanner(dataset, options=options)
         observe_batches(scanner.to_reader(), accumulator=observation)
     except (TypeError, ValueError, pa.ArrowInvalid, OSError):
         LOG.warning("Schema observation scan failed for %s", table_key)

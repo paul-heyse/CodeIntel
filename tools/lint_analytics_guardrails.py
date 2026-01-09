@@ -79,6 +79,27 @@ _ALLOWLIST_ITER_ROWS: dict[str, frozenset[str]] = {
     "src/codeintel/build/analytics/utilities/catalogs.py": frozenset({"_iter_rows_from_source"}),
     "src/codeintel/build/analytics/utilities/datasets.py": frozenset({"_validated_records"}),
 }
+_ALLOWLIST_MATERIALIZE: frozenset[str] = frozenset(
+    {
+        "src/codeintel/build/analytics/cfg_dfg/helpers.py",
+        "src/codeintel/build/analytics/compute/functions/goids.py",
+        "src/codeintel/build/analytics/functions/function_effects.py",
+        "src/codeintel/build/analytics/functions/metrics.py",
+        "src/codeintel/build/analytics/graphs/config_data_flow.py",
+        "src/codeintel/build/analytics/graphs/config_graph_metrics.py",
+        "src/codeintel/build/analytics/graphs/config_references.py",
+        "src/codeintel/build/analytics/graphs/subsystem_agreement.py",
+        "src/codeintel/build/analytics/py_cpg_quality_report.py",
+        "src/codeintel/build/analytics/scip_diagnostics_rollups.py",
+        "src/codeintel/build/analytics/semantic_roles/core.py",
+        "src/codeintel/build/analytics/subsystems/affinity.py",
+        "src/codeintel/build/analytics/subsystems/cache.py",
+        "src/codeintel/build/analytics/utilities/catalogs.py",
+        "src/codeintel/build/analytics/utilities/finalize.py",
+        "src/codeintel/build/analytics/utilities/snapshot.py",
+    }
+)
+_ALLOWLIST_RAW_COMPUTE: frozenset[str] = frozenset()
 _ALLOWLIST_NO_DECODER: frozenset[str] = frozenset(
     {
         "src/codeintel/build/analytics/cfg_dfg/helpers.py",
@@ -103,7 +124,15 @@ _FINALIZE_MESSAGE = (
 )
 _ROWSET_ORDER_MESSAGE = "Plan.aggregate(list) without order_by in rowset helper."
 _ROWSET_DECODER_MESSAGE = "List-aggregate rowset missing list-decoding helper."
+_RAW_COMPUTE_MESSAGE = (
+    "Raw pyarrow.compute import detected; use DSL helpers instead of pc in analytics."
+)
+_MATERIALIZE_MESSAGE = (
+    "Materialization via materialize_plan/to_table detected; keep readers streaming "
+    "and finalize at explicit boundaries."
+)
 _LIST_LITERAL_PATTERN = re.compile(r"(['\"])list\1")
+_COMPUTE_NAME_RE = re.compile(r"\bcompute\b")
 
 
 @dataclass(frozen=True)
@@ -122,12 +151,14 @@ class AnalyticsScan:
     iter_rows: list[Violation]
     finalize_writes: list[Violation]
     rowset_guardrails: list[Violation]
+    raw_compute: list[Violation]
+    materialize: list[Violation]
 
 
 def _candidate_paths(root: Path) -> set[Path]:
     analytics_candidates = find_literal_candidates(
         root,
-        patterns=("iter_rows", "aggregate"),
+        patterns=("iter_rows", "aggregate", "materialize_plan", "to_table", "pyarrow.compute"),
         include_globs=(f"{_ANALYTICS_ROOT}/**/*.py",),
     )
     finalize_candidates = find_literal_candidates(
@@ -293,6 +324,68 @@ def _rowset_guardrail_violations(
     return violations
 
 
+def _scan_raw_compute(root: SgRoot, *, path: Path, repo_root: Path) -> list[Violation]:
+    rel = _rel_path(path, root=repo_root)
+    if rel in _ALLOWLIST_RAW_COMPUTE:
+        return []
+    violations: list[Violation] = []
+    tree = root.root()
+    for node in tree.find_all(kind="import_statement"):
+        text = " ".join(node.text().split())
+        if "pyarrow.compute" in text:
+            violations.append(
+                Violation(
+                    path=path,
+                    lineno=node.range().start.line + 1,
+                    message=_RAW_COMPUTE_MESSAGE,
+                )
+            )
+    for node in tree.find_all(kind="import_from_statement"):
+        text = " ".join(node.text().split())
+        if text.startswith("from pyarrow.compute"):
+            violations.append(
+                Violation(
+                    path=path,
+                    lineno=node.range().start.line + 1,
+                    message=_RAW_COMPUTE_MESSAGE,
+                )
+            )
+            continue
+        if text.startswith("from pyarrow import") and _COMPUTE_NAME_RE.search(text):
+            violations.append(
+                Violation(
+                    path=path,
+                    lineno=node.range().start.line + 1,
+                    message=_RAW_COMPUTE_MESSAGE,
+                )
+            )
+    return violations
+
+
+def _scan_materialize(root: SgRoot, *, path: Path, repo_root: Path) -> list[Violation]:
+    rel = _rel_path(path, root=repo_root)
+    if rel in _ALLOWLIST_MATERIALIZE:
+        return []
+    violations: list[Violation] = []
+    for node in root.root().find_all(pattern="materialize_plan($$$ARGS)"):
+        violations.append(
+            Violation(
+                path=path,
+                lineno=node.range().start.line + 1,
+                message=_MATERIALIZE_MESSAGE,
+            )
+        )
+    for node in root.root().find_all(pattern="$OBJ.to_table($$$ARGS)"):
+        violations.append(
+            Violation(
+                path=path,
+                lineno=node.range().start.line + 1,
+                message=_MATERIALIZE_MESSAGE,
+            )
+        )
+    return violations
+
+
 def _finalize_write_violations(*, path: Path, functions: list[SgNode]) -> list[Violation]:
     violations: list[Violation] = []
     for node in functions:
@@ -330,10 +423,18 @@ def scan_analytics(repo_root: Path) -> AnalyticsScan:
     """
     candidate_paths = _candidate_paths(repo_root)
     if not candidate_paths:
-        return AnalyticsScan(iter_rows=[], finalize_writes=[], rowset_guardrails=[])
+        return AnalyticsScan(
+            iter_rows=[],
+            finalize_writes=[],
+            rowset_guardrails=[],
+            raw_compute=[],
+            materialize=[],
+        )
     iter_rows_violations: list[Violation] = []
     finalize_violations: list[Violation] = []
     rowset_violations: list[Violation] = []
+    raw_compute_violations: list[Violation] = []
+    materialize_violations: list[Violation] = []
     for path in _iter_python_files(repo_root):
         if path not in candidate_paths:
             continue
@@ -350,6 +451,12 @@ def scan_analytics(repo_root: Path) -> AnalyticsScan:
             rowset_violations.extend(
                 _rowset_guardrail_violations(path=path, rel=rel, functions=functions)
             )
+            raw_compute_violations.extend(
+                _scan_raw_compute(parsed_root, path=path, repo_root=repo_root)
+            )
+            materialize_violations.extend(
+                _scan_materialize(parsed_root, path=path, repo_root=repo_root)
+            )
         finalize_violations.extend(
             _finalize_write_violations(path=path, functions=functions)
         )
@@ -357,6 +464,8 @@ def scan_analytics(repo_root: Path) -> AnalyticsScan:
         iter_rows=iter_rows_violations,
         finalize_writes=finalize_violations,
         rowset_guardrails=rowset_violations,
+        raw_compute=raw_compute_violations,
+        materialize=materialize_violations,
     )
 
 
@@ -384,6 +493,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit_violations(findings.rowset_guardrails, root=repo_root)
         sys.stderr.write(
             f"{len(findings.rowset_guardrails)} analytics rowset guardrail violation(s).\n"
+        )
+        had_violations = True
+    if findings.raw_compute:
+        _emit_violations(findings.raw_compute, root=repo_root)
+        sys.stderr.write(
+            f"{len(findings.raw_compute)} analytics raw compute guardrail violation(s).\n"
+        )
+        had_violations = True
+    if findings.materialize:
+        _emit_violations(findings.materialize, root=repo_root)
+        sys.stderr.write(
+            f"{len(findings.materialize)} analytics materialize guardrail violation(s).\n"
         )
         had_violations = True
     if findings.finalize_writes:
