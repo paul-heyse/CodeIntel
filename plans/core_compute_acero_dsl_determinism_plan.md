@@ -77,10 +77,10 @@ def run_pipeline(
 ```
 
 Checklist
-- [ ] Add `ExecutionContext` with determinism tier and threading knobs.
-- [ ] Add an `ExecPlan` wrapper (Declaration or table thunk).
-- [ ] Provide a single `run_pipeline` entrypoint used by core pipelines.
-- [ ] Ensure finalize is the only boundary that enforces schema + dedupe + ordering.
+- [x] Add `ExecutionContext` with determinism tier and threading knobs.
+- [x] Add an `ExecPlan` wrapper (Declaration or table thunk).
+- [x] Provide a single `run_pipeline` entrypoint used by core pipelines.
+- [x] Ensure finalize is the only boundary that enforces schema + dedupe + ordering.
 
 ---
 
@@ -113,10 +113,10 @@ def safe_divide(
 ```
 
 Checklist
-- [ ] Add missing kernels (regex match/replace, list_len, struct_field, safe_divide).
-- [ ] Reexport kernels from `src/codeintel/core/columnar/__init__.py`.
-- [ ] Replace ad‑hoc `pc.*` in core compute paths with kernel helpers.
-- [ ] Add build tabular wrappers that forward to core kernels (no behavior changes).
+- [x] Add missing kernels (regex match/replace, list_len, struct_field, safe_divide).
+- [x] Reexport kernels from `src/codeintel/core/columnar/__init__.py`.
+- [ ] Replace ad-hoc `pc.*` in core compute paths with kernel helpers (audit remaining).
+- [x] Add build tabular wrappers that forward to core kernels (no behavior changes).
 
 ---
 
@@ -146,10 +146,10 @@ def _align_for_finalize(table: pa.Table, contract_schema: pa.Schema) -> pa.Table
 ```
 
 Checklist
-- [ ] Normalize list_view/binary_view/string_view at finalize boundary.
-- [ ] Apply `unify_schemas_with_contract_first` before casting.
-- [ ] Use `deep_cast_table_to_contract` for nested list/struct/map casting.
-- [ ] Emit alignment artifacts when nested promotions occur.
+- [x] Normalize list_view/binary_view/string_view at finalize boundary.
+- [x] Apply `unify_schemas_with_contract_first` before casting.
+- [x] Use `deep_cast_table_to_contract` for nested list/struct/map casting.
+- [ ] Emit alignment artifacts when nested promotions occur (confirm expectations).
 
 ---
 
@@ -182,10 +182,10 @@ def dedupe_table(table: pa.Table, *, spec: DedupeSpec) -> pa.Table:
 ```
 
 Checklist
-- [ ] Define `DedupeSpec` with keys, tie‑breakers, tier, and strategy.
-- [ ] Canonical tier: enforce order‑independent winner selection by default.
-- [ ] Canonical tier: require deterministic output ordering at finalize boundary.
-- [ ] Throughput tier: allow non‑ordered dedupe only when correctness requires it.
+- [x] Define `DedupeSpec` with keys, tie-breakers, tier, and strategy.
+- [x] Canonical tier: enforce order-independent winner selection by default.
+- [x] Canonical tier: require deterministic output ordering at finalize boundary.
+- [ ] Throughput tier: allow non-ordered dedupe only when correctness requires it.
 - [ ] Reject `hash_one`/arbitrary aggregations in canonical tier.
 
 ---
@@ -217,9 +217,9 @@ def canonical_post_join_order(
 ```
 
 Checklist
-- [ ] Add join‑safety validation (list payload detection).
-- [ ] Provide a helper that drops/forbids list payloads before join.
-- [ ] Canonical tier: enforce post‑join stable sort.
+- [x] Add join-safety validation (list payload detection).
+- [x] Provide a helper that drops/forbids list payloads before join.
+- [ ] Canonical tier: enforce post-join stable sort (apply helper in call sites).
 - [ ] Throughput tier: allow unordered join output when allowed by contract.
 
 ---
@@ -253,21 +253,40 @@ FinalizeSpec(
 ```
 
 Checklist
-- [ ] Ensure scan options include provenance columns when metrics are enabled.
-- [ ] Thread provenance through `FinalizeSpec.context_fields`.
-- [ ] Log provenance in finalize error summaries.
-- [ ] Include scan telemetry in export logs for reproducible debugging.
+- [x] Ensure scan options include provenance columns when metrics are enabled.
+- [x] Thread provenance through `FinalizeSpec.context_fields`.
+- [x] Log provenance in finalize error summaries.
+- [x] Include scan telemetry in export logs for reproducible debugging.
 
 ---
 
 ## Migration checklist (core only, build stays separate)
-- [ ] Add or augment `arrowdsl.py`/`plan_ops.py` with `ExecutionContext` and `ExecPlan`.
-- [ ] Expand `kernels.py` surface and reexport from `core/columnar/__init__.py`.
-- [ ] Replace direct `pc.*` in core compute modules with kernel helpers.
-- [ ] Wire deep‑cast + schema unification into finalize.
-- [ ] Implement `DedupeSpec` + tier‑aware dedupe in `dedupe_ops.py`.
-- [ ] Add join‑safety helpers and canonical post‑join ordering.
-- [ ] Thread scan telemetry + provenance into finalize artifacts and export logging.
+- [x] Add or augment `arrowdsl.py`/`plan_ops.py` with `ExecutionContext` and `ExecPlan`.
+- [x] Expand `kernels.py` surface and reexport from `core/columnar/__init__.py`.
+- [ ] Replace direct `pc.*` in core compute modules with kernel helpers (audit remaining).
+- [x] Wire deep-cast + schema unification into finalize.
+- [x] Implement `DedupeSpec` + tier-aware dedupe in `dedupe_ops.py`.
+- [x] Add join-safety helpers and canonical post-join ordering helpers.
+- [x] Thread scan telemetry + provenance into finalize artifacts and export logging.
+
+## Next step (serving/storage adoption - remaining)
+
+**Goal**: Standardize serving/storage call sites on `ExecutionPlan`/`run_pipeline` and
+`DedupeSpec` to make determinism consistent at boundaries.
+
+Target files
+- `src/codeintel/serving/http/export_dispatch.py`
+- `src/codeintel/serving/http/streaming.py`
+- `src/codeintel/serving/semantic/duckdb_relation_builder.py`
+- `src/codeintel/storage/datasets/maintenance.py`
+- `src/codeintel/storage/tracking/build_tracking.py`
+- `src/codeintel/storage/arrow_store.py`
+
+Checklist
+- [ ] Replace direct `to_table`/`pc.*` execution with `ExecutionPlan` + `run_pipeline`.
+- [ ] Thread `ExecutionContext(determinism=..., use_threads=...)` from request/config.
+- [ ] Replace legacy dedupe args with `DedupeSpec` at serving/storage boundaries.
+- [ ] Enforce canonical ordering at export/write boundaries when determinism is required.
 
 ## Validation checklist
 - [ ] Add unit tests for canonical vs throughput dedupe behavior.

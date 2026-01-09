@@ -20,6 +20,8 @@ def auto_preference(query: ServingQuery, *, ctx: EngineContext) -> tuple[str, ..
     """
     _ = query.spec.table_key
     _ = ctx.settings.query_engine
+    if query.arrow_plan is not None:
+        return ("arrow", "duckdb")
     return ("duckdb",)
 
 

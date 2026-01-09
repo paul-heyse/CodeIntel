@@ -568,7 +568,9 @@ class SubsystemRow:
     risk_level: str
     created_at: datetime
 
-    def to_tuple(self) -> tuple[
+    def to_tuple(
+        self,
+    ) -> tuple[
         str,
         str,
         str,

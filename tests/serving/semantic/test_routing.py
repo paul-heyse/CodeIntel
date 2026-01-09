@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 from sqlglot import exp, parse_one
 
 from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.serving.semantic.arrow_plan_builder import ArrowPlanSpec
 from codeintel.serving.semantic.engines.protocol import EngineContext
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.serving.semantic.models import SemanticViewSpec
@@ -56,7 +57,12 @@ def _engine_context(
     )
 
 
-def _serving_query(ast_sql: str, *, view: SemanticViewSpec) -> ServingQuery:
+def _serving_query(
+    ast_sql: str,
+    *,
+    view: SemanticViewSpec,
+    arrow_plan: ArrowPlanSpec | None = None,
+) -> ServingQuery:
     spec = SemanticQuerySpec(
         view_id=view.id,
         table_key=view.table_key,
@@ -74,7 +80,12 @@ def _serving_query(ast_sql: str, *, view: SemanticViewSpec) -> ServingQuery:
         columns=tuple(view.columns),
         filter_expression=None,
     )
-    return ServingQuery(spec=spec, ast=ast, plan_spec=plan_spec)
+    return ServingQuery(
+        spec=spec,
+        ast=ast,
+        plan_spec=plan_spec,
+        arrow_plan=arrow_plan,
+    )
 
 
 def test_auto_preference_prefers_duckdb_for_unregistered_views(tmp_path: Path) -> None:
@@ -105,3 +116,22 @@ def test_auto_preference_prefers_polars_for_tables(tmp_path: Path) -> None:
     ctx = _engine_context(tmp_path, view=view)
     query = _serving_query("SELECT id FROM docs.v_demo", view=view)
     assert auto_preference(query, ctx=ctx) == ("duckdb",)
+
+
+def test_auto_preference_prefers_arrow_when_plan_present(tmp_path: Path) -> None:
+    """Arrow plan hints should prefer the Arrow engine in auto mode."""
+    view = SemanticViewSpec(
+        id="demo.arrow",
+        kind="view",
+        table_key="docs.v_demo",
+        entity="demo",
+        grain="per_row",
+        columns=["id"],
+    )
+    ctx = _engine_context(tmp_path, view=view)
+    query = _serving_query(
+        "SELECT id FROM docs.v_demo",
+        view=view,
+        arrow_plan=cast("ArrowPlanSpec", object()),
+    )
+    assert auto_preference(query, ctx=ctx) == ("arrow", "duckdb")

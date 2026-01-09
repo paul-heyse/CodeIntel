@@ -637,7 +637,7 @@ def _normalize_table_binary_views(table: pa.Table) -> pa.Table:
     return pa.Table.from_arrays(columns, names=list(table.column_names))
 
 
-def normalize_table_for_join(table: pa.Table) -> pa.Table:
+def normalize_table_for_join(table: pa.Table, *, combine_chunks: bool = True) -> pa.Table:
     """Normalize string/binary view types ahead of Arrow joins.
 
     Returns
@@ -647,10 +647,10 @@ def normalize_table_for_join(table: pa.Table) -> pa.Table:
     """
     configure_arrow_threading()
     normalized = _normalize_table_binary_views(_normalize_table_string_views(table))
-    return _normalize_table_for_compute(normalized)
+    return _normalize_table_for_compute(normalized, combine_chunks=combine_chunks)
 
 
-def normalize_table_for_compute(table: pa.Table) -> pa.Table:
+def normalize_table_for_compute(table: pa.Table, *, combine_chunks: bool = True) -> pa.Table:
     """Normalize a table for compute-heavy kernels.
 
     Returns
@@ -658,7 +658,7 @@ def normalize_table_for_compute(table: pa.Table) -> pa.Table:
     pa.Table
         Table with normalized view types, unified dictionaries, and combined chunks.
     """
-    return normalize_table_for_join(table)
+    return normalize_table_for_join(table, combine_chunks=combine_chunks)
 
 
 def _null_key_stats(

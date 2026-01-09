@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from codeintel.build.tabular.datafusion_ops import register_datafusion_plan_runner
+from codeintel.build.tabular.substrait_ops import register_substrait_plan_runner
 from codeintel.core.columnar.plan_ops import (
     ExternalPlanSpec,
     HashJoinSpec,
@@ -14,6 +16,15 @@ from codeintel.core.columnar.plan_ops import (
     run_external_plan,
 )
 
+
+def register_default_external_plan_runners() -> None:
+    """Register optional external plan runners for build pipelines."""
+    register_substrait_plan_runner()
+    register_datafusion_plan_runner()
+
+
+register_default_external_plan_runners()
+
 __all__ = [
     "ExternalPlanSpec",
     "HashJoinSpec",
@@ -22,6 +33,7 @@ __all__ = [
     "build_scan_plan",
     "list_external_plan_runners",
     "materialize_plan",
+    "register_default_external_plan_runners",
     "register_external_plan_runner",
     "run_external_plan",
 ]

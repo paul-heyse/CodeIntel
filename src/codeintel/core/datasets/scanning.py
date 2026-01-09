@@ -402,7 +402,7 @@ def _projection_column_names(
 def _resolve_provenance_columns(options: ParquetScanOptions) -> tuple[str, ...]:
     if options.provenance_columns:
         return tuple(options.provenance_columns)
-    if options.metrics_enabled:
+    if options.metrics_enabled or options.finalize_mode is not None:
         return DEFAULT_ARROW_PROVENANCE_COLUMNS
     return ()
 

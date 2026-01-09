@@ -8,14 +8,12 @@ from pathlib import Path
 
 import pyarrow as pa
 
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
     FinalizeSpec,
-    finalize_table,
+    finalize_reader_batches,
 )
-from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetWriteOptions,
@@ -108,12 +106,15 @@ def rewrite_dataset_partitions(
         snapshot_id=request.snapshot_id,
     )
     target_snapshot_id = request.output_snapshot_id or request.snapshot_id
-    table = _scan_dataset_table(
+    reader = _scan_dataset_reader(
         dataset_root=request.dataset_root,
         table_key=request.table_key,
         snapshot_id=request.snapshot_id,
     )
-    finalized = _finalize_table_for_maintenance(table_key=request.table_key, table=table)
+    finalized = _finalize_reader_for_maintenance(
+        table_key=request.table_key,
+        reader=reader,
+    )
     options = ArrowDatasetWriteOptions(
         partition_columns=request.partition_columns,
         existing_data_behavior=request.existing_data_behavior,
@@ -151,12 +152,15 @@ def compact_dataset_files(
         snapshot_id=request.snapshot_id,
     )
     target_snapshot_id = request.output_snapshot_id or request.snapshot_id
-    table = _scan_dataset_table(
+    reader = _scan_dataset_reader(
         dataset_root=request.dataset_root,
         table_key=request.table_key,
         snapshot_id=request.snapshot_id,
     )
-    finalized = _finalize_table_for_maintenance(table_key=request.table_key, table=table)
+    finalized = _finalize_reader_for_maintenance(
+        table_key=request.table_key,
+        reader=reader,
+    )
     options = ArrowDatasetWriteOptions(
         partition_columns=source_manifest.partition_columns,
         existing_data_behavior=request.existing_data_behavior,
@@ -231,12 +235,12 @@ def vacuum_dataset_manifest(
     )
 
 
-def _scan_dataset_table(
+def _scan_dataset_reader(
     *,
     dataset_root: Path,
     table_key: str,
     snapshot_id: str,
-) -> pa.Table:
+) -> pa.RecordBatchReader:
     options = ParquetScanOptions(
         implicit_ordering=True,
         require_sequenced_output=True,
@@ -254,13 +258,19 @@ def _scan_dataset_table(
     if reader is None:
         msg = f"Dataset scan failed for {table_key}@{snapshot_id}"
         raise FileNotFoundError(msg)
-    table = reader_to_table(reader)
-    return normalize_table_for_compute(table)
+    return reader
 
 
-def _finalize_table_for_maintenance(*, table_key: str, table: pa.Table) -> pa.Table:
-    result = finalize_table(
-        table,
+def _finalize_reader_for_maintenance(
+    *,
+    table_key: str,
+    reader: pa.RecordBatchReader,
+) -> pa.RecordBatchReader:
+    def _finalize_hook(result: FinalizeResult) -> None:
+        _log_finalize_warnings(table_key, result)
+
+    return finalize_reader_batches(
+        reader,
         spec=FinalizeSpec(
             table_key=table_key,
             mode="tolerant",
@@ -269,9 +279,8 @@ def _finalize_table_for_maintenance(*, table_key: str, table: pa.Table) -> pa.Ta
             context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
             emit_artifacts=True,
         ),
+        finalize_hook=_finalize_hook,
     )
-    _log_finalize_warnings(table_key, result)
-    return result.good
 
 
 def _required_non_null_columns(table_key: str) -> tuple[str, ...]:

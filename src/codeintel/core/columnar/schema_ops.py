@@ -131,8 +131,7 @@ def validate_contract_schema_promotions(
         if is_allowed_promotion(candidate_field.type, field.type):
             continue
         msg = (
-            "Disallowed schema promotion for "
-            f"{field.name}: {candidate_field.type} -> {field.type}"
+            f"Disallowed schema promotion for {field.name}: {candidate_field.type} -> {field.type}"
         )
         raise ValueError(msg)
 

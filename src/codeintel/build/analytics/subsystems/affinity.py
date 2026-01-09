@@ -181,10 +181,7 @@ def _add_config_edges(
     )
     for row in config_filtered:
         extras = row.get("extras")
-        if isinstance(extras, dict):
-            reference_modules = extras.get("reference_modules")
-        else:
-            reference_modules = row.get("reference_modules")
+        reference_modules = extras.get("reference_modules") if isinstance(extras, dict) else None
         modules_list = parse_tags(reference_modules)
         filtered = [module for module in modules_list if module in ctx.modules]
         if len(filtered) < MIN_SHARED_MODULES:

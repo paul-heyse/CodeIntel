@@ -23,6 +23,7 @@ from codeintel.core.columnar.compute_config import (
 )
 from codeintel.core.columnar.compute_helpers import call_compute
 from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges
+from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.masks import (
     filter_valid,
@@ -137,6 +138,21 @@ def safe_count_with_scope(
     int | None
         Row count or None when the dataset is missing.
     """
+    dataset = _open_dataset(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot.commit,
+    )
+    if dataset is None:
+        return None
+    filter_expr = _scope_filter_expression(
+        dataset,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    count = _dataset_row_count(dataset, filter_expr=filter_expr)
+    if count is not None:
+        return count
     options = ParquetScanOptions(
         repo=snapshot.repo,
         commit=snapshot.commit,
@@ -442,14 +458,60 @@ def _open_dataset(
         return None
 
 
-def _dataset_row_count(dataset: ds.Dataset) -> int | None:
-    stats = dataset_stats(dataset)
-    if stats.row_count is not None:
-        return stats.row_count
+def _dataset_row_count(
+    dataset: ds.Dataset,
+    *,
+    filter_expr: ds.Expression | None = None,
+) -> int | None:
+    if filter_expr is None:
+        stats = dataset_stats(dataset)
+        if stats.row_count is not None:
+            return stats.row_count
+    counter = getattr(dataset, "count_rows", None)
+    if callable(counter):
+        try:
+            if filter_expr is None:
+                return int(counter())
+            return int(counter(filter=filter_expr))
+        except (pa.ArrowInvalid, pa.ArrowTypeError, OSError, ValueError):
+            pass
     try:
-        return dataset.to_table().num_rows
-    except (pa.ArrowInvalid, pa.ArrowTypeError, OSError, ValueError):
+        plan = build_scan_plan(
+            dataset,
+            columns=None,
+            filter_expr=filter_expr,
+            implicit_ordering=True,
+            require_sequenced_output=True,
+        )
+        counted = plan.aggregate(
+            keys=[],
+            aggregates=[(E.scalar(1), "count", None, "row_count")],
+        )
+        table = counted.to_table(use_threads=True)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return None
+    if table.num_rows == 0 or "row_count" not in table.column_names:
+        return None
+    value = table.column("row_count")[0]
+    if isinstance(value, pa.Scalar):
+        return _as_int(value)
+    return _as_int(value)
+
+
+def _scope_filter_expression(
+    dataset: ds.Dataset,
+    *,
+    repo: str,
+    commit: str,
+) -> ds.Expression | None:
+    names = set(dataset.schema.names)
+    expression: ds.Expression | None = None
+    if "repo" in names:
+        expression = ds.field("repo") == repo
+    if "commit" in names:
+        commit_expr = ds.field("commit") == commit
+        expression = commit_expr if expression is None else expression & commit_expr
+    return expression
 
 
 def _read_table(

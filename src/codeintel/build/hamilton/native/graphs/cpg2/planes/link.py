@@ -9,6 +9,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import rename_table_columns, select_table_columns
+from codeintel.build.hamilton.native.graphs.cpg.constants import CPG_TARGET_NAME
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     build_anchor_map,
     canonicalize_for_table,
@@ -21,7 +22,7 @@ from codeintel.build.tabular.compute_helpers import safe_filter, safe_filter_exp
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
-from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -78,6 +79,20 @@ def cpg2_nodes__import_modules(
         return empty_table_for_table(CPG_NODES_TABLE_KEY)
     normalized = canonicalize_for_table(import_modules, table_key=IMPORT_MODULES_TABLE_KEY)
     normalized = normalize_table_for_join(normalized)
+    join_keys = ["repo", "commit", "module"]
+    precheck = finalize_join_keys(
+        normalized,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        precheck,
+        table_key=IMPORT_MODULES_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=join_keys,
+    )
+    normalized = precheck.good
     anchors = build_anchor_map(
         normalized,
         table_key=IMPORT_MODULES_TABLE_KEY,
@@ -94,7 +109,6 @@ def cpg2_nodes__import_modules(
                 "module": E.cast(E.field("module"), "string"),
             }
         )
-        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid("module")))
     )
     right_plan = (
         Plan.table(anchors)
@@ -107,7 +121,6 @@ def cpg2_nodes__import_modules(
                 "source_pk_json": E.field("source_pk_json"),
             }
         )
-        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid("module")))
     )
     joined = left_plan.hash_join(
         right=right_plan,
@@ -120,18 +133,14 @@ def cpg2_nodes__import_modules(
         ),
     )
     joined = joined.filter(E.is_valid("cpg_node_id"))
+    joined = joined.order_by(
+        sort_keys=[
+            ("repo", "ascending"),
+            ("commit", "ascending"),
+            ("module", "ascending"),
+        ]
+    )
     joined_table = materialize_plan(joined, use_threads=True)
-    if joined_table.num_rows > 0:
-        joined_table = joined_table.take(
-            stable_sort_indices(
-                joined_table,
-                sort_keys=[
-                    ("repo", "ascending"),
-                    ("commit", "ascending"),
-                    ("module", "ascending"),
-                ],
-            )
-        )
     joined = append_constant_columns(
         joined_table,
         {
@@ -335,12 +344,39 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
         },
     )
     normalized_edges = normalize_table_for_join(normalized_edges)
+    edge_keys = ["caller_goid_h128", "callee_goid_h128"]
+    edge_precheck = finalize_join_keys(
+        normalized_edges,
+        required_non_null=edge_keys,
+        key_fields=edge_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        edge_precheck,
+        table_key="graph.call_graph_edges",
+        target_name=CPG_TARGET_NAME,
+        join_keys=edge_keys,
+    )
+    normalized_edges = edge_precheck.good
     anchor_base = build_anchor_map(
         canonicalize_for_table(goids, table_key=GOIDS_TABLE_KEY),
         table_key=GOIDS_TABLE_KEY,
         pk_columns=identity_keys(GOIDS_TABLE_KEY),
         include_source_pk_json=False,
     )
+    anchor_precheck = finalize_join_keys(
+        anchor_base,
+        required_non_null=["goid_h128"],
+        key_fields=["goid_h128"],
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        anchor_precheck,
+        table_key=GOIDS_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=["goid_h128"],
+    )
+    anchor_base = anchor_precheck.good
     anchor_base = normalize_table_for_join(anchor_base)
     src_anchor = rename_table_columns(
         anchor_base,
@@ -364,11 +400,7 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
         "confidence": E.field("confidence"),
         "kind": E.field("kind"),
     }
-    edge_plan = (
-        Plan.table(normalized_edges)
-        .project(edge_project)
-        .filter(E.and_(E.is_valid("caller_goid_h128"), E.is_valid("callee_goid_h128")))
-    )
+    edge_plan = Plan.table(normalized_edges).project(edge_project)
     src_plan = (
         Plan.table(src_anchor)
         .project(
@@ -377,7 +409,6 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
                 "src_cpg_node_id": E.field("src_cpg_node_id"),
             }
         )
-        .filter(E.is_valid("caller_goid_h128"))
     )
     joined = edge_plan.hash_join(
         right=src_plan,
@@ -398,7 +429,6 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
                 "dst_cpg_node_id": E.field("dst_cpg_node_id"),
             }
         )
-        .filter(E.is_valid("callee_goid_h128"))
     )
     joined = joined.hash_join(
         right=dst_plan,
@@ -411,21 +441,19 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
         ),
     )
     joined = joined.filter(E.is_valid("dst_cpg_node_id"))
-    joined_table = materialize_plan(joined, use_threads=True)
-    if joined_table.num_rows > 0:
-        sort_keys: list[tuple[str, Literal["ascending", "descending"]]] = [
-            ("repo", "ascending"),
-            ("commit", "ascending"),
-            ("caller_goid_h128", "ascending"),
-            ("callee_goid_h128", "ascending"),
-            ("callsite_path", "ascending"),
-        ]
-        if "callsite_line" in joined_table.column_names:
-            sort_keys.append(("callsite_line", "ascending"))
-        if "callsite_col" in joined_table.column_names:
-            sort_keys.append(("callsite_col", "ascending"))
-        joined_table = joined_table.take(stable_sort_indices(joined_table, sort_keys=sort_keys))
-    return joined_table
+    sort_keys: list[tuple[str, Literal["ascending", "descending"]]] = [
+        ("repo", "ascending"),
+        ("commit", "ascending"),
+        ("caller_goid_h128", "ascending"),
+        ("callee_goid_h128", "ascending"),
+        ("callsite_path", "ascending"),
+    ]
+    if "callsite_line" in joined.schema.names:
+        sort_keys.append(("callsite_line", "ascending"))
+    if "callsite_col" in joined.schema.names:
+        sort_keys.append(("callsite_col", "ascending"))
+    joined = joined.order_by(sort_keys=sort_keys)
+    return materialize_plan(joined, use_threads=True)
 
 
 def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table) -> pa.Table:
@@ -440,6 +468,20 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         },
     )
     normalized_edges = normalize_table_for_join(normalized_edges)
+    edge_keys = ["repo", "commit", "src_module", "dst_module"]
+    edge_precheck = finalize_join_keys(
+        normalized_edges,
+        required_non_null=edge_keys,
+        key_fields=edge_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        edge_precheck,
+        table_key="graph.import_graph_edges",
+        target_name=CPG_TARGET_NAME,
+        join_keys=edge_keys,
+    )
+    normalized_edges = edge_precheck.good
     anchor_base = build_anchor_map(
         canonicalize_for_table(
             select_table_columns(import_modules, ["repo", "commit", "module"]),
@@ -449,6 +491,19 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         pk_columns=identity_keys(IMPORT_MODULES_TABLE_KEY),
         include_source_pk_json=False,
     )
+    anchor_precheck = finalize_join_keys(
+        anchor_base,
+        required_non_null=["repo", "commit", "module"],
+        key_fields=["repo", "commit", "module"],
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        anchor_precheck,
+        table_key=IMPORT_MODULES_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=["repo", "commit", "module"],
+    )
+    anchor_base = anchor_precheck.good
     anchor_base = normalize_table_for_join(anchor_base)
     src_anchor = rename_table_columns(
         anchor_base,
@@ -470,18 +525,7 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         "cycle_group": E.field("cycle_group"),
         "module_layer": E.field("module_layer"),
     }
-    edge_plan = (
-        Plan.table(normalized_edges)
-        .project(edge_project)
-        .filter(
-            E.and_(
-                E.is_valid("repo"),
-                E.is_valid("commit"),
-                E.is_valid("src_module"),
-                E.is_valid("dst_module"),
-            )
-        )
-    )
+    edge_plan = Plan.table(normalized_edges).project(edge_project)
     src_plan = (
         Plan.table(src_anchor)
         .project(
@@ -492,7 +536,6 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
                 "src_cpg_node_id": E.field("src_cpg_node_id"),
             }
         )
-        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid("src_module")))
     )
     joined = edge_plan.hash_join(
         right=src_plan,
@@ -515,7 +558,6 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
                 "dst_cpg_node_id": E.field("dst_cpg_node_id"),
             }
         )
-        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid("dst_module")))
     )
     joined = joined.hash_join(
         right=dst_plan,
@@ -528,18 +570,16 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         ),
     )
     joined = joined.filter(E.is_valid("dst_cpg_node_id"))
-    joined_table = materialize_plan(joined, use_threads=True)
-    if joined_table.num_rows > 0:
-        sort_keys: list[tuple[str, Literal["ascending", "descending"]]] = [
-            ("repo", "ascending"),
-            ("commit", "ascending"),
-            ("src_module", "ascending"),
-            ("dst_module", "ascending"),
-        ]
-        if "cycle_group" in joined_table.column_names:
-            sort_keys.append(("cycle_group", "ascending"))
-        joined_table = joined_table.take(stable_sort_indices(joined_table, sort_keys=sort_keys))
-    return joined_table
+    sort_keys: list[tuple[str, Literal["ascending", "descending"]]] = [
+        ("repo", "ascending"),
+        ("commit", "ascending"),
+        ("src_module", "ascending"),
+        ("dst_module", "ascending"),
+    ]
+    if "cycle_group" in joined.schema.names:
+        sort_keys.append(("cycle_group", "ascending"))
+    joined = joined.order_by(sort_keys=sort_keys)
+    return materialize_plan(joined, use_threads=True)
 
 
 def _filter_valid_edges(table: pa.Table) -> pa.Table:

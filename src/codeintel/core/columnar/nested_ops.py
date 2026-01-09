@@ -413,8 +413,7 @@ def _is_int_promotion(source_type: pa.DataType, target_type: pa.DataType) -> boo
 
 def _is_uint_promotion(source_type: pa.DataType, target_type: pa.DataType) -> bool:
     if not (
-        pa.types.is_unsigned_integer(source_type)
-        and pa.types.is_unsigned_integer(target_type)
+        pa.types.is_unsigned_integer(source_type) and pa.types.is_unsigned_integer(target_type)
     ):
         return False
     source_width = _int_bit_width(source_type)

@@ -283,12 +283,7 @@ def _config_references_from_rows(
         if config_path is None or key is None:
             continue
         extras = row.get("extras")
-        if isinstance(extras, Mapping):
-            reference_paths = extras.get("reference_paths")
-        else:
-            reference_paths = None
-        if reference_paths is None:
-            reference_paths = row.get("reference_paths")
+        reference_paths = extras.get("reference_paths") if isinstance(extras, Mapping) else None
         for rel_path in _coerce_paths(reference_paths):
             refs.setdefault(rel_path, []).append((str(key), str(config_path)))
     return refs

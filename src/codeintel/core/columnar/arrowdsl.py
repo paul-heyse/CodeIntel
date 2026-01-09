@@ -9,9 +9,15 @@ import pyarrow as pa
 from pyarrow import acero
 
 from codeintel.core.columnar.dedupe_ops import DedupeTier
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
-from codeintel.core.columnar.normalization import normalize_table_for_compute
+from codeintel.core.columnar.finalize_ops import (
+    FinalizeResult,
+    FinalizeSpec,
+    finalize_join_keys,
+    finalize_table,
+    record_join_precheck_errors,
+)
 from codeintel.core.columnar.kernels import SortKey, stable_sort_table
+from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.validation.schema_constraints import is_list_like
 
 TableThunk = Callable[[], pa.Table]
@@ -25,6 +31,19 @@ class ExecutionContext:
     use_threads: bool = True
     determinism: DedupeTier = "throughput"
     combine_chunks: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class JoinPrecheckSpec:
+    """Specification for join-key precheck evaluation."""
+
+    required_non_null: Sequence[str]
+    key_fields: Sequence[str] = ()
+    context_fields: Sequence[str] = ()
+    table_key: str | None = None
+    target_name: str | None = None
+    stage: str = "schema"
+    record: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +92,42 @@ def run_pipeline(
     if isinstance(finalize, FinalizeSpec):
         return finalize_table(table, spec=finalize).good
     return finalize(table)
+
+
+def precheck_join_keys(
+    table: pa.Table,
+    *,
+    spec: JoinPrecheckSpec,
+) -> FinalizeResult:
+    """Validate join keys and optionally record precheck errors.
+
+    Parameters
+    ----------
+    table
+        Table to validate.
+    spec
+        Join precheck specification for required fields and metadata.
+
+    Returns
+    -------
+    FinalizeResult
+        Result of the join-key precheck.
+    """
+    result = finalize_join_keys(
+        table,
+        required_non_null=spec.required_non_null,
+        key_fields=spec.key_fields,
+        context_fields=spec.context_fields,
+        stage=spec.stage,
+    )
+    if spec.record:
+        record_join_precheck_errors(
+            result,
+            table_key=spec.table_key,
+            target_name=spec.target_name,
+            join_keys=spec.required_non_null,
+        )
+    return result
 
 
 def list_payload_columns(table: pa.Table) -> tuple[str, ...]:
@@ -197,9 +252,11 @@ def apply_deterministic_order(
 __all__ = [
     "ExecutionContext",
     "ExecutionPlan",
+    "JoinPrecheckSpec",
     "apply_deterministic_order",
     "join_safe_projection",
     "list_payload_columns",
+    "precheck_join_keys",
     "require_join_safe_schema",
     "run_pipeline",
 ]

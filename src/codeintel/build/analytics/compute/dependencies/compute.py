@@ -411,10 +411,7 @@ def _config_keys_from_frame(
     filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
     for row in filtered:
         extras = row.get("extras")
-        if isinstance(extras, Mapping):
-            ref_modules = extras.get("reference_modules")
-        else:
-            ref_modules = row.get("reference_modules")
+        ref_modules = extras.get("reference_modules") if isinstance(extras, Mapping) else None
         key = row.get("key")
         if key is None or ref_modules is None:
             continue

@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Protocol, runtime_checkable
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import pyarrow as pa
+
+from codeintel.core.columnar.plan_ops import register_external_plan_runner
 
 try:
     import datafusion as _datafusion
 except ImportError:
     _datafusion = None
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from codeintel.core.columnar.plan_ops import ExternalPlanSpec
 
 
 @runtime_checkable
@@ -165,6 +171,39 @@ def run_substrait_plan(
     return _reader_from_frame(frame)
 
 
+def datafusion_plan_runner(
+    *,
+    spec: ExternalPlanSpec,
+    dataset: object,
+    filter_expr: object,
+    columns: object,
+    scan_options: object,
+    use_threads: object,
+) -> pa.RecordBatchReader:
+    """Execute a DataFusion plan via ExternalPlanSpec."""
+    _ = (dataset, filter_expr, columns, scan_options, use_threads)
+    ctx = session_context()
+    payload = spec.payload
+    if isinstance(payload, str):
+        return run_sql(ctx, payload)
+    if isinstance(payload, (bytes, bytearray, memoryview)):
+        return run_substrait_plan(ctx, payload)
+    if isinstance(payload, Mapping):
+        sql = payload.get("sql")
+        if isinstance(sql, str):
+            return run_sql(ctx, sql)
+        plan = payload.get("plan")
+        if isinstance(plan, (bytes, bytearray, memoryview)):
+            return run_substrait_plan(ctx, plan)
+    msg = "DataFusion payload must be SQL text or Substrait bytes."
+    raise TypeError(msg)
+
+
+def register_datafusion_plan_runner(name: str = "datafusion") -> None:
+    """Register the DataFusion external plan runner."""
+    register_external_plan_runner(name, datafusion_plan_runner)
+
+
 def _reader_from_frame(frame: object) -> pa.RecordBatchReader:
     if isinstance(frame, pa.RecordBatchReader):
         return frame
@@ -221,7 +260,9 @@ __all__ = [
     "DataFusionDataFrame",
     "DataFusionSession",
     "datafusion_available",
+    "datafusion_plan_runner",
     "register_arrow_table",
+    "register_datafusion_plan_runner",
     "run_sql",
     "run_substrait_plan",
     "session_context",

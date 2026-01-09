@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 import pyarrow as pa
 
@@ -74,7 +74,7 @@ def _stable_sort_for_dedupe(
     if table.num_rows <= 1 or not sort_keys:
         return table
     sort_table = table
-    resolved_sort_keys = list(sort_keys)
+    resolved_sort_keys: list[SortKey] = list(sort_keys)
     if hash_tiebreaker:
         try:
             ordinal = hash_struct_ordinal(
@@ -134,6 +134,10 @@ def _require_tie_breakers(
         msg = f"Deterministic dedupe missing tie_breaker columns: {missing}"
         raise ValueError(msg)
     return tie_breakers
+
+
+def _ascending_sort_keys(columns: Sequence[str]) -> list[SortKey]:
+    return [cast("SortKey", (name, "ascending")) for name in columns]
 
 
 def _require_key_columns(
@@ -208,7 +212,7 @@ def dedupe_table_for_table(
         key_columns = list(spec.keys) if spec.keys else key_columns
         _require_key_columns(table, key_columns=key_columns)
         prefer = tuple(name for name in spec.prefer_columns if name in table.column_names)
-        tie_breakers = tuple(spec.tie_breakers)
+        tie_breakers: tuple[SortKey, ...] = tuple(spec.tie_breakers)
         if spec.tier == "canonical" and spec.strategy == "first":
             tie_breakers = tuple(_require_tie_breakers(table, tie_breakers=tie_breakers))
         determinism = _determinism_for_spec(spec)
@@ -232,14 +236,10 @@ def dedupe_table_for_table(
     if resolved_legacy.determinism != "best_effort":
         resolved_tie_breakers = _require_tie_breakers(
             table,
-            tie_breakers=[
-                (name, "ascending") for name in resolved_legacy.tie_breaker_columns
-            ],
+            tie_breakers=_ascending_sort_keys(resolved_legacy.tie_breaker_columns),
         )
         prefer = tuple(
-            name
-            for name in resolved_legacy.prefer_columns
-            if name in table.column_names
+            name for name in resolved_legacy.prefer_columns if name in table.column_names
         )
         sort_keys = _dedupe_sort_keys(
             table,
@@ -254,9 +254,7 @@ def dedupe_table_for_table(
         )
     elif resolved_legacy.prefer_columns:
         prefer = [
-            name
-            for name in resolved_legacy.prefer_columns
-            if name in set(table.column_names)
+            name for name in resolved_legacy.prefer_columns if name in set(table.column_names)
         ]
         if prefer:
             table = _sort_table_for_preference(table, prefer)

@@ -13,6 +13,7 @@ from codeintel.build.graphs.assembly import (
     rename_table_columns,
     select_table_columns,
 )
+from codeintel.build.hamilton.native.graphs.cpg.constants import CPG_TARGET_NAME
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     build_anchor_map,
     canonicalize_for_table,
@@ -29,7 +30,7 @@ from codeintel.build.tabular.compute_helpers import (
 )
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
@@ -99,7 +100,34 @@ def cpg2_nodes__cfg_blocks(
         casts={"function_goid_h128": pa.decimal128(38, 0)},
     )
     normalized_blocks = normalize_table_for_join(normalized_blocks)
+    block_keys = ["function_goid_h128", "block_idx"]
+    block_precheck = finalize_join_keys(
+        normalized_blocks,
+        required_non_null=block_keys,
+        key_fields=block_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        block_precheck,
+        table_key=CFG_BLOCKS_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=block_keys,
+    )
+    normalized_blocks = block_precheck.good
     goid_ctx = normalize_table_for_join(_goid_context(goids))
+    goid_precheck = finalize_join_keys(
+        goid_ctx,
+        required_non_null=["function_goid_h128"],
+        key_fields=["function_goid_h128"],
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        goid_precheck,
+        table_key=GOIDS_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=["function_goid_h128"],
+    )
+    goid_ctx = goid_precheck.good
     block_plan = (
         Plan.table(normalized_blocks)
         .project(
@@ -112,7 +140,6 @@ def cpg2_nodes__cfg_blocks(
                 "file_path": E.field("file_path"),
             }
         )
-        .filter(E.is_valid("function_goid_h128"))
     )
     goid_plan = (
         Plan.table(goid_ctx)
@@ -126,7 +153,6 @@ def cpg2_nodes__cfg_blocks(
                 "commit": E.cast(E.field("commit"), "string"),
             }
         )
-        .filter(E.is_valid("function_goid_h128"))
     )
     joined = block_plan.hash_join(
         right=goid_plan,
@@ -158,7 +184,6 @@ def cpg2_nodes__cfg_blocks(
                 "source_pk_json": E.field("source_pk_json"),
             }
         )
-        .filter(E.and_(E.is_valid("function_goid_h128"), E.is_valid("block_idx")))
     )
     joined = joined.hash_join(
         right=anchor_plan,
@@ -176,19 +201,15 @@ def cpg2_nodes__cfg_blocks(
             right_output=["cpg_node_id", "source_pk_json"],
         ),
     )
+    joined = joined.order_by(
+        sort_keys=[
+            ("repo", "ascending"),
+            ("commit", "ascending"),
+            ("function_goid_h128", "ascending"),
+            ("block_idx", "ascending"),
+        ]
+    )
     joined_table = materialize_plan(joined, use_threads=True)
-    if joined_table.num_rows > 0:
-        joined_table = joined_table.take(
-            stable_sort_indices(
-                joined_table,
-                sort_keys=[
-                    ("repo", "ascending"),
-                    ("commit", "ascending"),
-                    ("function_goid_h128", "ascending"),
-                    ("block_idx", "ascending"),
-                ],
-            )
-        )
     joined = append_constant_columns(
         joined_table,
         {
@@ -530,7 +551,34 @@ def _cfg_block_lookup(cfg_blocks: pa.Table, goids: pa.Table) -> pa.Table:
         casts={"function_goid_h128": pa.decimal128(38, 0), "block_id": pa.string()},
     )
     normalized_blocks = normalize_table_for_join(normalized_blocks)
+    lookup_keys = ["function_goid_h128", "block_id", "block_idx"]
+    lookup_precheck = finalize_join_keys(
+        normalized_blocks,
+        required_non_null=lookup_keys,
+        key_fields=lookup_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        lookup_precheck,
+        table_key=CFG_BLOCKS_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=lookup_keys,
+    )
+    normalized_blocks = lookup_precheck.good
     goid_ctx = normalize_table_for_join(_goid_context(goids))
+    goid_precheck = finalize_join_keys(
+        goid_ctx,
+        required_non_null=["function_goid_h128"],
+        key_fields=["function_goid_h128"],
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        goid_precheck,
+        table_key=GOIDS_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=["function_goid_h128"],
+    )
+    goid_ctx = goid_precheck.good
     block_plan = (
         Plan.table(normalized_blocks)
         .project(
@@ -544,7 +592,6 @@ def _cfg_block_lookup(cfg_blocks: pa.Table, goids: pa.Table) -> pa.Table:
                 "file_path": E.field("file_path"),
             }
         )
-        .filter(E.is_valid("function_goid_h128"))
     )
     goid_plan = (
         Plan.table(goid_ctx)
@@ -558,7 +605,6 @@ def _cfg_block_lookup(cfg_blocks: pa.Table, goids: pa.Table) -> pa.Table:
                 "commit": E.cast(E.field("commit"), "string"),
             }
         )
-        .filter(E.is_valid("function_goid_h128"))
     )
     joined = block_plan.hash_join(
         right=goid_plan,
@@ -570,18 +616,14 @@ def _cfg_block_lookup(cfg_blocks: pa.Table, goids: pa.Table) -> pa.Table:
             right_output=["repo", "commit"],
         ),
     )
+    joined = joined.order_by(
+        sort_keys=[
+            ("function_goid_h128", "ascending"),
+            ("block_id", "ascending"),
+        ]
+    )
     joined_table = materialize_plan(joined, use_threads=True)
     joined_table = rename_table_columns(joined_table, {"file_path": "rel_path"})
-    if joined_table.num_rows > 0:
-        joined_table = joined_table.take(
-            stable_sort_indices(
-                joined_table,
-                sort_keys=[
-                    ("function_goid_h128", "ascending"),
-                    ("block_id", "ascending"),
-                ],
-            )
-        )
     return normalize_table_for_join(
         joined_table.select(
             ["function_goid_h128", "block_id", "block_idx", "rel_path", "repo", "commit"]

@@ -296,7 +296,12 @@ class Plan:
         return self.declaration.to_reader(use_threads=use_threads)
 
 
-def materialize_plan(plan: Plan, *, use_threads: bool = True) -> pa.Table:
+def materialize_plan(
+    plan: Plan,
+    *,
+    use_threads: bool = True,
+    combine_chunks: bool = True,
+) -> pa.Table:
     """Materialize a plan into a normalized Arrow table.
 
     Parameters
@@ -312,7 +317,7 @@ def materialize_plan(plan: Plan, *, use_threads: bool = True) -> pa.Table:
         Materialized table with compute-normalized chunks.
     """
     reader = plan.to_reader(use_threads=use_threads)
-    return normalize_table_for_compute(reader_to_table(reader))
+    return normalize_table_for_compute(reader_to_table(reader), combine_chunks=combine_chunks)
 
 
 def build_scan_plan(

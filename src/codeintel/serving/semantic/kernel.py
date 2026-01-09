@@ -54,6 +54,7 @@ from codeintel.serving.semantic.duckdb_contracts import (
     ContractSchemaOptions,
     contract_schema_for_table_key,
 )
+from codeintel.serving.semantic.engines.arrow_engine import ArrowQueryEngine
 from codeintel.serving.semantic.engines.duckdb_engine import DuckDBQueryEngine
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
 from codeintel.serving.semantic.engines.registry import QueryEngineRegistry, build_engine_registry
@@ -483,7 +484,7 @@ class SemanticQueryKernel:
     def __post_init__(self) -> None:
         """Initialize planner after dataclass construction."""
         self._planner = SemanticQueryPlanner(db=self.db, settings=self.settings)
-        self._engine_registry = build_engine_registry((DuckDBQueryEngine(),))
+        self._engine_registry = build_engine_registry((ArrowQueryEngine(), DuckDBQueryEngine()))
 
     @staticmethod
     def _snapshot_dict(pointer: ServingSnapshotPointer) -> ServingSnapshotIdentity:

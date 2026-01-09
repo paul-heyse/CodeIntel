@@ -8,6 +8,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import ensure_table_columns, rename_table_columns
+from codeintel.build.hamilton.native.graphs.cpg.constants import CPG_TARGET_NAME
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     build_anchor_map,
     canonicalize_for_table,
@@ -24,7 +25,7 @@ from codeintel.build.tabular.compute_helpers import (
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_payload
-from codeintel.build.tabular.kernels import stable_sort_indices
+from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
@@ -105,6 +106,20 @@ def cpg2_nodes__syntax_nodes(
     if "extras_kv" not in normalized.column_names:
         extras_kv = _extras_kv_column(normalized, column_name="extras")
         normalized = normalized.append_column("extras_kv", extras_kv)
+    join_keys = ["repo", "commit", "rel_path", "producer", "node_id"]
+    precheck = finalize_join_keys(
+        normalized,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        precheck,
+        table_key=SYNTAX_NODES_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=join_keys,
+    )
+    normalized = precheck.good
     anchor_map = normalize_table_for_join(
         _syntax_anchor_map(normalized, include_source_pk_json=True)
     )
@@ -122,7 +137,6 @@ def cpg2_nodes__syntax_nodes(
                 "extras_kv": E.field("extras_kv"),
             }
         )
-        .filter(_syntax_key_filter())
     )
     right_plan = (
         Plan.table(anchor_map)
@@ -137,7 +151,6 @@ def cpg2_nodes__syntax_nodes(
                 "source_pk_json": E.field("source_pk_json"),
             }
         )
-        .filter(_syntax_key_filter())
     )
     joined = left_plan.hash_join(
         right=right_plan,
@@ -158,18 +171,16 @@ def cpg2_nodes__syntax_nodes(
             right_output=["cpg_node_id", "source_pk_json"],
         ),
     )
+    joined = joined.order_by(
+        sort_keys=[
+            ("repo", "ascending"),
+            ("commit", "ascending"),
+            ("rel_path", "ascending"),
+            ("producer", "ascending"),
+            ("node_id", "ascending"),
+        ]
+    )
     joined = materialize_plan(joined, use_threads=True)
-    if joined.num_rows != 0:
-        joined = joined.take(
-            stable_sort_indices(
-                joined,
-                sort_keys=[
-                    ("repo", "ascending"),
-                    ("commit", "ascending"),
-                    ("node_id", "ascending"),
-                ],
-            )
-        )
     joined = append_constant_columns(
         joined,
         {
@@ -214,6 +225,20 @@ def cpg2_edges__syntax_edges(
     normalized_edges = normalize_table_for_join(
         canonicalize_for_table(syntax_edges, table_key="core.syntax_edges")
     )
+    join_keys = ["repo", "commit", "rel_path", "producer", "parent_node_id", "child_node_id"]
+    precheck = finalize_join_keys(
+        normalized_edges,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        precheck,
+        table_key="core.syntax_edges",
+        target_name=CPG_TARGET_NAME,
+        join_keys=join_keys,
+    )
+    normalized_edges = precheck.good
     anchor_plan = (
         Plan.table(anchor_map)
         .project(
@@ -226,9 +251,8 @@ def cpg2_edges__syntax_edges(
                 "cpg_node_id": E.field("cpg_node_id"),
             }
         )
-        .filter(_syntax_key_filter())
     )
-    parent_join = materialize_plan(
+    parent_join = (
         Plan.table(normalized_edges)
         .project(
             {
@@ -241,7 +265,6 @@ def cpg2_edges__syntax_edges(
                 "child_ordinal": E.field("child_ordinal"),
             }
         )
-        .filter(_syntax_key_filter())
         .hash_join(
             right=anchor_plan,
             spec=HashJoinSpec(
@@ -258,12 +281,22 @@ def cpg2_edges__syntax_edges(
                 ],
                 right_output=["cpg_node_id"],
             ),
-        ),
-        use_threads=True,
+        )
+        .order_by(
+            sort_keys=[
+                ("repo", "ascending"),
+                ("commit", "ascending"),
+                ("rel_path", "ascending"),
+                ("producer", "ascending"),
+                ("child_node_id", "ascending"),
+                ("child_ordinal", "ascending"),
+            ]
+        )
     )
+    parent_join = materialize_plan(parent_join, use_threads=True)
     if parent_join.num_rows == 0:
         return _empty_edge_table()
-    child_join = materialize_plan(
+    child_join = (
         Plan.table(parent_join)
         .project(
             {
@@ -276,7 +309,6 @@ def cpg2_edges__syntax_edges(
                 "src_cpg_node_id": E.field("cpg_node_id"),
             }
         )
-        .filter(_syntax_key_filter())
         .hash_join(
             right=anchor_plan,
             spec=HashJoinSpec(
@@ -287,29 +319,29 @@ def cpg2_edges__syntax_edges(
                     "repo",
                     "commit",
                     "rel_path",
+                    "producer",
                     "child_ordinal",
                     "src_cpg_node_id",
                 ],
                 right_output=["cpg_node_id"],
                 output_suffix_for_right="_child",
             ),
-        ),
-        use_threads=True,
-    )
-    if child_join.num_rows == 0:
-        return _empty_edge_table()
-    child_join = child_join.take(
-        stable_sort_indices(
-            child_join,
+        )
+        .order_by(
             sort_keys=[
                 ("repo", "ascending"),
                 ("commit", "ascending"),
+                ("rel_path", "ascending"),
+                ("producer", "ascending"),
                 ("src_cpg_node_id", "ascending"),
                 ("cpg_node_id_child", "ascending"),
                 ("child_ordinal", "ascending"),
-            ],
+            ]
         )
     )
+    child_join = materialize_plan(child_join, use_threads=True)
+    if child_join.num_rows == 0:
+        return _empty_edge_table()
     child_join = rename_table_columns(
         child_join,
         {"cpg_node_id_child": "dst_cpg_node_id", "child_ordinal": "ordinal"},
@@ -389,16 +421,6 @@ _CPG_EDGE_COLUMNS = (
     "extras",
     "extras_kv",
 )
-
-
-def _syntax_key_filter() -> pc.Expression:
-    return (
-        E.is_valid("repo")
-        & E.is_valid("commit")
-        & E.is_valid("rel_path")
-        & E.is_valid("producer")
-        & E.is_valid("node_id")
-    )
 
 
 def _extras_kv_column(table: pa.Table, *, column_name: str) -> pa.Array:

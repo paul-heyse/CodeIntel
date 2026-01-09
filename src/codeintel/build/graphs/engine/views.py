@@ -368,13 +368,12 @@ def _populate_config_graph(
     names = list(config_reader.schema.names)
     key_idx = _column_index(names, "key")
     extras_idx = _column_index(names, "extras")
-    ref_idx = _column_index(names, "reference_modules") if extras_idx is None else None
-    if key_idx is None or (extras_idx is None and ref_idx is None):
+    if key_idx is None or extras_idx is None:
         return stats
     for row in _iter_scoped_rows(factory, config_reader):
         stats.total_rows += 1
         key = row[key_idx]
-        ref_modules = row[extras_idx] if extras_idx is not None else row[ref_idx]
+        ref_modules = row[extras_idx]
         if key is None or ref_modules is None:
             stats.empty_refs += 1
             continue

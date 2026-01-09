@@ -19,14 +19,16 @@ from sqlglot import exp
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
-from codeintel.core.columnar.conversion import table_to_reader
-from codeintel.core.columnar.dedupe_ops import DedupeLegacy, dedupe_table_for_table
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec, finalize_table
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.kernels import stable_sort_indices
 from codeintel.core.columnar.masks import and_mask, fill_null_false, invert_mask
 from codeintel.core.columnar.normalization import normalize_array
+from codeintel.core.columnar.plan_ops import build_scan_plan
 from codeintel.core.columnar.rows import table_for_rows
-from codeintel.core.columnar.schema_alignment import align_reader_to_contract
+from codeintel.core.columnar.streaming import DatasetScanOptions
+from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetWriteOptions,
     scan_dataset,
@@ -367,22 +369,37 @@ class BuildTracking:
             )
         except FileNotFoundError:
             return None
-        table = dataset.to_table()
+        scan_options = DatasetScanOptions(
+            columns=list(arrow_schema.names),
+            provenance_columns=DEFAULT_ARROW_PROVENANCE_COLUMNS,
+            implicit_ordering=True,
+            require_sequenced_output=True,
+        )
+        plan = build_scan_plan(
+            dataset,
+            columns=scan_options.projection_columns(),
+            filter_expr=None,
+            implicit_ordering=scan_options.implicit_ordering,
+            require_sequenced_output=scan_options.require_sequenced_output,
+        )
+        use_threads = scan_options.use_threads if scan_options.use_threads is not None else True
+        table = reader_to_table(plan.to_reader(use_threads=use_threads))
         if table.num_rows == 0:
             return None
-        if table.schema != arrow_schema:
-            reader = table_to_reader(table, batch_size=None)
-            aligned = align_reader_to_contract(reader, arrow_schema)
-            table = aligned.read_all()
-        return dedupe_table_for_table(
-            _MANIFEST_TABLE_KEY,
+        finalized = finalize_table(
             table,
-            legacy=DedupeLegacy(
-                prefer_columns=("computed_at",),
-                determinism="stable",
-                tie_breaker_columns=("input_hash", "output_hash", "options_hash"),
+            spec=FinalizeSpec(
+                table_key=_MANIFEST_TABLE_KEY,
+                mode="tolerant",
+                context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
+                dedupe=FinalizeDedupe(
+                    prefer_columns=("computed_at",),
+                    determinism="stable",
+                    tie_breaker_columns=("input_hash", "output_hash", "options_hash"),
+                ),
             ),
         )
+        return finalized.good if finalized.good.num_rows else None
 
     @staticmethod
     def _manifest_match_mask(

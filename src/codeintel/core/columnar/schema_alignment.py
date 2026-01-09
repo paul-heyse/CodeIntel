@@ -408,11 +408,7 @@ def _validate_extras_policy(extras_policy: ExtrasPolicy) -> None:
 
 
 def _is_nested_type(data_type: pa.DataType) -> bool:
-    return (
-        pa.types.is_struct(data_type)
-        or pa.types.is_map(data_type)
-        or _is_list_type(data_type)
-    )
+    return pa.types.is_struct(data_type) or pa.types.is_map(data_type) or _is_list_type(data_type)
 
 
 def _is_list_type(data_type: pa.DataType) -> bool:

@@ -134,6 +134,7 @@ def build_relation_plan(
     ast: exp.Select,
     context: RelationBuildContext,
     plan_spec: QueryPlanSpec | None = None,
+    apply_ast: bool = True,
 ) -> DuckDBRelation:
     """Build a DuckDB relation plan for a semantic query spec.
 
@@ -180,6 +181,8 @@ def build_relation_plan(
             projection_columns=projection_columns,
             external_plan=external_plan,
         )
+    if not apply_ast:
+        return relation
     default_order_by: tuple[str, ...] = ()
     if not spec.order_by and not _ast_has_joins(ast):
         default_order_by = _default_order_by_columns(

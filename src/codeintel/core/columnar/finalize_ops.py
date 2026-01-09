@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -10,7 +10,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
-from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.conversion import reader_to_table, record_batch_reader_from_iterable
 from codeintel.core.columnar.dedupe_ops import (
     DedupeDeterminism,
     DedupeLegacy,
@@ -29,6 +29,7 @@ from codeintel.core.columnar.nested_ops import (
     deep_cast_table_to_contract,
     unify_schemas_with_contract_first,
 )
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema_alignment import (
     align_table_to_contract,
     extras_policy_from_schema,
@@ -390,6 +391,50 @@ def finalize_reader(
     """
     table = reader_to_table(reader)
     return finalize_table(table, spec=spec)
+
+
+def finalize_reader_batches(
+    reader: pa.RecordBatchReader,
+    *,
+    spec: FinalizeSpec,
+    finalize_hook: Callable[[FinalizeResult], None] | None = None,
+    cancel_check: Callable[[], None] | None = None,
+) -> pa.RecordBatchReader:
+    """Finalize an Arrow reader per batch, returning a new reader.
+
+    Parameters
+    ----------
+    reader
+        RecordBatchReader to finalize.
+    spec
+        Finalize specification.
+    finalize_hook
+        Optional callback invoked with finalize artifacts per batch.
+    cancel_check
+        Optional cancellation hook invoked between batches.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Reader over finalized batches.
+    """
+
+    def _iter_batches() -> Iterable[pa.RecordBatch]:
+        for batch in reader:
+            if cancel_check is not None:
+                cancel_check()
+            if batch.num_rows == 0:
+                continue
+            table = pa.Table.from_batches([batch], schema=batch.schema)
+            result = finalize_table(table, spec=spec)
+            if finalize_hook is not None:
+                finalize_hook(result)
+            yield from result.good.to_batches(max_chunksize=batch.num_rows)
+
+    finalized = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
+    if finalized is None:
+        return empty_reader_from_schema(reader.schema)
+    return finalized
 
 
 def _prepare_alignment(
@@ -1233,6 +1278,7 @@ __all__ = [
     "drain_join_precheck_reports",
     "finalize_join_keys",
     "finalize_reader",
+    "finalize_reader_batches",
     "finalize_table",
     "record_join_precheck_errors",
 ]

@@ -256,12 +256,7 @@ def _config_bipartite_from_rows(
         if key is None:
             continue
         extras = row.get("extras")
-        if isinstance(extras, Mapping):
-            reference_modules = extras.get("reference_modules")
-        else:
-            reference_modules = None
-        if reference_modules is None:
-            reference_modules = row.get("reference_modules")
+        reference_modules = extras.get("reference_modules") if isinstance(extras, Mapping) else None
         modules = _normalize_reference_modules(
             reference_modules,
             allowed_modules=allowed_modules,
