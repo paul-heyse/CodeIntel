@@ -148,6 +148,8 @@ reader = run_rustworkx_external_plan(
 - [ ] Build edge/node tables via Plan + finalize before rustworkx ingestion.
 - [ ] Move graph computation behind the external plan interface.
 - [ ] Return `RecordBatchReader` and finalize like any other plan output.
+- [ ] Migrate remaining direct rustworkx usage in `analytics/subsystems/affinity.py` and
+      `analytics/compute/graphs/*` to `run_rustworkx_external_plan`.
 
 ---
 
@@ -172,16 +174,30 @@ options = BuildStoreOptions(node_hint=200_000, edge_hint=2_000_000, stable_nodes
 store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
 ```
 
+```python
+spec = EdgeBuildSpec(
+    directed=False,
+    weight_policy=weight_policy_for_kind(GraphKind.CONFIG_BIPARTITE),
+    numeric_policy=DEFAULT_NUMERIC_POLICY,
+    node_attrs_fn=lambda node_id, side: {"bipartite": side},
+)
+options = BuildStoreOptions(stable_nodes=True)
+store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
+```
+
 **Target files**
 - `src/codeintel/build/graphs/rx/build_from_edges.py`
 - `src/codeintel/build/graphs/builders.py`
 - `src/codeintel/build/graphs/engine/views.py`
 - `src/codeintel/build/analytics/graphs/*`
+- `src/codeintel/build/analytics/subsystems/affinity.py`
 
 **Implementation checklist**
 - [ ] Consolidate graph loaders into `build_store_from_edge_tuples`.
 - [ ] Supply stable node lists and capacity hints where available.
 - [ ] Remove bespoke per-edge add loops in analytics graph loaders.
+- [ ] Replace `add_graph_weight` flows in analytics subsystems (e.g., affinity) with
+      `EdgeBuildSpec` + node attrs where needed.
 
 ---
 
@@ -217,6 +233,9 @@ plan = plan_from_schema_defaults(
 - [ ] Add PlanPolicy for all analytics tables without defaults.
 - [ ] Route snapshot helpers through schema-driven defaults.
 - [ ] Ensure schema serde preserves plan_policy fields.
+- [ ] Update snapshot helpers to use `plan_from_schema_defaults` for in-memory tables
+      (replace `build_snapshot_plan` / `resolve_default_projection` in
+      `snapshot.py` and `catalogs.py`).
 
 ---
 
@@ -294,11 +313,14 @@ result = run_pipeline(plan=ExecutionPlan.from_plan(plan), finalize=finalize, opt
 - `src/codeintel/build/analytics/utilities/datasets.py`
 - `src/codeintel/build/analytics/py_cpg_quality_report.py`
 - `src/codeintel/build/analytics/scip_diagnostics_rollups.py`
+- `src/codeintel/build/hamilton/native/analytics/*.py`
 
 **Implementation checklist**
 - [ ] Attach scan telemetry for dataset-backed plans.
 - [ ] Persist finalize artifacts alongside analytics outputs.
 - [ ] Emit run manifests for all analytics pipelines.
+- [ ] Ensure Hamilton analytics outputs persist finalize artifacts and run manifests
+      (route writes through analytics dataset helpers or a shared pipeline wrapper).
 
 ---
 
@@ -360,6 +382,8 @@ merged = rx.union(graph_a, graph_b, merge_nodes=True, merge_edges=True)
 - [ ] Use `subgraph_with_nodemap` for filtered views.
 - [ ] Use `rx.layers` / `rx.topological_generations` for DAG layers.
 - [ ] Use `rx.union` / `rx.compose` for graph merges.
+- [ ] Replace bespoke topological layering and edge assembly in
+      `components.py` / `community.py` with rustworkx primitives.
 
 ---
 
@@ -374,6 +398,13 @@ from codeintel.build.graphs.rx.normalize import sorted_mapping
 
 weights = {src: 0.0 for src, _, _ in iter_edge_id_weights(store)}
 weights = sorted_mapping(weights)
+```
+
+```python
+from codeintel.build.graphs.rx.iterators import iter_incident_edges
+
+for src_id, dst_id, weight in iter_incident_edges(store, node_id):
+    ...
 ```
 
 **Target files**
@@ -409,11 +440,14 @@ payload = dumps_node_link_json(store.graph, require_metadata=True)
 - `src/codeintel/build/graphs/rx/serialization.py`
 - `src/codeintel/build/graphs/rx/metadata.py`
 - `src/codeintel/build/graphs/runtime/runtime.py`
+- `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
+- `src/codeintel/build/analytics/graphs/subsystem_graph_metrics.py`
 
 **Implementation checklist**
 - [ ] Use typed node-link JSON for both directed and undirected graphs.
 - [ ] Persist determinism tier + ordering keys + weight policy in attrs.
 - [ ] Ensure round-trip preserves node IDs and payloads.
+- [ ] Attach ordering keys/metadata for config bipartite + subsystem graph outputs.
 
 ---
 
@@ -446,6 +480,8 @@ for row in iter_tuples(worklist.to_reader(), columns=("function_goid_h128", "rel
 - [ ] Drive AST work exclusively from Arrow worklists.
 - [ ] Emit Arrow tables from parsing kernels; avoid row-dict pipelines.
 - [ ] Finalize outputs via analytics finalize helpers.
+- [ ] Replace remaining row-dict loops in parsing/metrics modules with
+      grouped rollups + Arrow worklists before AST boundaries.
 
 ---
 

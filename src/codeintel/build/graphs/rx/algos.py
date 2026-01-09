@@ -19,6 +19,7 @@ from rustworkx import visit
 from codeintel.build.graphs.rx.components import sort_components
 from codeintel.build.graphs.rx.convert import store_from_rx
 from codeintel.build.graphs.rx.iterators import (
+    iter_edge_index_payloads,
     iter_edge_payloads,
     neighbors_by_index,
     weighted_neighbors_by_index,
@@ -1339,6 +1340,68 @@ def betweenness_by_id(
     return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
 
 
+def edge_betweenness_by_id(
+    graph: GraphInput,
+    *,
+    options: EdgeBetweennessOptions | None = None,
+    algo_config: GraphAlgoConfig | None = None,
+) -> dict[tuple[Hashable, Hashable], float]:
+    """Compute edge betweenness centrality keyed by node id pairs.
+
+    Returns
+    -------
+    dict[tuple[Hashable, Hashable], float]
+        Edge betweenness scores keyed by (src, dst) node id tuples.
+    """
+    resolved = options or EdgeBetweennessOptions()
+    store = ensure_store(graph, nan_policy=resolved.nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, resolved.nan_policy)
+    _apply_rayon_threads(algo_config)
+    parallel_threshold = _resolve_parallel_threshold(algo_config)
+    if store.graph.num_edges() == 0:
+        return {}
+    if store.is_directed:
+        directed_graph = _directed_graph(store)
+        if parallel_threshold is None:
+            raw = rx.digraph_edge_betweenness_centrality(
+                directed_graph,
+                normalized=resolved.normalized,
+            )
+        else:
+            raw = rx.digraph_edge_betweenness_centrality(
+                directed_graph,
+                normalized=resolved.normalized,
+                parallel_threshold=parallel_threshold,
+            )
+    else:
+        undirected_graph = _undirected_graph(store)
+        if parallel_threshold is None:
+            raw = rx.graph_edge_betweenness_centrality(
+                undirected_graph,
+                normalized=resolved.normalized,
+            )
+        else:
+            raw = rx.graph_edge_betweenness_centrality(
+                undirected_graph,
+                normalized=resolved.normalized,
+                parallel_threshold=parallel_threshold,
+            )
+    edge_pairs: dict[int, tuple[Hashable, Hashable]] = {}
+    for edge_idx, src_idx, dst_idx, _payload in iter_edge_index_payloads(store):
+        src_id = store.index_to_id[src_idx]
+        dst_id = store.index_to_id[dst_idx]
+        if store.is_directed or stable_key(src_id) <= stable_key(dst_id):
+            edge_pairs[edge_idx] = (src_id, dst_id)
+        else:
+            edge_pairs[edge_idx] = (dst_id, src_id)
+    mapped = {
+        edge_pairs[edge_idx]: float(score)
+        for edge_idx, score in raw.items()
+        if edge_idx in edge_pairs
+    }
+    return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
+
+
 def harmonic_centrality_by_id(
     graph: GraphInput,
     *,
@@ -1569,7 +1632,11 @@ def clustering_by_id(
     )
 
 
-def transitivity_score(graph: GraphInput) -> float:
+def transitivity_score(
+    graph: GraphInput,
+    *,
+    algo_config: GraphAlgoConfig | None = None,
+) -> float:
     """Compute global transitivity for an undirected view of the graph.
 
     Returns
@@ -1579,21 +1646,14 @@ def transitivity_score(graph: GraphInput) -> float:
     """
     store = ensure_store(graph)
     work_store = to_undirected_store(store)
+    _apply_rayon_threads(algo_config)
     if work_store.graph.num_nodes() == 0:
         return 0.0
-    neighbors = _neighbor_map(work_store, include_self=False)
-    triangle_total = sum(_triangle_counts(neighbor_map=neighbors).values())
-    if triangle_total == 0:
+    undirected_graph = _undirected_graph(work_store)
+    try:
+        return float(rx.graph_transitivity(undirected_graph))
+    except rx.NullGraph:
         return 0.0
-    triplets = 0.0
-    for neighbor_list in neighbors.values():
-        degree = len(neighbor_list)
-        if degree < _MIN_CLUSTERING_DEGREE:
-            continue
-        triplets += degree * (degree - 1) / 2
-    if triplets == 0.0:
-        return 0.0
-    return float(triangle_total) / triplets
 
 
 def _clustering_unweighted(
@@ -2388,6 +2448,254 @@ def digraph_all_pairs_shortest_path_lengths_by_id(
     return sorted_nested_mapping(mapped)
 
 
+def floyd_warshall_path_lengths_by_id(
+    graph: GraphInput,
+    *,
+    weight: str | None = None,
+    nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
+) -> dict[Hashable, dict[Hashable, float]]:
+    """Return Floyd-Warshall path lengths keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, dict[Hashable, float]]
+        Nested mapping of source node ids to target distances.
+    """
+    store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    if store.graph.num_nodes() == 0:
+        return {}
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    weight_fn: Callable[[object], float] | None = None
+    if weight is not None:
+        weight_fn = edge_cost_weight_fn(context=weight_ctx)
+    _apply_rayon_threads(algo_config)
+    parallel_threshold = _resolve_parallel_threshold(algo_config)
+    try:
+        if store.is_directed:
+            directed_graph = _directed_graph(store)
+            raw = _call_with_supported_kwargs(
+                rx.digraph_floyd_warshall,
+                directed_graph,
+                weight_fn=weight_fn,
+                default_weight=1.0,
+                as_undirected=False,
+                parallel_threshold=parallel_threshold,
+            )
+        else:
+            undirected_graph = _undirected_graph(store)
+            raw = _call_with_supported_kwargs(
+                rx.graph_floyd_warshall,
+                undirected_graph,
+                weight_fn=weight_fn,
+                default_weight=1.0,
+                parallel_threshold=parallel_threshold,
+            )
+    except rx.NullGraph:
+        return {}
+    if not isinstance(raw, Mapping):
+        msg = "rustworkx floyd_warshall returned an unexpected result."
+        raise TypeError(msg)
+    mapped: dict[Hashable, dict[Hashable, float]] = {}
+    for src_idx, targets in raw.items():
+        src_id = store.index_to_id[src_idx]
+        inner = {store.index_to_id[idx]: float(dist) for idx, dist in targets.items()}
+        mapped[src_id] = _normalize_float_mapping(inner, nan_policy=weight_ctx.nan_policy)
+    return sorted_nested_mapping(mapped)
+
+
+def bellman_ford_shortest_path_lengths_by_id(
+    graph: GraphInput,
+    source: Hashable,
+    *,
+    weight: str | None = None,
+    nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
+    goal: Hashable | None = None,
+) -> dict[Hashable, float]:
+    """Return Bellman-Ford shortest path lengths keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, float]
+        Mapping of node ids to shortest path lengths.
+    """
+    store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    if store.graph.num_nodes() == 0:
+        return {}
+    source_idx = store.id_to_index.get(source)
+    if source_idx is None:
+        return {}
+    goal_idx = store.id_to_index.get(goal) if goal is not None else None
+    if goal is not None and goal_idx is None:
+        return {}
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    weight_fn = constant_weight_fn()
+    if weight is not None:
+        weight_fn = edge_cost_weight_fn(context=weight_ctx)
+    _apply_rayon_threads(algo_config)
+    graph_obj = _directed_graph(store) if store.is_directed else _undirected_graph(store)
+    try:
+        if store.is_directed:
+            if goal_idx is None:
+                lengths = rx.digraph_bellman_ford_shortest_path_lengths(
+                    graph_obj,
+                    source_idx,
+                    weight_fn,
+                )
+            else:
+                lengths = rx.digraph_bellman_ford_shortest_path_lengths(
+                    graph_obj,
+                    source_idx,
+                    weight_fn,
+                    goal_idx,
+                )
+        elif goal_idx is None:
+            lengths = rx.graph_bellman_ford_shortest_path_lengths(
+                graph_obj,
+                source_idx,
+                weight_fn,
+            )
+        else:
+            lengths = rx.graph_bellman_ford_shortest_path_lengths(
+                graph_obj,
+                source_idx,
+                weight_fn,
+                goal_idx,
+            )
+    except (rx.InvalidNode, rx.NullGraph):
+        return {}
+    mapped = {store.index_to_id[idx]: float(dist) for idx, dist in lengths.items()}
+    return _normalize_float_mapping(mapped, nan_policy=weight_ctx.nan_policy)
+
+
+def all_pairs_bellman_ford_path_lengths_by_id(
+    graph: GraphInput,
+    *,
+    weight: str | None = None,
+    nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
+) -> dict[Hashable, dict[Hashable, float]]:
+    """Return all-pairs Bellman-Ford path lengths keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, dict[Hashable, float]]
+        Nested mapping of source node ids to target distances.
+    """
+    store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    if store.graph.num_nodes() == 0:
+        return {}
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    weight_fn = constant_weight_fn()
+    if weight is not None:
+        weight_fn = edge_cost_weight_fn(context=weight_ctx)
+    _apply_rayon_threads(algo_config)
+    graph_obj = _directed_graph(store) if store.is_directed else _undirected_graph(store)
+    try:
+        if store.is_directed:
+            raw = rx.digraph_all_pairs_bellman_ford_path_lengths(graph_obj, weight_fn)
+        else:
+            raw = rx.graph_all_pairs_bellman_ford_path_lengths(graph_obj, weight_fn)
+    except rx.NullGraph:
+        return {}
+    mapped: dict[Hashable, dict[Hashable, float]] = {}
+    for src_idx, targets in raw.items():
+        src_id = store.index_to_id[src_idx]
+        inner = {store.index_to_id[idx]: float(dist) for idx, dist in targets.items()}
+        mapped[src_id] = _normalize_float_mapping(inner, nan_policy=weight_ctx.nan_policy)
+    return sorted_nested_mapping(mapped)
+
+
+def k_shortest_path_lengths_by_id(
+    graph: GraphInput,
+    source: Hashable,
+    k: int,
+    *,
+    weight: str | None = None,
+    nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
+    goal: Hashable | None = None,
+) -> dict[Hashable, float]:
+    """Return kth shortest path lengths keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, float]
+        Mapping of node ids to kth shortest path lengths.
+    """
+    if k < 1:
+        msg = "k must be >= 1 for kth shortest path lengths."
+        raise ValueError(msg)
+    store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    if store.graph.num_nodes() == 0:
+        return {}
+    source_idx = store.id_to_index.get(source)
+    if source_idx is None:
+        return {}
+    goal_idx = store.id_to_index.get(goal) if goal is not None else None
+    if goal is not None and goal_idx is None:
+        return {}
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    weight_fn = constant_weight_fn()
+    if weight is not None:
+        weight_fn = edge_cost_weight_fn(context=weight_ctx)
+    _apply_rayon_threads(algo_config)
+    graph_obj = _directed_graph(store) if store.is_directed else _undirected_graph(store)
+    try:
+        if store.is_directed:
+            if goal_idx is None:
+                lengths = rx.digraph_k_shortest_path_lengths(
+                    graph_obj,
+                    source_idx,
+                    k,
+                    weight_fn,
+                )
+            else:
+                lengths = rx.digraph_k_shortest_path_lengths(
+                    graph_obj,
+                    source_idx,
+                    k,
+                    weight_fn,
+                    goal_idx,
+                )
+        elif goal_idx is None:
+            lengths = rx.graph_k_shortest_path_lengths(
+                graph_obj,
+                source_idx,
+                k,
+                weight_fn,
+            )
+        else:
+            lengths = rx.graph_k_shortest_path_lengths(
+                graph_obj,
+                source_idx,
+                k,
+                weight_fn,
+                goal_idx,
+            )
+    except (rx.InvalidNode, rx.NullGraph):
+        return {}
+    mapped = {store.index_to_id[idx]: float(dist) for idx, dist in lengths.items()}
+    return _normalize_float_mapping(mapped, nan_policy=weight_ctx.nan_policy)
+
+
 def immediate_dominators_by_id(
     graph: GraphInput,
     entry: Hashable,
@@ -2490,6 +2798,7 @@ def simple_paths_by_id(
 
 __all__ = [
     "BetweennessOptions",
+    "EdgeBetweennessOptions",
     "EigenvectorOptions",
     "GraphAlgoConfig",
     "GraphInput",
@@ -2498,8 +2807,10 @@ __all__ = [
     "PagerankOptions",
     "RxGraph",
     "WeightContext",
+    "all_pairs_bellman_ford_path_lengths_by_id",
     "ancestors_by_id",
     "articulation_points_by_id",
+    "bellman_ford_shortest_path_lengths_by_id",
     "betweenness_by_id",
     "bfs_distances_by_id",
     "bipartite_degree_centrality_by_id",
@@ -2517,12 +2828,14 @@ __all__ = [
     "digraph_all_pairs_shortest_path_lengths_by_id",
     "digraph_shortest_path_lengths_by_id",
     "dominance_frontiers_by_id",
+    "edge_betweenness_by_id",
     "edge_cost_weight_fn",
     "edge_strength_weight_fn",
     "effective_size_by_id",
     "eigenvector_centrality_by_id",
     "ensure_directed_store",
     "ensure_store",
+    "floyd_warshall_path_lengths_by_id",
     "graph_distance_matrix",
     "graph_edge_count",
     "graph_node_count",
@@ -2535,6 +2848,7 @@ __all__ = [
     "in_degree_centrality_by_id",
     "insert_node_on_out_edges_by_id",
     "is_directed_acyclic",
+    "k_shortest_path_lengths_by_id",
     "katz_centrality_by_id",
     "out_degree_by_id",
     "out_degree_centrality_by_id",

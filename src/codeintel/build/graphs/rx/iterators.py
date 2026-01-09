@@ -62,6 +62,27 @@ def iter_edge_id_payloads(store: RxGraphStore) -> Iterable[tuple[Hashable, Hasha
         yield store.index_to_id[src_idx], store.index_to_id[dst_idx], payload
 
 
+def iter_incident_edge_id_payloads(
+    store: RxGraphStore,
+    node_id: Hashable,
+) -> Iterable[tuple[Hashable, Hashable, object]]:
+    """Yield incident edge endpoints (node ids) and payloads.
+
+    Yields
+    ------
+    tuple[Hashable, Hashable, object]
+        Node id endpoints and payloads for incident edges.
+    """
+    node_idx = store.id_to_index.get(node_id)
+    if node_idx is None:
+        return
+    edge_list = store.graph.edge_list()
+    payloads = store.graph.edges()
+    for edge_idx in store.graph.incident_edges(node_idx):
+        src_idx, dst_idx = edge_list[edge_idx]
+        yield store.index_to_id[src_idx], store.index_to_id[dst_idx], payloads[edge_idx]
+
+
 def iter_edge_weights(
     store: RxGraphStore,
     *,
@@ -94,6 +115,25 @@ def iter_edge_id_weights(
     """
     for src_idx, dst_idx, weight in iter_edge_weights(store, nan_policy=nan_policy):
         yield store.index_to_id[src_idx], store.index_to_id[dst_idx], weight
+
+
+def iter_incident_edge_id_weights(
+    store: RxGraphStore,
+    node_id: Hashable,
+    *,
+    nan_policy: NanPolicy | None = None,
+) -> Iterable[tuple[Hashable, Hashable, float]]:
+    """Yield incident edge endpoints (node ids) and normalized weights.
+
+    Yields
+    ------
+    tuple[Hashable, Hashable, float]
+        Node id endpoints and normalized weights for incident edges.
+    """
+    resolved_nan_policy = nan_policy or store.numeric_policy.nan_policy
+    for src_id, dst_id, payload in iter_incident_edge_id_payloads(store, node_id):
+        weight = edge_weight_from_payload(payload, nan_policy=resolved_nan_policy)
+        yield src_id, dst_id, weight
 
 
 def iter_weighted_edge_ids(
@@ -197,6 +237,8 @@ __all__ = [
     "iter_edge_index_payloads",
     "iter_edge_payloads",
     "iter_edge_weights",
+    "iter_incident_edge_id_payloads",
+    "iter_incident_edge_id_weights",
     "iter_weighted_edge_ids",
     "neighbors_by_index",
     "weighted_neighbors_by_index",
