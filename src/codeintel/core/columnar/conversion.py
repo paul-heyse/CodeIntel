@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 import polars as pl
 import pyarrow as pa
 
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.readers import record_batch_reader_from_batches
 from codeintel.core.columnar.stream import (
     ColumnarStream,
@@ -26,6 +27,8 @@ _GOID_COLUMN_TYPE = pl.Decimal(38, 0)
 if TYPE_CHECKING:
     type RecordBatchIterable = Iterable[pa.RecordBatch]
     type TabularFrame = pl.LazyFrame
+    from codeintel.core.columnar.arrowdsl import ExecutionPlan
+    from codeintel.core.columnar.plan_ops import Plan
     type InferableTabularInput = (
         pa.RecordBatchReader
         | pa.Table
@@ -33,10 +36,14 @@ if TYPE_CHECKING:
         | TabularFrame
         | RecordBatchIterable
         | DuckDBRelation
+        | Plan
+        | ExecutionPlan
     )
 else:
     RecordBatchIterable = Iterable[pa.RecordBatch]
     TabularFrame = pl.LazyFrame
+    from codeintel.core.columnar.arrowdsl import ExecutionPlan
+    from codeintel.core.columnar.plan_ops import Plan
     InferableTabularInput = (
         pa.RecordBatchReader
         | pa.Table
@@ -44,6 +51,8 @@ else:
         | TabularFrame
         | RecordBatchIterable
         | DuckDBRelation
+        | Plan
+        | ExecutionPlan
     )
 
 
@@ -158,6 +167,8 @@ def tabular_to_arrow_reader(
     ----------
     value
         Tabular input to convert.
+    batch_size
+        Optional batch size to use when streaming tabular inputs.
 
     Returns
     -------
@@ -184,6 +195,8 @@ def tabular_to_arrow_table(
     ----------
     value
         Tabular input to convert.
+    batch_size
+        Optional batch size to use when streaming tabular inputs.
 
     Returns
     -------
@@ -203,12 +216,36 @@ def reader_from_batches(
     schema: pa.Schema,
     batches: Iterable[pa.RecordBatch],
 ) -> pa.RecordBatchReader:
-    """Return a RecordBatchReader for the provided schema and batches."""
+    """Return a RecordBatchReader for the provided schema and batches.
+
+    Parameters
+    ----------
+    schema
+        Schema to associate with the record batches.
+    batches
+        Iterable of record batches to stream.
+
+    Returns
+    -------
+    pa.RecordBatchReader
+        Reader yielding the provided record batches.
+    """
     return record_batch_reader_from_batches(schema, batches)
 
 
 def empty_table_from_schema(schema: pa.Schema) -> pa.Table:
-    """Return an empty Arrow table with the provided schema."""
+    """Return an empty Arrow table with the provided schema.
+
+    Parameters
+    ----------
+    schema
+        Schema for the empty table.
+
+    Returns
+    -------
+    pa.Table
+        Empty Arrow table.
+    """
     return pa.Table.from_batches([], schema=schema)
 
 
@@ -217,7 +254,25 @@ def table_from_batches(
     *,
     schema: pa.Schema | None = None,
 ) -> pa.Table:
-    """Return a table built from record batches with optional schema enforcement."""
+    """Return a table built from record batches with optional schema enforcement.
+
+    Parameters
+    ----------
+    batches
+        Iterable of record batches to materialize.
+    schema
+        Optional schema to enforce on the resulting table.
+
+    Returns
+    -------
+    pa.Table
+        Materialized Arrow table.
+
+    Raises
+    ------
+    ValueError
+        If the batch iterable is empty and no schema is provided.
+    """
     reader = record_batch_reader_from_iterable(batches, empty_policy="none")
     if reader is None:
         if schema is None:
@@ -235,7 +290,20 @@ def relation_to_reader(
     *,
     batch_size: int | None = DEFAULT_ARROW_BATCH_SIZE,
 ) -> pa.RecordBatchReader:
-    """Return a RecordBatchReader for a DuckDB relation."""
+    """Return a RecordBatchReader for a DuckDB relation.
+
+    Parameters
+    ----------
+    relation
+        DuckDB relation to stream.
+    batch_size
+        Optional batch size to use when streaming.
+
+    Returns
+    -------
+    pa.RecordBatchReader
+        Reader yielding relation record batches.
+    """
     stream = stream_from_relation(relation, batch_size=batch_size)
     return stream.to_reader(batch_size=batch_size or DEFAULT_ARROW_BATCH_SIZE)
 
@@ -273,13 +341,21 @@ def _lazyframe_stream(frame: pl.LazyFrame) -> LazyFrameStream:
     )
 
 
-def _coerce_stream(
+def _stream_from_native_value(
     value: InferableTabularInput,
     *,
     batch_size: int | None,
-) -> ColumnarStream:
+) -> ColumnarStream | None:
     stream: ColumnarStream | None = None
-    if isinstance(value, pa.RecordBatchReader):
+    if isinstance(value, (Plan, ExecutionPlan)):
+        execution_ctx = resolve_execution_context(None)
+        reader = (
+            ExecutionPlan.from_plan(value).to_reader(ctx=execution_ctx)
+            if isinstance(value, Plan)
+            else value.to_reader(ctx=execution_ctx)
+        )
+        stream = stream_from_reader(reader)
+    elif isinstance(value, pa.RecordBatchReader):
         stream = stream_from_reader(value)
     elif isinstance(value, pa.Table):
         stream = stream_from_table(value, batch_size=batch_size)
@@ -289,15 +365,25 @@ def _coerce_stream(
         stream = _lazyframe_stream(_coerce_goid_columns(value))
     elif isinstance(value, pl.DataFrame):
         stream = stream_from_table(value.to_arrow(), batch_size=batch_size)
-    reader = coerce_arrow_reader(value, batch_size=batch_size)
-    if stream is None and reader is not None:
-        stream = stream_from_reader(reader)
-    if stream is None and isinstance(value, Iterable):
-        reader = _record_batch_reader_from_iterable(value)
-        if reader is None:
-            msg = "Unsupported tabular input type: empty iterable"
-            raise TypeError(msg)
-        stream = stream_from_reader(reader)
+    return stream
+
+
+def _coerce_stream(
+    value: InferableTabularInput,
+    *,
+    batch_size: int | None,
+) -> ColumnarStream:
+    stream = _stream_from_native_value(value, batch_size=batch_size)
+    if stream is None:
+        reader = coerce_arrow_reader(value, batch_size=batch_size)
+        if reader is not None:
+            stream = stream_from_reader(reader)
+        elif isinstance(value, Iterable):
+            reader = _record_batch_reader_from_iterable(value)
+            if reader is None:
+                msg = "Unsupported tabular input type: empty iterable"
+                raise TypeError(msg)
+            stream = stream_from_reader(reader)
     if stream is None:
         msg = f"Unsupported tabular input type: {type(value).__name__}"
         raise TypeError(msg)
@@ -360,11 +446,11 @@ __all__ = [
     "lazyframe_to_reader",
     "reader_from_batches",
     "reader_to_table",
-    "relation_to_reader",
     "record_batch_reader_from_iterable",
+    "relation_to_reader",
+    "table_from_batches",
     "table_to_frame",
     "table_to_lazyframe",
-    "table_from_batches",
     "table_to_reader",
     "tabular_to_arrow_reader",
     "tabular_to_arrow_table",

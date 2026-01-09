@@ -10,6 +10,7 @@ import pytest
 from codeintel.build.analytics.subsystems.cache import (
     build_subsystem_profile_cache_rows,
 )
+from codeintel.core.columnar.conversion import tabular_to_arrow_table
 from tests._helpers import TestScenario
 
 if TYPE_CHECKING:
@@ -70,13 +71,11 @@ def test_subsystem_cache_rows_build(tmp_path: Path) -> None:
     ctx = TestScenario.minimal().build(tmp_path)
     try:
         _seed_subsystem(ctx)
-        subsystems = (
-            ctx.gateway.con.execute("SELECT * FROM analytics.subsystems").arrow().read_all()
+        subsystems = tabular_to_arrow_table(
+            ctx.gateway.con.sql("SELECT * FROM analytics.subsystems")
         )
-        metrics = (
-            ctx.gateway.con.execute("SELECT * FROM analytics.subsystem_graph_metrics")
-            .arrow()
-            .read_all()
+        metrics = tabular_to_arrow_table(
+            ctx.gateway.con.sql("SELECT * FROM analytics.subsystem_graph_metrics")
         )
         profile_rows = build_subsystem_profile_cache_rows(
             ctx.snapshot,

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
@@ -31,7 +32,7 @@ class DataflowRepository(BaseRepository):
         cursor = self.con.execute(render_sql_duckdb(expr), list(params) if params else [])
         description = cursor.description or ()
         columns = [str(col[0]) for col in description]
-        reader = cursor.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(cursor, batch_size=DEFAULT_ARROW_BATCH_SIZE)
         return [
             dict(zip(columns, row, strict=True))
             for row in iter_tuples_from_arrow_reader(reader, columns=columns)

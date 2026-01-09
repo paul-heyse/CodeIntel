@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import random
 from collections.abc import Mapping
-from typing import Any, cast
-
-import rustworkx as rx
+from typing import Any
 
 from codeintel.build.graphs.rx.algos import (
     GraphInput,
     bridges_by_id,
     connected_components_by_id,
+    edge_subgraph_by_index,
+    empty_rx_graph,
     ensure_store,
     to_undirected_store,
+    union_graphs,
 )
 from codeintel.build.graphs.rx.iterators import (
     edge_weight_map,
@@ -80,16 +81,13 @@ def _store_without_edges(
         store.graph.node_indices(),
         key=lambda idx: stable_key(store.index_to_id.get(idx, idx)),
     )
-    if store.is_directed:
-        edge_graph = cast("rx.PyDiGraph", store.graph.edge_subgraph(edge_list))
-        isolate_graph = rx.PyDiGraph(multigraph=False)
-        isolate_graph.add_nodes_from([store.graph.get_node_data(idx) for idx in isolate_indices])
-        merged = rx.union(edge_graph, isolate_graph, merge_nodes=True, merge_edges=True)
-    else:
-        edge_graph = cast("rx.PyGraph", store.graph.edge_subgraph(edge_list))
-        isolate_graph = rx.PyGraph(multigraph=False)
-        isolate_graph.add_nodes_from([store.graph.get_node_data(idx) for idx in isolate_indices])
-        merged = rx.union(edge_graph, isolate_graph, merge_nodes=True, merge_edges=True)
+    edge_graph = edge_subgraph_by_index(store, edge_list)
+    isolate_graph = empty_rx_graph(
+        directed=store.is_directed,
+        node_hint=len(isolate_indices),
+    )
+    isolate_graph.add_nodes_from([store.graph.get_node_data(idx) for idx in isolate_indices])
+    merged = union_graphs(edge_graph, isolate_graph, merge_nodes=True, merge_edges=True)
     return RxGraphStore.from_rx_graph(
         merged,
         weight_policy=store.weight_policy,

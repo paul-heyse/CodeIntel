@@ -6,8 +6,7 @@ import difflib
 import json
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
-
+from codeintel.core.columnar.conversion import tabular_to_arrow_table
 from codeintel.core.hashing.short import sha256_short
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
@@ -43,9 +42,7 @@ def snapshot_table(
     if order_by:
         ordered = ", ".join(order_by)
         relation = relation.order(ordered)
-    reader = relation.fetch_record_batch()
-    batches = list(reader)
-    table_data = pa.Table.from_batches(batches, schema=reader.schema)
+    table_data = tabular_to_arrow_table(relation)
     column_names = table_data.column_names
     rows = [tuple(row[name] for name in column_names) for row in table_data.to_pylist()]
     if hash_rows:

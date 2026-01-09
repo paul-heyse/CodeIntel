@@ -13,9 +13,6 @@ import pyarrow as pa
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.ingestion.manifesting import (
-    finalize_ingest_reader_with_manifest,
-)
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     RelationTableSaveSpec,
@@ -52,7 +49,8 @@ from codeintel.build.tabular.finalize_ops import (
 from codeintel.build.tabular.kernels import hash_struct_goid
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import empty_table_from_schema
 from codeintel.core.columnar.dedupe_ops import stable_dedupe_for_context
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
@@ -60,21 +58,19 @@ from codeintel.core.columnar.execution_context import (
     resolve_execution_context,
 )
 from codeintel.core.columnar.expr_vocab import E, Expression
-from codeintel.core.columnar.finalize_ops import (
-    finalize_spec_for_table as columnar_finalize_spec_for_table,
-)
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.kernels import SortKey, case_when
-from codeintel.core.columnar.ordering import OrderingSpec
 from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
-from codeintel.core.columnar.conversion import empty_table_from_schema
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
-from codeintel.core.schemas.primitives import resolve_join_safe_columns
+from codeintel.core.schemas.primitives import (
+    resolve_canonical_sort_keys,
+    resolve_join_safe_columns,
+)
 
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
@@ -93,7 +89,6 @@ SCIP_SYMBOL_INFO_TABLE_KEY = "core.scip_symbol_information"
 GOIDS_TABLE_KEY = "core.goids"
 SYNTAX_DEFS_TABLE_KEY = "core.syntax_defs"
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
-_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 _ROLE_DEFINITION = 0x1
 _ROLE_IMPORT = 0x2
@@ -392,15 +387,16 @@ def _if_else(
     return result
 
 
-def _empty_reader_for_output_table(table_key: str) -> pa.Table:
+def _empty_plan_for_output_table(table_key: str) -> Plan:
     try:
-        return empty_table_for_table(table_key)
+        empty = empty_table_for_table(table_key)
     except KeyError:
         table_schema = OUTPUT_TABLE_SCHEMAS.get(table_key)
         if table_schema is None:
             raise
         arrow_schema = arrow_contract_for_table_schema(table_schema=table_schema)
-        return empty_table_from_schema(arrow_schema)
+        empty = empty_table_from_schema(arrow_schema)
+    return _plan_from_table(empty, table_key=table_key)
 
 
 def _empty_table_for_output_table(table_key: str) -> pa.Table:
@@ -412,17 +408,30 @@ def _empty_table_for_output_table(table_key: str) -> pa.Table:
     return empty_table_from_schema(arrow_schema)
 
 
-def _reader_from_table(
+def _canonical_sort_keys_for_table(
+    table_key: str,
+    columns: Sequence[str],
+) -> tuple[SortKey, ...] | None:
+    schema = get_schema_service().get_table_schema(table_key)
+    keys = resolve_canonical_sort_keys(schema)
+    if not keys:
+        return None
+    available = set(columns)
+    return tuple((key, "ascending") for key in keys if key in available)
+
+
+def _plan_from_table(
     table: pa.Table,
     *,
-    execution_ctx: ExecutionContext | None,
-) -> pa.RecordBatchReader:
-    resolved_ctx = resolve_execution_context(execution_ctx)
-    plan = ExecutionPlan.from_table(
-        table,
-        ordering=OrderingSpec.implicit(reason="ingest table"),
-    )
-    return plan.to_reader(ctx=resolved_ctx)
+    table_key: str | None,
+) -> Plan:
+    plan = Plan.table(table)
+    if table_key is None:
+        return plan
+    sort_keys = _canonical_sort_keys_for_table(table_key, table.column_names)
+    if sort_keys:
+        return plan.order_by(sort_keys=list(sort_keys))
+    return plan
 
 
 def _apply_enclosing_ranges(table: pa.Table) -> pa.Table:
@@ -1401,12 +1410,7 @@ def _occurrence_syntax_left_anti(
 
 def _plan_to_table(plan: Plan, *, execution_ctx: ExecutionContext | None) -> pa.Table:
     resolved_ctx = resolve_execution_context(execution_ctx)
-    result = run_pipeline(
-        plan=ExecutionPlan.from_plan(plan),
-        finalize=columnar_finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
-        options=PipelineRunOptions(ctx=resolved_ctx),
-    )
-    return result.good
+    return ExecutionPlan.from_plan(plan).to_table(ctx=resolved_ctx)
 
 
 def _empty_occurrence_match_table(pairs: pa.Table) -> pa.Table:
@@ -1482,72 +1486,58 @@ def scip_resolution__frames(
 
 
 def scip_resolution__symbol_goid_xref__base(
-    env: BuildEnv,
+    _env: BuildEnv,
     scip_resolution__frames: ScipResolutionFrames,
-) -> pa.Table:
+) -> Plan:
     """Return rows for core.scip_symbol_goid_xref.
 
     Parameters
     ----------
-    env
+    _env
         Build environment with snapshot metadata.
     scip_resolution__frames
         Resolved SCIP frames.
 
     Returns
     -------
-    pa.Table
-        Arrow reader for core.scip_symbol_goid_xref.
+    Plan
+        Plan for core.scip_symbol_goid_xref.
     """
     table = scip_resolution__frames.symbol_goid_xref
     if table.num_rows == 0:
-        return _empty_reader_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
-    execution_ctx = resolve_columnar_context(env.execution_context)
-    reader = _reader_from_table(table, execution_ctx=execution_ctx)
-    return finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
-        reader=reader,
-        target_name=SCIP_RESOLUTION_TARGET_NAME,
-    )
+        return _empty_plan_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
+    return _plan_from_table(table, table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
 
 
 def scip_resolution__occurrence_span_xref__base(
-    env: BuildEnv,
+    _env: BuildEnv,
     scip_resolution__frames: ScipResolutionFrames,
-) -> pa.Table:
+) -> Plan:
     """Return rows for core.scip_occurrence_span_xref.
 
     Parameters
     ----------
-    env
+    _env
         Build environment with snapshot metadata.
     scip_resolution__frames
         Resolved SCIP frames.
 
     Returns
     -------
-    pa.Table
-        Arrow reader for core.scip_occurrence_span_xref.
+    Plan
+        Plan for core.scip_occurrence_span_xref.
     """
     table = scip_resolution__frames.occurrence_span_xref
     if table.num_rows == 0:
-        return _empty_reader_for_output_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
-    execution_ctx = resolve_columnar_context(env.execution_context)
-    reader = _reader_from_table(table, execution_ctx=execution_ctx)
-    return finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
-        reader=reader,
-        target_name=SCIP_RESOLUTION_TARGET_NAME,
-    )
+        return _empty_plan_for_output_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
+    return _plan_from_table(table, table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
 
 
 def scip_resolution__occurrence_syntax_xref__base(
     env: BuildEnv,
     scip_resolution__frames: ScipResolutionFrames,
     q__core__syntax_nodes: InferableTabularInput,
-) -> pa.Table:
+) -> Plan:
     """Return rows for core.scip_occurrence_syntax_xref.
 
     Parameters
@@ -1561,8 +1551,8 @@ def scip_resolution__occurrence_syntax_xref__base(
 
     Returns
     -------
-    pa.Table
-        Arrow reader for core.scip_occurrence_syntax_xref.
+    Plan
+        Plan for core.scip_occurrence_syntax_xref.
     """
     execution_ctx = _resolve_ingest_execution_ctx(env)
     occurrences_table = scip_resolution__frames.occurrence_span_xref
@@ -1574,7 +1564,7 @@ def scip_resolution__occurrence_syntax_xref__base(
         require_scope_columns=False,
     )
     if occurrences_table.num_rows == 0 or nodes_table.num_rows == 0:
-        return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
+        return _empty_plan_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
 
     occurrences = _occurrence_syntax_occurrences_table(
         occurrences_table,
@@ -1582,7 +1572,7 @@ def scip_resolution__occurrence_syntax_xref__base(
     )
     producers = _occurrence_syntax_producers_table(nodes_table, execution_ctx=execution_ctx)
     if occurrences.num_rows == 0 or producers.num_rows == 0:
-        return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
+        return _empty_plan_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
 
     pairs = _occurrence_syntax_pairs_table(
         occurrences,
@@ -1590,7 +1580,7 @@ def scip_resolution__occurrence_syntax_xref__base(
         execution_ctx=execution_ctx,
     )
     if pairs.num_rows == 0:
-        return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
+        return _empty_plan_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
 
     byte_matches = _occurrence_syntax_match_table(
         _OccurrenceSyntaxMatchRequest(
@@ -1664,21 +1654,28 @@ def scip_resolution__occurrence_syntax_xref__base(
         "match_kind": E.coalesce([E.field("match_kind"), E.scalar("NONE")]),
         "candidate_count": E.coalesce([E.field("candidate_count"), E.scalar(0)]),
     }
-    ordered = (
-        joined.project(project)
-        .order_by(sort_keys=list(_OCCURRENCE_MATCH_SORT_KEYS))
-        .project({name: E.field(name) for name in _OCCURRENCE_SYNTAX_OUTPUT_COLUMNS})
+    projected = joined.project(project)
+    sort_keys = _canonical_sort_keys_for_table(
+        SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
+        _OCCURRENCE_SYNTAX_OUTPUT_COLUMNS,
     )
-    reader = ordered.to_reader(use_threads=True)
-    return finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
-        reader=reader,
-        target_name=SCIP_RESOLUTION_TARGET_NAME,
-    )
+    if sort_keys is None:
+        ordered = projected.order_by(sort_keys=list(_OCCURRENCE_MATCH_SORT_KEYS))
+    else:
+        ordered = projected.order_by(sort_keys=list(sort_keys))
+    return ordered.project({name: E.field(name) for name in _OCCURRENCE_SYNTAX_OUTPUT_COLUMNS})
 
 
 _MODULE = sys.modules[__name__]
+
+
+def _scip_resolution_save_spec(table_key: str) -> RelationTableSaveSpec:
+    return RelationTableSaveSpec(
+        table_key=table_key,
+        ingest_finalize=True,
+    )
+
+
 _SCIP_RESOLUTION_TABLE_CONTEXTS = (
     TableTargetTableContext(
         table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
@@ -1703,7 +1700,7 @@ _SCIP_RESOLUTION_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts
         tables=(),
         table_materializations_node="scip_resolution__table_materializations",
         anchor_node_name="t__scip_resolution",
-        save_spec_factory=RelationTableSaveSpec,
+        save_spec_factory=_scip_resolution_save_spec,
         default_input_type=InferableTabularInput,
     ),
     table_contexts=_SCIP_RESOLUTION_TABLE_CONTEXTS,

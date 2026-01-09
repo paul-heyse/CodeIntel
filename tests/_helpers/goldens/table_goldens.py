@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import reader_to_table, tabular_to_arrow_table
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.helpers.table_key import split_table_key
 
@@ -46,9 +47,7 @@ def dump_table(
         message = f"Unsafe identifier in table_key: {table_key!r}"
         raise ValueError(message)
     relation = gateway.con.table(f"{schema}.{table}")
-    reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-    batches = list(reader)
-    return pa.Table.from_batches(batches, schema=reader.schema)
+    return tabular_to_arrow_table(relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
 
 
 def assert_table_matches_golden(
@@ -126,7 +125,7 @@ def _ipc_bytes_for_table(table: pa.Table) -> bytes:
 def _table_from_ipc(path: Path) -> pa.Table:
     with path.open("rb") as handle:
         reader = pa.ipc.open_stream(handle)
-        return reader.read_all()
+        return reader_to_table(reader)
 
 
 def _format_rows(rows: list[dict[str, object]]) -> str:

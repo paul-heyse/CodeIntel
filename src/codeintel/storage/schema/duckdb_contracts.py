@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.core.columnar.schema_metadata import (
     decode_metadata,
     merge_field_metadata,
@@ -210,13 +211,7 @@ def _fetch_arrow_reader(
     *,
     batch_size: int,
 ) -> pa.RecordBatchReader:
-    fetcher = getattr(relation, "fetch_arrow_reader", None)
-    if callable(fetcher):
-        try:
-            return fetcher(batch_size)
-        except TypeError:
-            return fetcher()
-    return relation.fetch_record_batch(batch_size)
+    return tabular_to_arrow_reader(relation, batch_size=batch_size)
 
 
 __all__ = ["contract_schema_for_table_key", "table_schema_for_table_key"]

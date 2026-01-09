@@ -31,6 +31,10 @@ from codeintel.build.hamilton.materializers.base import (
     duration_ms,
     resolve_materialization_context,
 )
+from codeintel.build.hamilton.native.ingestion.manifesting import (
+    IngestManifestDetails,
+    finalize_ingest_reader_with_manifest,
+)
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observation_pipeline import (
     ObservationPersistContext,
@@ -52,16 +56,20 @@ from codeintel.build.tabular.conversion import (
     record_batch_reader_from_iterable,
     table_to_reader,
 )
+from codeintel.build.tabular.finalize_ops import FinalizeMode
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar import (
     LazyFrameStream,
     align_reader_to_contract,
     extras_policy_from_schema,
 )
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.dedupe_ops import DedupeTier, normalize_dedupe_tier
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.ordering import OrderingSpec
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.columnar.run_manifest import RunManifestOptions, write_run_manifest
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
@@ -125,6 +133,8 @@ _RECOVERABLE_EXCEPTIONS = (
 )
 
 _TABULAR_TYPES: tuple[type, ...] = (
+    ExecutionPlan,
+    Plan,
     pa.RecordBatchReader,
     pa.Table,
     pl.DataFrame,
@@ -215,6 +225,9 @@ class _MaterializeContext:
     target_name: str
     partition_columns: tuple[str, ...]
     collect_group: str | None
+    manifest_extras: Mapping[str, object] | None
+    ingest_finalize: bool
+    ingest_finalize_mode: FinalizeMode | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,6 +298,9 @@ class ArrowDatasetSaver(DataSaver):
     partition_columns: tuple[str, ...] = ()
     collect_group: str | None = None
     output_role: Literal["contract", "internal"] | None = None
+    manifest_extras: Mapping[str, object] | None = None
+    ingest_finalize: bool = False
+    ingest_finalize_mode: FinalizeMode | None = None
 
     @classmethod
     def name(cls) -> str:
@@ -373,6 +389,9 @@ class ArrowDatasetSaver(DataSaver):
                         target_name=self.target_name,
                         partition_columns=self.partition_columns,
                         collect_group=self.collect_group,
+                        manifest_extras=self.manifest_extras,
+                        ingest_finalize=self.ingest_finalize,
+                        ingest_finalize_mode=self.ingest_finalize_mode,
                     )
                     manifest, manifest_path = _materialize_dataset(
                         ctx=context,
@@ -410,6 +429,8 @@ def _materialize_dataset(
     data: TabularData,
 ) -> tuple[ArrowDatasetManifest, Path]:
     normalized = _normalize_tabular_data(data)
+    if ctx.ingest_finalize:
+        normalized = _finalize_ingest_input(ctx=ctx, data=normalized)
     plan = _build_materialization_plan(ctx=ctx, data=normalized)
     write_ctx = _DatasetWriteContext(
         dataset_root=plan.dataset_root,
@@ -467,15 +488,19 @@ def _materialize_dataset(
 
 
 def _normalize_tabular_data(data: TabularData) -> TabularData:
-    if isinstance(data, pl.LazyFrame):
-        return data
-    if isinstance(data, pl.DataFrame):
-        return data.lazy()
-    if isinstance(data, pa.RecordBatchReader):
-        return data
-    if isinstance(data, pa.Table):
-        return table_to_reader(cast("pa.Table", data))
-    if isinstance(data, Iterable):
+    if isinstance(data, ExecutionPlan):
+        normalized: TabularData = _reader_from_execution_plan(data)
+    elif isinstance(data, Plan):
+        normalized = _reader_from_plan(data)
+    elif isinstance(data, pl.LazyFrame):
+        normalized = data
+    elif isinstance(data, pl.DataFrame):
+        normalized = data.lazy()
+    elif isinstance(data, pa.RecordBatchReader):
+        normalized = data
+    elif isinstance(data, pa.Table):
+        normalized = table_to_reader(cast("pa.Table", data))
+    elif isinstance(data, Iterable):
         reader = record_batch_reader_from_iterable(
             data,
             empty_policy="error",
@@ -483,9 +508,29 @@ def _normalize_tabular_data(data: TabularData) -> TabularData:
         if reader is None:
             msg = "Record batch iterable is empty; schema cannot be inferred"
             raise ValueError(msg)
-        return reader
-    msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
-    raise TypeError(msg)
+        normalized = reader
+    else:
+        msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
+        raise TypeError(msg)
+    return normalized
+
+
+def _finalize_ingest_input(*, ctx: _MaterializeContext, data: TabularData) -> TabularData:
+    if isinstance(data, pl.LazyFrame):
+        msg = f"Ingest finalize does not support LazyFrame inputs for {ctx.table_key}"
+        raise TypeError(msg)
+    reader = _coerce_arrow_input(data)
+    finalized = finalize_ingest_reader_with_manifest(
+        env=ctx.env,
+        table_key=ctx.table_key,
+        reader=reader,
+        target_name=ctx.target_name,
+        details=IngestManifestDetails(
+            mode=ctx.ingest_finalize_mode,
+            manifest_extras=ctx.manifest_extras,
+        ),
+    )
+    return table_to_reader(finalized, batch_size=None)
 
 
 def _build_materialization_plan(
@@ -505,6 +550,8 @@ def _build_materialization_plan(
             provenance=inputs.provenance,
         )
     )
+    if ctx.manifest_extras:
+        extras = {**extras, **ctx.manifest_extras}
     parquet_metadata = _parquet_metadata_payload(
         _ParquetMetadataInputs(
             ctx=ctx,
@@ -903,7 +950,8 @@ def _write_run_manifest(
     ctx: _DatasetWriteContext,
     result: FinalizeResult,
 ) -> None:
-    table_schema = resolve_table_schema(ctx.table_key)
+    resolution = resolve_table_schema(ctx.table_key)
+    table_schema = resolution.table_schema
     determinism = _determinism_for_manifest(table_schema)
     ordering = _ordering_spec_for_manifest(
         table_schema,
@@ -1863,28 +1911,60 @@ def _schema_output_tag_sets(
 
 
 def _arrow_schema_for_data(*, data: TabularData) -> pa.Schema:
-    if isinstance(data, pl.DataFrame):
-        return data.lazy().collect_schema().to_arrow()
-    if isinstance(data, pl.LazyFrame):
-        return data.collect_schema().to_arrow()
-    if isinstance(data, pa.Table):
+    if isinstance(data, ExecutionPlan):
+        schema = _schema_from_execution_plan(data)
+    elif isinstance(data, Plan):
+        schema = _schema_from_plan(data)
+    elif isinstance(data, pl.DataFrame):
+        schema = data.lazy().collect_schema().to_arrow()
+    elif isinstance(data, pl.LazyFrame):
+        schema = data.collect_schema().to_arrow()
+    elif isinstance(data, pa.Table):
         table = cast("pa.Table", data)
-        return table.schema
-    if isinstance(data, pa.RecordBatchReader):
+        schema = table.schema
+    elif isinstance(data, pa.RecordBatchReader):
         reader = cast("pa.RecordBatchReader", data)
-        return reader.schema
-    if isinstance(data, Iterable):
-        batches = list(data)
-        if not batches:
-            msg = "Record batch iterable is empty; schema cannot be inferred"
-            raise ValueError(msg)
-        if not all(isinstance(batch, pa.RecordBatch) for batch in batches):
-            msg = "Record batch iterable contains non-RecordBatch values"
-            raise TypeError(msg)
-        first_batch = cast("pa.RecordBatch", batches[0])
-        return first_batch.schema
-    msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
-    raise TypeError(msg)
+        schema = reader.schema
+    elif isinstance(data, Iterable):
+        schema = _schema_from_batches(data)
+    else:
+        msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
+        raise TypeError(msg)
+    return schema
+
+
+def _reader_from_execution_plan(plan: ExecutionPlan) -> pa.RecordBatchReader:
+    execution_ctx = resolve_execution_context(None)
+    return plan.to_reader(ctx=execution_ctx)
+
+
+def _reader_from_plan(plan: Plan) -> pa.RecordBatchReader:
+    execution_ctx = resolve_execution_context(None)
+    return ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+
+
+def _schema_from_execution_plan(plan: ExecutionPlan) -> pa.Schema:
+    if plan.schema is not None:
+        return plan.schema
+    return _reader_from_execution_plan(plan).schema
+
+
+def _schema_from_plan(plan: Plan) -> pa.Schema:
+    if plan.schema is not None:
+        return plan.schema
+    return _reader_from_plan(plan).schema
+
+
+def _schema_from_batches(batches: Iterable[pa.RecordBatch]) -> pa.Schema:
+    batch_list = list(batches)
+    if not batch_list:
+        msg = "Record batch iterable is empty; schema cannot be inferred"
+        raise ValueError(msg)
+    if not all(isinstance(batch, pa.RecordBatch) for batch in batch_list):
+        msg = "Record batch iterable contains non-RecordBatch values"
+        raise TypeError(msg)
+    first_batch = cast("pa.RecordBatch", batch_list[0])
+    return first_batch.schema
 
 
 def _load_inferred_settings(*, ctx: _MaterializeContext) -> dict[str, object] | None:

@@ -7,6 +7,7 @@ import pyarrow as pa
 import pytest
 
 from codeintel.build.schemas.inference_service import table_schema_from_tabular
+from codeintel.core.columnar.conversion import reader_from_batches
 
 
 def test_inference_service_handles_arrow_table() -> None:
@@ -34,7 +35,7 @@ def test_inference_service_handles_record_batch_reader() -> None:
         ]
     )
     batch = pa.record_batch([[1], ["alpha"]], schema=schema)
-    reader = pa.RecordBatchReader.from_batches(schema, [batch])
+    reader = reader_from_batches(schema, [batch])
     table_schema = table_schema_from_tabular(reader, table_key="analytics.reader_demo")
     actual = [(col.name, col.type, col.nullable) for col in table_schema.columns]
     expected = [("id", "BIGINT", False), ("name", "VARCHAR", True)]

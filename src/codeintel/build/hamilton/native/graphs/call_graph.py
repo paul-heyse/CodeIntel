@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,7 +15,6 @@ from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabul
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
@@ -418,16 +417,7 @@ def call_graph_nodes_compute(
         module_by_path=module_by_path,
     )
     table, _ = table_for_rows(CALL_GRAPH_NODES_TABLE_KEY, output_rows)
-    reader = table_to_reader(table, batch_size=None)
-    result = finalize_reader(
-        reader,
-        spec=finalize_spec_for_table(
-            CALL_GRAPH_NODES_TABLE_KEY,
-            mode="strict",
-            order_by=CALL_GRAPH_NODES_SORT_KEYS,
-        ),
-    )
-    return result.good
+    return _plan_from_table(table, sort_keys=CALL_GRAPH_NODES_SORT_KEYS)
 
 
 def call_graph_edges_compute(
@@ -475,16 +465,7 @@ def call_graph_edges_compute(
         CALL_GRAPH_EDGES_TABLE_KEY,
         _edge_rows(edge_context, module_by_path=module_by_path),
     )
-    reader = table_to_reader(table, batch_size=None)
-    result = finalize_reader(
-        reader,
-        spec=finalize_spec_for_table(
-            CALL_GRAPH_EDGES_TABLE_KEY,
-            mode="strict",
-            order_by=CALL_GRAPH_EDGES_SORT_KEYS,
-        ),
-    )
-    return result.good
+    return _plan_from_table(table, sort_keys=CALL_GRAPH_EDGES_SORT_KEYS)
 
 
 def call_graph_nodes_existing(env: BuildEnv) -> InferableTabularInput:
@@ -495,11 +476,12 @@ def call_graph_nodes_existing(env: BuildEnv) -> InferableTabularInput:
     InferableTabularInput
         Tabular input for existing call graph nodes.
     """
-    return load_snapshot_tabular(
+    table = load_snapshot_tabular(
         env=env,
         table_key=CALL_GRAPH_NODES_TABLE_KEY,
         snapshot_id=env.commit,
     )
+    return _plan_from_table(table, sort_keys=CALL_GRAPH_NODES_SORT_KEYS)
 
 
 def call_graph_edges_existing(env: BuildEnv) -> InferableTabularInput:
@@ -510,11 +492,12 @@ def call_graph_edges_existing(env: BuildEnv) -> InferableTabularInput:
     InferableTabularInput
         Tabular input for existing call graph edges.
     """
-    return load_snapshot_tabular(
+    table = load_snapshot_tabular(
         env=env,
         table_key=CALL_GRAPH_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
+    return _plan_from_table(table, sort_keys=CALL_GRAPH_EDGES_SORT_KEYS)
 
 
 def call_graph_nodes_empty(env: BuildEnv) -> InferableTabularInput:
@@ -526,7 +509,8 @@ def call_graph_nodes_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for call graph nodes.
     """
     _ = env
-    return empty_table_for_table(CALL_GRAPH_NODES_TABLE_KEY)
+    empty = empty_table_for_table(CALL_GRAPH_NODES_TABLE_KEY)
+    return _plan_from_table(empty, sort_keys=CALL_GRAPH_NODES_SORT_KEYS)
 
 
 def call_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
@@ -538,7 +522,8 @@ def call_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for call graph edges.
     """
     _ = env
-    return empty_table_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
+    empty = empty_table_for_table(CALL_GRAPH_EDGES_TABLE_KEY)
+    return _plan_from_table(empty, sort_keys=CALL_GRAPH_EDGES_SORT_KEYS)
 
 
 def _filtered_goids_table(goids_table: pa.Table) -> pa.Table:
@@ -601,6 +586,17 @@ def _plan_to_table(plan: Plan) -> pa.Table:
     execution_ctx = resolve_execution_context(None)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
     return reader_to_table(reader)
+
+
+def _plan_from_table(
+    table: pa.Table,
+    *,
+    sort_keys: Sequence[SortKey] | None = None,
+) -> Plan:
+    plan = Plan.table(table)
+    if sort_keys:
+        return plan.order_by(sort_keys=sort_keys)
+    return plan
 
 
 def _python_language_expr() -> Expression:

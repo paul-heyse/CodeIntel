@@ -12,6 +12,7 @@ tables by the build system.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,8 +28,11 @@ from codeintel.build.analytics.data_models.core import (
     _gather_models_for_path,
     _load_class_metadata,
 )
+from codeintel.build.analytics.parsing.worklists import build_module_ast_worklist
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.rows import ColumnarRowBuffer
-from codeintel.core.paths import normalize_path
+from codeintel.core.paths import normalize_path, safe_relpath
+from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -72,6 +76,7 @@ class DataModelsInputs:
 
     class_metas: tuple[ClassMeta, ...]
     doc_map: dict[tuple[str, str], tuple[str | None, str | None]]
+    module_worklist: pa.Table | None = None
 
 
 def _build_model_rows(
@@ -226,7 +231,45 @@ def load_data_models_inputs(
         commit=snapshot.commit,
     )
     docs = _doc_map(docstrings_frame, repo=snapshot.repo, commit=snapshot.commit)
-    return DataModelsInputs(class_metas=tuple(class_metas), doc_map=docs)
+    worklist = build_module_ast_worklist(
+        modules_frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        ctx=None,
+    )
+    return DataModelsInputs(
+        class_metas=tuple(class_metas),
+        doc_map=docs,
+        module_worklist=worklist,
+    )
+
+
+def _normalized_rel_path(path: object, repo_root: Path) -> str | None:
+    if not isinstance(path, str) or not path.strip():
+        return None
+    rel_path = normalize_path(safe_relpath(path, repo_root))
+    if not rel_path:
+        return None
+    return rel_path
+
+
+def _collect_models_for_path(
+    rel_path: str,
+    *,
+    repo_root: Path,
+    metas: Sequence[ClassMeta],
+    docs: dict[tuple[str, str], tuple[str | None, str | None]],
+    snapshot: SnapshotRef,
+) -> list[ModelRecord] | None:
+    abs_path = (repo_root / rel_path).resolve()
+    if not abs_path.is_file():
+        log.debug("Skipping %s; file missing on disk", abs_path)
+        return None
+    parsed = parse_python_module(abs_path)
+    if parsed is None:
+        log.debug("Skipping %s; unable to parse module", abs_path)
+        return None
+    return _gather_models_for_path(rel_path, parsed, list(metas), docs, snapshot)
 
 
 def compute_data_models_from_inputs(
@@ -260,20 +303,37 @@ def compute_data_models_from_inputs(
     docs = inputs.doc_map
 
     models: list[ModelRecord] = []
-    for rel_path, metas in metas_by_path.items():
-        abs_path = (Path(snapshot.repo_root) / rel_path).resolve()
-        if not abs_path.is_file():
-            log.debug("Skipping %s; file missing on disk", abs_path)
-            continue
-        models.extend(
-            _gather_models_for_path(
+    repo_root = Path(snapshot.repo_root)
+    worklist = inputs.module_worklist
+    parsed_paths: set[str] = set()
+    if worklist is not None and worklist.num_rows > 0:
+        for path, _ in iter_tuples(worklist.to_reader(), columns=("path", "modules")):
+            rel_path = _normalized_rel_path(path, repo_root)
+            if rel_path is None or rel_path not in metas_by_path or rel_path in parsed_paths:
+                continue
+            records = _collect_models_for_path(
                 rel_path,
-                abs_path,
-                metas,
-                docs,
-                snapshot,
+                repo_root=repo_root,
+                metas=metas_by_path[rel_path],
+                docs=docs,
+                snapshot=snapshot,
             )
+            if records is None:
+                continue
+            parsed_paths.add(rel_path)
+            models.extend(records)
+    for rel_path, metas in metas_by_path.items():
+        if rel_path in parsed_paths:
+            continue
+        records = _collect_models_for_path(
+            rel_path,
+            repo_root=repo_root,
+            metas=metas,
+            docs=docs,
+            snapshot=snapshot,
         )
+        if records is not None:
+            models.extend(records)
 
     _attach_relationships(models)
 

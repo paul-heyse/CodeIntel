@@ -156,7 +156,7 @@ def build_scanner(
     if spec is None:
         if resolved_options is None:
             resolved_options = ScannerParams().to_options()
-        return _build_scanner(dataset, options=resolved_options)
+        return _build_scanner(dataset, options=resolved_options, ctx=ctx)
     if resolved_options is None:
         resolved_options = DatasetScanOptions()
     return build_scanner_for_queryspec_ctx(

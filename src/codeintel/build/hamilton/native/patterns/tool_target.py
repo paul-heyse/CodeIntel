@@ -324,6 +324,7 @@ def attach_tool_target_template(
                 context=template_context,
                 table_spec=table_spec,
                 ingest_node=ingest_node,
+                save_spec_factory=spec.table_save_spec_factory,
             )
 
     artifact_collector = make_artifact_materializations_collector(
@@ -422,6 +423,7 @@ def _attach_table_rows_node(
     context: _TemplateContext,
     table_spec: TableOutputSpec,
     ingest_node: str,
+    save_spec_factory: Callable[[TableOutputSpec], RelationTableSaveSpec] | None,
 ) -> None:
     def rows_fn(**kwargs: object) -> InferableTabularInput:
         ingest_result = kwargs.get(ingest_node)
@@ -457,13 +459,17 @@ def _attach_table_rows_node(
         else f"{context.target_name}__{table_spec.table_key.replace('.', '__')}_rows"
     )
     rows_fn.__name__ = node_name
-    decorator = save_relation_table(
-        context=context.saver_context,
-        spec=RelationTableSaveSpec(
+    if save_spec_factory is None:
+        save_spec = RelationTableSaveSpec(
             table_key=table_spec.table_key,
             output_role=table_spec.output_role,
             output_name=table_spec.output_name,
-        ),
+        )
+    else:
+        save_spec = save_spec_factory(table_spec)
+    decorator = save_relation_table(
+        context=context.saver_context,
+        spec=save_spec,
     )
     tagged_attach_node(
         context.module,

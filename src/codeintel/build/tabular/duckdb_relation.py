@@ -9,7 +9,11 @@ from typing import cast
 import polars as pl
 import pyarrow as pa
 
-from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe, table_to_lazyframe
+from codeintel.build.tabular.conversion import (
+    arrow_reader_to_lazyframe,
+    table_to_lazyframe,
+    tabular_to_arrow_reader,
+)
 from codeintel.build.tabular.types import TabularInputWithRelation, TabularRelation
 from codeintel.core.duckdb_types import DuckDBConnection, DuckDBRelation
 
@@ -90,7 +94,7 @@ def relation_schema(relation: TabularRelation) -> pa.Schema:
     pa.Schema
         Arrow schema for the relation.
     """
-    return relation.fetch_arrow_reader().schema
+    return tabular_to_arrow_reader(relation, batch_size=None).schema
 
 
 def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
@@ -106,7 +110,7 @@ def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
     pa.RecordBatchReader
         Arrow reader for streaming record batches.
     """
-    return relation.fetch_arrow_reader()
+    return tabular_to_arrow_reader(relation, batch_size=None)
 
 
 def relation_to_polars(relation: TabularInputWithRelation) -> pl.LazyFrame:
@@ -135,7 +139,7 @@ def relation_to_polars(relation: TabularInputWithRelation) -> pl.LazyFrame:
         reader = cast("pa.RecordBatchReader", relation)
         return arrow_reader_to_lazyframe(reader)
     if isinstance(relation, DuckDBRelation):
-        reader = relation.fetch_arrow_reader()
+        reader = tabular_to_arrow_reader(relation, batch_size=None)
         return arrow_reader_to_lazyframe(reader)
     msg = f"Unsupported tabular input type: {type(relation).__name__}"
     raise TypeError(msg)

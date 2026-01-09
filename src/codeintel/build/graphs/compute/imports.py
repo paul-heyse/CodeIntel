@@ -23,8 +23,8 @@ from codeintel.build.graphs.rx.build_from_edges import (
 )
 from codeintel.build.graphs.rx.condensation import condensation_store
 from codeintel.build.graphs.rx.metadata import GraphMetadata, apply_graph_metadata
-from codeintel.build.graphs.rx.payloads import EDGE_PAYLOAD_VERSION
 from codeintel.build.graphs.rx.normalize import stable_key
+from codeintel.build.graphs.rx.payloads import EDGE_PAYLOAD_VERSION
 from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, weight_policy_for_kind
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.data_models.rows import ImportEdgeRow, ImportModuleRow

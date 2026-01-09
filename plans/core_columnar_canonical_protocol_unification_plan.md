@@ -161,6 +161,9 @@ plan_policy = schema.plan_policy
 Make `ColumnarStream` the only conversion protocol for reader/table/lazyframe
 and keep streaming utilities focused on dataset scanning and telemetry.
 
+**Status**  
+Completed.
+
 **Code pattern**
 ```python
 from codeintel.core.columnar.stream import ColumnarStream, RecordBatchReaderStream
@@ -176,10 +179,10 @@ def stream_from_reader(reader: pa.RecordBatchReader) -> ColumnarStream:
 - `src/codeintel/core/columnar/conversion.py`
 
 **Implementation checklist**
-- [ ] Standardize conversions via ColumnarStream adapters.
-- [ ] Remove duplicate conversion helpers or make them thin wrappers.
-- [ ] Keep dataset scan logic and telemetry in streaming.py only.
-- [ ] Ensure downstream surfaces consume ColumnarStream rather than raw readers.
+- [x] Standardize conversions via ColumnarStream adapters.
+- [x] Remove duplicate conversion helpers or make them thin wrappers.
+- [x] Keep dataset scan logic and telemetry in streaming.py only.
+- [x] Ensure downstream surfaces consume ColumnarStream rather than raw readers.
 
 ---
 
@@ -187,6 +190,9 @@ def stream_from_reader(reader: pa.RecordBatchReader) -> ColumnarStream:
 **Goal**  
 Make ExecutionContext the single runtime policy carrier for threading and
 scan profiles. Remove parallel profile logic in helper modules.
+
+**Status**  
+Completed.
 
 **Code pattern**
 ```python
@@ -205,10 +211,10 @@ configure_arrow_threading_for_context(ctx=ctx)
 - `src/codeintel/core/columnar/runtime.py`
 
 **Implementation checklist**
-- [ ] Route all scan/plan threading decisions through ExecutionContext.
-- [ ] Remove local runtime knobs that bypass ExecutionContext.
-- [ ] Keep runtime profile defaults in one module (profiles.py).
-- [ ] Ensure scan profile selection is derived from ExecutionContext only.
+- [x] Route all scan/plan threading decisions through ExecutionContext.
+- [x] Remove local runtime knobs that bypass ExecutionContext.
+- [x] Keep runtime profile defaults in one module (profiles.py).
+- [x] Ensure scan profile selection is derived from ExecutionContext only.
 
 ---
 
@@ -246,13 +252,10 @@ table = result.good
 ## Sequencing (Recommended)
 1) Scope 01 (QuerySpec single control plane) — completed.  
 2) Scope 03 (Schema single source of truth) — completed.  
-3) Scope 06 (Finalize policy derivation from schema).  
-4) Scope 02 (Kernel lane consolidation).  
-5) Scope 04 (Streaming adapter unification).  
-6) Scope 05 (Runtime profiles via ExecutionContext).
-4) Scope 02 (Kernel lane consolidation).  
-5) Scope 04 (Streaming adapter unification).  
-6) Scope 05 (Runtime profiles via ExecutionContext).
+3) Scope 02 (Kernel lane consolidation) — completed.  
+4) Scope 04 (Streaming adapter unification) — completed.  
+5) Scope 05 (Runtime profiles via ExecutionContext) — completed.  
+6) Scope 06 (Finalize policy derivation from schema).
 
 ## Validation Gates (when re-enabled)
 - `uv run python -m tools.quality_report --output build/quality-results/quality_report.json`

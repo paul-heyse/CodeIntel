@@ -37,6 +37,7 @@ from codeintel.build.settings import get_arrow_scan_settings, get_columnar_runti
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.execution_context import (
     ExecutionContext as ColumnarExecutionContext,
+    resolve_arrow_scan_settings,
 )
 from codeintel.core.columnar.execution_context import (
     RuntimeProfile,
@@ -247,7 +248,6 @@ def _diagnostics_execution_ctx(env: BuildEnv) -> ColumnarExecutionContext:
     runtime_profile = runtime_profile_from_settings(get_columnar_runtime_settings())
     if runtime_profile is None:
         runtime_profile = RuntimeProfile(name=env.profile)
-    scan_profile = runtime_profile.scan_profile or scan_settings.profile
     use_threads = (
         runtime_profile.use_threads
         if runtime_profile.use_threads is not None
@@ -264,7 +264,6 @@ def _diagnostics_execution_ctx(env: BuildEnv) -> ColumnarExecutionContext:
     runtime_profile = replace(
         runtime_profile,
         name=runtime_profile.name or env.profile,
-        scan_profile=scan_profile,
         implicit_ordering=implicit_ordering,
         require_sequenced_output=require_sequenced_output,
         use_threads=use_threads,
@@ -272,6 +271,7 @@ def _diagnostics_execution_ctx(env: BuildEnv) -> ColumnarExecutionContext:
     return ColumnarExecutionContext(
         use_threads=resolved_use_threads,
         runtime_profile=runtime_profile,
+        scan_settings=scan_settings,
     )
 
 
@@ -390,7 +390,7 @@ def _emit_diagnostics_run_manifest(
     ordering = _manifest_ordering(table_key, execution_ctx=execution_ctx)
     threading_snapshot = apply_runtime_profile(
         execution_ctx.runtime_profile,
-        settings=get_arrow_scan_settings(),
+        settings=resolve_arrow_scan_settings(execution_ctx),
     )
     try:
         write_run_manifest(

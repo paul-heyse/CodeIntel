@@ -12,6 +12,7 @@ import pyarrow as pa
 import pytest
 
 from codeintel.build.hamilton.native.options.ingestion import InspectExtractOptions
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.inspect_extract import InspectExtractStep
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
@@ -38,10 +39,7 @@ def _sys_path(path: Path) -> Iterator[None]:
 def _reader_to_dicts(
     reader: pa.RecordBatchReader | pa.Table,
 ) -> list[dict[str, object]]:
-    if isinstance(reader, pa.Table):
-        table = reader
-    else:
-        table = pa.Table.from_batches(reader, schema=reader.schema)
+    table = reader if isinstance(reader, pa.Table) else reader_to_table(reader)
     return list(table.to_pylist())
 
 

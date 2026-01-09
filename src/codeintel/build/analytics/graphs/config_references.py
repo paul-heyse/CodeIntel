@@ -14,11 +14,12 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.functions.parsing import parse_python_file
+from codeintel.build.analytics.parsing.worklists import build_module_ast_worklist
 from codeintel.build.analytics.utilities.list_semantics import normalize_list_semantics
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
@@ -39,7 +40,6 @@ log = logging.getLogger(__name__)
 
 CONFIG_REFERENCES_TABLE_KEY = "analytics.config_references"
 CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
-CORE_MODULES_TABLE_KEY = "core.modules"
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,8 +181,9 @@ def _config_entries_from_table(
 ) -> tuple[list[_ConfigKeyEntry], set[str]]:
     entries: list[_ConfigKeyEntry] = []
     keys: set[str] = set()
+    reader = table_to_reader(table, batch_size=None)
     for config_path, key in iter_tuples(
-        table.to_reader(),
+        reader,
         columns=("config_path", "key"),
     ):
         if config_path is None or key is None:
@@ -236,49 +237,11 @@ def _modules_by_path_from_tabular(
     ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[str, set[str]]:
     if isinstance(rows, pa.Table):
-        table = _module_rowset(rows, repo=repo, commit=commit, ctx=ctx)
-        return _modules_by_path_from_table(table, repo_root=repo_root)
+        worklist = build_module_ast_worklist(rows, repo=repo, commit=commit, ctx=ctx)
+        if not {"path", "modules"}.issubset(worklist.column_names):
+            return {}
+        return _modules_by_path_from_table(worklist, repo_root=repo_root)
     return _modules_by_path(rows, repo_root=repo_root)
-
-
-def _module_rowset(
-    table: pa.Table,
-    *,
-    repo: str,
-    commit: str,
-    ctx: ExecutionContext | RuntimeExecutionContext | None,
-) -> pa.Table:
-    required = {"path", "module"}
-    missing = [name for name in required if name not in table.column_names]
-    if missing:
-        msg = f"Missing module columns: {missing}"
-        raise ValueError(msg)
-    columns = ["path", "module"]
-    if "language" in table.column_names:
-        columns.append("language")
-    plan = snapshot_plan(
-        table,
-        columns=tuple(columns),
-        context=SnapshotContext(
-            repo=repo,
-            commit=commit,
-            ctx=ctx,
-            table_key=CORE_MODULES_TABLE_KEY,
-        ),
-    )
-    filters = [E.is_valid("path"), E.is_valid("module")]
-    if "language" in table.column_names:
-        filters.append(E.or_(E.is_null("language"), E.field("language") == E.scalar("python")))
-    plan = plan.filter(E.and_(*filters))
-    filtered = _materialize_plan(plan, ctx=ctx)
-    return grouped_rollup_table(
-        filtered,
-        spec=GroupedRollupSpec(
-            keys=("path",),
-            aggregates=(("module", "list", None, "modules"),),
-        ),
-        ctx=resolve_columnar_context(ctx),
-    )
 
 
 def _modules_by_path_from_table(
@@ -287,7 +250,8 @@ def _modules_by_path_from_table(
     repo_root: Path,
 ) -> dict[str, set[str]]:
     modules_by_path: dict[str, set[str]] = {}
-    for path, module_list in iter_tuples(table.to_reader(), columns=("path", "modules")):
+    reader = table_to_reader(table, batch_size=None)
+    for path, module_list in iter_tuples(reader, columns=("path", "modules")):
         if not isinstance(path, str) or not path.strip():
             continue
         rel_path = _normalize_module_path(path, repo_root=repo_root)

@@ -844,12 +844,13 @@ class AssetTracking:
                 exp.Ordered(this=exp.Column(this=exp.to_identifier("asset_key"))),
             )
         )
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            [run_id],
-        ),
-        batch_size=DEFAULT_ARROW_BATCH_SIZE,
-    )
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                [run_id],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         return [
             RunAssetVersionRecord(
                 run_id=coerce_str(row[0], ctx="run_asset_versions.run_id"),
@@ -1148,12 +1149,13 @@ class AssetTracking:
             .from_(table_expr_from_ref("build.asset_lineage"))
             .where(self._combine_conditions(conditions))
         )
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            params,
-        ),
-        batch_size=DEFAULT_ARROW_BATCH_SIZE,
-    )
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                params,
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         return [
             AssetLineageEdgeRecord(
                 downstream_kind=coerce_str(row[0], ctx="asset_lineage.downstream_kind"),

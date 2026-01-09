@@ -168,7 +168,7 @@ def loads_node_link_json(payload: str) -> RxGraph:
 
 def write_node_link_json(path: Path, graph: RxGraph) -> None:
     """Write a node-link JSON payload to disk."""
-    payload = dumps_node_link_json(graph)
+    payload = dumps_node_link_json(graph, require_metadata=True)
     path.write_text(payload, encoding="utf-8")
 
 

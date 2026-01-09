@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import reader_from_batches
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 
@@ -16,10 +17,7 @@ def test_write_dataset_from_reader_populates_stats(tmp_path: Path) -> None:
     dataset_root.mkdir(parents=True, exist_ok=True)
 
     table = pa.table({"value": [1, 2, 3]})
-    reader = pa.RecordBatchReader.from_batches(
-        table.schema,
-        table.to_batches(max_chunksize=2),
-    )
+    reader = reader_from_batches(table.schema, table.to_batches(max_chunksize=2))
 
     manifest = write_dataset(
         dataset_root=dataset_root,

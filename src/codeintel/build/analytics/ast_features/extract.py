@@ -244,6 +244,8 @@ def compute_function_features(
     fn: FunctionAst,
     *,
     repo_root: Path | None = None,
+    module_tree: ast.AST | None = None,
+    import_map: Mapping[str, str] | None = None,
     patterns: AstFeaturePatterns = DEFAULT_PATTERNS,
 ) -> FunctionAstFeatures:
     """
@@ -254,17 +256,19 @@ def compute_function_features(
     FunctionAstFeatures
         Derived feature vector for the provided function AST.
     """
-    if repo_root is not None:
-        module_path = (repo_root / fn.rel_path).resolve()
-        parsed = parse_python_module(module_path)
-        if parsed is None:
-            module_tree = ast.parse("".join(fn.lines), filename=str(module_path))
-        else:
-            _, module_tree = parsed
-    else:
-        module_tree = ast.parse("".join(fn.lines), filename=fn.rel_path)
-
-    import_map = build_import_map(module_tree)
+    if import_map is None:
+        resolved_tree = module_tree
+        if resolved_tree is None:
+            if repo_root is not None:
+                module_path = (repo_root / fn.rel_path).resolve()
+                parsed = parse_python_module(module_path)
+                if parsed is None:
+                    resolved_tree = ast.parse("".join(fn.lines), filename=str(module_path))
+                else:
+                    _, resolved_tree = parsed
+            else:
+                resolved_tree = ast.parse("".join(fn.lines), filename=fn.rel_path)
+        import_map = build_import_map(resolved_tree)
 
     visitor = FunctionFeatureVisitor(import_map=import_map, patterns=patterns)
     visitor.visit(fn.node)

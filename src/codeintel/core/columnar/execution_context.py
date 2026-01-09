@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.columnar import compute_config as columnar_compute_config
 from codeintel.core.columnar import profiles as columnar_profiles
+from codeintel.core.config.settings import ArrowScanSettings
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.runtime.loader import load_runtime_settings
 
@@ -80,6 +81,21 @@ def resolve_runtime_profile_for_context(
     return runtime_profile_from_settings(settings)
 
 
+def resolve_arrow_scan_settings(
+    ctx: ExecutionContext | None,
+) -> ArrowScanSettings:
+    """Return Arrow scan settings for an optional execution context.
+
+    Returns
+    -------
+    ArrowScanSettings
+        Scan settings from the context or runtime defaults.
+    """
+    if ctx is not None and ctx.scan_settings is not None:
+        return ctx.scan_settings
+    return load_runtime_settings().build.arrow_scan
+
+
 def resolve_execution_context(ctx: ExecutionContext | None) -> ExecutionContext:
     """Return an execution context with runtime defaults applied.
 
@@ -91,7 +107,10 @@ def resolve_execution_context(ctx: ExecutionContext | None) -> ExecutionContext:
     if ctx is not None:
         return ctx
     profile = resolve_runtime_profile_for_context(None)
-    return ExecutionContext(runtime_profile=profile)
+    return ExecutionContext(
+        runtime_profile=profile,
+        scan_settings=resolve_arrow_scan_settings(None),
+    )
 
 
 def resolve_columnar_context(
@@ -110,7 +129,10 @@ def resolve_columnar_context(
         return ctx
     if isinstance(ctx, RuntimeExecutionContext):
         profile = runtime_profile_from_settings(ctx.columnar_settings)
-        return ExecutionContext(runtime_profile=profile)
+        return ExecutionContext(
+            runtime_profile=profile,
+            scan_settings=ctx.settings.build.arrow_scan,
+        )
     return None
 
 
@@ -123,6 +145,7 @@ class ExecutionContext:
     combine_chunks: bool = True
     provenance: bool = False
     runtime_profile: RuntimeProfile | None = None
+    scan_settings: ArrowScanSettings | None = None
 
     def resolve_use_threads(self) -> bool:
         """Return the resolved plan use_threads setting.

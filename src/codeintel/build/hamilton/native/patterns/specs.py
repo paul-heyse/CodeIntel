@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hamilton.native.target_decorators import TargetSpecDescriptor
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.build.hamilton.tagging import TagKey, TagValue
+    from codeintel.build.hamilton.native.patterns.savers import RelationTableSaveSpec
 
 
 OutputRole = Literal["contract", "internal"]
@@ -47,6 +49,7 @@ class ToolTargetSpec:
     artifacts: tuple[ArtifactOutputSpec, ...] = ()
     tables: tuple[TableOutputSpec, ...] = ()
     tool_tags: Mapping[TagKey, TagValue] | None = None
+    table_save_spec_factory: Callable[[TableOutputSpec], RelationTableSaveSpec] | None = None
 
 
 __all__ = [

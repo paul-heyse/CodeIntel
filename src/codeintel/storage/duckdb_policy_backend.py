@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.core.errors.storage import StorageError
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
@@ -1131,13 +1132,16 @@ class DuckDBPolicyBackend:
         frozenset[str]
             Column names present in the table, or empty when missing.
         """
-        reader = self.con.execute(
-            (
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema = ? AND table_name = ?"
+        reader = tabular_to_arrow_reader(
+            self.con.execute(
+                (
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = ? AND table_name = ?"
+                ),
+                (schema, table),
             ),
-            (schema, table),
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         return frozenset(str(row[0]) for row in iter_tuples_from_arrow_reader(reader))
 
     def _clear_cfg_metrics(self, repo: str, commit: str) -> None:
@@ -1375,10 +1379,13 @@ class DuckDBPolicyBackend:
         raise RuntimeError(message)
 
     def _fetch_table_columns(self, qualified_name: str) -> list[str]:
-        reader = self.con.execute(
-            "SELECT * FROM pragma_table_info(?)",
-            [qualified_name],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self.con.execute(
+                "SELECT * FROM pragma_table_info(?)",
+                [qualified_name],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         return [
             coerce_str(row[1], ctx="pragma_table_info.name")
             for row in iter_tuples_from_arrow_reader(reader)
@@ -1484,7 +1491,11 @@ class DuckDBPolicyBackend:
                 reader = self.con.execute(
                     "SELECT * FROM pragma_table_info(?)",
                     [qualified_name],
-                ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+                )
+                reader = tabular_to_arrow_reader(
+                    reader,
+                    batch_size=DEFAULT_ARROW_BATCH_SIZE,
+                )
                 columns = [
                     coerce_str(row[1], ctx="pragma_table_info.name")
                     for row in iter_tuples_from_arrow_reader(reader)

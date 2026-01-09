@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+from collections.abc import Sequence
 from pathlib import Path
 
 import pyarrow as pa
@@ -21,7 +22,6 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
@@ -29,6 +29,7 @@ from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
@@ -150,16 +151,7 @@ def import_modules_compute(
         IMPORT_MODULES_TABLE_KEY,
         (dataclasses.asdict(row) for row in rows),
     )
-    reader = table_to_reader(table, batch_size=None)
-    result = finalize_reader(
-        reader,
-        spec=finalize_spec_for_table(
-            IMPORT_MODULES_TABLE_KEY,
-            mode="strict",
-            order_by=IMPORT_MODULES_SORT_KEYS,
-        ),
-    )
-    return result.good
+    return _plan_from_table(table, sort_keys=IMPORT_MODULES_SORT_KEYS)
 
 
 def import_graph_edges_compute(
@@ -178,16 +170,7 @@ def import_graph_edges_compute(
         for row in build_import_edge_rows(env.repo, env.commit, import_graph_analysis)
     )
     table, _ = table_for_rows(IMPORT_GRAPH_EDGES_TABLE_KEY, rows)
-    reader = table_to_reader(table, batch_size=None)
-    result = finalize_reader(
-        reader,
-        spec=finalize_spec_for_table(
-            IMPORT_GRAPH_EDGES_TABLE_KEY,
-            mode="strict",
-            order_by=IMPORT_GRAPH_EDGES_SORT_KEYS,
-        ),
-    )
-    return result.good
+    return _plan_from_table(table, sort_keys=IMPORT_GRAPH_EDGES_SORT_KEYS)
 
 
 def import_modules_existing(env: BuildEnv) -> InferableTabularInput:
@@ -198,11 +181,12 @@ def import_modules_existing(env: BuildEnv) -> InferableTabularInput:
     InferableTabularInput
         Tabular input for existing import modules.
     """
-    return load_snapshot_tabular(
+    table = load_snapshot_tabular(
         env=env,
         table_key=IMPORT_MODULES_TABLE_KEY,
         snapshot_id=env.commit,
     )
+    return _plan_from_table(table, sort_keys=IMPORT_MODULES_SORT_KEYS)
 
 
 def import_graph_edges_existing(env: BuildEnv) -> InferableTabularInput:
@@ -213,11 +197,12 @@ def import_graph_edges_existing(env: BuildEnv) -> InferableTabularInput:
     InferableTabularInput
         Tabular input for existing import graph edges.
     """
-    return load_snapshot_tabular(
+    table = load_snapshot_tabular(
         env=env,
         table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
+    return _plan_from_table(table, sort_keys=IMPORT_GRAPH_EDGES_SORT_KEYS)
 
 
 def import_modules_empty(env: BuildEnv) -> InferableTabularInput:
@@ -229,7 +214,8 @@ def import_modules_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for import modules.
     """
     _ = env
-    return empty_table_for_table(IMPORT_MODULES_TABLE_KEY)
+    empty = empty_table_for_table(IMPORT_MODULES_TABLE_KEY)
+    return _plan_from_table(empty, sort_keys=IMPORT_MODULES_SORT_KEYS)
 
 
 def import_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
@@ -241,7 +227,8 @@ def import_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for import graph edges.
     """
     _ = env
-    return empty_table_for_table(IMPORT_GRAPH_EDGES_TABLE_KEY)
+    empty = empty_table_for_table(IMPORT_GRAPH_EDGES_TABLE_KEY)
+    return _plan_from_table(empty, sort_keys=IMPORT_GRAPH_EDGES_SORT_KEYS)
 
 
 def _python_modules_table(modules_table: pa.Table) -> pa.Table:
@@ -267,6 +254,17 @@ def _python_modules_table(modules_table: pa.Table) -> pa.Table:
     execution_ctx = resolve_execution_context(None)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
     return reader_to_table(reader)
+
+
+def _plan_from_table(
+    table: pa.Table,
+    *,
+    sort_keys: Sequence[SortKey] | None = None,
+) -> Plan:
+    plan = Plan.table(table)
+    if sort_keys:
+        return plan.order_by(sort_keys=sort_keys)
+    return plan
 
 
 def _python_language_expr() -> Expression:

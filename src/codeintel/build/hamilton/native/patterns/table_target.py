@@ -37,6 +37,7 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
+from codeintel.build.tabular.finalize_ops import FinalizeMode
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.hamilton import tags as ht
 
@@ -172,6 +173,9 @@ class TableTargetContext:
                 collect_group=save_options.collect_group,
                 output_role=save_options.output_role,
                 output_name=save_options.output_name,
+                manifest_extras_node=save_options.manifest_extras_node,
+                ingest_finalize=save_options.ingest_finalize,
+                ingest_finalize_mode=save_options.ingest_finalize_mode,
             )
             resolved_context = replace(context, save_spec=save_spec)
         return build_single_table_target_spec(context=resolved_context)
@@ -199,6 +203,9 @@ class TableTargetContext:
                     validation_profile=save_options.validation_profile,
                     output_role=save_options.output_role,
                     output_name=save_options.output_name,
+                    manifest_extras_node=save_options.manifest_extras_node,
+                    ingest_finalize=save_options.ingest_finalize,
+                    ingest_finalize_mode=save_options.ingest_finalize_mode,
                 )
             resolved_context = replace(context, save_spec=save_spec)
         return build_single_table_target_spec(context=resolved_context)
@@ -237,6 +244,9 @@ class DatasetSaveSpecOptions:
     collect_group: str | None = None
     output_role: OutputRole | None = None
     output_name: str | None = None
+    manifest_extras_node: str | None = None
+    ingest_finalize: bool = False
+    ingest_finalize_mode: FinalizeMode | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +256,9 @@ class RelationTableSaveSpecOptions:
     validation_profile: ValidationProfile | None = None
     output_role: OutputRole | None = None
     output_name: str | None = None
+    manifest_extras_node: str | None = None
+    ingest_finalize: bool = False
+    ingest_finalize_mode: FinalizeMode | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -414,6 +427,9 @@ class MultiTableTargetContext:
                     validation_profile=save_options.validation_profile,
                     output_role=save_options.output_role,
                     output_name=save_options.output_name,
+                    manifest_extras_node=save_options.manifest_extras_node,
+                    ingest_finalize=save_options.ingest_finalize,
+                    ingest_finalize_mode=save_options.ingest_finalize_mode,
                 )
             resolved_context = replace(context, save_spec=save_spec)
         return MultiTableTargetContext.build_table_spec(

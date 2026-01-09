@@ -14,6 +14,8 @@ if TYPE_CHECKING:
     type RecordBatchIterable = Iterable[pa.RecordBatch]
     type TabularRelation = DuckDBRelation
     type TabularFrame = pl.LazyFrame
+    from codeintel.core.columnar.arrowdsl import ExecutionPlan
+    from codeintel.core.columnar.plan_ops import Plan
     # RecordBatchReader inputs are single-consume; materialize if reuse is required.
     type InferableTabularInput = (
         pa.RecordBatchReader
@@ -22,6 +24,8 @@ if TYPE_CHECKING:
         | TabularFrame
         | RecordBatchIterable
         | DuckDBRelation
+        | Plan
+        | ExecutionPlan
     )
     type TabularInput = InferableTabularInput
     type TabularInputWithRelation = TabularInput | TabularRelation
@@ -29,6 +33,8 @@ else:
     RecordBatchIterable = Iterable[pa.RecordBatch]
     TabularRelation = DuckDBRelation
     TabularFrame = pl.LazyFrame
+    from codeintel.core.columnar.arrowdsl import ExecutionPlan
+    from codeintel.core.columnar.plan_ops import Plan
     # RecordBatchReader inputs are single-consume; materialize if reuse is required.
     InferableTabularInput = (
         pa.RecordBatchReader
@@ -37,6 +43,8 @@ else:
         | TabularFrame
         | RecordBatchIterable
         | DuckDBRelation
+        | Plan
+        | ExecutionPlan
     )
     TabularInput = InferableTabularInput
     TabularInputWithRelation = TabularInput | TabularRelation

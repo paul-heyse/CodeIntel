@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.validation.columnar import (
@@ -73,7 +74,10 @@ def assert_table_schema_valid(gateway: StorageGateway, table_key: str) -> None:
         message = f"No schema registered for {table_key}"
         raise AssertionError(message)
     try:
-        reader = gateway.con.table(table_key).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            gateway.con.table(table_key),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         context = ColumnarValidationContext(table_schema=table_schema)
         validated = validate_record_batch_reader(
             table_key,

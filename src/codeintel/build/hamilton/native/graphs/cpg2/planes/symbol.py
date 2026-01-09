@@ -28,7 +28,7 @@ from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join
 from codeintel.build.tabular.kernels import stable_sort_indices
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.core.columnar.arrowdsl import ExecutionPlan, join_safe_projection
-from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
@@ -95,7 +95,7 @@ def cpg2_edges__scip_symbol_relationships(
         "dst_cpg_node_id",
         "dst_cpg_node_id_ext",
     ]
-    for values in iter_tuples(joined.to_reader(), columns=extras_columns):
+    for values in iter_tuples(table_to_reader(joined), columns=extras_columns):
         payload: dict[str, object] = {}
         src_cpg_node_id = values[3]
         src_cpg_node_id_ext = values[4]
@@ -198,7 +198,7 @@ def cpg2_edges__scip_symbol_goid_xref(
         if field in joined_table.column_names
     ]
     extras_kv: list[dict[str, str] | None] = []
-    for values in iter_tuples(joined_table.to_reader(), columns=extras_fields):
+    for values in iter_tuples(table_to_reader(joined_table), columns=extras_fields):
         mapping = dict(zip(extras_fields, values, strict=False))
         extras_kv.append(extras_kv_from_mapping(mapping))
     joined = joined_table.append_column("ordinal", ordinals)

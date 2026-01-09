@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.iter import (
     iter_array_values,
     iter_rows,
@@ -30,14 +31,14 @@ def test_iter_rows_table_and_batch() -> None:
 def test_iter_tuples_reader() -> None:
     """Tuple iteration should respect column selection for readers."""
     table = pa.table({"x": [1, 2], "y": [3, 4]})
-    reader = table.to_reader()
+    reader = table_to_reader(table)
     assert list(iter_tuples(reader, columns=("x",))) == [(1,), (2,)]
 
 
 def test_iter_rows_limit_reader_across_batches() -> None:
     """Row limiting should stop across batch boundaries."""
     table = pa.table({"a": [1, 2, 3, 4], "b": ["x", "y", "z", "w"]})
-    reader = table.to_reader(max_chunksize=2)
+    reader = table_to_reader(table, batch_size=2)
     assert list(iter_rows_limit(reader, limit=3)) == [
         {"a": 1, "b": "x"},
         {"a": 2, "b": "y"},

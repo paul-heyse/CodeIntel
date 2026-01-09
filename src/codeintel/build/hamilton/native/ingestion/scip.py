@@ -14,7 +14,7 @@ import hashlib
 import json
 import logging
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -31,10 +31,6 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleToolOutput
-from codeintel.build.hamilton.native.ingestion.manifesting import (
-    IngestManifestDetails,
-    finalize_ingest_reader_with_manifest,
-)
 from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
 from codeintel.build.hamilton.native.patterns import (
     ArtifactSaveSpec,
@@ -68,7 +64,7 @@ from codeintel.build.tabular.arrow_ops import (
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_arrow_table
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -79,18 +75,18 @@ from codeintel.build.tabular.finalize_ops import (
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.dedupe_ops import stable_dedupe_for_context
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
     resolve_execution_context,
 )
 from codeintel.core.columnar.expr_vocab import E
-from codeintel.core.columnar.finalize_ops import (
-    finalize_spec_for_table as columnar_finalize_spec_for_table,
-)
-from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
+from codeintel.core.columnar.ordering import SortKey
+from codeintel.core.columnar.plan_builder import build_table_plan
 from codeintel.core.columnar.plan_ops import Plan
+from codeintel.core.columnar.queryspec import PROVENANCE_FIELDS
 from codeintel.core.columnar.rows import (
     columnar_row_count,
     empty_table_for_table,
@@ -103,7 +99,10 @@ from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.query_results import iter_records_from_arrow_reader
-from codeintel.core.schemas.primitives import resolve_join_safe_columns
+from codeintel.core.schemas.primitives import (
+    resolve_canonical_sort_keys,
+    resolve_join_safe_columns,
+)
 from codeintel.core.spans import normalize_byte_span
 from codeintel.core.tools import ToolName
 from codeintel.ingestion.compute.plan_surface import (
@@ -193,7 +192,6 @@ SCIP_TABLE_KEYS = (
 )
 FILE_STATE_TABLE_KEY = "core.file_state"
 FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
-_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 _MODULE = sys.modules[__name__]
 SCIP_SAVE_CONTEXT = SaverContext(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -582,6 +580,15 @@ def _scan_telemetry_for_table(
         log.warning("Scan telemetry spec failed for %s: %s", table_key, exc)
         return None
     return _scan_telemetry_payload(telemetry)
+
+
+def _provenance_tie_breakers(table: pa.Table) -> tuple[SortKey, ...]:
+    available = set(table.column_names)
+    return tuple(
+        (output_name, "ascending")
+        for output_name, _source_name in PROVENANCE_FIELDS
+        if output_name in available
+    )
 
 
 def _scip_scan_telemetry(env: BuildEnv) -> dict[str, dict[str, int | None]]:
@@ -1580,6 +1587,26 @@ def _scip_payload_table(
     return tabular_to_arrow_table(_scip_payload_frame(t__scip__ingest, table_key))
 
 
+def _canonical_sort_keys_for_table(
+    table_key: str,
+    columns: Sequence[str],
+) -> list[tuple[str, str]] | None:
+    schema = get_schema_service().get_table_schema(table_key)
+    keys = resolve_canonical_sort_keys(schema)
+    if not keys:
+        return None
+    available = set(columns)
+    return [(key, "ascending") for key in keys if key in available]
+
+
+def _plan_from_table(table: pa.Table, *, table_key: str) -> Plan:
+    plan = Plan.table(table)
+    sort_keys = _canonical_sort_keys_for_table(table_key, table.column_names)
+    if sort_keys:
+        return plan.order_by(sort_keys=sort_keys)
+    return plan
+
+
 def _scip_manifest_extras(result: ExecutionResult, *, env: BuildEnv) -> dict[str, object]:
     status = "failed"
     if result.skipped:
@@ -1602,36 +1629,18 @@ def _scip_manifest_extras(result: ExecutionResult, *, env: BuildEnv) -> dict[str
     return extras
 
 
-def _scip_manifest_details(
+def scip__manifest_extras(
+    env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-    *,
-    env: BuildEnv,
-) -> IngestManifestDetails:
-    extras = _scip_manifest_extras(t__scip__ingest.result, env=env)
-    return IngestManifestDetails(manifest_extras=extras)
-
-
-def _finalize_scip_table(
-    env: BuildEnv,
-    table_key: str,
-    table: pa.Table,
-    *,
-    details: IngestManifestDetails,
-) -> pa.Table:
-    reader = table_to_reader(table, batch_size=None)
-    return finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=table_key,
-        reader=reader,
-        target_name=SCIP_TARGET_NAME,
-        details=details,
-    )
+) -> Mapping[str, object]:
+    """Return manifest extras for SCIP ingestion outputs."""
+    return _scip_manifest_extras(t__scip__ingest.result, env=env)
 
 
 def scip__symbol_rows__base(
     env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput:
+) -> Plan:
     """Return rows for core.scip_symbols.
 
     Parameters
@@ -1643,18 +1652,17 @@ def scip__symbol_rows__base(
 
     Returns
     -------
-    InferableTabularInput
-        Tabular input for core.scip_symbols.
+    Plan
+        Plan for core.scip_symbols.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_SYMBOLS_TABLE_KEY)
-    details = _scip_manifest_details(t__scip__ingest, env=env)
-    return _finalize_scip_table(env, SCIP_SYMBOLS_TABLE_KEY, table, details=details)
+    return _plan_from_table(table, table_key=SCIP_SYMBOLS_TABLE_KEY)
 
 
 def scip__occurrence_rows__base(
     env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput:
+) -> Plan:
     """Return rows for core.scip_occurrences.
 
     Parameters
@@ -1666,18 +1674,17 @@ def scip__occurrence_rows__base(
 
     Returns
     -------
-    InferableTabularInput
-        Tabular input for core.scip_occurrences.
+    Plan
+        Plan for core.scip_occurrences.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_OCCURRENCES_TABLE_KEY)
-    details = _scip_manifest_details(t__scip__ingest, env=env)
-    return _finalize_scip_table(env, SCIP_OCCURRENCES_TABLE_KEY, table, details=details)
+    return _plan_from_table(table, table_key=SCIP_OCCURRENCES_TABLE_KEY)
 
 
 def scip__symbol_info_rows__base(
     env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput:
+) -> Plan:
     """Return rows for core.scip_symbol_information.
 
     Parameters
@@ -1689,18 +1696,17 @@ def scip__symbol_info_rows__base(
 
     Returns
     -------
-    InferableTabularInput
-        Tabular input for core.scip_symbol_information.
+    Plan
+        Plan for core.scip_symbol_information.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_SYMBOL_INFO_TABLE_KEY)
-    details = _scip_manifest_details(t__scip__ingest, env=env)
-    return _finalize_scip_table(env, SCIP_SYMBOL_INFO_TABLE_KEY, table, details=details)
+    return _plan_from_table(table, table_key=SCIP_SYMBOL_INFO_TABLE_KEY)
 
 
 def scip__relationship_rows__base(
     env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput:
+) -> Plan:
     """Return rows for core.scip_symbol_relationships.
 
     Parameters
@@ -1712,18 +1718,17 @@ def scip__relationship_rows__base(
 
     Returns
     -------
-    InferableTabularInput
-        Tabular input for core.scip_symbol_relationships.
+    Plan
+        Plan for core.scip_symbol_relationships.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_RELATIONSHIPS_TABLE_KEY)
-    details = _scip_manifest_details(t__scip__ingest, env=env)
-    return _finalize_scip_table(env, SCIP_RELATIONSHIPS_TABLE_KEY, table, details=details)
+    return _plan_from_table(table, table_key=SCIP_RELATIONSHIPS_TABLE_KEY)
 
 
 def scip__diagnostic_rows__base(
     env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput:
+) -> Plan:
     """Return rows for core.scip_diagnostics.
 
     Parameters
@@ -1735,12 +1740,11 @@ def scip__diagnostic_rows__base(
 
     Returns
     -------
-    InferableTabularInput
-        Tabular input for core.scip_diagnostics.
+    Plan
+        Plan for core.scip_diagnostics.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
-    details = _scip_manifest_details(t__scip__ingest, env=env)
-    return _finalize_scip_table(env, SCIP_DIAGNOSTICS_TABLE_KEY, table, details=details)
+    return _plan_from_table(table, table_key=SCIP_DIAGNOSTICS_TABLE_KEY)
 
 
 def _derive_external_symbol_rows(
@@ -1846,12 +1850,7 @@ def _log_join_precheck_errors(
 
 def _plan_to_table(plan: Plan, *, execution_ctx: ExecutionContext) -> pa.Table:
     resolved_ctx = resolve_execution_context(execution_ctx)
-    result = run_pipeline(
-        plan=ExecutionPlan.from_plan(plan),
-        finalize=columnar_finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
-        options=PipelineRunOptions(ctx=resolved_ctx),
-    )
-    return result.good
+    return ExecutionPlan.from_plan(plan).to_table(ctx=resolved_ctx)
 
 
 def _distinct_external_symbol_rows(
@@ -1867,15 +1866,13 @@ def _distinct_external_symbol_rows(
         table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
         join_keys=join_keys,
     )
-    project = {name: E.field(name) for name in join_keys}
-    plan = build_table_plan(table=checked).project(project)
-    plan = build_grouped_rollup_plan(
-        plan,
-        keys=join_keys,
-        aggregates=(),
-        order_by=tuple((key, "ascending") for key in join_keys),
+    deduped = stable_dedupe_for_context(
+        checked,
+        key_columns=join_keys,
+        tie_breakers=_provenance_tie_breakers(checked),
+        ctx=execution_ctx,
     )
-    return _plan_to_table(plan, execution_ctx=execution_ctx)
+    return deduped.select(list(join_keys))
 
 
 def _left_anti_external_symbols(
@@ -1928,7 +1925,7 @@ def scip__external_symbol_rows__base(
     scip__occurrence_rows__base: InferableTabularInput,
     scip__relationship_rows__base: InferableTabularInput,
     scip__symbol_info_rows__base: InferableTabularInput,
-) -> InferableTabularInput:
+) -> Plan:
     """Return rows for core.scip_external_symbols.
 
     Parameters
@@ -1946,12 +1943,11 @@ def scip__external_symbol_rows__base(
 
     Returns
     -------
-    InferableTabularInput
-        Tabular input for core.scip_external_symbols.
+    Plan
+        Plan for core.scip_external_symbols.
     """
     execution_ctx = _resolve_ingest_execution_ctx(env)
     base_table = _scip_payload_table(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
-    details = _scip_manifest_details(t__scip__ingest, env=env)
     derived = _derive_external_symbol_rows(
         tabular_to_arrow_table(scip__occurrence_rows__base),
         tabular_to_arrow_table(scip__relationship_rows__base),
@@ -1959,25 +1955,15 @@ def scip__external_symbol_rows__base(
         execution_ctx=execution_ctx,
     )
     if derived.num_rows == 0:
-        return _finalize_scip_table(
-            env,
-            SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
-            base_table,
-            details=details,
-        )
+        return _plan_from_table(base_table, table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
     combined = concat_tables_unified([base_table, derived])
-    return _finalize_scip_table(
-        env,
-        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
-        combined,
-        details=details,
-    )
+    return _plan_from_table(combined, table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
 
 
 def scip__index_metadata_rows__base(
     env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput:
+) -> Plan:
     """Return rows for core.scip_index_metadata.
 
     Parameters
@@ -1989,18 +1975,17 @@ def scip__index_metadata_rows__base(
 
     Returns
     -------
-    InferableTabularInput
-        Tabular input for core.scip_index_metadata.
+    Plan
+        Plan for core.scip_index_metadata.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_INDEX_METADATA_TABLE_KEY)
-    details = _scip_manifest_details(t__scip__ingest, env=env)
-    return _finalize_scip_table(env, SCIP_INDEX_METADATA_TABLE_KEY, table, details=details)
+    return _plan_from_table(table, table_key=SCIP_INDEX_METADATA_TABLE_KEY)
 
 
 def scip__module_state_rows__base(
     env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
-) -> InferableTabularInput:
+) -> Plan:
     """Return rows for core.scip_module_state.
 
     Parameters
@@ -2012,12 +1997,11 @@ def scip__module_state_rows__base(
 
     Returns
     -------
-    InferableTabularInput
-        Tabular input for core.scip_module_state.
+    Plan
+        Plan for core.scip_module_state.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_MODULE_STATE_TABLE_KEY)
-    details = _scip_manifest_details(t__scip__ingest, env=env)
-    return _finalize_scip_table(env, SCIP_MODULE_STATE_TABLE_KEY, table, details=details)
+    return _plan_from_table(table, table_key=SCIP_MODULE_STATE_TABLE_KEY)
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -2036,6 +2020,14 @@ def scip__materializations(
     }
 
 
+def _scip_save_spec(table_key: str) -> RelationTableSaveSpec:
+    return RelationTableSaveSpec(
+        table_key=table_key,
+        manifest_extras_node="scip__manifest_extras",
+        ingest_finalize=True,
+    )
+
+
 _SCIP_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="ingestion",
@@ -2043,7 +2035,7 @@ _SCIP_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
         tables=(),
         table_materializations_node="scip__table_materializations",
         attach_anchor=False,
-        save_spec_factory=RelationTableSaveSpec,
+        save_spec_factory=_scip_save_spec,
         default_input_type=InferableTabularInput,
     ),
     table_contexts=(

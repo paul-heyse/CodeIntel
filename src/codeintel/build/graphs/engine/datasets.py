@@ -797,7 +797,6 @@ def _resolve_graph_runtime_profile(
     if profile is None:
         return None
     scan_settings = settings.build.arrow_scan
-    scan_profile = profile.scan_profile or scan_settings.profile
     use_threads = (
         profile.use_threads if profile.use_threads is not None else scan_settings.use_threads
     )
@@ -808,7 +807,6 @@ def _resolve_graph_runtime_profile(
     return replace(
         profile,
         name=profile.name or default_name,
-        scan_profile=scan_profile,
         implicit_ordering=implicit_ordering,
         require_sequenced_output=require_sequenced_output,
         use_threads=use_threads,

@@ -12,13 +12,10 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.naming import materialize_node
-from codeintel.build.hamilton.native.ingestion.manifesting import (
-    IngestManifestDetails,
-    finalize_ingest_reader_with_manifest,
-)
 from codeintel.build.hamilton.native.options.ingestion import TreeSitterIndexOptions
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
+    RelationTableSaveSpec,
     TableOutputSpec,
     ToolRunContext,
     ToolTargetSpec,
@@ -291,7 +288,7 @@ def t__tree_sitter_index__run(
 
 
 def t__tree_sitter_index__ingest(
-    env: BuildEnv,
+    _env: BuildEnv,
     t__tree_sitter_index__run: TreeSitterToolOutput,
 ) -> IngestStep[TabularByTable]:
     """Package tree-sitter rows for table materialization.
@@ -317,64 +314,27 @@ def t__tree_sitter_index__ingest(
             )
         )
 
-    tolerant_keys = {TS_PARSE_ERRORS_TABLE_KEY, TS_CHANGED_RANGES_TABLE_KEY}
-
-    def _finalize_reader(table_key: str, reader: pa.RecordBatchReader) -> pa.Table:
-        mode = "tolerant" if table_key in tolerant_keys else None
-        return finalize_ingest_reader_with_manifest(
-            env=env,
-            table_key=table_key,
-            reader=reader,
-            target_name=TREE_SITTER_TARGET_NAME,
-            details=IngestManifestDetails(mode),
-        )
-
-    parse_manifest_table = _finalize_reader(
-        TS_PARSE_MANIFEST_TABLE_KEY,
-        t__tree_sitter_index__run.parse_manifest_rows,
-    )
-    captures_table = _finalize_reader(
-        TS_CAPTURES_TABLE_KEY,
-        t__tree_sitter_index__run.captures_rows,
-    )
-    nodes_table = _finalize_reader(TS_NODES_TABLE_KEY, t__tree_sitter_index__run.nodes_rows)
-    edges_table = _finalize_reader(TS_EDGES_TABLE_KEY, t__tree_sitter_index__run.edges_rows)
-    parse_errors_table = _finalize_reader(
-        TS_PARSE_ERRORS_TABLE_KEY,
-        t__tree_sitter_index__run.parse_errors_rows,
-    )
-    changed_ranges_table = _finalize_reader(
-        TS_CHANGED_RANGES_TABLE_KEY,
-        t__tree_sitter_index__run.changed_ranges_rows,
-    )
-    tokens_table = _finalize_reader(TS_TOKENS_TABLE_KEY, t__tree_sitter_index__run.tokens_rows)
-    trivia_table = _finalize_reader(TS_TRIVIA_TABLE_KEY, t__tree_sitter_index__run.trivia_rows)
-    language_metadata_table = _finalize_reader(
-        TS_LANGUAGE_METADATA_TABLE_KEY,
-        t__tree_sitter_index__run.language_metadata_rows,
-    )
-
     payload = {
-        TS_PARSE_MANIFEST_TABLE_KEY: parse_manifest_table,
-        TS_CAPTURES_TABLE_KEY: captures_table,
-        TS_NODES_TABLE_KEY: nodes_table,
-        TS_EDGES_TABLE_KEY: edges_table,
-        TS_PARSE_ERRORS_TABLE_KEY: parse_errors_table,
-        TS_CHANGED_RANGES_TABLE_KEY: changed_ranges_table,
-        TS_TOKENS_TABLE_KEY: tokens_table,
-        TS_TRIVIA_TABLE_KEY: trivia_table,
-        TS_LANGUAGE_METADATA_TABLE_KEY: language_metadata_table,
+        TS_PARSE_MANIFEST_TABLE_KEY: t__tree_sitter_index__run.parse_manifest_rows,
+        TS_CAPTURES_TABLE_KEY: t__tree_sitter_index__run.captures_rows,
+        TS_NODES_TABLE_KEY: t__tree_sitter_index__run.nodes_rows,
+        TS_EDGES_TABLE_KEY: t__tree_sitter_index__run.edges_rows,
+        TS_PARSE_ERRORS_TABLE_KEY: t__tree_sitter_index__run.parse_errors_rows,
+        TS_CHANGED_RANGES_TABLE_KEY: t__tree_sitter_index__run.changed_ranges_rows,
+        TS_TOKENS_TABLE_KEY: t__tree_sitter_index__run.tokens_rows,
+        TS_TRIVIA_TABLE_KEY: t__tree_sitter_index__run.trivia_rows,
+        TS_LANGUAGE_METADATA_TABLE_KEY: t__tree_sitter_index__run.language_metadata_rows,
     }
     table_counts = {
-        TS_PARSE_MANIFEST_TABLE_KEY: parse_manifest_table.num_rows,
-        TS_CAPTURES_TABLE_KEY: captures_table.num_rows,
-        TS_NODES_TABLE_KEY: nodes_table.num_rows,
-        TS_EDGES_TABLE_KEY: edges_table.num_rows,
-        TS_PARSE_ERRORS_TABLE_KEY: parse_errors_table.num_rows,
-        TS_CHANGED_RANGES_TABLE_KEY: changed_ranges_table.num_rows,
-        TS_TOKENS_TABLE_KEY: tokens_table.num_rows,
-        TS_TRIVIA_TABLE_KEY: trivia_table.num_rows,
-        TS_LANGUAGE_METADATA_TABLE_KEY: language_metadata_table.num_rows,
+        TS_PARSE_MANIFEST_TABLE_KEY: t__tree_sitter_index__run.parse_manifest_row_count,
+        TS_CAPTURES_TABLE_KEY: t__tree_sitter_index__run.captures_row_count,
+        TS_NODES_TABLE_KEY: t__tree_sitter_index__run.nodes_row_count,
+        TS_EDGES_TABLE_KEY: t__tree_sitter_index__run.edges_row_count,
+        TS_PARSE_ERRORS_TABLE_KEY: t__tree_sitter_index__run.parse_errors_row_count,
+        TS_CHANGED_RANGES_TABLE_KEY: t__tree_sitter_index__run.changed_ranges_row_count,
+        TS_TOKENS_TABLE_KEY: t__tree_sitter_index__run.tokens_row_count,
+        TS_TRIVIA_TABLE_KEY: t__tree_sitter_index__run.trivia_row_count,
+        TS_LANGUAGE_METADATA_TABLE_KEY: t__tree_sitter_index__run.language_metadata_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -386,10 +346,23 @@ _INTENSIVE_SPEC = TargetSpecDescriptor(
     resources=TargetResources(tracker=True, modules=True),
     execution=CPU_INTENSIVE_EXECUTION,
 )
+
+
+def _tree_sitter_save_spec(table_spec: TableOutputSpec) -> RelationTableSaveSpec:
+    tolerant_keys = {TS_PARSE_ERRORS_TABLE_KEY, TS_CHANGED_RANGES_TABLE_KEY}
+    mode = "tolerant" if table_spec.table_key in tolerant_keys else None
+    return RelationTableSaveSpec(
+        table_key=table_spec.table_key,
+        output_role=table_spec.output_role,
+        output_name=table_spec.output_name,
+        ingest_finalize=True,
+        ingest_finalize_mode=mode,
+    )
 _TREE_SITTER_TARGET_SPEC = ToolTargetSpec(
     domain="ingestion",
     target_name=TREE_SITTER_TARGET_NAME,
     spec=_INTENSIVE_SPEC,
+    table_save_spec_factory=_tree_sitter_save_spec,
     tables=(
         TableOutputSpec(
             table_key=TS_PARSE_MANIFEST_TABLE_KEY,

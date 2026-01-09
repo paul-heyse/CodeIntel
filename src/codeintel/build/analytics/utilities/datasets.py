@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import pyarrow as pa
 from sqlglot import exp
@@ -51,6 +51,7 @@ from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable, table_to_reader
 from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.ordering import OrderingSpec
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.readers import empty_reader_from_schema
@@ -276,7 +277,8 @@ def _row_ordering_spec(table_schema: TableSchema) -> OrderingSpec | None:
         return None
     if stable_sort_keys == ():
         return OrderingSpec.unordered(reason="schema stable_sort_keys=()")
-    sort_keys = tuple((name, "ascending") for name in stable_sort_keys)
+    direction: Literal["ascending"] = "ascending"
+    sort_keys: tuple[SortKey, ...] = tuple((name, direction) for name in stable_sort_keys)
     return OrderingSpec.explicit(keys=sort_keys, reason="schema.canonical_sort_keys")
 
 

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 from fastapi import status
 
+from codeintel.core.columnar.conversion import reader_to_table
 from tests._helpers.assertions import assert_http_success
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.harnesses.serving_app import ServingAppHarness
@@ -41,7 +42,7 @@ def test_semantic_routes_end_to_end(tmp_path: Path) -> None:
         )
         expect_equal(query.status_code, status.HTTP_200_OK)
         reader = pa.ipc.open_stream(pa.BufferReader(query.content))
-        rows = reader.read_all().to_pylist()
+        rows = reader_to_table(reader).to_pylist()
         expect_equal([row["id"] for row in rows], [3, 2])
 
 

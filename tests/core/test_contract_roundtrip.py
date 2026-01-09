@@ -8,6 +8,11 @@ import duckdb
 import pyarrow as pa
 import pytest
 
+from codeintel.core.columnar.conversion import (
+    reader_from_batches,
+    table_from_batches,
+    tabular_to_arrow_table,
+)
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
@@ -49,13 +54,13 @@ def _aligned_table(contract_schema: pa.Schema) -> pa.Table:
         [pa.array([1, 2]), struct_array],
         names=["id", "payload"],
     )
-    reader = pa.RecordBatchReader.from_batches(batch.schema, [batch])
+    reader = reader_from_batches(batch.schema, [batch])
     aligned_reader = align_reader_to_contract(
         reader,
         contract_schema,
         extras_policy=extras_policy_from_schema(contract_schema),
     )
-    return pa.Table.from_batches(list(aligned_reader), schema=aligned_reader.schema)
+    return table_from_batches(aligned_reader, schema=aligned_reader.schema)
 
 
 def _assert_payload_table(table: pa.Table, *, label: str) -> None:
@@ -70,8 +75,7 @@ def _duckdb_table(aligned_table: pa.Table) -> pa.Table:
     con = duckdb.connect()
     try:
         relation = con.from_arrow(aligned_table)
-        duckdb_reader = relation.fetch_arrow_reader()
-        return pa.Table.from_batches(list(duckdb_reader), schema=duckdb_reader.schema)
+        return tabular_to_arrow_table(relation)
     finally:
         con.close()
 

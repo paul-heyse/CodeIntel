@@ -11,6 +11,7 @@ from codeintel.build.analytics.functions.function_contracts import (
     build_function_contracts_rows,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.parsing.worklists import build_function_ast_worklist
 from codeintel.build.analytics.utilities.catalogs import (
     CatalogProviderRequest,
     CatalogScope,
@@ -94,11 +95,18 @@ def function_contracts__base(
             ),
         )
     )
+    worklist = build_function_ast_worklist(
+        goids_frame,
+        repo=env.repo,
+        commit=env.commit,
+        ctx=env.execution_context,
+    )
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
         repo_root=env.snapshot.repo_root,
         catalog_provider=catalog,
+        worklist=worklist,
     )
     ast_map, _missing = load_function_asts(request)
     rows = build_function_contracts_rows(

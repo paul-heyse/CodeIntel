@@ -101,6 +101,7 @@ class ExternalDependencyInputs:
     module_map: dict[str, str]
     ast_by_goid: dict[int, FunctionAst]
     features_map: dict[int, FunctionAstFeatures]
+    module_worklist: pa.Table | None = None
     missing_goids: set[int] | None = None
 
 

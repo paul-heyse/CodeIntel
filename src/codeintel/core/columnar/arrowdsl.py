@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 from pyarrow import acero
 
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.dedupe_ops import DedupeTier, normalize_dedupe_tier
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_execution_context,
 )
 from codeintel.core.columnar.expr_vocab import E, Expression
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.finalize_ops import (
     FinalizeResult,
     FinalizeSpec,
@@ -79,6 +79,7 @@ class ExecutionPlan:
     external_request: ExternalPlanRequest | None = None
     ordering: OrderingSpec | None = None
     determinism: DedupeTier | None = None
+    schema: pa.Schema | None = None
 
     @classmethod
     def from_declaration(
@@ -95,7 +96,12 @@ class ExecutionPlan:
         ExecutionPlan
             Plan wrapping the provided Acero declaration.
         """
-        return cls(decl=declaration, ordering=ordering, determinism=determinism)
+        return cls(
+            decl=declaration,
+            ordering=ordering,
+            determinism=determinism,
+            schema=None,
+        )
 
     @classmethod
     def from_table(
@@ -112,7 +118,12 @@ class ExecutionPlan:
         ExecutionPlan
             Plan wrapping the provided table.
         """
-        return cls(table_thunk=lambda: table, ordering=ordering, determinism=determinism)
+        return cls(
+            table_thunk=lambda: table,
+            ordering=ordering,
+            determinism=determinism,
+            schema=table.schema,
+        )
 
     @classmethod
     def from_reader(
@@ -129,7 +140,12 @@ class ExecutionPlan:
         ExecutionPlan
             Plan wrapping the provided reader.
         """
-        return cls(reader_thunk=lambda: reader, ordering=ordering, determinism=determinism)
+        return cls(
+            reader_thunk=lambda: reader,
+            ordering=ordering,
+            determinism=determinism,
+            schema=reader.schema,
+        )
 
     @classmethod
     def from_external_plan(
@@ -146,7 +162,12 @@ class ExecutionPlan:
         ExecutionPlan
             Plan wrapping the external plan runner request.
         """
-        return cls(external_request=request, ordering=ordering, determinism=determinism)
+        return cls(
+            external_request=request,
+            ordering=ordering,
+            determinism=determinism,
+            schema=None,
+        )
 
     @classmethod
     def from_plan(
@@ -166,6 +187,7 @@ class ExecutionPlan:
             decl=plan.declaration,
             ordering=plan.ordering,
             determinism=determinism,
+            schema=plan.schema,
         )
 
     def to_reader(self, *, ctx: ExecutionContext) -> pa.RecordBatchReader:

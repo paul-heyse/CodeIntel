@@ -20,6 +20,7 @@ from codeintel.build.analytics.entrypoints.core import (
     EntrypointContextInputs,
 )
 from codeintel.build.analytics.entrypoints.runtime import load_entrypoint_module_sources
+from codeintel.build.analytics.parsing.worklists import build_module_ast_worklist
 from codeintel.build.analytics.utilities.catalogs import (
     CatalogProviderRequest,
     CatalogScope,
@@ -309,9 +310,16 @@ def entrypoints_result(
         module_map=module_map,
         features_map=_features_by_goid(entrypoint_module_frames.features_frame),
     )
+    module_worklist = build_module_ast_worklist(
+        entrypoint_module_frames.modules_frame,
+        repo=env.repo,
+        commit=env.commit,
+        ctx=env.execution_context,
+    )
     module_sources = load_entrypoint_module_sources(
         module_map,
         env.snapshot.repo_root,
+        module_worklist=module_worklist,
         scan_profile=inputs.scan_profile,
     )
     context_inputs = EntrypointContextInputs(

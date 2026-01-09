@@ -61,9 +61,8 @@ from codeintel.build.scopes.snapshot import SnapshotScanContext
 from codeintel.build.settings import get_arrow_scan_settings, get_columnar_runtime_settings
 from codeintel.core.columnar.execution_context import (
     ExecutionContext as ColumnarExecutionContext,
-)
-from codeintel.core.columnar.execution_context import (
     RuntimeProfile,
+    resolve_arrow_scan_settings,
     runtime_profile_from_settings,
 )
 from codeintel.core.columnar.iter import iter_rows_limit
@@ -345,7 +344,6 @@ def _resolve_columnar_ctx(
     runtime_profile = runtime_profile_from_settings(get_columnar_runtime_settings())
     if runtime_profile is None:
         runtime_profile = RuntimeProfile(name="graph_validation")
-    scan_profile = runtime_profile.scan_profile or scan_settings.profile
     use_threads = (
         runtime_profile.use_threads
         if runtime_profile.use_threads is not None
@@ -362,7 +360,6 @@ def _resolve_columnar_ctx(
     runtime_profile = replace(
         runtime_profile,
         name=runtime_profile.name or "graph_validation",
-        scan_profile=scan_profile,
         implicit_ordering=implicit_ordering,
         require_sequenced_output=require_sequenced_output,
         use_threads=use_threads,
@@ -370,6 +367,7 @@ def _resolve_columnar_ctx(
     return ColumnarExecutionContext(
         use_threads=resolved_use_threads,
         runtime_profile=runtime_profile,
+        scan_settings=scan_settings,
     )
 
 
@@ -395,7 +393,7 @@ def _emit_validation_run_manifest(
     ordering = _manifest_ordering(table_key, execution_ctx=execution_ctx)
     threading_snapshot = apply_runtime_profile(
         execution_ctx.runtime_profile,
-        settings=get_arrow_scan_settings(),
+        settings=resolve_arrow_scan_settings(execution_ctx),
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     try:

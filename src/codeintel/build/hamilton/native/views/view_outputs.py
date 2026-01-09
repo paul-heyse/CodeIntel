@@ -33,8 +33,8 @@ from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observation_provider import observation_provider_for_env
 from codeintel.build.tabular.conversion import (
     empty_table_from_schema,
-    tabular_to_arrow_table,
     table_from_batches,
+    tabular_to_arrow_table,
 )
 from codeintel.build.tabular.types import TabularInput
 from codeintel.core.columnar.type_normalization import (

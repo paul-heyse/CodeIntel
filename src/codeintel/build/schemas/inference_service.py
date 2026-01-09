@@ -43,6 +43,9 @@ from codeintel.build.tabular.conversion import tabular_to_lazyframe
 from codeintel.build.tabular.types import InferableTabularInput, TabularInput
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.plan_ops import Plan
+from codeintel.core.columnar.plan_schema import compile_plan_schema
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.config.settings import (
     BuildSettings,
@@ -111,6 +114,8 @@ _INFERABLE_RUNTIME_TYPES: tuple[type[object], ...] = (
     pa.Table,
     pl.DataFrame,
     pl.LazyFrame,
+    Plan,
+    ExecutionPlan,
 )
 
 
@@ -379,6 +384,28 @@ def _is_arrow_table(value: object) -> TypeGuard[pa.Table]:
 
 def _is_record_batch_reader(value: object) -> TypeGuard[pa.RecordBatchReader]:
     return isinstance(value, pa.RecordBatchReader)
+
+
+def _is_plan(value: object) -> TypeGuard[Plan]:
+    return isinstance(value, Plan)
+
+
+def _is_execution_plan(value: object) -> TypeGuard[ExecutionPlan]:
+    return isinstance(value, ExecutionPlan)
+
+
+def _schema_from_plan_like(obj: object, *, table_key: str) -> TableSchema | None:
+    if _is_plan(obj):
+        return compile_plan_schema(obj, table_key=table_key)
+    if _is_execution_plan(obj):
+        if obj.schema is None:
+            msg = f"ExecutionPlan schema missing for {table_key}"
+            raise TypeError(msg)
+        return table_schema_from_arrow_schema(
+            arrow_schema=obj.schema,
+            table_key=table_key,
+        )
+    return None
 
 
 def _is_tabular_annotation(annotation: object) -> bool:
@@ -1674,7 +1701,10 @@ def _table_schema_from_tabular(
     table_key: str,
     observation_context: SchemaObservationContext | None = None,
 ) -> TableSchema:
-    if _is_arrow_table(obj):
+    plan_schema = _schema_from_plan_like(obj, table_key=table_key)
+    if plan_schema is not None:
+        table_schema = plan_schema
+    elif _is_arrow_table(obj):
         table_schema = table_schema_from_arrow_schema(arrow_schema=obj.schema, table_key=table_key)
     elif _is_record_batch_reader(obj):
         if observation_context is None:

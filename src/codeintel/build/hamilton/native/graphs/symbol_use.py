@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+from collections.abc import Sequence
 
 import pyarrow as pa
 
@@ -26,7 +27,6 @@ from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabul
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
@@ -235,33 +235,26 @@ def symbol_use_edges_compute(
         q__core__goids,
     )
     if occurrences_table.num_rows == 0:
-        return empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        empty = empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        return _plan_from_table(empty, sort_keys=SYMBOL_USE_EDGES_SORT_KEYS)
     occurrences = _symbol_occurrences(occurrences_table)
     if not occurrences:
-        return empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        empty = empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        return _plan_from_table(empty, sort_keys=SYMBOL_USE_EDGES_SORT_KEYS)
 
     module_by_path = _module_by_path(modules_table)
     def_info_by_symbol, def_path_by_symbol = _definition_maps(occurrences)
     edges = build_use_edges(occurrences, def_path_by_symbol, module_by_path)
     if not edges:
-        return empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        empty = empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+        return _plan_from_table(empty, sort_keys=SYMBOL_USE_EDGES_SORT_KEYS)
 
     use_lines_by_symbol_path = _reference_lines_by_symbol_path(occurrences)
     goid_resolver = _goid_resolver(goids_table)
     edges = _attach_goids(edges, def_info_by_symbol, use_lines_by_symbol_path, goid_resolver)
     rows = (dataclasses.asdict(row) for row in edges_to_rows(edges, env.repo, env.commit))
     table, _ = table_for_rows(SYMBOL_USE_EDGES_TABLE_KEY, rows)
-    reader = table_to_reader(table, batch_size=None)
-    result = finalize_reader(
-        reader,
-        spec=finalize_spec_for_table(
-            SYMBOL_USE_EDGES_TABLE_KEY,
-            mode="strict",
-            order_by=SYMBOL_USE_EDGES_SORT_KEYS,
-            target_name=SYMBOL_USES_TARGET_NAME,
-        ),
-    )
-    return result.good
+    return _plan_from_table(table, sort_keys=SYMBOL_USE_EDGES_SORT_KEYS)
 
 
 def _filtered_occurrences_table(occurrences_table: pa.Table) -> pa.Table:
@@ -344,6 +337,17 @@ def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
     return reader_to_table(reader)
 
 
+def _plan_from_table(
+    table: pa.Table,
+    *,
+    sort_keys: Sequence[SortKey] | None = None,
+) -> Plan:
+    plan = Plan.table(table)
+    if sort_keys:
+        return plan.order_by(sort_keys=sort_keys)
+    return plan
+
+
 def _python_language_expr() -> Expression:
     return E.or_(E.is_null("language"), E.field("language") == E.scalar("python"))
 
@@ -360,11 +364,12 @@ def symbol_use_edges_existing(env: BuildEnv) -> InferableTabularInput:
     InferableTabularInput
         Tabular input for existing symbol use edges.
     """
-    return load_snapshot_tabular(
+    table = load_snapshot_tabular(
         env=env,
         table_key=SYMBOL_USE_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
+    return _plan_from_table(table, sort_keys=SYMBOL_USE_EDGES_SORT_KEYS)
 
 
 def symbol_use_edges_empty(env: BuildEnv) -> InferableTabularInput:
@@ -376,7 +381,8 @@ def symbol_use_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for symbol use edges.
     """
     _ = env
-    return empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+    empty = empty_table_for_table(SYMBOL_USE_EDGES_TABLE_KEY)
+    return _plan_from_table(empty, sort_keys=SYMBOL_USE_EDGES_SORT_KEYS)
 
 
 _MODULE = sys.modules[__name__]

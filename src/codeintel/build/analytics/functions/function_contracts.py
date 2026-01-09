@@ -19,7 +19,6 @@ from codeintel.build.analytics.utilities.ast import (
     safe_unparse,
 )
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_table
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.columnar.execution_context import resolve_columnar_context
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
@@ -257,11 +256,7 @@ def _type_map_from_frame(
         return {}
     if "function_goid_h128" not in frame.column_names:
         return {}
-    columns = ["function_goid_h128", "return_type"]
-    if "extras" in frame.column_names:
-        columns.append("extras")
-    if "param_types" in frame.column_names:
-        columns.append("param_types")
+    columns = _type_columns_for_frame(frame)
     table = _scoped_table(
         frame,
         request=_ScopedTableRequest(
@@ -274,22 +269,85 @@ def _type_map_from_frame(
     )
     if table.num_rows == 0:
         return {}
+    grouped, grouped_columns, has_extras, has_param_types = _grouped_type_table(
+        table,
+        ctx=ctx,
+    )
     mapping: dict[int, dict[str, object]] = {}
-    for row in iter_rows(table, columns):
-        goid = normalize_decimal_id(row.get("function_goid_h128"))
-        if goid is None:
+    for row in iter_tuples(grouped.to_reader(), columns=grouped_columns):
+        entry = _type_map_entry_from_grouped(
+            row,
+            has_extras=has_extras,
+            has_param_types=has_param_types,
+        )
+        if entry is None:
             continue
-        return_type = row.get("return_type")
-        extras = row.get("extras")
-        if isinstance(extras, Mapping):
-            param_types = extras.get("param_types")
-        else:
-            param_types = row.get("param_types")
-        mapping[goid] = {
-            "return_type": str(return_type) if return_type is not None else None,
-            "param_types": _coerce_json(param_types) or {},
-        }
+        goid, payload = entry
+        mapping[goid] = payload
     return mapping
+
+
+def _type_columns_for_frame(frame: pa.Table) -> list[str]:
+    columns = ["function_goid_h128", "return_type"]
+    if "extras" in frame.column_names:
+        columns.append("extras")
+    if "param_types" in frame.column_names:
+        columns.append("param_types")
+    return columns
+
+
+def _grouped_type_table(
+    table: pa.Table,
+    *,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> tuple[pa.Table, tuple[str, ...], bool, bool]:
+    has_extras = "extras" in table.column_names
+    has_param_types = "param_types" in table.column_names
+    aggregates: list[tuple[str, str, None, str]] = [
+        ("return_type", "list", None, "return_types"),
+    ]
+    if has_extras:
+        aggregates.append(("extras", "list", None, "extras_list"))
+    if has_param_types:
+        aggregates.append(("param_types", "list", None, "param_types_list"))
+    grouped = grouped_rollup_table(
+        table,
+        spec=GroupedRollupSpec(
+            keys=("function_goid_h128",),
+            aggregates=aggregates,
+        ),
+        ctx=resolve_columnar_context(ctx),
+    )
+    grouped_columns = ["function_goid_h128", "return_types"]
+    if has_extras:
+        grouped_columns.append("extras_list")
+    if has_param_types:
+        grouped_columns.append("param_types_list")
+    return grouped, tuple(grouped_columns), has_extras, has_param_types
+
+
+def _type_map_entry_from_grouped(
+    row: tuple[object, ...],
+    *,
+    has_extras: bool,
+    has_param_types: bool,
+) -> tuple[int, dict[str, object]] | None:
+    goid = normalize_decimal_id(row[0])
+    if goid is None:
+        return None
+    extras_list = row[2] if has_extras else None
+    param_idx = 3 if has_extras else 2
+    param_types_list = row[param_idx] if has_param_types else None
+    return_type = _first_list_value(row[1])
+    extras = _first_list_value(extras_list)
+    param_types = _first_list_value(param_types_list)
+    if param_types is None and isinstance(extras, Mapping):
+        param_types = extras.get("param_types")
+    payload = {
+        "return_type": str(return_type) if return_type is not None else None,
+        "param_types": _coerce_json(param_types) or {},
+    }
+    return goid, payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,6 +382,12 @@ def _coerce_json(value: object) -> object:
             return json.loads(value)
         except json.JSONDecodeError:
             return value
+    return value
+
+
+def _first_list_value(value: object) -> object | None:
+    if isinstance(value, list):
+        return value[0] if value else None
     return value
 
 

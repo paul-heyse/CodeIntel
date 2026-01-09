@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import ast
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 
 import pyarrow as pa
 from hamilton.function_modifiers import cache
 
-from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.graphs.config_data_flow import (
     ConfigDataFlowInputs,
     compute_config_data_flow_result,
@@ -28,7 +25,8 @@ from codeintel.build.analytics.graphs.config_references import (
     ConfigReferenceInputs,
     compute_config_reference_rows,
 )
-from codeintel.build.analytics.parsing.ast_cache import FunctionAst
+from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.parsing.worklists import build_function_ast_worklist
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.graphs.builders import build_call_graph_from_tables
 from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
@@ -49,13 +47,13 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.scopes.snapshot import SnapshotScope
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import (
+    tabular_to_arrow_table,
+    tabular_to_scoped_table,
+)
 from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
-from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.paths import normalize_path
-from codeintel.core.spans import normalize_line_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -119,17 +117,6 @@ CONFIG_GRAPH_MODULE_EDGES_CONTRACT = contract_ref_for_table(
     clip_column=None,
 )
 
-_FUNCTION_KINDS: frozenset[str] = frozenset({"function", "method"})
-
-
-@dataclass(frozen=True)
-class _GoidSpan:
-    goid: int
-    qualname: str
-    start_line: int
-    end_line: int
-
-
 @dataclass(frozen=True)
 class ConfigDataFlowFrames:
     """Tabular inputs needed for config data flow computation."""
@@ -157,93 +144,6 @@ def _allowed_modules_from_frame(
     if not filtered:
         return set()
     return {str(row["module"]) for row in filtered if row.get("module") is not None}
-
-
-def _coerce_int(value: object) -> int | None:
-    parsed: int | None = None
-    if value is None:
-        parsed = None
-    elif isinstance(value, bool):
-        parsed = int(value)
-    elif isinstance(value, int):
-        parsed = value
-    elif isinstance(value, float):
-        parsed = int(value) if value.is_integer() else None
-    elif isinstance(value, str):
-        try:
-            parsed = int(value.strip())
-        except ValueError:
-            parsed = None
-    return parsed
-
-
-def _group_goids_by_path(
-    rows: list[dict[str, object]],
-    *,
-    scope: SnapshotScope,
-) -> tuple[dict[str, list[_GoidSpan]], set[int]]:
-    grouped: dict[str, list[_GoidSpan]] = {}
-    missing: set[int] = set()
-    if not rows:
-        return grouped, missing
-    filtered = scope.filter_rows(rows, require_keys=True)
-    for row in filtered:
-        kind = row.get("kind")
-        if kind is None or str(kind) not in _FUNCTION_KINDS:
-            continue
-        goid = normalize_decimal_id(row.get("goid_h128"))
-        if goid is None:
-            continue
-        rel_path = row.get("rel_path")
-        if rel_path is None:
-            missing.add(goid)
-            continue
-        start_line = _coerce_int(row.get("start_line"))
-        end_line = _coerce_int(row.get("end_line"))
-        if start_line is None:
-            missing.add(goid)
-            continue
-        start_line, end_line = normalize_line_span(start_line, end_line)
-        span = _GoidSpan(
-            goid=goid,
-            qualname=str(row.get("qualname") or ""),
-            start_line=start_line,
-            end_line=end_line,
-        )
-        grouped.setdefault(normalize_path(str(rel_path)), []).append(span)
-    return grouped, missing
-
-
-def _function_asts_from_goids(
-    rows: list[dict[str, object]],
-    *,
-    scope: SnapshotScope,
-    repo_root: Path,
-) -> tuple[dict[int, FunctionAst], set[int]]:
-    grouped, missing = _group_goids_by_path(rows, scope=scope)
-    ast_by_goid: dict[int, FunctionAst] = {}
-    for rel_path, spans in grouped.items():
-        abs_path = (repo_root / rel_path).resolve()
-        try:
-            parsed = parse_python_file(abs_path)
-        except (OSError, ValueError):
-            missing.update(span.goid for span in spans)
-            continue
-        for span in spans:
-            node = parsed.span_index.lookup(span.start_line, span.end_line)
-            if node is None or not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                missing.add(span.goid)
-                continue
-            ast_by_goid[span.goid] = FunctionAst(
-                goid=span.goid,
-                rel_path=rel_path,
-                qualname=span.qualname,
-                start_line=span.start_line,
-                end_line=span.end_line,
-                node=node,
-                lines=list(parsed.lines),
-            )
-    return ast_by_goid, missing
 
 
 def config_references__base(
@@ -343,15 +243,25 @@ def config_data_flow__base(
         repo=env.repo,
         commit=env.commit,
     )
-    goid_rows = collect_scoped_rows(
+    goids_frame = tabular_to_scoped_table(
         config_data_flow_frames.goids,
-        ("goid_h128", "rel_path", "qualname", "kind", "start_line", "end_line", "repo", "commit"),
         scope=scope,
+        columns=None,
+        require_scope_columns=True,
     )
-    ast_map, missing = _function_asts_from_goids(
-        goid_rows,
-        scope=scope,
-        repo_root=env.snapshot.repo_root,
+    worklist = build_function_ast_worklist(
+        goids_frame,
+        repo=env.repo,
+        commit=env.commit,
+        ctx=env.execution_context,
+    )
+    ast_map, missing = load_function_asts(
+        FunctionAstLoadRequest(
+            repo=env.repo,
+            commit=env.commit,
+            repo_root=env.snapshot.repo_root,
+            worklist=worklist,
+        )
     )
     result = compute_config_data_flow_result(
         ConfigDataFlowInputs(

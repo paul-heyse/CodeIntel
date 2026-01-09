@@ -8,6 +8,7 @@ import pyarrow as pa
 import pytest
 
 from codeintel.build.hamilton.transforms import tabular_steps
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
 
 if TYPE_CHECKING:
     from polars import LazyFrame
@@ -28,7 +29,7 @@ def test_sort_columns_uses_polars_selectors() -> None:
 
 
 def _reader_for_table(table: pa.Table) -> pa.RecordBatchReader:
-    return pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    return table_to_reader(table, batch_size=None)
 
 
 def test_drop_bad_rows_filters_arrow_reader() -> None:
@@ -40,7 +41,7 @@ def test_drop_bad_rows_filters_arrow_reader() -> None:
         "pa.RecordBatchReader",
         tabular_steps.drop_bad_rows(reader, ("loc", "cyclo")),
     )
-    result = result_reader.read_all().to_pylist()
+    result = reader_to_table(result_reader).to_pylist()
 
     assert result == [{"loc": 1, "cyclo": 1, "name": "a"}]
 
@@ -54,7 +55,7 @@ def test_normalize_nulls_drops_arrow_rows() -> None:
         "pa.RecordBatchReader",
         tabular_steps.normalize_nulls(reader, "drop_bad_rows"),
     )
-    result = result_reader.read_all().to_pylist()
+    result = reader_to_table(result_reader).to_pylist()
 
     assert result == [{"a": 1, "b": "x"}]
 
@@ -68,7 +69,7 @@ def test_clip_numeric_arrow_reader() -> None:
         "pa.RecordBatchReader",
         tabular_steps.clip_numeric(reader, "loc", 10),
     )
-    result = result_reader.read_all().column("loc").to_pylist()
+    result = reader_to_table(result_reader).column("loc").to_pylist()
 
     assert result == [1, 10, None]
 
@@ -82,7 +83,7 @@ def test_sort_columns_arrow_reader() -> None:
         "pa.RecordBatchReader",
         tabular_steps.sort_columns(reader, ["a", "b"]),
     )
-    result_table = result_reader.read_all()
+    result_table = reader_to_table(result_reader)
 
     assert result_table.schema.names == ["a", "b"]
     assert result_table.column("a").to_pylist() == [3, 4]

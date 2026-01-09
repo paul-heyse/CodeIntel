@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.core.columnar.finalize_ops import (
     finalize_reader_batches,
     finalize_spec_for_table,
@@ -248,7 +249,7 @@ class BaseRepository:
         table_key: str | None = None,
         batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
     ) -> pa.RecordBatchReader:
-        reader = relation.fetch_record_batch(batch_size)
+        reader = tabular_to_arrow_reader(relation, batch_size=batch_size)
         if table_key is None or BaseRepository._has_nested_arrow_types(reader.schema):
             return reader
         resolution = resolve_table_schema(

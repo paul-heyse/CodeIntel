@@ -11,6 +11,7 @@ from codeintel.build.hamilton.native.graphs.cpg2.planes.overlays_bytecode import
     cpg2_edges__py_bc_callsite,
     cpg2_edges__py_bc_stack,
 )
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.serialization.payload import decode_payload
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.cst_extract import CstExtractStep
@@ -22,9 +23,7 @@ pytestmark = pytest.mark.no_runtime_env
 
 
 def _reader_to_table(reader: pa.RecordBatchReader | pa.Table) -> pa.Table:
-    if isinstance(reader, pa.Table):
-        return reader
-    return reader.read_all()
+    return reader_to_table(reader)
 
 
 def _callee_leaf(value: object) -> str | None:

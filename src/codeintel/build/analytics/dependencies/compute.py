@@ -21,6 +21,7 @@ from codeintel.build.analytics.compute.dependencies.compute import (
 )
 from codeintel.build.analytics.dependencies.core import (
     build_alias_maps,
+    build_alias_maps_from_worklist,
     load_dependency_patterns,
 )
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
@@ -53,7 +54,13 @@ def compute_dependency_calls_pure(
     if not patterns:
         log.warning("No dependency patterns loaded; returning empty result")
         return DependencyCallsResult(rows=())
-    alias_maps = build_alias_maps(snapshot.repo_root, inputs.module_map)
+    if inputs.module_worklist is not None and inputs.module_worklist.num_rows > 0:
+        alias_maps = build_alias_maps_from_worklist(
+            snapshot.repo_root,
+            inputs.module_worklist,
+        )
+    else:
+        alias_maps = build_alias_maps(snapshot.repo_root, inputs.module_map)
     return _compute_dependency_calls_pure(
         snapshot,
         inputs,

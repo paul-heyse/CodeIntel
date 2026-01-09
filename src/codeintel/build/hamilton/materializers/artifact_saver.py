@@ -32,7 +32,7 @@ from codeintel.build.hamilton.materializers.path_templates import (
     default_formatter,
     format_path_template,
 )
-from codeintel.core.columnar.conversion import table_to_reader
+from codeintel.core.columnar.conversion import table_to_reader, tabular_to_arrow_reader
 from codeintel.core.columnar.ipc import write_ipc_stream
 from codeintel.core.duckdb_types import DuckDBRelation
 from codeintel.core.execution.materialization import (
@@ -331,7 +331,10 @@ def _write_relation_artifact(output_path: Path, relation: DuckDBRelation) -> int
         relation.to_parquet(str(output_path))
         return output_path.stat().st_size
     if suffix in {".arrow", ".ipc"}:
-        return _write_arrow_reader(output_path, relation.fetch_arrow_reader())
+        return _write_arrow_reader(
+            output_path,
+            tabular_to_arrow_reader(relation, batch_size=None),
+        )
     msg = f"Unsupported relation artifact extension: {output_path.suffix}"
     raise ValueError(msg)
 

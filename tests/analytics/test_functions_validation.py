@@ -12,6 +12,7 @@ from codeintel.build.analytics.functions.metrics import (
     compute_function_analytics_result,
 )
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.columnar.conversion import tabular_to_arrow_table
 from tests._helpers import TestScenario
 from tests._helpers.fixtures.rows import GoidRow, insert_rows
 from tests._helpers.sql import run_query
@@ -101,7 +102,7 @@ def test_records_validation_when_parse_fails(ctx: TestContext) -> None:
     _insert_goid(ctx, rel_path=rel_path, qualname="pkg.mod.broken")
 
     snapshot = _get_snapshot(ctx)
-    goids_input = ctx.gateway.con.execute("SELECT * FROM core.goids").arrow().read_all()
+    goids_input = tabular_to_arrow_table(ctx.gateway.con.sql("SELECT * FROM core.goids"))
     result = compute_function_analytics_result(goids_input, snapshot)
     _write_function_results(ctx, result)
 
@@ -133,7 +134,7 @@ def test_span_not_found_is_recorded(ctx: TestContext) -> None:
     _insert_goid(ctx, rel_path=rel_path, qualname="pkg.mod.foo", start_line=50, end_line=55)
 
     snapshot = _get_snapshot(ctx)
-    goids_input = ctx.gateway.con.execute("SELECT * FROM core.goids").arrow().read_all()
+    goids_input = tabular_to_arrow_table(ctx.gateway.con.sql("SELECT * FROM core.goids"))
     result = compute_function_analytics_result(goids_input, snapshot)
     _write_function_results(ctx, result)
 

@@ -10,6 +10,11 @@ from typing import TYPE_CHECKING, TypeGuard, cast
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import (
+    empty_table_from_schema,
+    reader_from_batches,
+    table_from_batches,
+)
 from codeintel.core.columnar.rows import ColumnarRowBuffer, ColumnarRows, columnar_row_count
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
@@ -87,7 +92,7 @@ def reader_for_rows(
     buffer = _buffer_for_rows(table_schema, rows, columns=columns)
     contract_schema = arrow_contract_for_table_schema(table_schema=table_schema)
     table = _table_for_buffer(buffer, contract_schema)
-    reader = pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    reader = reader_from_batches(table.schema, table.to_batches())
     resolved_policy = extras_policy or extras_policy_from_schema(contract_schema)
     aligned = align_reader_to_contract(
         reader,
@@ -106,7 +111,7 @@ def reader_for_rows(
 
 def _table_for_buffer(buffer: ColumnarRowBuffer, contract_schema: pa.Schema) -> pa.Table:
     if buffer.row_count == 0:
-        return pa.Table.from_batches([], schema=contract_schema)
+        return empty_table_from_schema(contract_schema)
     arrays: list[pa.Array] = []
     fields: list[pa.Field] = []
     for name in buffer.columns:
@@ -121,7 +126,7 @@ def _table_for_buffer(buffer: ColumnarRowBuffer, contract_schema: pa.Schema) -> 
         arrays.append(array)
         fields.append(pa.field(name, array.type))
     batch = pa.record_batch(arrays, schema=pa.schema(fields))
-    return pa.Table.from_batches([batch], schema=batch.schema)
+    return table_from_batches([batch], schema=batch.schema)
 
 
 def _coerce_values_for_arrow_type(
@@ -173,8 +178,7 @@ def table_for_rows(
         columns=columns,
         extras_policy=extras_policy,
     )
-    batches = list(reader)
-    return pa.Table.from_batches(batches, schema=reader.schema)
+    return table_from_batches(reader, schema=reader.schema)
 
 
 def materialize_table_from_rows(

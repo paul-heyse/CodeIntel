@@ -16,9 +16,6 @@ from hamilton.function_modifiers import cache
 from codeintel.build.graphs.assembly import select_table_columns
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import materialize_node
-from codeintel.build.hamilton.native.ingestion.manifesting import (
-    finalize_ingest_reader_with_manifest,
-)
 from codeintel.build.hamilton.native.options.ingestion import SyntaxAugmentOptions
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
@@ -64,18 +61,16 @@ from codeintel.build.tabular.finalize_ops import (
 from codeintel.build.tabular.nested_ops import deep_cast_table_to_contract, make_extras_struct
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import empty_table_from_schema, table_from_batches
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
     resolve_execution_context,
 )
+from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges_with_aligned_lists
 from codeintel.core.columnar.expr_vocab import E, Expression
-from codeintel.core.columnar.finalize_ops import (
-    finalize_spec_for_table as columnar_finalize_spec_for_table,
-)
-from codeintel.core.columnar.ordering import OrderingSpec
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.plan_builder import build_table_plan
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
@@ -86,14 +81,16 @@ from codeintel.core.columnar.rows import (
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
-from codeintel.core.schemas.primitives import resolve_join_safe_columns
+from codeintel.core.schemas.primitives import (
+    resolve_canonical_sort_keys,
+    resolve_join_safe_columns,
+)
 from codeintel.core.spans import normalize_byte_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, InferableTabularInput)
 
 LOG = logging.getLogger(__name__)
 
-_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 SYNTAX_AUGMENT_TARGET_NAME = "syntax_augment"
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
@@ -215,6 +212,15 @@ class SyntaxAugmentFrames:
 
 @dataclass(frozen=True, slots=True)
 class _SyntaxAugmentInputs:
+    syntax_nodes: pa.Table
+    syntax_edges: pa.Table
+    ts_nodes: pa.Table
+    ts_edges: pa.Table
+    parse_manifest: pa.Table
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedSyntaxTables:
     syntax_nodes: pa.Table
     syntax_edges: pa.Table
     ts_nodes: pa.Table
@@ -617,12 +623,7 @@ def _hash_join_tables(request: _HashJoinRequest) -> pa.Table:
 
 def _plan_to_table(plan: Plan, *, execution_ctx: ExecutionContext) -> pa.Table:
     resolved_ctx = resolve_execution_context(execution_ctx)
-    result = run_pipeline(
-        plan=ExecutionPlan.from_plan(plan),
-        finalize=columnar_finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
-        options=PipelineRunOptions(ctx=resolved_ctx),
-    )
-    return result.good
+    return ExecutionPlan.from_plan(plan).to_table(ctx=resolved_ctx)
 
 
 def _xref_exact(
@@ -642,9 +643,9 @@ def _xref_exact(
         "producer",
     }
     if not required_ts.issubset(set(ts_nodes.column_names)):
-        return _empty_reader(TS_XREF_TABLE_KEY)
+        return _empty_output_table(TS_XREF_TABLE_KEY)
     if not required_syntax.issubset(set(syntax_nodes.column_names)):
-        return _empty_reader(TS_XREF_TABLE_KEY)
+        return _empty_output_table(TS_XREF_TABLE_KEY)
     ts_selected = select_table_columns(
         ts_nodes,
         ["repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"],
@@ -905,7 +906,7 @@ def _xref_fuzzy(
     execution_ctx: ExecutionContext,
 ) -> pa.Table:
     if unmatched_ts_nodes.num_rows == 0:
-        return _empty_reader(TS_XREF_TABLE_KEY)
+        return _empty_output_table(TS_XREF_TABLE_KEY)
     index_by_path = _build_syntax_index(syntax_nodes)
     unmatched_ts_nodes = normalize_table_for_join(
         unmatched_ts_nodes,
@@ -1011,6 +1012,54 @@ def _group_payloads_by_syntax_node(
             }
         )
     return renamed
+
+
+def _ts_payload_list_errors(ts_payloads: pa.Table) -> pa.Table:
+    if not {"syntax_node_id", "ts_nodes"}.issubset(set(ts_payloads.column_names)):
+        return _empty_list_error_table()
+    spec = ExplodeSpec(
+        src_col="syntax_node_id",
+        dst_list_col="ts_nodes",
+        null_list_policy="error",
+        null_child_policy="error",
+        enforce_parent_valid=True,
+        error_context_cols=("syntax_node_id",),
+    )
+    return explode_edges_with_aligned_lists(ts_payloads, spec=spec).errors
+
+
+def _empty_list_error_table() -> pa.Table:
+    schema = pa.schema(
+        [
+            pa.field("row_id", pa.int64()),
+            pa.field("error_code", pa.string()),
+            pa.field("column", pa.string()),
+            pa.field("detail", pa.string()),
+            pa.field("syntax_node_id", pa.string()),
+        ]
+    )
+    return empty_table_from_schema(schema)
+
+
+def _log_list_errors(table: pa.Table, *, context: str) -> None:
+    if table.num_rows == 0:
+        return
+    LOG.warning("List validation errors (%s): %d rows", context, table.num_rows)
+
+
+def _ts_payloads_with_validation(
+    ts_nodes: pa.Table,
+    xref: pa.Table,
+    *,
+    execution_ctx: ExecutionContext,
+) -> pa.Table:
+    ts_payloads = _ts_payloads_by_syntax_node(
+        ts_nodes,
+        xref,
+        execution_ctx=execution_ctx,
+    )
+    _log_list_errors(_ts_payload_list_errors(ts_payloads), context="ts_payloads")
+    return ts_payloads
 
 
 def _index_lookup_indices(node_ids: pa.Array, payload_ids: pa.Array) -> pa.Array:
@@ -1206,29 +1255,31 @@ def _empty_selected(table: pa.Table, columns: Sequence[str]) -> pa.Table:
     return table.select(existing).slice(0, 0)
 
 
-def _empty_reader(table_key: str) -> pa.Table:
+def _empty_output_table(table_key: str) -> pa.Table:
     try:
         return empty_table_for_table(table_key)
     except (KeyError, RuntimeError):
         return _empty_table()
 
 
-def _reader_from_table(env: BuildEnv, table_key: str, table: pa.Table) -> pa.Table:
-    if table.num_rows == 0:
-        return _empty_reader(table_key)
-    execution_ctx = resolve_columnar_context(env.execution_context)
-    resolved_ctx = resolve_execution_context(execution_ctx)
-    plan = ExecutionPlan.from_table(
-        table,
-        ordering=OrderingSpec.implicit(reason="ingest table"),
-    )
-    reader = plan.to_reader(ctx=resolved_ctx)
-    return finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=table_key,
-        reader=reader,
-        target_name=SYNTAX_AUGMENT_TARGET_NAME,
-    )
+def _canonical_sort_keys_for_table(
+    table_key: str,
+    columns: Sequence[str],
+) -> tuple[SortKey, ...] | None:
+    schema = get_schema_service().get_table_schema(table_key)
+    keys = resolve_canonical_sort_keys(schema)
+    if not keys:
+        return None
+    available = set(columns)
+    return tuple((key, "ascending") for key in keys if key in available)
+
+
+def _plan_from_table(table: pa.Table, *, table_key: str) -> Plan:
+    plan = Plan.table(table)
+    sort_keys = _canonical_sort_keys_for_table(table_key, table.column_names)
+    if sort_keys:
+        return plan.order_by(sort_keys=list(sort_keys))
+    return plan
 
 
 def _rename_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
@@ -1396,25 +1447,63 @@ def _build_xref_table(
     return _xref_union(xref_exact, xref_fuzzy)
 
 
-def _frame_or_empty(env: BuildEnv, table_key: str, table: pa.Table) -> pa.Table:
+def _frame_or_empty(table_key: str, table: pa.Table) -> pa.Table:
     if table.num_rows == 0 or not table.column_names:
-        return _empty_reader(table_key)
+        return _empty_output_table(table_key)
     resolved = table
     if table_key == SYNTAX_NODES_AUGMENTED_TABLE_KEY:
         resolved = _deep_cast_syntax_nodes_augmented(table)
-    return _reader_from_table(env, table_key, resolved)
+    return resolved
 
 
-def _frame_if_enabled(
-    env: BuildEnv,
-    table_key: str,
-    table: pa.Table,
+def _resolve_syntax_tables(
+    inputs: _SyntaxAugmentInputs,
     *,
-    emit: bool,
-) -> pa.Table:
+    scope: SnapshotScope,
+) -> _ResolvedSyntaxTables:
+    return _ResolvedSyntaxTables(
+        syntax_nodes=scoped_table_for_ingest(
+            inputs.syntax_nodes,
+            table_key=SYNTAX_NODES_TABLE_KEY,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        syntax_edges=scoped_table_for_ingest(
+            inputs.syntax_edges,
+            table_key=SYNTAX_EDGES_TABLE_KEY,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        ts_nodes=scoped_table_for_ingest(
+            inputs.ts_nodes,
+            table_key=TS_NODES_TABLE_KEY,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        ts_edges=scoped_table_for_ingest(
+            inputs.ts_edges,
+            table_key=TS_EDGES_TABLE_KEY,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        parse_manifest=scoped_table_for_ingest(
+            inputs.parse_manifest,
+            table_key=PARSE_MANIFEST_TABLE_KEY,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+    )
+
+
+def _frame_if_enabled(table_key: str, table: pa.Table, *, emit: bool) -> pa.Table:
     if not emit:
-        return _empty_reader(table_key)
-    return _frame_or_empty(env, table_key, table)
+        return _empty_output_table(table_key)
+    return _frame_or_empty(table_key, table)
 
 
 def syntax_augment__frames(
@@ -1431,76 +1520,38 @@ def syntax_augment__frames(
     """
     scope = SnapshotScope.from_snapshot(env.snapshot)
     execution_ctx = _resolve_ingest_execution_ctx(env)
-    inputs = syntax_augment__inputs
-    syntax_nodes = scoped_table_for_ingest(
-        inputs.syntax_nodes,
-        table_key=SYNTAX_NODES_TABLE_KEY,
-        columns=None,
-        scope=scope,
-        require_scope_columns=True,
-    )
-    syntax_edges = scoped_table_for_ingest(
-        inputs.syntax_edges,
-        table_key=SYNTAX_EDGES_TABLE_KEY,
-        columns=None,
-        scope=scope,
-        require_scope_columns=True,
-    )
-    ts_nodes = scoped_table_for_ingest(
-        inputs.ts_nodes,
-        table_key=TS_NODES_TABLE_KEY,
-        columns=None,
-        scope=scope,
-        require_scope_columns=True,
-    )
-    ts_edges = scoped_table_for_ingest(
-        inputs.ts_edges,
-        table_key=TS_EDGES_TABLE_KEY,
-        columns=None,
-        scope=scope,
-        require_scope_columns=True,
-    )
-    parse_manifest = scoped_table_for_ingest(
-        inputs.parse_manifest,
-        table_key=PARSE_MANIFEST_TABLE_KEY,
-        columns=None,
-        scope=scope,
-        require_scope_columns=True,
-    )
-    fallback_paths = _resolve_fallback_paths(syntax_augment__options, parse_manifest)
+    resolved = _resolve_syntax_tables(syntax_augment__inputs, scope=scope)
+    fallback_paths = _resolve_fallback_paths(syntax_augment__options, resolved.parse_manifest)
     syntax_nodes, syntax_edges = _apply_fallback_paths(
-        syntax_nodes,
-        syntax_edges,
-        ts_nodes,
-        ts_edges,
+        resolved.syntax_nodes,
+        resolved.syntax_edges,
+        resolved.ts_nodes,
+        resolved.ts_edges,
         fallback_paths,
     )
-    xref_table = _build_xref_table(ts_nodes, syntax_nodes, execution_ctx=execution_ctx)
+    xref_table = _build_xref_table(resolved.ts_nodes, syntax_nodes, execution_ctx=execution_ctx)
     syntax_nodes_augmented = _augment_syntax_nodes(
         syntax_nodes,
-        _ts_payloads_by_syntax_node(
-            inputs.ts_nodes,
+        _ts_payloads_with_validation(
+            resolved.ts_nodes,
             xref_table,
             execution_ctx=execution_ctx,
         ),
     )
 
     syntax_nodes_frame = _frame_or_empty(
-        env,
         SYNTAX_NODES_AUGMENTED_TABLE_KEY,
         syntax_nodes_augmented,
     )
-    syntax_edges_frame = _frame_or_empty(env, SYNTAX_EDGES_AUGMENTED_TABLE_KEY, syntax_edges)
+    syntax_edges_frame = _frame_or_empty(SYNTAX_EDGES_AUGMENTED_TABLE_KEY, syntax_edges)
     xref_frame = _frame_if_enabled(
-        env,
         TS_XREF_TABLE_KEY,
         xref_table,
         emit=syntax_augment__options.emit_ts_xref,
     )
     coverage_frame = _frame_or_empty(
-        env,
         TS_WELD_COVERAGE_TABLE_KEY,
-        _weld_coverage_table(inputs.ts_nodes, xref_table, execution_ctx=execution_ctx),
+        _weld_coverage_table(resolved.ts_nodes, xref_table, execution_ctx=execution_ctx),
     )
 
     return SyntaxAugmentFrames(
@@ -1513,57 +1564,78 @@ def syntax_augment__frames(
 
 def syntax_augment__syntax_nodes__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pa.Table:
+) -> Plan:
     """Return canonical syntax nodes with tree-sitter augmentation.
 
     Returns
     -------
-    pa.Table
-        Canonical syntax node rows.
+    Plan
+        Plan for canonical syntax node rows.
     """
-    return syntax_augment__frames.syntax_nodes
+    return _plan_from_table(
+        syntax_augment__frames.syntax_nodes,
+        table_key=SYNTAX_NODES_AUGMENTED_TABLE_KEY,
+    )
 
 
 def syntax_augment__syntax_edges__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pa.Table:
+) -> Plan:
     """Return canonical syntax edges with tree-sitter fallback applied.
 
     Returns
     -------
-    pa.Table
-        Canonical syntax edge rows.
+    Plan
+        Plan for canonical syntax edge rows.
     """
-    return syntax_augment__frames.syntax_edges
+    return _plan_from_table(
+        syntax_augment__frames.syntax_edges,
+        table_key=SYNTAX_EDGES_AUGMENTED_TABLE_KEY,
+    )
 
 
 def syntax_augment__ts_syntax_node_xref__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pa.Table:
+) -> Plan:
     """Return tree-sitter xref rows for canonical syntax nodes.
 
     Returns
     -------
-    pa.Table
-        Tree-sitter xref rows.
+    Plan
+        Plan for tree-sitter xref rows.
     """
-    return syntax_augment__frames.ts_syntax_node_xref
+    return _plan_from_table(
+        syntax_augment__frames.ts_syntax_node_xref,
+        table_key=TS_XREF_TABLE_KEY,
+    )
 
 
 def syntax_augment__ts_weld_coverage__base(
     syntax_augment__frames: SyntaxAugmentFrames,
-) -> pa.Table:
+) -> Plan:
     """Return per-file tree-sitter weld coverage rows.
 
     Returns
     -------
-    pa.Table
-        Weld coverage rows.
+    Plan
+        Plan for weld coverage rows.
     """
-    return syntax_augment__frames.ts_weld_coverage
+    return _plan_from_table(
+        syntax_augment__frames.ts_weld_coverage,
+        table_key=TS_WELD_COVERAGE_TABLE_KEY,
+    )
 
 
 _MODULE = sys.modules[__name__]
+
+
+def _syntax_augment_save_spec(table_key: str) -> RelationTableSaveSpec:
+    return RelationTableSaveSpec(
+        table_key=table_key,
+        ingest_finalize=True,
+    )
+
+
 _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
     context=MultiTableTargetContext(
         domain="ingestion",
@@ -1571,8 +1643,8 @@ _SYNTAX_AUGMENT_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
         tables=(),
         table_materializations_node="syntax_augment__table_materializations",
         anchor_node_name="t__syntax_augment",
-        save_spec_factory=RelationTableSaveSpec,
-        default_input_type=pa.Table,
+        save_spec_factory=_syntax_augment_save_spec,
+        default_input_type=InferableTabularInput,
     ),
     table_contexts=(
         TableTargetTableContext(

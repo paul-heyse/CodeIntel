@@ -168,6 +168,7 @@ class FunctionEffectsInputs:
     catalog_provider: FunctionCatalogProvider | None = None
     ast_map: dict[int, FunctionAst] | None = None
     missing_goids: set[int] | None = None
+    worklist: pa.Table | pa.RecordBatchReader | None = None
     call_graph_edges: pa.Table | None = None
     call_graph_nodes: pa.Table | None = None
     ctx: ExecutionContext | RuntimeExecutionContext | None = None
@@ -180,6 +181,7 @@ class _EffectInputs:
     catalog: FunctionCatalogProvider
     ast_map: dict[int, FunctionAst] | None = None
     missing_goids: set[int] | None = None
+    worklist: pa.Table | pa.RecordBatchReader | None = None
     call_graph_edges: pa.Table | None = None
     call_graph_nodes: pa.Table | None = None
     ctx: ExecutionContext | RuntimeExecutionContext | None = None
@@ -274,6 +276,7 @@ def build_function_effects_rows(
         catalog=catalog,
         ast_map=input_opts.ast_map,
         missing_goids=input_opts.missing_goids,
+        worklist=input_opts.worklist,
         call_graph_edges=input_opts.call_graph_edges,
         call_graph_nodes=input_opts.call_graph_nodes,
         ctx=input_opts.ctx,
@@ -299,6 +302,7 @@ def _resolve_effect_asts(inputs: _EffectInputs) -> tuple[dict[int, FunctionAst],
                 commit=inputs.snapshot.commit,
                 repo_root=inputs.snapshot.repo_root,
                 catalog_provider=inputs.catalog,
+                worklist=inputs.worklist,
             )
         )
     if missing:

@@ -36,6 +36,7 @@ from codeintel.cli.errors.results import (
 from codeintel.cli.handlers.metadata_bundle import BundleIngestRequest, ingest_metadata_bundle
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.services.storage import StorageService
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.errors.taxonomy import INVALID_FORMAT
@@ -144,8 +145,9 @@ def validate_macros_handler(
 
 def _load_table_schema_registry_keys(connection: DuckDBConnection) -> set[str]:
     table_ref = meta_table_ref("metadata.table_schema_registry")
-    reader = connection.execute(f"SELECT table_key FROM {table_ref}").fetch_record_batch(
-        DEFAULT_ARROW_BATCH_SIZE
+    reader = tabular_to_arrow_reader(
+        connection.execute(f"SELECT table_key FROM {table_ref}"),
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
     )
     return {str(row[0]) for row in iter_tuples_from_arrow_reader(reader)}
 
@@ -161,7 +163,11 @@ def _load_missing_schema_versions(connection: DuckDBConnection) -> list[str]:
           ON r.schema_digest = v.schema_digest
         WHERE v.schema_digest IS NULL
         """
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    )
+    reader = tabular_to_arrow_reader(
+        reader,
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+    )
     return [str(row[0]) for row in iter_tuples_from_arrow_reader(reader)]
 
 

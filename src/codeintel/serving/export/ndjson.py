@@ -7,15 +7,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
-
-from codeintel.core.columnar.conversion import table_from_batches
 from codeintel.core.columnar.arrowdsl import (
     ExecutionContext,
     ExecutionPlan,
     PipelineRunOptions,
     run_pipeline,
 )
+from codeintel.core.columnar.conversion import table_from_batches
 from codeintel.core.columnar.run_manifest import RunManifestOptions
 from codeintel.core.columnar.streaming import ScanTelemetry
 from codeintel.core.exports.serialization import coerce_export_row

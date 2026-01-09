@@ -10,8 +10,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
+
+from codeintel.core.columnar.dedupe_ops import stable_dedupe_with_ties
+from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
@@ -25,17 +30,15 @@ from codeintel.ingestion.context import (
     resolve_scan_profile,
 )
 from codeintel.ingestion.ports.change_detection import ChangeRequest
+from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
-    from pathlib import Path
-
-    import pyarrow as pa
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.ports.change_detection import ChangeDetectionPort, ChangeSet
-    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
+    from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort
 
 log = logging.getLogger(__name__)
 MODULES_TABLE_KEY = "core.modules"
@@ -329,9 +332,41 @@ __all__ = ["RepoScanResult", "RepoScanStep"]
 
 
 def _dedupe_modules(modules: Sequence[ModuleRecord]) -> list[ModuleRecord]:
-    deduped: dict[tuple[str, str], ModuleRecord] = {}
-    for module in modules:
-        key = (module.module_name, module.rel_path)
-        if key not in deduped:
-            deduped[key] = module
-    return list(deduped.values())
+    if not modules:
+        return []
+    rows = {
+        "module_name": [module.module_name for module in modules],
+        "rel_path": [module.rel_path for module in modules],
+        "file_path": [str(module.file_path) for module in modules],
+        "row_index": list(range(len(modules))),
+    }
+    table = pa.table(rows)
+    deduped = stable_dedupe_with_ties(
+        table,
+        key_columns=("module_name", "rel_path"),
+        order_by=(("row_index", "ascending"),),
+    )
+    ordered = (
+        deduped.sort_by([("row_index", "ascending")])
+        if "row_index" in deduped.column_names
+        else deduped
+    )
+    total = ordered.num_rows
+    records: list[ModuleRecord] = []
+    for index, row in enumerate(
+        iter_rows(ordered, columns=("rel_path", "module_name", "file_path")),
+        start=1,
+    ):
+        rel_path = row.get("rel_path")
+        module_name = row.get("module_name")
+        file_path = row.get("file_path")
+        records.append(
+            ModuleRecord(
+                rel_path=rel_path if isinstance(rel_path, str) else "",
+                module_name=module_name if isinstance(module_name, str) else "",
+                file_path=Path(file_path) if isinstance(file_path, str) else Path(),
+                index=index,
+                total=total,
+            )
+        )
+    return records

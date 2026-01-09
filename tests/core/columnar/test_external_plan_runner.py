@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.plan_ops import (
     ExternalPlanRequest,
@@ -31,11 +32,11 @@ def test_run_external_plan_reader() -> None:
     def runner(*, request: ExternalPlanRequest) -> pa.RecordBatchReader:
         assert request.spec.engine == engine
         table = pa.table({"id": [1, 2]})
-        return table.to_reader()
+        return table_to_reader(table)
 
     register_external_plan_runner(engine, runner)
     reader = run_external_plan(_request(engine))
-    table = reader.read_all()
+    table = reader_to_table(reader)
     rows = list(iter_rows(table, columns=("id",)))
     assert rows == [{"id": 1}, {"id": 2}]
 
@@ -50,6 +51,6 @@ def test_run_external_plan_table() -> None:
 
     register_external_plan_runner(engine, runner)
     reader = run_external_plan(_request(engine))
-    table = reader.read_all()
+    table = reader_to_table(reader)
     rows = list(iter_rows(table, columns=("value",)))
     assert rows == [{"value": 3}]

@@ -48,6 +48,7 @@ from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.graphs.builders import build_symbol_module_edges
 from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.columnar.conversion import tabular_to_arrow_table
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.storage.catalog import FunctionCatalog
 from codeintel.storage.query_results import records_from_arrow_table, records_from_relation
@@ -659,15 +660,13 @@ def _write_mapping_rows(
 
 def _config_value_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]:
     if ctx.gateway.config.dataset_root_dir is None:
-        table = (
-            ctx.gateway.con.execute(
+        table = tabular_to_arrow_table(
+            ctx.gateway.con.sql(
                 """
             SELECT repo, commit, config_path, key, extras
             FROM analytics.config_values
             """
             )
-            .arrow()
-            .read_all()
         )
         return records_from_arrow_table(table)
     return records_from_relation(
@@ -683,15 +682,13 @@ def _config_value_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object
 
 def _entrypoint_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]:
     if ctx.gateway.config.dataset_root_dir is None:
-        table = (
-            ctx.gateway.con.execute(
+        table = tabular_to_arrow_table(
+            ctx.gateway.con.sql(
                 """
             SELECT repo, commit, handler_goid_h128
             FROM analytics.entrypoints
             """
             )
-            .arrow()
-            .read_all()
         )
         return records_from_arrow_table(table)
     return records_from_relation(
@@ -705,15 +702,13 @@ def _entrypoint_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]
 
 def _subsystem_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object]]:
     if ctx.gateway.config.dataset_root_dir is None:
-        table = (
-            ctx.gateway.con.execute(
+        table = tabular_to_arrow_table(
+            ctx.gateway.con.sql(
                 """
             SELECT repo, commit, subsystem_id, module
             FROM analytics.subsystem_modules
             """
             )
-            .arrow()
-            .read_all()
         )
         return records_from_arrow_table(table)
     return records_from_relation(
@@ -788,26 +783,22 @@ def _write_graph_metrics(
     active_filters: GraphMetricFilters,
 ) -> Sequence[Mapping[str, object]]:
     if ctx.gateway.config.dataset_root_dir is None:
-        import_table = (
-            ctx.gateway.con.execute(
+        import_table = tabular_to_arrow_table(
+            ctx.gateway.con.sql(
                 """
             SELECT module, scc_id, component_size, layer
             FROM graph.import_modules
             """
             )
-            .arrow()
-            .read_all()
         )
         import_module_rows = records_from_arrow_table(import_table)
-        symbol_table = (
-            ctx.gateway.con.execute(
+        symbol_table = tabular_to_arrow_table(
+            ctx.gateway.con.sql(
                 """
             SELECT def_path, use_path
             FROM graph.symbol_use_edges
             """
             )
-            .arrow()
-            .read_all()
         )
         symbol_rows = records_from_arrow_table(symbol_table)
     else:

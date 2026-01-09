@@ -15,6 +15,10 @@ from codeintel.build.analytics.dependencies.compute import (
     compute_external_dependencies_pure,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.parsing.worklists import (
+    build_function_ast_worklist,
+    build_module_ast_worklist,
+)
 from codeintel.build.analytics.utilities.catalogs import (
     CatalogProviderRequest,
     CatalogScope,
@@ -163,6 +167,12 @@ def external_dependency_calls__base(
     module_map = _module_map(modules_frame)
     if not module_map:
         return empty_table_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
+    module_worklist = build_module_ast_worklist(
+        modules_frame,
+        repo=env.repo,
+        commit=env.commit,
+        ctx=env.execution_context,
+    )
     catalog = catalog_provider_from_frames(
         CatalogProviderRequest(
             goids_frame=goids_frame,
@@ -174,16 +184,24 @@ def external_dependency_calls__base(
             ),
         )
     )
+    worklist = build_function_ast_worklist(
+        goids_frame,
+        repo=env.repo,
+        commit=env.commit,
+        ctx=env.execution_context,
+    )
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
         repo_root=env.snapshot.repo_root,
         catalog_provider=catalog,
+        worklist=worklist,
     )
     ast_map, missing = load_function_asts(request)
     inputs = ExternalDependencyInputs(
         catalog_provider=catalog,
         module_map=module_map,
+        module_worklist=module_worklist,
         ast_by_goid=ast_map,
         features_map=_features_by_goid(features_frame),
         missing_goids=missing,

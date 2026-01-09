@@ -11,9 +11,6 @@ import pyarrow as pa
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.ingestion.manifesting import (
-    finalize_ingest_reader_with_manifest,
-)
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     RelationTableSaveSpec,
@@ -26,7 +23,6 @@ from codeintel.build.hamilton.transforms.ingestion_normalize import scoped_table
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_helpers import cast_array
-from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -38,21 +34,22 @@ from codeintel.build.tabular.finalize_ops import (
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.table_ops import ensure_table_columns
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
     resolve_execution_context,
 )
 from codeintel.core.columnar.expr_vocab import E, Expression
-from codeintel.core.columnar.finalize_ops import (
-    finalize_spec_for_table as columnar_finalize_spec_for_table,
-)
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
-from codeintel.core.schemas.primitives import resolve_join_safe_columns
+from codeintel.core.schemas.primitives import (
+    resolve_canonical_sort_keys,
+    resolve_join_safe_columns,
+)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -69,7 +66,6 @@ SYNTAX_CALLS_TABLE_KEY = "core.syntax_calls"
 SYNTAX_IMPORTS_TABLE_KEY = "core.syntax_imports"
 SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY = "core.scip_occurrence_span_xref"
 SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY = "core.scip_occurrence_syntax_xref"
-_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 _OCCURRENCE_INT_COLUMNS = (
     "occ_start_line",
     "occ_start_col",
@@ -86,6 +82,26 @@ def _ordered_columns(table_key: str) -> list[str]:
     except (KeyError, RuntimeError):
         return []
     return list(schema.column_names())
+
+
+def _canonical_sort_keys_for_table(
+    table_key: str,
+    columns: Sequence[str],
+) -> tuple[SortKey, ...] | None:
+    schema = get_schema_service().get_table_schema(table_key)
+    keys = resolve_canonical_sort_keys(schema)
+    if not keys:
+        return None
+    available = set(columns)
+    return tuple((key, "ascending") for key in keys if key in available)
+
+
+def _plan_from_table(table: pa.Table, *, table_key: str) -> Plan:
+    plan = Plan.table(table)
+    sort_keys = _canonical_sort_keys_for_table(table_key, table.column_names)
+    if sort_keys:
+        return plan.order_by(sort_keys=list(sort_keys))
+    return plan
 
 
 def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
@@ -416,10 +432,10 @@ def _resolve_facts(
     occurrences: pa.Table,
     *,
     table_key: str,
-) -> pa.Table:
+) -> Plan:
     fact_columns = list(facts.column_names)
     if not fact_columns:
-        return empty_table_for_table(table_key)
+        return _plan_from_table(empty_table_for_table(table_key), table_key=table_key)
     execution_ctx = _resolve_ingest_execution_ctx(env)
     resolved_columns = _ordered_columns(table_key)
     matched_bytes, fallback_join, line_join = _resolve_occurrence_joins(
@@ -438,17 +454,11 @@ def _resolve_facts(
         aligned = _align_tables_for_concat([matched_bytes, fallback_join, line_join])
     tables = [table for table in aligned if table.num_rows > 0]
     if not tables:
-        return empty_table_for_table(table_key)
+        return _plan_from_table(empty_table_for_table(table_key), table_key=table_key)
     combined = concat_tables_unified(tables)
     if resolved_columns:
         combined = combined.select(resolved_columns)
-    reader = table_to_reader(combined, batch_size=None)
-    return finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=table_key,
-        reader=reader,
-        target_name=SYNTAX_ENRICH_TARGET_NAME,
-    )
+    return _plan_from_table(combined, table_key=table_key)
 
 
 def _resolve_occurrence_joins(
@@ -508,12 +518,7 @@ def _filter_table_expr(
 
 def _plan_to_table(plan: Plan, *, execution_ctx: ExecutionContext) -> pa.Table:
     resolved_ctx = resolve_execution_context(execution_ctx)
-    result = run_pipeline(
-        plan=ExecutionPlan.from_plan(plan),
-        finalize=columnar_finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
-        options=PipelineRunOptions(ctx=resolved_ctx),
-    )
-    return result.good
+    return ExecutionPlan.from_plan(plan).to_table(ctx=resolved_ctx)
 
 
 def _line_join_occurrences(
@@ -626,7 +631,7 @@ def syntax_enrich__defs_resolved__base(
     env: BuildEnv,
     q__core__syntax_defs: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
-) -> pa.Table:
+) -> Plan:
     """Build core.syntax_defs_resolved from syntax defs and SCIP welds.
 
     Parameters
@@ -640,8 +645,8 @@ def syntax_enrich__defs_resolved__base(
 
     Returns
     -------
-    pa.Table
-        Arrow reader for core.syntax_defs_resolved.
+    Plan
+        Plan for core.syntax_defs_resolved.
     """
     facts = scoped_table_for_ingest(
         q__core__syntax_defs,
@@ -669,7 +674,7 @@ def syntax_enrich__refs_resolved__base(
     env: BuildEnv,
     q__core__syntax_refs: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
-) -> pa.Table:
+) -> Plan:
     """Build core.syntax_refs_resolved from syntax refs and SCIP welds.
 
     Parameters
@@ -683,8 +688,8 @@ def syntax_enrich__refs_resolved__base(
 
     Returns
     -------
-    pa.Table
-        Arrow reader for core.syntax_refs_resolved.
+    Plan
+        Plan for core.syntax_refs_resolved.
     """
     facts = scoped_table_for_ingest(
         q__core__syntax_refs,
@@ -712,7 +717,7 @@ def syntax_enrich__calls_resolved__base(
     env: BuildEnv,
     q__core__syntax_calls: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
-) -> pa.Table:
+) -> Plan:
     """Build core.syntax_calls_resolved from syntax calls and SCIP welds.
 
     Parameters
@@ -726,8 +731,8 @@ def syntax_enrich__calls_resolved__base(
 
     Returns
     -------
-    pa.Table
-        Arrow reader for core.syntax_calls_resolved.
+    Plan
+        Plan for core.syntax_calls_resolved.
     """
     facts = scoped_table_for_ingest(
         q__core__syntax_calls,
@@ -755,7 +760,7 @@ def syntax_enrich__imports_resolved__base(
     env: BuildEnv,
     q__core__syntax_imports: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
-) -> pa.Table:
+) -> Plan:
     """Build core.syntax_imports_resolved from syntax imports and SCIP welds.
 
     Parameters
@@ -769,8 +774,8 @@ def syntax_enrich__imports_resolved__base(
 
     Returns
     -------
-    pa.Table
-        Arrow reader for core.syntax_imports_resolved.
+    Plan
+        Plan for core.syntax_imports_resolved.
     """
     facts = scoped_table_for_ingest(
         q__core__syntax_imports,
@@ -795,6 +800,15 @@ def syntax_enrich__imports_resolved__base(
 
 
 _MODULE = sys.modules[__name__]
+
+
+def _syntax_enrich_save_spec(table_key: str) -> RelationTableSaveSpec:
+    return RelationTableSaveSpec(
+        table_key=table_key,
+        ingest_finalize=True,
+    )
+
+
 _SYNTAX_ENRICH_TABLE_CONTEXTS = (
     TableTargetTableContext(
         table_key=SYNTAX_DEFS_RESOLVED_TABLE_KEY,
@@ -824,7 +838,7 @@ _SYNTAX_ENRICH_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
         tables=(),
         table_materializations_node="syntax_enrich__table_materializations",
         anchor_node_name="t__syntax_enrich",
-        save_spec_factory=RelationTableSaveSpec,
+        save_spec_factory=_syntax_enrich_save_spec,
         default_input_type=InferableTabularInput,
     ),
     table_contexts=_SYNTAX_ENRICH_TABLE_CONTEXTS,

@@ -11,6 +11,7 @@ from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.build.analytics.parsing.worklists import build_function_ast_worklist
 from codeintel.build.analytics.semantic_roles.core import (
     SemanticRoleInputs,
     SemanticRolesResult,
@@ -270,11 +271,18 @@ def semantic_roles_result(
             ),
         )
     )
+    worklist = build_function_ast_worklist(
+        semantic_role_module_frames.goids_frame,
+        repo=env.repo,
+        commit=env.commit,
+        ctx=env.execution_context,
+    )
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
         repo_root=env.snapshot.repo_root,
         catalog_provider=catalog,
+        worklist=worklist,
     )
     ast_map, _missing = load_function_asts(request)
     return build_semantic_roles_rows(

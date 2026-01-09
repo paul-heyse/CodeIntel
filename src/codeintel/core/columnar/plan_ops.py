@@ -18,6 +18,13 @@ from codeintel.core.columnar.execution_context import (
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.columnar.ordering import OrderingSpec, SortKey, ordering_keys_present
+from codeintel.core.columnar.plan_schema import (
+    infer_aggregate_schema,
+    infer_filter_schema,
+    infer_hash_join_schema,
+    infer_order_by_schema,
+    infer_project_schema,
+)
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.streaming import configure_arrow_threading_for_context
 
@@ -159,7 +166,8 @@ class Plan:
         declarations = [plan.declaration for plan in plans]
         decl = acero.Declaration.from_sequence(declarations)
         ordering = plans[-1].ordering if plans else None
-        return cls(decl, ordering=ordering)
+        schema = plans[-1].schema if plans else None
+        return cls(decl, schema=schema, ordering=ordering)
 
     def project(
         self,
@@ -193,7 +201,8 @@ class Plan:
             expressions=expr_list,
             names=names,
         )
-        return Plan(decl, ordering=ordering)
+        schema = infer_project_schema(self.schema, expr_list, names=names)
+        return Plan(decl, schema=schema, ordering=ordering)
 
     def filter(self, expr: pc.Expression) -> Plan:
         """Filter rows by an expression.
@@ -211,7 +220,8 @@ class Plan:
         options = acero.FilterNodeOptions(expr)
         decl = acero.Declaration("filter", options, inputs=[self.declaration])
         ordering = _filter_ordering(self._resolved_ordering())
-        return Plan(decl, ordering=ordering)
+        schema = infer_filter_schema(self.schema)
+        return Plan(decl, schema=schema, ordering=ordering)
 
     def aggregate(
         self,
@@ -236,7 +246,8 @@ class Plan:
         options = acero.AggregateNodeOptions(aggregates=list(aggregates), keys=keys)
         decl = acero.Declaration("aggregate", options, inputs=[self.declaration])
         ordering = _aggregate_ordering(self._resolved_ordering(), keys=keys)
-        return Plan(decl, ordering=ordering)
+        schema = infer_aggregate_schema(self.schema, keys=keys, aggregates=aggregates)
+        return Plan(decl, schema=schema, ordering=ordering)
 
     def hash_join(
         self,
@@ -280,7 +291,8 @@ class Plan:
             left_columns=_resolve_join_columns(self, output=spec.left_output),
             right_columns=_resolve_join_columns(right, output=spec.right_output),
         )
-        return Plan(decl, ordering=ordering)
+        schema = infer_hash_join_schema(self.schema, right.schema, spec=spec)
+        return Plan(decl, schema=schema, ordering=ordering)
 
     def order_by(
         self,
@@ -312,7 +324,8 @@ class Plan:
             reason="order_by explicit ordering",
             pipeline_breaker=True,
         )
-        return Plan(decl, ordering=ordering)
+        schema = infer_order_by_schema(self.schema)
+        return Plan(decl, schema=schema, ordering=ordering)
 
     def to_table(self, *, use_threads: bool = True) -> pa.Table:
         """Materialize the plan as an Arrow table.

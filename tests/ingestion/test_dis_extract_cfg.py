@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.dis_extract import DisExtractStep
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
@@ -50,10 +51,7 @@ def _reader_to_dicts(
     list[dict[str, object]]
         Rows converted from the reader stream.
     """
-    if isinstance(reader, pa.Table):
-        table = reader
-    else:
-        table = pa.Table.from_batches(reader, schema=reader.schema)
+    table = reader if isinstance(reader, pa.Table) else reader_to_table(reader)
     return list(table.to_pylist())
 
 

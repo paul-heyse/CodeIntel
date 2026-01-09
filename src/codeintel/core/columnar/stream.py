@@ -390,28 +390,30 @@ def coerce_arrow_reader(
     pyarrow.RecordBatchReader | None
         Reader when coercion succeeds, otherwise None.
     """
+    reader: pa.RecordBatchReader | None = None
     if isinstance(value, pa.RecordBatchReader):
-        return value
+        reader = value
     fetch_record_batch = getattr(value, "fetch_record_batch", None)
-    if callable(fetch_record_batch):
+    if reader is None and callable(fetch_record_batch):
         size = batch_size or DEFAULT_ARROW_BATCH_SIZE
         try:
-            return fetch_record_batch(size)
+            reader = fetch_record_batch(size)
         except TypeError:
-            return fetch_record_batch()
+            reader = fetch_record_batch()
     fetch_arrow_reader = getattr(value, "fetch_arrow_reader", None)
-    if callable(fetch_arrow_reader):
-        return fetch_arrow_reader()
-    reader = _import_c_stream(value)
-    if reader is not None:
-        return reader
-    table_from_c = _table_from_c_array(value)
-    if table_from_c is not None:
-        return _table_to_reader(table_from_c, batch_size=batch_size)
-    table = _table_from_interchange(value)
-    if table is None:
-        return None
-    return _table_to_reader(table, batch_size=batch_size)
+    if reader is None and callable(fetch_arrow_reader):
+        reader = fetch_arrow_reader()
+    if reader is None:
+        reader = _import_c_stream(value)
+    if reader is None:
+        table_from_c = _table_from_c_array(value)
+        if table_from_c is not None:
+            reader = _table_to_reader(table_from_c, batch_size=batch_size)
+    if reader is None:
+        table = _table_from_interchange(value)
+        if table is not None:
+            reader = _table_to_reader(table, batch_size=batch_size)
+    return reader
 
 
 def _table_to_reader(

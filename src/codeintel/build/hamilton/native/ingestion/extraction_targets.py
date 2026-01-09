@@ -21,7 +21,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
 import pyarrow as pa
@@ -32,6 +32,8 @@ from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.ingestion.manifesting import (
     finalize_ingest_reader_with_manifest,
     finalize_ingest_table_with_manifest,
+    ingest_manifest_dir,
+    ingest_manifest_options,
 )
 from codeintel.build.hamilton.native.options.ingestion import (
     AstExtractOptions,
@@ -68,10 +70,20 @@ from codeintel.build.tabular.finalize_ops import (
     record_join_precheck_errors,
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
+from codeintel.core.columnar.conversion import empty_table_from_schema, table_to_reader
+from codeintel.core.columnar.explode_ops import (
+    ExplodeSpec,
+    NullChildPolicy,
+    NullListPolicy,
+    explode_edges_with_aligned_lists,
+)
 from codeintel.core.columnar.expr_vocab import E, Expression
+from codeintel.core.columnar.iter import iter_rows_limit
+from codeintel.core.columnar.kernels import struct_field
 from codeintel.core.columnar.plan_builder import build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.execution.ids import RUN_PREFIX_INGEST, new_run_id
+from codeintel.core.manifests import read_manifest_json, write_manifest_json
 from codeintel.core.schemas.primitives import resolve_join_safe_columns
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.ast_extract import AstExtractStep
@@ -92,6 +104,10 @@ _HAMILTON_TYPE_HINTS = (
     ModuleRecord,
     PyFrontend,
 )
+
+ERROR_LIST_POLICY: NullListPolicy = "error"
+EMPTY_LIST_POLICY: NullListPolicy = "empty"
+ERROR_CHILD_POLICY: NullChildPolicy = "error"
 
 AST_TARGET_NAME = "ast"
 CST_TARGET_NAME = "cst"
@@ -560,6 +576,227 @@ def _merge_result_warnings(
     )
 
 
+def _empty_list_error_table(
+    table: pa.Table,
+    *,
+    context_cols: Sequence[str],
+) -> pa.Table:
+    fields = [
+        pa.field("row_id", pa.int64()),
+        pa.field("error_code", pa.string()),
+        pa.field("column", pa.string()),
+        pa.field("detail", pa.string()),
+    ]
+    for name in context_cols:
+        if name in table.column_names:
+            fields.append(table.schema.field(name))
+        else:
+            fields.append(pa.field(name, pa.null()))
+    return empty_table_from_schema(pa.schema(fields))
+
+
+def _concat_list_errors(
+    errors: Sequence[pa.Table],
+    *,
+    template: pa.Table,
+    context_cols: Sequence[str],
+) -> pa.Table:
+    non_empty = [error for error in errors if error.num_rows > 0]
+    if not non_empty:
+        return _empty_list_error_table(template, context_cols=context_cols)
+    return pa.concat_tables(non_empty, promote_options="default")
+
+
+def _list_validation_errors(
+    table: pa.Table,
+    *,
+    spec: ExplodeSpec,
+) -> pa.Table:
+    required = {
+        spec.src_col,
+        spec.dst_list_col,
+        *spec.aligned_list_cols,
+        *spec.error_context_cols,
+    }
+    if table.num_rows == 0 or not required.issubset(set(table.column_names)):
+        return _empty_list_error_table(table, context_cols=spec.error_context_cols)
+    return explode_edges_with_aligned_lists(table, spec=spec).errors
+
+
+def _cst_span_list_errors(cst_rows: pa.Table) -> pa.Table:
+    context_cols = ("path", "node_id")
+    required = {"path", "node_id", "span"}
+    if cst_rows.num_rows == 0 or not required.issubset(set(cst_rows.column_names)):
+        return _empty_list_error_table(cst_rows, context_cols=context_cols)
+    try:
+        span_start = struct_field(cst_rows["span"], "start")
+        span_end = struct_field(cst_rows["span"], "end")
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
+        return _empty_list_error_table(cst_rows, context_cols=context_cols)
+    span_table = pa.table(
+        {
+            "path": cst_rows["path"],
+            "node_id": cst_rows["node_id"],
+            "span_start": span_start,
+            "span_end": span_end,
+        }
+    )
+    return _list_validation_errors(
+        span_table,
+        spec=ExplodeSpec(
+            src_col="node_id",
+            dst_list_col="span_start",
+            aligned_list_cols=("span_end",),
+            null_list_policy=ERROR_LIST_POLICY,
+            null_child_policy=ERROR_CHILD_POLICY,
+            error_context_cols=context_cols,
+        ),
+    )
+
+
+def _cst_list_errors(cst_rows: pa.Table) -> pa.Table:
+    context_cols = ("path", "node_id")
+    # Hard-error for span alignment; tolerate null list for parents/qnames.
+    errors = [
+        _cst_span_list_errors(cst_rows),
+        _list_validation_errors(
+            cst_rows,
+            spec=ExplodeSpec(
+                src_col="node_id",
+                dst_list_col="parents",
+                null_list_policy=EMPTY_LIST_POLICY,
+                null_child_policy=ERROR_CHILD_POLICY,
+                error_context_cols=context_cols,
+            ),
+        ),
+        _list_validation_errors(
+            cst_rows,
+            spec=ExplodeSpec(
+                src_col="node_id",
+                dst_list_col="qnames",
+                null_list_policy=EMPTY_LIST_POLICY,
+                null_child_policy=ERROR_CHILD_POLICY,
+                error_context_cols=context_cols,
+            ),
+        ),
+    ]
+    return _concat_list_errors(errors, template=cst_rows, context_cols=context_cols)
+
+
+def _docstrings_list_errors(docstring_rows: pa.Table) -> pa.Table:
+    context_cols = ("repo", "commit", "rel_path", "module", "qualname", "kind")
+    errors = [
+        _list_validation_errors(
+            docstring_rows,
+            spec=ExplodeSpec(
+                src_col="qualname",
+                dst_list_col="params",
+                null_list_policy=EMPTY_LIST_POLICY,
+                null_child_policy=ERROR_CHILD_POLICY,
+                error_context_cols=context_cols,
+            ),
+        ),
+        _list_validation_errors(
+            docstring_rows,
+            spec=ExplodeSpec(
+                src_col="qualname",
+                dst_list_col="raises",
+                null_list_policy=EMPTY_LIST_POLICY,
+                null_child_policy=ERROR_CHILD_POLICY,
+                error_context_cols=context_cols,
+            ),
+        ),
+        _list_validation_errors(
+            docstring_rows,
+            spec=ExplodeSpec(
+                src_col="qualname",
+                dst_list_col="examples",
+                null_list_policy=EMPTY_LIST_POLICY,
+                null_child_policy=ERROR_CHILD_POLICY,
+                error_context_cols=context_cols,
+            ),
+        ),
+    ]
+    return _concat_list_errors(errors, template=docstring_rows, context_cols=context_cols)
+
+
+def _inspect_runtime_state_list_errors(runtime_state_rows: pa.Table) -> pa.Table:
+    context_cols = ("repo", "commit", "object_id", "state_kind")
+    errors = [
+        _list_validation_errors(
+            runtime_state_rows,
+            spec=ExplodeSpec(
+                src_col="object_id",
+                dst_list_col="locals",
+                null_list_policy=EMPTY_LIST_POLICY,
+                null_child_policy=ERROR_CHILD_POLICY,
+                error_context_cols=context_cols,
+            ),
+        )
+    ]
+    return _concat_list_errors(errors, template=runtime_state_rows, context_cols=context_cols)
+
+
+def _list_validation_warnings(errors: pa.Table, *, context: str) -> tuple[str, ...]:
+    if errors.num_rows == 0:
+        return ()
+    message = f"{context} list validation errors: {errors.num_rows} rows"
+    log.warning(message)
+    return (message,)
+
+
+def _list_error_manifest_payload(
+    errors: pa.Table,
+    *,
+    sample_limit: int,
+) -> dict[str, object]:
+    return {
+        "row_count": errors.num_rows,
+        "columns": list(errors.column_names),
+        "sample": list(iter_rows_limit(errors, limit=sample_limit)),
+    }
+
+
+def _update_ingest_manifest_extras(
+    env: BuildEnv,
+    *,
+    table_key: str,
+    target_name: str,
+    extras: Mapping[str, object],
+) -> None:
+    options = ingest_manifest_options(env, table_key=table_key, target_name=target_name)
+    path = ingest_manifest_dir(env) / options.filename
+    if not path.exists():
+        return
+    payload = read_manifest_json(path)
+    if not isinstance(payload, dict):
+        return
+    existing_extras = payload.get("extras")
+    merged_extras: dict[str, object] = {}
+    if isinstance(existing_extras, Mapping):
+        merged_extras.update(existing_extras)
+    merged_extras.update(extras)
+    payload["extras"] = merged_extras
+    write_manifest_json(path, payload)
+
+
+def _persist_list_errors_manifest(
+    env: BuildEnv,
+    *,
+    table_key: str,
+    target_name: str,
+    errors: pa.Table,
+    sample_limit: int = 50,
+) -> None:
+    payload = _list_error_manifest_payload(errors, sample_limit=sample_limit)
+    _update_ingest_manifest_extras(
+        env,
+        table_key=table_key,
+        target_name=target_name,
+        extras={"list_errors": payload},
+    )
+
+
 def _coerce_ast_output(
     output: ToolStepOutput,
     warnings: tuple[str, ...],
@@ -897,7 +1134,7 @@ def _py_compiler_meta_frame(
         }
     ]
     table, _ = table_for_rows(PY_COMPILER_META_TABLE_KEY, rows)
-    return table.to_reader()
+    return table_to_reader(table, batch_size=None)
 
 
 def _coerce_inspect_output(
@@ -1238,10 +1475,21 @@ def t__cst__ingest(
         reader=t__cst__run.rows,
         target_name=CST_TARGET_NAME,
     )
+    list_errors = _cst_list_errors(cst_rows)
+    list_warnings = _list_validation_warnings(list_errors, context=CST_NODES_TABLE_KEY)
+    _persist_list_errors_manifest(
+        env,
+        table_key=CST_NODES_TABLE_KEY,
+        target_name=CST_TARGET_NAME,
+        errors=list_errors,
+    )
     payload = {CST_NODES_TABLE_KEY: cst_rows}
     table_counts = {CST_NODES_TABLE_KEY: cst_rows.num_rows}
     return IngestStep(
-        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        result=ExecutionResult.ok(
+            table_counts=table_counts,
+            warnings=(*result.warnings, *list_warnings),
+        ),
         payload=payload,
     )
 
@@ -2106,6 +2354,17 @@ def t__inspect__ingest(
         reader=t__inspect__run.runtime_state_rows,
         target_name=INSPECT_TARGET_NAME,
     )
+    list_errors = _inspect_runtime_state_list_errors(runtime_state_rows)
+    list_warnings = _list_validation_warnings(
+        list_errors,
+        context=PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
+    )
+    _persist_list_errors_manifest(
+        env,
+        table_key=PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
+        target_name=INSPECT_TARGET_NAME,
+        errors=list_errors,
+    )
     payload = {
         PY_INSPECT_OBJECTS_TABLE_KEY: object_rows,
         PY_INSPECT_MEMBERS_TABLE_KEY: member_rows,
@@ -2131,7 +2390,10 @@ def t__inspect__ingest(
         PY_INSPECT_RUNTIME_STATE_TABLE_KEY: runtime_state_rows.num_rows,
     }
     return IngestStep(
-        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        result=ExecutionResult.ok(
+            table_counts=table_counts,
+            warnings=(*result.warnings, *list_warnings),
+        ),
         payload=payload,
     )
 
@@ -2217,10 +2479,21 @@ def t__docstrings__ingest(
         reader=t__docstrings__run.rows,
         target_name=DOCSTRINGS_TARGET_NAME,
     )
+    list_errors = _docstrings_list_errors(docstring_rows)
+    list_warnings = _list_validation_warnings(list_errors, context=DOCSTRINGS_TABLE_KEY)
+    _persist_list_errors_manifest(
+        env,
+        table_key=DOCSTRINGS_TABLE_KEY,
+        target_name=DOCSTRINGS_TARGET_NAME,
+        errors=list_errors,
+    )
     payload = {DOCSTRINGS_TABLE_KEY: docstring_rows}
     table_counts = {DOCSTRINGS_TABLE_KEY: docstring_rows.num_rows}
     return IngestStep(
-        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        result=ExecutionResult.ok(
+            table_counts=table_counts,
+            warnings=(*result.warnings, *list_warnings),
+        ),
         payload=payload,
     )
 

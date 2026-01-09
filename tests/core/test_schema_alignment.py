@@ -7,6 +7,7 @@ import json
 import pyarrow as pa
 import pytest
 
+from codeintel.core.columnar.conversion import reader_from_batches
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.primitives import Column, TableSchema
@@ -36,7 +37,7 @@ def test_align_reader_retains_extras_and_preserves_columns() -> None:
         ],
         names=["id", "name", "extra"],
     )
-    reader = pa.RecordBatchReader.from_batches(batch.schema, [batch])
+    reader = reader_from_batches(batch.schema, [batch])
 
     aligned_reader = align_reader_to_contract(
         reader,
@@ -75,7 +76,7 @@ def test_align_reader_rejects_extras_policy() -> None:
         ],
         names=["id", "name", "extra"],
     )
-    reader = pa.RecordBatchReader.from_batches(batch.schema, [batch])
+    reader = reader_from_batches(batch.schema, [batch])
 
     with pytest.raises(ValueError, match="Unexpected columns"):
         align_reader_to_contract(

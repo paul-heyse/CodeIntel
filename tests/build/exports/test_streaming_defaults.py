@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.build.exports.writers import write_jsonl_records
+from codeintel.core.columnar.conversion import reader_from_batches
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
@@ -27,7 +28,7 @@ class _BatchRecorder:
         self, rows_per_batch: int = DEFAULT_ARROW_BATCH_SIZE
     ) -> pa.RecordBatchReader:
         self.batch_sizes.append(rows_per_batch)
-        return pa.RecordBatchReader.from_batches(_EMPTY_SCHEMA, [])
+        return reader_from_batches(_EMPTY_SCHEMA, [])
 
     def aggregate(
         self,

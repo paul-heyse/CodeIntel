@@ -422,13 +422,13 @@ def _subsystem_maps_from_frame(
     subsystem_by_module: dict[str, str] = {}
     subsystem_names: dict[str, str] = {}
     if subsystem_modules_frame is not None and subsystem_modules_frame.num_rows > 0:
-    filtered = _rows_for_snapshot(
-        subsystem_modules_frame,
-        repo=repo,
-        commit=commit,
-        ctx=ctx,
-        table_key=SUBSYSTEM_MODULES_TABLE_KEY,
-    )
+        filtered = _rows_for_snapshot(
+            subsystem_modules_frame,
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=SUBSYSTEM_MODULES_TABLE_KEY,
+        )
         for row in filtered:
             module = row.get("module")
             subsystem_id = row.get("subsystem_id")

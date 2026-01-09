@@ -18,6 +18,7 @@ from sqlglot.errors import SqlglotError
 
 from codeintel.core.columnar import align_reader_to_contract, extras_policy_from_schema
 from codeintel.core.columnar.compute_helpers import combine_table_chunks
+from codeintel.core.columnar.conversion import table_from_batches, tabular_to_arrow_reader
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import hash_struct_ordinal, stable_sort_indices
 from codeintel.core.columnar.nested_ops import deep_cast_table_to_contract
@@ -610,7 +611,7 @@ class SemanticQueryKernel:
             batches.append(batch)
         if not batches:
             return []
-        table = pa.Table.from_batches(batches, schema=reader.schema)
+        table = table_from_batches(batches, schema=reader.schema)
         table = combine_table_chunks(table)
         if options.contract_schema is not None:
             with suppress(
@@ -1357,7 +1358,10 @@ class SemanticQueryKernel:
                 request,
                 fts_available=is_fts_available(warehouse.gateway.con),
             )
-            reader = relation.fetch_record_batch(self.settings.export_batch_size)
+            reader = tabular_to_arrow_reader(
+                relation,
+                batch_size=self.settings.export_batch_size,
+            )
             reader_options = _ReaderOutputOptions(
                 table_key=f"{SEARCH_TABLE_SCHEMA}.{SEARCH_TABLE_NAME}",
                 columns=None,
@@ -1616,7 +1620,9 @@ class SemanticQueryKernel:
                     for batch in reader:
                         _raise_if_cancelled(cancel_check)
                         rows_written += batch.num_rows
-                        writer.write_table(pa.Table.from_batches([batch], schema=reader.schema))
+                        writer.write_table(
+                            table_from_batches([batch], schema=reader.schema)
+                        )
                 finally:
                     writer.close()
                 return rows_written

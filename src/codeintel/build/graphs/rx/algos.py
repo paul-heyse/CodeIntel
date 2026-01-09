@@ -525,8 +525,38 @@ def union_graphs(
     -------
     RxGraph
         Union of the two graphs.
+
+    Raises
+    ------
+    ValueError
+        When the inputs are not both directed or both undirected.
     """
-    return rx.union(left, right, merge_nodes=merge_nodes, merge_edges=merge_edges)
+    if isinstance(left, rx.PyDiGraph) and isinstance(right, rx.PyDiGraph):
+        return rx.union(left, right, merge_nodes=merge_nodes, merge_edges=merge_edges)
+    if isinstance(left, rx.PyGraph) and isinstance(right, rx.PyGraph):
+        return rx.union(left, right, merge_nodes=merge_nodes, merge_edges=merge_edges)
+    message = "Union requires graphs of the same directedness"
+    raise ValueError(message)
+
+
+def subgraph_with_nodemap_by_index(
+    store: RxGraphStore,
+    indices: Sequence[int],
+    *,
+    preserve_attrs: bool = True,
+) -> tuple[RxGraph, dict[int, int]]:
+    """Return a subgraph for the provided node indices.
+
+    Returns
+    -------
+    tuple[RxGraph, dict[int, int]]
+        Subgraph and node index mapping returned by rustworkx.
+    """
+    subgraph, node_map = store.graph.subgraph_with_nodemap(
+        indices,
+        preserve_attrs=preserve_attrs,
+    )
+    return subgraph, dict(node_map)
 
 
 def _directed_graph(store: RxGraphStore) -> DirectedRxGraph:
@@ -2922,9 +2952,9 @@ __all__ = [
     "digraph_shortest_path_lengths_by_id",
     "dominance_frontiers_by_id",
     "edge_betweenness_by_id",
-    "edge_subgraph_by_index",
     "edge_cost_weight_fn",
     "edge_strength_weight_fn",
+    "edge_subgraph_by_index",
     "effective_size_by_id",
     "eigenvector_centrality_by_id",
     "empty_rx_graph",
@@ -2956,6 +2986,7 @@ __all__ = [
     "simple_cycles_by_id",
     "simple_paths_by_id",
     "strongly_connected_components_by_id",
+    "subgraph_with_nodemap_by_index",
     "successors_by_id",
     "to_directed_store",
     "to_undirected_store",

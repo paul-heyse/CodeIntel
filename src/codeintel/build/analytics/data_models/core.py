@@ -12,12 +12,9 @@ The Hamilton native module is at:
 from __future__ import annotations
 
 import ast
-import logging
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import TYPE_CHECKING
-
-import pyarrow as pa
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.utilities.ast import (
@@ -36,11 +33,11 @@ from codeintel.core.hashing import sha256_short
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.paths import normalize_path, path_to_module
 from codeintel.core.schemas.row_models import columns_for_table_key
-from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
-    from pathlib import Path
+
+    import pyarrow as pa
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.columnar.execution_context import ExecutionContext
@@ -60,8 +57,6 @@ DATA_MODEL_RELATIONSHIPS_COLS = _columns_for_table("analytics.data_model_relatio
 CORE_GOIDS_TABLE_KEY = "core.goids"
 CORE_MODULES_TABLE_KEY = "core.modules"
 CORE_DOCSTRINGS_TABLE_KEY = "core.docstrings"
-
-log = logging.getLogger(__name__)
 
 FIELD_CONSTRAINT_KEYS: tuple[str, ...] = (
     "gt",
@@ -827,15 +822,11 @@ def _all_class_defs(tree: ast.AST) -> Iterator[ast.ClassDef]:
 
 def _gather_models_for_path(
     rel_path: str,
-    abs_path: Path,
+    parsed: tuple[list[str], ast.AST],
     metas: list[ClassMeta],
     docstrings: dict[tuple[str, str], tuple[str | None, str | None]],
     snapshot: SnapshotRef,
 ) -> list[ModelRecord]:
-    parsed = parse_python_module(abs_path)
-    if parsed is None:
-        log.debug("Skipping %s; unable to parse module", abs_path)
-        return []
     lines, tree = parsed
     meta_resolver = _class_meta_resolver(rel_path, metas)
     module_name = metas[0].module if metas else path_to_module(rel_path)

@@ -24,10 +24,14 @@ from codeintel.build.analytics.entrypoints.core import (
     _build_entrypoint_context,
     collect_entrypoint_rows,
 )
+from codeintel.build.analytics.entrypoints.runtime import load_entrypoint_module_sources
+from codeintel.build.analytics.parsing.worklists import build_module_ast_worklist
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    import pyarrow as pa
 
     from codeintel.build.analytics.entrypoints.core import (
         EntrypointBuildInputs,
@@ -62,7 +66,9 @@ def compute_entrypoints_pure(
     snapshot: SnapshotRef,
     inputs: EntrypointBuildInputs,
     context_inputs: EntrypointContextInputs,
-    module_sources: Sequence[EntrypointModuleSource],
+    module_sources: Sequence[EntrypointModuleSource] | None = None,
+    *,
+    module_worklist: pa.Table | None = None,
 ) -> EntrypointsResult:
     """Compute entrypoints without writing to database.
 
@@ -97,6 +103,21 @@ def compute_entrypoints_pure(
     - Scheduled jobs and background tasks
     - Event handlers and message consumers
     """
+    resolved_worklist = module_worklist
+    if resolved_worklist is None and context_inputs.modules_frame is not None:
+        resolved_worklist = build_module_ast_worklist(
+            context_inputs.modules_frame,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            ctx=context_inputs.ctx,
+        )
+    if module_sources is None:
+        module_sources = load_entrypoint_module_sources(
+            inputs.module_map,
+            snapshot.repo_root,
+            module_worklist=resolved_worklist,
+            scan_profile=inputs.scan_profile,
+        )
     resolved_context_inputs = EntrypointContextInputs(
         module_map_override=inputs.module_map,
         features=inputs.features_map,

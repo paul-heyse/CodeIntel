@@ -24,6 +24,7 @@ from codeintel.build.analytics.compute.dependencies.detection import (
     group_calls_by_library,
 )
 from codeintel.build.analytics.dependencies import load_config_key_map
+from codeintel.core.columnar.conversion import tabular_to_arrow_table
 from tests._helpers.analytics_samples import (
     dependency_alias_sources,
     dependency_calls_sample,
@@ -113,7 +114,7 @@ def test_load_config_keys_filters_repo(dependencies_ctx: DependenciesFixture) ->
         ],
     )
 
-    config_frame = con.execute("SELECT * FROM analytics.config_values").arrow().read_all()
+    config_frame = tabular_to_arrow_table(con.sql("SELECT * FROM analytics.config_values"))
     mapping = load_config_key_map(config_frame, repo=ctx.repo, commit=ctx.commit)
 
     expect_in("pkg.mod_a", mapping)

@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, cast
-
-import rustworkx as rx
+from typing import Any
 
 from codeintel.build.graphs.rx.algos import (
     GraphInput,
@@ -23,6 +21,7 @@ from codeintel.build.graphs.rx.algos import (
     is_directed_acyclic,
     out_degree_by_id,
     strongly_connected_components_by_id,
+    subgraph_with_nodemap_by_index,
     to_undirected_store,
     topological_generations_by_id,
     weakly_connected_components_by_id,
@@ -64,13 +63,6 @@ class GraphStatistics:
     strongly_connected_components: int
     weakly_connected_components: int
     is_dag: bool
-
-
-def _undirected_graph(store: RxGraphStore) -> rx.PyGraph:
-    if store.is_directed:
-        message = "Expected an undirected graph store"
-        raise ValueError(message)
-    return cast("rx.PyGraph", store.graph)
 
 
 def get_in_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
@@ -242,12 +234,12 @@ def compute_diameter_estimate(graph: GraphInput) -> float | None:
         return None
     if len(largest) <= 1:
         return 0.0
-    undirected_graph = _undirected_graph(work_store)
     ordered_indices = [
         work_store.id_to_index[node_id] for node_id in largest if node_id in work_store.id_to_index
     ]
     ordered_indices.sort(key=lambda idx: stable_key(work_store.index_to_id[idx]))
-    subgraph, _node_map = undirected_graph.subgraph_with_nodemap(
+    subgraph, _node_map = subgraph_with_nodemap_by_index(
+        work_store,
         ordered_indices,
         preserve_attrs=True,
     )
@@ -293,12 +285,12 @@ def compute_avg_shortest_path_length(graph: GraphInput) -> float | None:
         return None
     if len(largest) <= 1:
         return 0.0
-    undirected_graph = _undirected_graph(work_store)
     ordered_indices = [
         work_store.id_to_index[node_id] for node_id in largest if node_id in work_store.id_to_index
     ]
     ordered_indices.sort(key=lambda idx: stable_key(work_store.index_to_id[idx]))
-    subgraph, _node_map = undirected_graph.subgraph_with_nodemap(
+    subgraph, _node_map = subgraph_with_nodemap_by_index(
+        work_store,
         ordered_indices,
         preserve_attrs=True,
     )

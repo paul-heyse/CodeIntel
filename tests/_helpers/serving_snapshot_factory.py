@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, get_args
 import duckdb
 
 from codeintel.config.primitives import BuildPaths
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
@@ -439,7 +440,7 @@ def _manifest_path_for_table(
         return None
     try:
         relation = con.sql(f'SELECT * FROM "{schema_name}"."{table_name}"')
-        reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
     except duckdb.Error:
         return None
     schema_hash = _schema_hash_from_table(table)

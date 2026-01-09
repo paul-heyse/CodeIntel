@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, SCHEMAS
 from codeintel.storage.contracts.provider import is_view, iter_contracts
@@ -155,10 +156,13 @@ def assert_schema_alignment(
             )
             .order_by(exp.Ordered(this=exp.column("ordinal_position")))
         )
-        reader = con.execute(
-            render_sql_duckdb(query),
-            [table.schema, table.name],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            con.execute(
+                render_sql_duckdb(query),
+                [table.schema, table.name],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         actual = [row[0] for row in iter_tuples_from_arrow_reader(reader)]
         expected = table.column_names()
         if actual != expected:

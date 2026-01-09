@@ -18,6 +18,7 @@ from codeintel.build.analytics.parsing.span_resolver import (
     build_span_index,
     resolve_span,
 )
+from codeintel.build.analytics.parsing.worklists import build_function_ast_worklist
 from codeintel.core.parsing import ParsedFunction, ParsedModule, SourceSpan
 from codeintel.core.validation.reporters import (
     BaseValidationReporter,
@@ -36,6 +37,7 @@ __all__ = [
     "SpanResolutionError",
     "SpanResolutionResult",
     "ValidationRows",
+    "build_function_ast_worklist",
     "build_span_index",
     "get_parser",
     "get_validation_rows",

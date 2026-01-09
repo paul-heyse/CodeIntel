@@ -34,7 +34,7 @@ from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
@@ -363,6 +363,7 @@ def _config_bipartite_from_rows(
             key_node = ("c", key_value)
             module_node = ("m", str(module_name))
             edge_rows.append((key_node, module_node, 1.0))
+    node_ids = {edge[0] for edge in edge_rows} | {edge[1] for edge in edge_rows}
     if not edge_rows and not node_ids:
         store = RxGraphStore.undirected(
             weight_policy=DEFAULT_WEIGHT_POLICY,
@@ -376,7 +377,6 @@ def _config_bipartite_from_rows(
         numeric_policy=DEFAULT_NUMERIC_POLICY,
         node_attrs_fn=_bipartite_node_attrs,
     )
-    node_ids = {edge[0] for edge in edge_rows} | {edge[1] for edge in edge_rows}
     options = BuildStoreOptions(
         stable_nodes=True,
         node_ids=node_ids or None,
@@ -409,9 +409,10 @@ def _rows_from_tabular(
             ctx=ctx,
         )
         columns = list(table.column_names)
+        reader = table_to_reader(table, batch_size=None)
         return [
             dict(zip(columns, values, strict=False))
-            for values in iter_tuples(table.to_reader(), columns=columns)
+            for values in iter_tuples(reader, columns=columns)
         ]
     return [dict(row) for row in rows]
 
@@ -649,7 +650,13 @@ def compute_config_graph_metrics_result(
 
 
 def build_config_graph_metrics_keys_table(request: ConfigGraphMetricsRequest) -> pa.Table:
-    """Build the config graph key metrics table."""
+    """Build the config graph key metrics table.
+
+    Returns
+    -------
+    pa.Table
+        Config graph metrics keys table.
+    """
     result = compute_config_graph_metrics_result(request)
     if result.key_rows is None:
         return empty_table_for_table(CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY)
@@ -658,7 +665,13 @@ def build_config_graph_metrics_keys_table(request: ConfigGraphMetricsRequest) ->
 
 
 def build_config_graph_metrics_modules_table(request: ConfigGraphMetricsRequest) -> pa.Table:
-    """Build the config graph module metrics table."""
+    """Build the config graph module metrics table.
+
+    Returns
+    -------
+    pa.Table
+        Config graph metrics modules table.
+    """
     result = compute_config_graph_metrics_result(request)
     if result.module_rows is None:
         return empty_table_for_table(CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY)
@@ -667,7 +680,13 @@ def build_config_graph_metrics_modules_table(request: ConfigGraphMetricsRequest)
 
 
 def build_config_projection_key_edges_table(request: ConfigGraphMetricsRequest) -> pa.Table:
-    """Build the config projection key edges table."""
+    """Build the config projection key edges table.
+
+    Returns
+    -------
+    pa.Table
+        Config projection key edges table.
+    """
     result = compute_config_graph_metrics_result(request)
     if result.key_edge_rows is None:
         return empty_table_for_table(CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY)
@@ -676,7 +695,13 @@ def build_config_projection_key_edges_table(request: ConfigGraphMetricsRequest) 
 
 
 def build_config_projection_module_edges_table(request: ConfigGraphMetricsRequest) -> pa.Table:
-    """Build the config projection module edges table."""
+    """Build the config projection module edges table.
+
+    Returns
+    -------
+    pa.Table
+        Config projection module edges table.
+    """
     result = compute_config_graph_metrics_result(request)
     if result.module_edge_rows is None:
         return empty_table_for_table(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY)

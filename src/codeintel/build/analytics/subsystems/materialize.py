@@ -198,7 +198,13 @@ def build_subsystems_table(
     snapshot: SnapshotRef,
     inputs: SubsystemBuildInputs,
 ) -> pa.Table:
-    """Build a subsystem summary table via the affinity graph pipeline."""
+    """Build a subsystem summary table via the affinity graph pipeline.
+
+    Returns
+    -------
+    pa.Table
+        Subsystem summary table.
+    """
     rows = build_subsystem_rows(snapshot, inputs)
     if not rows.subsystem_rows:
         return empty_table_for_table(SUBSYSTEMS_TABLE_KEY)
@@ -210,7 +216,13 @@ def build_subsystem_modules_table(
     snapshot: SnapshotRef,
     inputs: SubsystemBuildInputs,
 ) -> pa.Table:
-    """Build a subsystem membership table via the affinity graph pipeline."""
+    """Build a subsystem membership table via the affinity graph pipeline.
+
+    Returns
+    -------
+    pa.Table
+        Subsystem membership table.
+    """
     rows = build_subsystem_rows(snapshot, inputs)
     if not rows.membership_rows:
         return empty_table_for_table(SUBSYSTEM_MODULES_TABLE_KEY)

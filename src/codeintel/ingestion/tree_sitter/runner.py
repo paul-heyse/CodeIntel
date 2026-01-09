@@ -280,9 +280,6 @@ class _QueryPackAccumulator:
     tokens: list[TreeSitterToken]
     trivia: list[TreeSitterTrivia]
     warnings: list[str]
-    seen_captures: set[tuple[str, int, int, str]]
-    seen_tokens: set[str]
-    seen_trivia: set[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -903,7 +900,6 @@ def _append_capture_rows(
     *,
     capture_context: _CaptureRowContext,
     accumulator: _QueryPackAccumulator,
-    dedupe: bool,
 ) -> None:
     for pattern_index, capture_name, node in _iter_captures(matches):
         capture, token, trivia_entry = _capture_rows_for_match(
@@ -913,26 +909,10 @@ def _append_capture_rows(
             pattern_index=pattern_index,
         )
         if capture is not None:
-            if dedupe:
-                key = (
-                    capture.capture_name,
-                    capture.start_byte,
-                    capture.end_byte,
-                    capture.node_type,
-                )
-                if key in accumulator.seen_captures:
-                    continue
-                accumulator.seen_captures.add(key)
             accumulator.captures.append(capture)
         if token is not None:
-            if dedupe and token.token_id in accumulator.seen_tokens:
-                continue
-            accumulator.seen_tokens.add(token.token_id)
             accumulator.tokens.append(token)
         if trivia_entry is not None:
-            if dedupe and trivia_entry.trivia_id in accumulator.seen_trivia:
-                continue
-            accumulator.seen_trivia.add(trivia_entry.trivia_id)
             accumulator.trivia.append(trivia_entry)
 
 
@@ -945,9 +925,6 @@ def _query_pack_results(
         tokens=[],
         trivia=[],
         warnings=[],
-        seen_captures=set(),
-        seen_tokens=set(),
-        seen_trivia=set(),
     )
     cursor = _make_query_cursor(run_context.pack.query, run_context.context.match_limit)
     capture_context = _CaptureRowContext(
@@ -967,7 +944,6 @@ def _query_pack_results(
             matches,
             capture_context=capture_context,
             accumulator=accumulator,
-            dedupe=True,
         )
 
     if not byte_ranges:
@@ -977,7 +953,6 @@ def _query_pack_results(
             matches,
             capture_context=capture_context,
             accumulator=accumulator,
-            dedupe=False,
         )
 
     if exceeded:

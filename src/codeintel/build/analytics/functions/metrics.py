@@ -21,7 +21,9 @@ from codeintel.build.analytics.functions.config import (
     ProcessState,
 )
 from codeintel.build.analytics.functions.parsing import parse_python_file
+from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
+from codeintel.build.analytics.parsing.worklists import build_function_ast_worklist
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
@@ -395,16 +397,23 @@ def _goids_by_file_from_grouped(
         list_values = values[1:]
         if not list_values:
             continue
-        list_lengths = [len(value) for value in list_values if isinstance(value, list)]
-        if list_lengths and len(set(list_lengths)) != 1:
+        list_values_by_name: dict[str, list[object]] = {
+            name: value
+            for name, value in zip(columns[1:], list_values, strict=False)
+            if isinstance(value, list)
+        }
+        if not list_values_by_name:
+            continue
+        list_lengths = [len(value) for value in list_values_by_name.values()]
+        if len(set(list_lengths)) != 1:
             log.warning("GOID rollup list length mismatch for %s", rel_path)
             continue
-        total = list_lengths[0] if list_lengths else 0
+        total = list_lengths[0]
         for idx in range(total):
             record = {
-                name: list_values[pos][idx]
-                for pos, name in enumerate(columns[1:])
-                if isinstance(list_values[pos], list)
+                name: list_values_by_name[name][idx]
+                for name in columns[1:]
+                if name in list_values_by_name
             }
             goid_row: GoidRow = {
                 "goid_h128": coerce_int(record.get("goid_h128"), ctx="goid_h128"),
@@ -537,8 +546,49 @@ def compute_function_analytics_result_from_tabular(
         scope=SnapshotScope.from_snapshot(snapshot),
         require_scope_columns=True,
     )
+    resolved_options = _resolve_ast_options(
+        goids_table=goids_table,
+        snapshot=snapshot,
+        options=options,
+        ctx=ctx,
+    )
     goids_by_file = _load_goids_from_frame(goids_table, snapshot, ctx=ctx)
-    return _compute_from_goids(goids_by_file, snapshot, options=options)
+    return _compute_from_goids(goids_by_file, snapshot, options=resolved_options)
+
+
+def _resolve_ast_options(
+    *,
+    goids_table: pa.Table,
+    snapshot: SnapshotRef,
+    options: FunctionAnalyticsOptions | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> FunctionAnalyticsOptions | None:
+    if options is not None and options.has_ast_data():
+        return options
+    worklist = build_function_ast_worklist(
+        goids_table,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        ctx=ctx,
+    )
+    if worklist.num_rows == 0:
+        return options
+    ast_map, missing = load_function_asts(
+        FunctionAstLoadRequest(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            repo_root=snapshot.repo_root,
+            worklist=worklist,
+        )
+    )
+    if not ast_map and not missing:
+        return options
+    reporter = options.validation_reporter if options is not None else None
+    return FunctionAnalyticsOptions(
+        validation_reporter=reporter,
+        function_ast_map=ast_map,
+        missing_function_goids=missing,
+    )
 
 
 def _build_function_analytics_from_ast_data(

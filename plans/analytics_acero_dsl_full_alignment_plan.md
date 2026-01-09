@@ -496,6 +496,13 @@ for row in iter_tuples(worklist.to_reader(), columns=("function_goid_h128", "rel
 - `src/codeintel/build/analytics/functions/metrics.py`
 - `src/codeintel/build/analytics/ast_features/extract.py`
 - `src/codeintel/build/analytics/parsing/*.py`
+- `src/codeintel/build/analytics/entrypoints/compute.py`
+- `src/codeintel/build/analytics/entrypoints/runtime.py`
+- `src/codeintel/build/analytics/dependencies/core.py`
+- `src/codeintel/build/analytics/dependencies/compute.py`
+- `src/codeintel/build/analytics/compute/dependencies/compute.py`
+- `src/codeintel/build/hamilton/native/analytics/entrypoints.py`
+- `src/codeintel/build/hamilton/native/analytics/tables_dependencies.py`
 
 **Implementation checklist**
 - [ ] Drive AST work exclusively from Arrow worklists.
@@ -503,6 +510,10 @@ for row in iter_tuples(worklist.to_reader(), columns=("function_goid_h128", "rel
 - [ ] Finalize outputs via analytics finalize helpers.
 - [ ] Replace remaining row-dict loops in parsing/metrics modules with
       grouped rollups + Arrow worklists before AST boundaries.
+
+**Progress**
+- [x] Entrypoint module source loading now accepts module worklists (Hamilton and non-Hamilton).
+- [x] Dependency alias map parsing now prefers module worklists when available.
 
 ---
 

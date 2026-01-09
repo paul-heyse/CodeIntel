@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import table_from_batches
 from codeintel.core.columnar.rows import ColumnarRows, columnar_row_count
 from codeintel.core.datasets.arrow_store import scan_dataset_reader, write_dataset
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
@@ -98,7 +99,7 @@ def read_snapshot_rows(
         snapshot_id=snapshot_id,
         options=options,
     )
-    table = pa.Table.from_batches(list(reader), schema=reader.schema)
+    table = table_from_batches(reader, schema=reader.schema)
     return list(table.to_pylist())
 
 

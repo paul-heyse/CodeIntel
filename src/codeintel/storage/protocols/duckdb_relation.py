@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 from duckdb import DuckDBPyRelation
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.protocols.export import ExportRelation, RecordBatch, RecordBatchReader
 
@@ -73,7 +74,7 @@ class DuckDBRelationAdapter:
         RecordBatchReader
             Reader yielding record batches.
         """
-        reader = self.relation.fetch_record_batch(rows_per_batch)
+        reader = tabular_to_arrow_reader(self.relation, batch_size=rows_per_batch)
         return ArrowRecordBatchReaderAdapter(reader)
 
     def aggregate(self, aggr_expr: str, group_expr: str = "") -> ExportRelation:
@@ -134,13 +135,7 @@ class DuckDBResultStreamAdapter:
         pyarrow.RecordBatchReader
             Reader yielding record batches.
         """
-        fetcher = getattr(self.relation, "fetch_arrow_reader", None)
-        if callable(fetcher):
-            try:
-                return fetcher(batch_size)
-            except TypeError:
-                return fetcher()
-        return self.relation.fetch_record_batch(batch_size)
+        return tabular_to_arrow_reader(self.relation, batch_size=batch_size)
 
 
 def adapt_duckdb_relation(relation: DuckDBPyRelation) -> ExportRelation:

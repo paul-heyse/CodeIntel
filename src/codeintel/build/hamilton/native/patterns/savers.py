@@ -23,6 +23,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.patterns.specs import OutputRole
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_dataset
+from codeintel.build.tabular.finalize_ops import FinalizeMode
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.validation.profiles import ValidationProfile, normalize_validation_profile
@@ -63,6 +64,9 @@ class DatasetSaveSpec:
     validation_profile: ValidationProfile | None = "lenient"
     output_role: OutputRole | None = None
     output_name: str | None = None
+    manifest_extras_node: str | None = None
+    ingest_finalize: bool = False
+    ingest_finalize_mode: FinalizeMode | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +77,9 @@ class RelationTableSaveSpec:
     validation_profile: ValidationProfile | None = "lenient"
     output_role: OutputRole | None = None
     output_name: str | None = None
+    manifest_extras_node: str | None = None
+    ingest_finalize: bool = False
+    ingest_finalize_mode: FinalizeMode | None = None
 
 
 def _dep(value: object) -> ParametrizedDependency:
@@ -266,6 +273,13 @@ def save_dataset(
     """
 
     def _materialize() -> NodeTransformLifecycle:
+        manifest_deps: dict[str, ParametrizedDependency] = {}
+        if spec.manifest_extras_node is not None:
+            manifest_deps["manifest_extras"] = _dep(source(spec.manifest_extras_node))
+        ingest_deps: dict[str, ParametrizedDependency] = {
+            "ingest_finalize": _dep(value(spec.ingest_finalize)),
+            "ingest_finalize_mode": _dep(value(spec.ingest_finalize_mode)),
+        }
         return SaveToObjectMetadataDecorator(
             [ArrowDatasetSaver],
             output_name_=spec.output_name or materialize_node(spec.table_key),
@@ -277,6 +291,8 @@ def save_dataset(
             collect_group=_dep(value(spec.collect_group)),
             validation_profile=_dep(value(spec.validation_profile)),
             output_role=_dep(value(spec.output_role)),
+            **manifest_deps,
+            **ingest_deps,
         )
 
     materializer = resolve_from_config(decorate_with=_materialize)
@@ -323,6 +339,13 @@ def save_relation_table(
     """
 
     def _materialize() -> NodeTransformLifecycle:
+        manifest_deps: dict[str, ParametrizedDependency] = {}
+        if spec.manifest_extras_node is not None:
+            manifest_deps["manifest_extras"] = _dep(source(spec.manifest_extras_node))
+        ingest_deps: dict[str, ParametrizedDependency] = {
+            "ingest_finalize": _dep(value(spec.ingest_finalize)),
+            "ingest_finalize_mode": _dep(value(spec.ingest_finalize_mode)),
+        }
         return SaveToObjectMetadataDecorator(
             [ArrowDatasetSaver],
             output_name_=spec.output_name or materialize_node(spec.table_key),
@@ -332,6 +355,8 @@ def save_relation_table(
             table_key=_dep(value(spec.table_key)),
             validation_profile=_dep(value(spec.validation_profile)),
             output_role=_dep(value(spec.output_role)),
+            **manifest_deps,
+            **ingest_deps,
         )
 
     materializer = resolve_from_config(decorate_with=_materialize)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -24,10 +25,10 @@ from codeintel.build.tabular.arrow_ops import iter_array_values
 from codeintel.build.tabular.compute_helpers import cast_array
 from codeintel.build.tabular.compute_masks import non_empty_string_expr
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
-from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
@@ -307,20 +308,12 @@ def cfg_blocks_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInp
         Arrow reader of CFG block rows.
     """
     if not cfg_dfg_analysis.cfg_blocks:
-        return empty_table_for_table(CFG_BLOCKS_TABLE_KEY)
+        empty = empty_table_for_table(CFG_BLOCKS_TABLE_KEY)
+        return _plan_from_table(empty, sort_keys=_order_by_for_table(CFG_BLOCKS_TABLE_KEY))
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_blocks)
     table, _ = table_for_rows(CFG_BLOCKS_TABLE_KEY, rows)
     table = _cast_function_goid(table)
-    result = finalize_table(
-        table,
-        spec=finalize_spec_for_table(
-            CFG_BLOCKS_TABLE_KEY,
-            mode="strict",
-            key_fields=_key_fields_for_table(CFG_BLOCKS_TABLE_KEY),
-            order_by=_order_by_for_table(CFG_BLOCKS_TABLE_KEY),
-        ),
-    )
-    return result.good
+    return _plan_from_table(table, sort_keys=_order_by_for_table(CFG_BLOCKS_TABLE_KEY))
 
 
 def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInput:
@@ -332,20 +325,12 @@ def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
         Tabular input of CFG edge rows.
     """
     if not cfg_dfg_analysis.cfg_edges:
-        return empty_table_for_table(CFG_EDGES_TABLE_KEY)
+        empty = empty_table_for_table(CFG_EDGES_TABLE_KEY)
+        return _plan_from_table(empty, sort_keys=_order_by_for_table(CFG_EDGES_TABLE_KEY))
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.cfg_edges)
     table, _ = table_for_rows(CFG_EDGES_TABLE_KEY, rows)
     table = _cast_function_goid(table)
-    result = finalize_table(
-        table,
-        spec=finalize_spec_for_table(
-            CFG_EDGES_TABLE_KEY,
-            mode="strict",
-            key_fields=_key_fields_for_table(CFG_EDGES_TABLE_KEY),
-            order_by=_order_by_for_table(CFG_EDGES_TABLE_KEY),
-        ),
-    )
-    return result.good
+    return _plan_from_table(table, sort_keys=_order_by_for_table(CFG_EDGES_TABLE_KEY))
 
 
 def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInput:
@@ -357,20 +342,12 @@ def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
         Tabular input of DFG edge rows.
     """
     if not cfg_dfg_analysis.dfg_edges:
-        return empty_table_for_table(DFG_EDGES_TABLE_KEY)
+        empty = empty_table_for_table(DFG_EDGES_TABLE_KEY)
+        return _plan_from_table(empty, sort_keys=_order_by_for_table(DFG_EDGES_TABLE_KEY))
     rows = (dataclasses.asdict(row) for row in cfg_dfg_analysis.dfg_edges)
     table, _ = table_for_rows(DFG_EDGES_TABLE_KEY, rows)
     table = _cast_function_goid(table)
-    result = finalize_table(
-        table,
-        spec=finalize_spec_for_table(
-            DFG_EDGES_TABLE_KEY,
-            mode="strict",
-            key_fields=_key_fields_for_table(DFG_EDGES_TABLE_KEY),
-            order_by=_order_by_for_table(DFG_EDGES_TABLE_KEY),
-        ),
-    )
-    return result.good
+    return _plan_from_table(table, sort_keys=_order_by_for_table(DFG_EDGES_TABLE_KEY))
 
 
 def cfg_blocks_existing(env: BuildEnv) -> InferableTabularInput:
@@ -386,7 +363,8 @@ def cfg_blocks_existing(env: BuildEnv) -> InferableTabularInput:
         table_key=CFG_BLOCKS_TABLE_KEY,
         snapshot_id=env.commit,
     )
-    return _cast_function_goid(table)
+    casted = _cast_function_goid(table)
+    return _plan_from_table(casted, sort_keys=_order_by_for_table(CFG_BLOCKS_TABLE_KEY))
 
 
 def cfg_edges_existing(env: BuildEnv) -> InferableTabularInput:
@@ -402,7 +380,8 @@ def cfg_edges_existing(env: BuildEnv) -> InferableTabularInput:
         table_key=CFG_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
-    return _cast_function_goid(table)
+    casted = _cast_function_goid(table)
+    return _plan_from_table(casted, sort_keys=_order_by_for_table(CFG_EDGES_TABLE_KEY))
 
 
 def dfg_edges_existing(env: BuildEnv) -> InferableTabularInput:
@@ -418,7 +397,8 @@ def dfg_edges_existing(env: BuildEnv) -> InferableTabularInput:
         table_key=DFG_EDGES_TABLE_KEY,
         snapshot_id=env.commit,
     )
-    return _cast_function_goid(table)
+    casted = _cast_function_goid(table)
+    return _plan_from_table(casted, sort_keys=_order_by_for_table(DFG_EDGES_TABLE_KEY))
 
 
 def cfg_blocks_empty(env: BuildEnv) -> InferableTabularInput:
@@ -430,7 +410,8 @@ def cfg_blocks_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for CFG blocks.
     """
     _ = env
-    return empty_table_for_table(CFG_BLOCKS_TABLE_KEY)
+    empty = empty_table_for_table(CFG_BLOCKS_TABLE_KEY)
+    return _plan_from_table(empty, sort_keys=_order_by_for_table(CFG_BLOCKS_TABLE_KEY))
 
 
 def cfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
@@ -442,7 +423,8 @@ def cfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for CFG edges.
     """
     _ = env
-    return empty_table_for_table(CFG_EDGES_TABLE_KEY)
+    empty = empty_table_for_table(CFG_EDGES_TABLE_KEY)
+    return _plan_from_table(empty, sort_keys=_order_by_for_table(CFG_EDGES_TABLE_KEY))
 
 
 def dfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
@@ -454,7 +436,8 @@ def dfg_edges_empty(env: BuildEnv) -> InferableTabularInput:
         Empty tabular input for DFG edges.
     """
     _ = env
-    return empty_table_for_table(DFG_EDGES_TABLE_KEY)
+    empty = empty_table_for_table(DFG_EDGES_TABLE_KEY)
+    return _plan_from_table(empty, sort_keys=_order_by_for_table(DFG_EDGES_TABLE_KEY))
 
 
 def _cast_function_goid(table: pa.Table) -> pa.Table:
@@ -486,6 +469,17 @@ def _order_by_for_table(table_key: str) -> tuple[SortKey, ...]:
     if not key_fields:
         return ()
     return tuple((field, _ASCENDING) for field in key_fields)
+
+
+def _plan_from_table(
+    table: pa.Table,
+    *,
+    sort_keys: Sequence[SortKey] | None = None,
+) -> Plan:
+    plan = Plan.table(table)
+    if sort_keys:
+        return plan.order_by(sort_keys=sort_keys)
+    return plan
 
 
 __all__ = [

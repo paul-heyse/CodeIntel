@@ -277,12 +277,17 @@ def _scan_dataset_reader(
         snapshot_id=snapshot_id,
         options=options,
     )
+    scan_telemetry: ScanTelemetry | None = None
     if telemetry is not None:
         LOG.debug("Maintenance scan telemetry: %s", telemetry.to_mapping())
+        scan_telemetry = ScanTelemetry(
+            fragment_count=telemetry.fragment_count,
+            estimated_rows=telemetry.row_count,
+        )
     if reader is None:
         msg = f"Dataset scan failed for {table_key}@{snapshot_id}"
         raise FileNotFoundError(msg)
-    return reader, telemetry
+    return reader, scan_telemetry
 
 
 def _finalize_reader_for_maintenance(

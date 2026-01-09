@@ -17,12 +17,13 @@ Usage
 -----
 Open a gateway and access tables through typed accessors:
 
+    from codeintel.core.columnar.conversion import tabular_to_arrow_reader
     from codeintel.storage.gateway import open_gateway, StorageConfig
 
     config = StorageConfig(path="catalog.duckdb")
     with open_gateway(config) as gw:
 
-        reader = gw.core.modules().fetch_record_batch(1024)
+        reader = tabular_to_arrow_reader(gw.core.modules(), batch_size=1024)
 
 Writes are routed through `codeintel.storage.warehouse.Warehouse` to keep a single
 I/O boundary.

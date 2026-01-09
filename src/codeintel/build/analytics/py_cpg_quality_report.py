@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter_expr
@@ -171,7 +170,7 @@ def _anchor_rate(
     total = table.num_rows
     if anchor_column not in table.schema.names:
         return _AnchorRate(total=total, anchored=0)
-    anchored_value = pc.count(table[anchor_column]).as_py()
+    anchored_value = total - table[anchor_column].null_count
     return _AnchorRate(
         total=total,
         anchored=coerce_int(anchored_value, ctx="anchored_count")

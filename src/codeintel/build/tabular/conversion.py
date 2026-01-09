@@ -15,11 +15,11 @@ from codeintel.core.columnar.conversion import (
     lazyframe_to_reader,
     reader_from_batches,
     reader_to_table,
-    relation_to_reader,
     record_batch_reader_from_iterable,
+    relation_to_reader,
+    table_from_batches,
     table_to_lazyframe,
     table_to_reader,
-    table_from_batches,
 )
 from codeintel.core.columnar.conversion import (
     table_to_frame as _core_table_to_frame,
@@ -45,6 +45,13 @@ def relation_to_arrow_reader(
     batch_size: int | None = None,
 ) -> pa.RecordBatchReader:
     """Return a streaming Arrow reader for a DuckDB relation.
+
+    Parameters
+    ----------
+    relation
+        DuckDB relation to stream.
+    batch_size
+        Optional batch size to use when streaming.
 
     Returns
     -------
@@ -78,6 +85,8 @@ def tabular_to_arrow_reader(
     ----------
     value
         Tabular input to convert.
+    batch_size
+        Optional batch size to use when streaming tabular inputs.
 
     Returns
     -------
@@ -103,6 +112,8 @@ def tabular_to_arrow_table(
     ----------
     value
         Tabular input to convert.
+    batch_size
+        Optional batch size to use when streaming tabular inputs.
 
     Returns
     -------
@@ -171,8 +182,12 @@ def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
         reader = record_batch_reader_from_iterable(value, empty_policy="none")
         result = pl.DataFrame().lazy() if reader is None else arrow_reader_to_lazyframe(reader)
     else:
-        msg = f"Unsupported tabular input type: {type(value).__name__}"
-        raise TypeError(msg)
+        try:
+            reader = _tabular_to_arrow_reader(value)
+        except TypeError as exc:
+            msg = f"Unsupported tabular input type: {type(value).__name__}"
+            raise TypeError(msg) from exc
+        result = arrow_reader_to_lazyframe(reader)
     return result
 
 
@@ -228,9 +243,9 @@ __all__ = [
     "record_batch_reader_from_iterable",
     "relation_to_arrow_reader",
     "relation_to_polars_lazy",
+    "table_from_batches",
     "table_to_frame",
     "table_to_lazyframe",
-    "table_from_batches",
     "table_to_reader",
     "tabular_to_arrow_reader",
     "tabular_to_arrow_table",

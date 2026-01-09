@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from codeintel.build.analytics.utilities.list_semantics import normalize_list_semantics
+
 SEVERITY_SCORES: Final[dict[str, float]] = {
     "critical": 4.0,
     "high": 3.0,

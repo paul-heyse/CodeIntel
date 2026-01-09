@@ -9,17 +9,12 @@ import pyarrow as pa
 import pytest
 
 from codeintel.build.hamilton.cache_adapter import ArrowCachedResult, ArrowFileResultStore
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
 
 
 class _Pylistable(Protocol):
     def to_pylist(self) -> list[object]:
         """Return the table as a list of Python objects."""
-        ...
-
-
-class _RecordBatchReader(Protocol):
-    def read_all(self) -> _Pylistable:
-        """Read all batches into a table-like object."""
         ...
 
 
@@ -31,7 +26,7 @@ def _reader_from_table(table: pa.Table) -> pa.RecordBatchReader:
     pa.RecordBatchReader
         Reader over table batches.
     """
-    return pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+    return table_to_reader(table, batch_size=None)
 
 
 def _table_from_cached(value: object | None) -> _Pylistable:
@@ -40,8 +35,7 @@ def _table_from_cached(value: object | None) -> _Pylistable:
     if isinstance(value, pa.Table):
         return cast("_Pylistable", value)
     if isinstance(value, pa.RecordBatchReader):
-        reader = cast("_RecordBatchReader", value)
-        return reader.read_all()
+        return reader_to_table(value)
     msg = f"Unexpected cached value type: {type(value)!r}"
     pytest.fail(msg)
 

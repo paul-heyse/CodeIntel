@@ -5,6 +5,7 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
+from codeintel.core.columnar.conversion import reader_from_batches
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.validation.pandera_schema import pandera_available
 from codeintel.storage.validation.columnar import (
@@ -76,7 +77,7 @@ def test_data_strict_enforces_primary_key_uniqueness() -> None:
         names=["id", "name"],
     )
 
-    reader = pa.RecordBatchReader.from_batches(batch.schema, [batch, dup_batch])
+    reader = reader_from_batches(batch.schema, [batch, dup_batch])
     light_context = ColumnarValidationContext(
         table_schema=table_schema,
         validation_profile="data-light",
@@ -89,7 +90,7 @@ def test_data_strict_enforces_primary_key_uniqueness() -> None:
     for _batch in light_reader:
         pass
 
-    strict_reader = pa.RecordBatchReader.from_batches(batch.schema, [batch, dup_batch])
+    strict_reader = reader_from_batches(batch.schema, [batch, dup_batch])
     strict_context = ColumnarValidationContext(
         table_schema=table_schema,
         validation_profile="data-strict",

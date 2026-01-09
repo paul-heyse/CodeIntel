@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.cst_extract import CstExtractStep
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
@@ -15,10 +16,7 @@ from tests._helpers.fixtures.repos import write_tree
 def _reader_to_dicts(
     reader: pa.RecordBatchReader | pa.Table,
 ) -> list[dict[str, object]]:
-    if isinstance(reader, pa.Table):
-        table = reader
-    else:
-        table = pa.Table.from_batches(reader, schema=reader.schema)
+    table = reader if isinstance(reader, pa.Table) else reader_to_table(reader)
     return list(table.to_pylist())
 
 

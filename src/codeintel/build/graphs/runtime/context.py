@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -70,7 +70,7 @@ class GraphMetricsOptions:
     weight_semantics: WeightSemantics = WeightSemantics.STRENGTH
     enable_cfg_normalization: bool = True
     enable_dfg_normalization: bool = True
-    output_toggles: GraphOutputToggles = GraphOutputToggles()
+    output_toggles: GraphOutputToggles = field(default_factory=GraphOutputToggles)
 
 
 @dataclass(frozen=True)
@@ -99,7 +99,7 @@ class GraphContext:
     determinism_tier: DedupeTier | None = None
     enable_cfg_normalization: bool = True
     enable_dfg_normalization: bool = True
-    output_toggles: GraphOutputToggles = GraphOutputToggles()
+    output_toggles: GraphOutputToggles = field(default_factory=GraphOutputToggles)
 
     def resolved_now(self) -> datetime:
         """Return a concrete timestamp, defaulting to current UTC time.
@@ -459,7 +459,6 @@ def _normalize_runtime_profile(
     if profile is None:
         return None
     scan_settings = load_runtime_settings().build.arrow_scan
-    scan_profile = profile.scan_profile or scan_settings.profile
     use_threads = (
         profile.use_threads if profile.use_threads is not None else scan_settings.use_threads
     )
@@ -470,7 +469,6 @@ def _normalize_runtime_profile(
     return replace(
         profile,
         name=profile.name or default_name,
-        scan_profile=scan_profile,
         implicit_ordering=implicit_ordering,
         require_sequenced_output=require_sequenced_output,
         use_threads=use_threads,

@@ -594,6 +594,32 @@ def _flatten_tags(raw: object) -> list[str]:
     return parse_tags(raw)
 
 
+def add_graph_weight(
+    graph: GraphInput,
+    src: str,
+    dst: str,
+    weight: float,
+) -> None:
+    """
+    Add a weighted edge to the affinity graph, aggregating when it exists.
+
+    Parameters
+    ----------
+    graph : GraphInput
+        Graph or graph store to update.
+    src : str
+        Source module identifier.
+    dst : str
+        Destination module identifier.
+    weight : float
+        Weight to add when positive.
+    """
+    if src == dst or weight <= 0.0:
+        return
+    store = ensure_store(graph)
+    store.add_weighted_edge(src, dst, weight=weight)
+
+
 def graph_to_adjacency(graph: GraphInput) -> dict[str, dict[str, float]]:
     """
     Return a plain adjacency dict copy from a weighted undirected graph.

@@ -7,9 +7,7 @@ metrics without any database or file I/O.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
-
-import rustworkx as rx
+from typing import TYPE_CHECKING, Any
 
 from codeintel.build.graphs.compute.metrics.centrality import centrality_directed
 from codeintel.build.graphs.compute.metrics.components import (
@@ -21,7 +19,9 @@ from codeintel.build.graphs.rx.algos import (
     bfs_distances_by_id,
     digraph_all_pairs_shortest_path_lengths_by_id,
     ensure_directed_store,
+    in_degree_by_id,
     insert_node_on_out_edges_by_id,
+    out_degree_by_id,
     predecessors_by_id,
     remove_node_retain_edges_by_id,
     simple_cycles_by_id,
@@ -156,11 +156,10 @@ def _next_synthetic_id(store: RxGraphStore) -> int:
 
 
 def _insert_phi_fanout(store: RxGraphStore, node_id: int) -> int | None:
-    node_idx = store.id_to_index.get(node_id)
-    if node_idx is None:
+    if node_id not in store.id_to_index:
         return None
-    directed_graph = cast("rx.PyDiGraph", store.graph)
-    if directed_graph.out_degree(node_idx) <= 1:
+    out_degrees = out_degree_by_id(store)
+    if out_degrees.get(node_id, 0) <= 1:
         return None
     synthetic_id = _next_synthetic_id(store)
     return insert_node_on_out_edges_by_id(
@@ -172,12 +171,10 @@ def _insert_phi_fanout(store: RxGraphStore, node_id: int) -> int | None:
 
 
 def _prune_isolated_nodes(store: RxGraphStore) -> None:
-    directed_graph = cast("rx.PyDiGraph", store.graph)
+    in_degrees = in_degree_by_id(store)
+    out_degrees = out_degree_by_id(store)
     for node_id in store.node_ids():
-        node_idx = store.id_to_index.get(node_id)
-        if node_idx is None:
-            continue
-        if directed_graph.in_degree(node_idx) == 0 and directed_graph.out_degree(node_idx) == 0:
+        if in_degrees.get(node_id, 0) == 0 and out_degrees.get(node_id, 0) == 0:
             remove_node_retain_edges_by_id(store, node_id)
 
 

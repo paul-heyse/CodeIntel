@@ -24,6 +24,7 @@ from codeintel.build.graphs.builders import (
 )
 from codeintel.build.graphs.engine import NxGraphEngine
 from codeintel.build.graphs.validation import warn_graph_structure
+from codeintel.core.columnar.conversion import tabular_to_arrow_table
 from codeintel.storage.query_results import records_from_arrow_table, records_from_relation
 from tests._helpers.columnar_streams import table_for_rows
 from tests._helpers.fixtures.rows import (
@@ -87,8 +88,8 @@ def _records_for_table(
 ) -> list[dict[str, object]]:
     if ctx.gateway.config.dataset_root_dir is None:
         column_clause = ", ".join(columns)
-        table = (
-            ctx.gateway.con.execute(f"SELECT {column_clause} FROM {table_key}").arrow().read_all()
+        table = tabular_to_arrow_table(
+            ctx.gateway.con.sql(f"SELECT {column_clause} FROM {table_key}")
         )
         return records_from_arrow_table(table)
     return records_from_relation(ctx.gateway.relation_from_table_key(table_key).select(*columns))

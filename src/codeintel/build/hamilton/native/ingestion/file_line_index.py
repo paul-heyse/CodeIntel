@@ -6,15 +6,13 @@ import io
 import logging
 import sys
 import tokenize
+from collections.abc import Sequence
 from pathlib import Path
 
 import pyarrow as pa
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.ingestion.manifesting import (
-    finalize_ingest_reader_with_manifest,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpecOptions,
     TableTargetContext,
@@ -24,7 +22,6 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.ingestion_normalize import scoped_table_for_ingest
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.execution_context import (
@@ -34,7 +31,9 @@ from codeintel.core.columnar.execution_context import (
 )
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +41,26 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 FILE_LINE_INDEX_TARGET_NAME = "file_line_index"
 FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
+
+
+def _canonical_sort_keys_for_table(
+    table_key: str,
+    columns: Sequence[str],
+) -> list[tuple[str, str]] | None:
+    schema = get_schema_service().get_table_schema(table_key)
+    keys = resolve_canonical_sort_keys(schema)
+    if not keys:
+        return None
+    available = set(columns)
+    return [(key, "ascending") for key in keys if key in available]
+
+
+def _plan_from_table(table: pa.Table, *, table_key: str) -> Plan:
+    plan = Plan.table(table)
+    sort_keys = _canonical_sort_keys_for_table(table_key, table.column_names)
+    if sort_keys:
+        return plan.order_by(sort_keys=sort_keys)
+    return plan
 
 
 def _resolve_module_paths(
@@ -136,13 +155,13 @@ def _line_rows_for_bytes(
 def file_line_index__base(
     env: BuildEnv,
     q__core__modules: InferableTabularInput,
-) -> pa.Table:
+) -> Plan:
     """Build core.file_line_index rows from repository files.
 
     Returns
     -------
-    pa.Table
-        Reader of line index rows.
+    Plan
+        Plan for line index rows.
     """
     scope = SnapshotScope.from_snapshot(env.snapshot)
     modules_table = scoped_table_for_ingest(
@@ -153,14 +172,20 @@ def file_line_index__base(
         require_scope_columns=True,
     )
     if modules_table.num_rows == 0:
-        return empty_table_for_table(FILE_LINE_INDEX_TABLE_KEY)
+        return _plan_from_table(
+            empty_table_for_table(FILE_LINE_INDEX_TABLE_KEY),
+            table_key=FILE_LINE_INDEX_TABLE_KEY,
+        )
 
     repo_root = Path(env.snapshot.repo_root)
     execution_ctx = resolve_columnar_context(env.execution_context)
     resolved_ctx = resolve_execution_context(execution_ctx)
     path_languages = _resolve_module_paths(modules_table, execution_ctx=resolved_ctx)
     if not path_languages:
-        return empty_table_for_table(FILE_LINE_INDEX_TABLE_KEY)
+        return _plan_from_table(
+            empty_table_for_table(FILE_LINE_INDEX_TABLE_KEY),
+            table_key=FILE_LINE_INDEX_TABLE_KEY,
+        )
 
     rows: list[dict[str, object]] = []
     for rel_path, language in sorted(path_languages.items()):
@@ -185,13 +210,7 @@ def file_line_index__base(
         )
 
     table, _ = table_for_rows(FILE_LINE_INDEX_TABLE_KEY, rows)
-    reader = table_to_reader(table, batch_size=None)
-    return finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=FILE_LINE_INDEX_TABLE_KEY,
-        reader=reader,
-        target_name=FILE_LINE_INDEX_TARGET_NAME,
-    )
+    return _plan_from_table(table, table_key=FILE_LINE_INDEX_TABLE_KEY)
 
 
 _MODULE = sys.modules[__name__]
@@ -201,9 +220,12 @@ _FILE_LINE_INDEX_TABLE_TARGET_SPEC = TableTargetContext.build_dataset_table_spec
         target_name=FILE_LINE_INDEX_TARGET_NAME,
         table_key=FILE_LINE_INDEX_TABLE_KEY,
         base_node="file_line_index__base",
-        input_type=pa.Table,
+        input_type=InferableTabularInput,
     ),
-    save_options=DatasetSaveSpecOptions(partition_columns=("repo", "commit")),
+    save_options=DatasetSaveSpecOptions(
+        partition_columns=("repo", "commit"),
+        ingest_finalize=True,
+    ),
 )
 attach_table_target_template(_MODULE, spec=_FILE_LINE_INDEX_TABLE_TARGET_SPEC)
 file_line_index__table = _MODULE.file_line_index__table

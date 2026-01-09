@@ -20,6 +20,7 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_module_rows,
 )
 from codeintel.build.graphs.builders import build_symbol_module_graph_from_tables
+from codeintel.core.columnar.conversion import tabular_to_arrow_table
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.storage.query_results import records_from_arrow_table, records_from_relation
 from tests._helpers.columnar_streams import table_for_rows
@@ -127,7 +128,9 @@ def _records_for_table(
 ) -> list[dict[str, object]]:
     if test_ctx.gateway.config.dataset_root_dir is None:
         column_clause = ", ".join(columns)
-        table = test_ctx.con.execute(f"SELECT {column_clause} FROM {table_key}").arrow().read_all()
+        table = tabular_to_arrow_table(
+            test_ctx.gateway.con.sql(f"SELECT {column_clause} FROM {table_key}")
+        )
         return records_from_arrow_table(table)
     return records_from_relation(
         test_ctx.gateway.relation_from_table_key(table_key).select(*columns)

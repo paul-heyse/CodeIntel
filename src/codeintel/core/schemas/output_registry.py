@@ -1537,6 +1537,22 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             "end_byte",
             "node_type",
         ),
+        finalize_policy=FinalizePolicy(
+            dedupe=FinalizeDedupeSpec(
+                keys=(
+                    "repo",
+                    "commit",
+                    "rel_path",
+                    "language",
+                    "query_pack",
+                    "capture_name",
+                    "start_byte",
+                    "end_byte",
+                    "node_type",
+                ),
+                tier="stable_set",
+            ),
+        ),
         indexes=(
             Index("idx_core_ts_captures_path", ("rel_path",)),
             Index("idx_core_ts_captures_capture", ("capture_name",)),
@@ -1679,6 +1695,12 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", TS_TOKEN_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "language", "token_id"),
+        finalize_policy=FinalizePolicy(
+            dedupe=FinalizeDedupeSpec(
+                keys=("repo", "commit", "rel_path", "language", "token_id"),
+                tier="stable_set",
+            ),
+        ),
         indexes=(
             Index("idx_core_ts_tokens_path", ("rel_path",)),
             Index("idx_core_ts_tokens_kind", ("token_kind",)),
@@ -1705,6 +1727,12 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", TS_TOKEN_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "language", "trivia_id"),
+        finalize_policy=FinalizePolicy(
+            dedupe=FinalizeDedupeSpec(
+                keys=("repo", "commit", "rel_path", "language", "trivia_id"),
+                tier="stable_set",
+            ),
+        ),
         indexes=(
             Index("idx_core_ts_trivia_path", ("rel_path",)),
             Index("idx_core_ts_trivia_kind", ("trivia_kind",)),
@@ -6115,6 +6143,38 @@ _GRAPH_OVERRIDE_TABLE_KEYS: set[str] = {
     )
 }
 
+_PLAN_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
+    {
+        "core.file_line_index",
+        "core.scip_diagnostics",
+        "core.scip_external_symbols",
+        "core.scip_index_metadata",
+        "core.scip_module_state",
+        "core.scip_occurrences",
+        "core.scip_occurrence_span_xref",
+        "core.scip_occurrence_syntax_xref",
+        "core.scip_symbol_information",
+        "core.scip_symbol_goid_xref",
+        "core.scip_symbol_relationships",
+        "core.scip_symbols",
+        "core.syntax_calls_resolved",
+        "core.syntax_defs_resolved",
+        "core.syntax_edges_augmented",
+        "core.syntax_imports_resolved",
+        "core.syntax_nodes_augmented",
+        "core.syntax_refs_resolved",
+        "core.ts_syntax_node_xref",
+        "core.ts_weld_coverage",
+        "graph.call_graph_edges",
+        "graph.call_graph_nodes",
+        "graph.cfg_blocks",
+        "graph.cfg_edges",
+        "graph.dfg_edges",
+        "graph.import_graph_edges",
+        "graph.import_modules",
+        "graph.symbol_use_edges",
+    }
+)
 
 NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
     {
@@ -6192,6 +6252,7 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
         "core.ts_trivia",
         "core.ts_weld_coverage",
     }.union(_GRAPH_OVERRIDE_TABLE_KEYS)
+    .difference(_PLAN_INFERABLE_OUTPUT_KEYS)
 )
 
 

@@ -163,11 +163,14 @@ deduped = stable_dedupe_with_ties(
 - `src/codeintel/ingestion/compute/repo_scan.py`
 
 **Implementation checklist**
-- [ ] Replace ad hoc list alignment with explode kernels and list invariants.
+- [x] Add explode-kernel list validation for syntax augmentation payload lists.
+- [x] Add explode-kernel list validation for CST/docstrings/inspect list payloads.
+- [x] Replace remaining ad hoc list alignment with explode kernels and list invariants.
 - [x] Migrate `scip_resolution` winner selection to `stable_dedupe_for_context`.
-- [ ] Replace remaining manual dedupe/winner logic with stable kernel helpers.
-- [ ] Standardize null list policy errors and propagate to FinalizeResult.
-- [ ] Keep row-changing operations in kernel lane only.
+- [x] Replace SCIP external symbol distinct with `stable_dedupe_for_context`.
+- [x] Replace remaining manual dedupe/winner logic with stable kernel helpers.
+- [x] Standardize null list policy errors and propagate to FinalizeResult.
+- [x] Keep row-changing operations in kernel lane only.
 
 ---
 
@@ -208,12 +211,12 @@ result = run_pipeline(
 
 **Implementation checklist**
 - [x] Annotate filter ordering transitions in plan ops.
-- [ ] Annotate remaining ordering transitions in plan ops (scan/hash_join/aggregate/order_by).
+- [x] Annotate remaining ordering transitions in plan ops (scan/hash_join/aggregate/order_by).
 - [x] Replace `table_to_reader` usage in `scip_resolution` and `syntax_augment` with
   `ExecutionPlan.from_table` using implicit ordering metadata.
-- [ ] Preserve ordering metadata by avoiding `_plan_to_table` before finalize.
-- [ ] Enforce canonical tie-breakers when determinism is canonical.
-- [ ] Ensure finalize emits stable ordering and artifacts consistently.
+- [x] Preserve ordering metadata by avoiding `_plan_to_table` before finalize.
+- [x] Enforce canonical tie-breakers when determinism is canonical.
+- [x] Ensure finalize emits stable ordering and artifacts consistently.
 
 ---
 
@@ -310,6 +313,7 @@ result = run_pipeline(plan=ExecutionPlan.from_plan(plan), finalize=finalize, opt
 - [ ] Include ordering/determinism/profile metadata in manifests.
 - [ ] Ensure provenance columns flow into error artifacts when enabled.
 - [x] Attach tool metadata (counts, warnings, errors) to manifest extras.
+- [x] Persist list validation errors in ingest run manifests.
 
 ---
 

@@ -15,11 +15,11 @@ from codeintel.build.analytics.subsystems.materialize import (
     build_subsystems_table,
 )
 from codeintel.build.contracts.ref import contract_ref_for_table
+from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.finalize_helpers import (
     finalize_analytics_reader,
-    finalize_analytics_rows,
 )
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
@@ -31,7 +31,6 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 

@@ -14,11 +14,15 @@ import pyarrow.dataset as ds
 
 from codeintel.core.columnar import profiles as columnar_profiles
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
-from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_arrow_scan_settings,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.profiles import DatasetScanOptions, scan_profile_options
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.readers import empty_reader_from_schema
-from codeintel.core.columnar.runtime import apply_arrow_threading, apply_runtime_profile
+from codeintel.core.columnar.runtime import apply_runtime_profile
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_ops import unify_schemas
 from codeintel.core.config.settings import ArrowScanSettings
@@ -36,7 +40,6 @@ from codeintel.core.constants import (
 )
 from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
 from codeintel.core.manifests import ArrowDatasetManifest
-from codeintel.core.runtime.loader import load_runtime_settings
 
 if TYPE_CHECKING:
     from polars import LazyFrame
@@ -68,10 +71,13 @@ _DATASET_IGNORE_PREFIXES: tuple[str, ...] = (".", "_")
 _DATASET_EXCLUDE_INVALID_FILES = True
 
 
-def _resolve_arrow_scan_settings(settings: ArrowScanSettings | None = None) -> ArrowScanSettings:
+def _resolve_arrow_scan_settings(
+    ctx: ExecutionContext | None,
+    settings: ArrowScanSettings | None,
+) -> ArrowScanSettings:
     if settings is not None:
         return settings
-    return load_runtime_settings().build.arrow_scan
+    return resolve_arrow_scan_settings(ctx)
 
 
 def _override_default_int(current: int, override: int, *, default: int) -> int:
@@ -151,8 +157,6 @@ def _merge_scan_options(
             default=DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
         ),
     )
-    if settings.profile:
-        return scan_profile_options(settings.profile, base=resolved)
     return resolved
 
 
@@ -163,11 +167,24 @@ def configure_arrow_threading(
     settings: ArrowScanSettings | None = None,
 ) -> None:
     """Apply Arrow threading defaults for compute and dataset scans."""
-    apply_arrow_threading(
-        cpu_threads=cpu_count,
-        io_threads=io_thread_count,
-        settings=settings,
-    )
+    resolved_ctx = resolve_execution_context(None)
+    resolved_settings = _resolve_arrow_scan_settings(resolved_ctx, settings)
+    profile = resolved_ctx.runtime_profile
+    override_cpu = None if cpu_count == DEFAULT_ARROW_CPU_COUNT else cpu_count
+    override_io = None if io_thread_count == DEFAULT_ARROW_IO_THREAD_COUNT else io_thread_count
+    if override_cpu is not None or override_io is not None:
+        if profile is None:
+            profile = columnar_profiles.RuntimeProfile(
+                cpu_threads=override_cpu,
+                io_threads=override_io,
+            )
+        else:
+            profile = replace(
+                profile,
+                cpu_threads=override_cpu if override_cpu is not None else profile.cpu_threads,
+                io_threads=override_io if override_io is not None else profile.io_threads,
+            )
+    apply_runtime_profile(profile, settings=resolved_settings)
 
 
 def configure_arrow_threading_for_context(
@@ -186,7 +203,8 @@ def configure_arrow_threading_for_context(
     """
     resolved_ctx = resolve_execution_context(ctx)
     profile = resolved_ctx.runtime_profile
-    apply_runtime_profile(profile, settings=settings)
+    resolved_settings = _resolve_arrow_scan_settings(resolved_ctx, settings)
+    apply_runtime_profile(profile, settings=resolved_settings)
 
 
 def resolve_partitioning(
@@ -303,7 +321,12 @@ def dataset_for_path(
     return ds.dataset(str(dataset_dir), **dataset_kwargs)
 
 
-def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanner:
+def build_scanner(
+    dataset: ds.Dataset,
+    *,
+    options: DatasetScanOptions,
+    ctx: ExecutionContext | None = None,
+) -> Scanner:
     """Build a dataset scanner using shared scan options.
 
     Parameters
@@ -312,15 +335,22 @@ def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanne
         Arrow dataset to scan.
     options
         Scan configuration options.
+    ctx
+        Optional execution context for runtime profile defaults.
 
     Returns
     -------
     pyarrow.dataset.Scanner
         Scanner configured for the dataset.
     """
-    scan_settings = _resolve_arrow_scan_settings()
+    resolved_ctx = resolve_execution_context(ctx)
+    scan_settings = _resolve_arrow_scan_settings(resolved_ctx, None)
     resolved_options = _merge_scan_options(options, scan_settings)
-    configure_arrow_threading_for_context(ctx=None, settings=scan_settings)
+    resolved_options = _apply_runtime_profile_scan_defaults(
+        resolved_options,
+        profile=resolved_ctx.runtime_profile,
+    )
+    configure_arrow_threading_for_context(ctx=resolved_ctx)
     schema = _resolve_scan_schema(dataset, resolved_options)
     fragment_scan_options = _parquet_fragment_scan_options(dataset, resolved_options)
     scan_kwargs = _build_scan_kwargs(
@@ -493,7 +523,7 @@ def build_scanner_for_queryspec_ctx(
         ctx=ctx,
         options=options,
     )
-    return build_scanner(dataset, options=scan_options)
+    return build_scanner(dataset, options=scan_options, ctx=ctx)
 
 
 def scan_telemetry_for_queryspec(
@@ -553,6 +583,7 @@ def scan_dataset_reader(
     dataset_dir: Path,
     *,
     options: DatasetScanOptions | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> pa.RecordBatchReader | None:
     """Return a streaming reader for a dataset directory.
 
@@ -562,6 +593,8 @@ def scan_dataset_reader(
         Directory containing the dataset.
     options
         Optional DatasetScanOptions to configure scanning.
+    ctx
+        Optional execution context for runtime profile defaults.
 
     Returns
     -------
@@ -573,7 +606,7 @@ def scan_dataset_reader(
     try:
         dataset = ds.dataset(str(dataset_dir), **_dataset_kwargs(file_format="parquet"))
         resolved = options or DatasetScanOptions()
-        scanner = build_scanner(dataset, options=resolved)
+        scanner = build_scanner(dataset, options=resolved, ctx=ctx)
         return scanner.to_reader()
     except (OSError, ValueError, pa.ArrowInvalid):
         return None
@@ -585,6 +618,7 @@ def scan_dataset_lazyframe(
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
+    ctx: ExecutionContext | None = None,
 ) -> PolarsLazyFrame | None:
     """Return a Polars LazyFrame for a dataset directory.
 
@@ -598,6 +632,8 @@ def scan_dataset_lazyframe(
         Optional row index column to attach.
     row_index_offset
         Optional offset for row index values.
+    ctx
+        Optional execution context for runtime profile defaults.
 
     Returns
     -------
@@ -608,13 +644,18 @@ def scan_dataset_lazyframe(
         return None
     if not dataset_dir.is_dir():
         return None
-    scan_settings = _resolve_arrow_scan_settings()
-    resolved_batch_size = _override_default_int(
-        batch_size,
-        scan_settings.batch_size,
-        default=DEFAULT_ARROW_BATCH_SIZE,
+    resolved_ctx = resolve_execution_context(ctx)
+    scan_settings = _resolve_arrow_scan_settings(resolved_ctx, None)
+    resolved_options = _merge_scan_options(
+        DatasetScanOptions(batch_size=batch_size),
+        scan_settings,
     )
-    configure_arrow_threading_for_context(ctx=None, settings=scan_settings)
+    resolved_options = _apply_runtime_profile_scan_defaults(
+        resolved_options,
+        profile=resolved_ctx.runtime_profile,
+    )
+    resolved_batch_size = resolved_options.batch_size
+    configure_arrow_threading_for_context(ctx=resolved_ctx)
     try:
         if row_index_name:
             return _scan_parquet_with_row_index(
