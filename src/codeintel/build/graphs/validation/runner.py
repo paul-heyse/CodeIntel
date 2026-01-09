@@ -22,7 +22,10 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.analytics.utilities.catalogs import (
+    CatalogProviderRequest,
+    catalog_provider_from_frames,
+)
 from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
     dataset_snapshot_exists,
@@ -64,8 +67,8 @@ from codeintel.core.columnar.execution_context import (
     runtime_profile_from_settings,
 )
 from codeintel.core.columnar.iter import iter_rows_limit
-from codeintel.core.columnar.ordering import OrderingSpec, SortKey
-from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
+from codeintel.core.columnar.ordering import OrderingSpec
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_schema_defaults
 from codeintel.core.columnar.run_manifest import (
     RunManifestOptions,
     run_manifest_options_for_context,
@@ -85,6 +88,7 @@ if TYPE_CHECKING:
         GraphValidationOptions,
     )
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.columnar.ordering import SortKey
     from codeintel.core.validation.runner import CheckProtocol, ValidationReport
     from codeintel.storage.catalog import FunctionCatalogProvider
 
@@ -434,9 +438,11 @@ def _scan_telemetry_for_manifest(
         return _empty_scan_telemetry()
     scan_ctx = SnapshotScanContext.from_snapshot(snapshot)
     predicate = scan_ctx.filter_expr(dataset.schema)
-    projection = projection_spec_from_columns(
+    table_schema = get_schema_service().get_table_schema(table_key)
+    projection = projection_spec_from_schema_defaults(
         None,
-        default_columns=tuple(dataset.schema.names),
+        table_schema=table_schema,
+        available_columns=tuple(dataset.schema.names),
     )
     spec = QuerySpec(
         predicate=predicate,
@@ -525,8 +531,10 @@ def _catalog_provider_from_dataset(
     if goids_reader is None or modules_reader is None:
         return None
     return catalog_provider_from_frames(
-        goids_frame=goids_reader,
-        modules_frame=modules_reader,
+        CatalogProviderRequest(
+            goids_frame=goids_reader,
+            modules_frame=modules_reader,
+        )
     )
 
 

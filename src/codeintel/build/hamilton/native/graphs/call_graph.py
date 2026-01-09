@@ -16,10 +16,11 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
@@ -145,10 +146,14 @@ def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
     include_language = "language" in filtered.column_names
     if include_language:
         columns.append("language")
+    language_index = columns.index("language") if include_language else None
     for values in iter_tuples(table_to_reader(filtered), columns=columns):
         rel_path = values[0]
         module_name = values[1]
-        language = values[2] if include_language and len(values) > 2 else None
+        if language_index is not None and len(values) > language_index:
+            language = values[language_index]
+        else:
+            language = None
         if language not in {None, "python"}:
             continue
         if not isinstance(rel_path, str) or not rel_path:
@@ -209,6 +214,7 @@ def _call_graph_index_rows(
     include_language = "language" in filtered.column_names
     if include_language:
         columns.append("language")
+    language_index = columns.index("language") if include_language else None
     rows: list[dict[str, object]] = []
     for values in iter_tuples(table_to_reader(filtered), columns=columns):
         rel_path = values[1]
@@ -219,8 +225,8 @@ def _call_graph_index_rows(
             "rel_path": rel_path,
             "goid_h128": values[2],
         }
-        if include_language and len(values) > 3:
-            row["language"] = values[3]
+        if language_index is not None and len(values) > language_index:
+            row["language"] = values[language_index]
         rows.append(row)
     return rows or None
 
@@ -321,25 +327,18 @@ def _call_graph_node_rows(
     module_by_path: Mapping[str, str],
 ) -> list[dict[str, object]]:
     function_map = _function_definitions(env, module_by_path)
-    function_rows = [
-        {
-            "rel_path": rel_path,
-            "qualname": qualname,
-            "arity": info.arity,
-            "is_public": info.is_public,
-        }
-        for (rel_path, qualname), info in function_map.items()
-    ]
     function_index = {
-        (row["rel_path"], row["qualname"]): row for row in function_rows if "rel_path" in row
+        (rel_path, qualname): {"arity": info.arity, "is_public": info.is_public}
+        for (rel_path, qualname), info in function_map.items()
     }
     output_rows: list[dict[str, object]] = []
     matched_defs = 0
     total_defs = 0
     columns = ["kind", "rel_path", "qualname", "goid_h128"]
-    include_language = "language" in goids_table.column_names
-    if include_language:
+    language_index: int | None = None
+    if "language" in goids_table.column_names:
         columns.append("language")
+        language_index = len(columns) - 1
     for values in iter_tuples(table_to_reader(goids_table), columns=columns):
         kind = values[0]
         if kind not in _FUNCTION_KINDS:
@@ -360,7 +359,11 @@ def _call_graph_node_rows(
         output_rows.append(
             {
                 "goid_h128": values[3],
-                "language": values[4] if include_language and len(values) > 4 else None,
+                "language": (
+                    values[language_index]
+                    if language_index is not None and len(values) > language_index
+                    else None
+                ),
                 "kind": kind,
                 "arity": int(arity) if isinstance(arity, int) else 0,
                 "is_public": bool(is_public),
@@ -549,7 +552,6 @@ def _filtered_goids_table(goids_table: pa.Table) -> pa.Table:
     }
     if "language" in goids_table.column_names:
         projection["language"] = E.cast(E.field("language"), "string")
-    plan = Plan.table(goids_table).project(projection)
     exprs: list[Expression] = [
         E.in_("kind", _FUNCTION_KINDS),
         _non_empty_expr("rel_path"),
@@ -559,7 +561,13 @@ def _filtered_goids_table(goids_table: pa.Table) -> pa.Table:
         exprs.append(_non_empty_expr("qualname"))
     if "language" in projection:
         exprs.append(_python_language_expr())
-    plan = plan.filter(E.and_(*exprs))
+    plan = build_table_plan(
+        table=goids_table,
+        options=TablePlanOptions(
+            projection=projection,
+            filter_expr=E.and_(*exprs),
+        ),
+    )
     return materialize_plan(plan, use_threads=True)
 
 
@@ -573,11 +581,16 @@ def _python_modules_table(modules_table: pa.Table) -> pa.Table:
     }
     if "language" in modules_table.column_names:
         projection["language"] = E.cast(E.field("language"), "string")
-    plan = Plan.table(modules_table).project(projection)
     exprs: list[Expression] = [_non_empty_expr("path"), _non_empty_expr("module")]
     if "language" in projection:
         exprs.append(_python_language_expr())
-    plan = plan.filter(E.and_(*exprs))
+    plan = build_table_plan(
+        table=modules_table,
+        options=TablePlanOptions(
+            projection=projection,
+            filter_expr=E.and_(*exprs),
+        ),
+    )
     return materialize_plan(plan, use_threads=True)
 
 

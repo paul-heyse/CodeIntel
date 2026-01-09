@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.compute.dependencies.compute import (
@@ -22,6 +23,7 @@ from codeintel.build.analytics.dependencies.core import (
     build_alias_maps,
     load_dependency_patterns,
 )
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -30,6 +32,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.analytics.compute.dependencies.compute import ExternalDependencyInputs
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.columnar.execution_context import ExecutionContext
 
 log = logging.getLogger(__name__)
 
@@ -59,13 +62,20 @@ def compute_dependency_calls_pure(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ExternalDependenciesRequest:
+    """Inputs required to aggregate external dependencies."""
+
+    dependency_calls_frame: pa.Table | None = None
+    config_values_frame: pa.Table | None = None
+    dependency_patterns_path: Path | None = None
+    language: str = "python"
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
+
+
 def compute_external_dependencies_pure(
     snapshot: SnapshotRef,
-    *,
-    dependency_calls_frame: pa.Table | None = None,
-    config_values_frame: pa.Table | None = None,
-    dependency_patterns_path: Path | None = None,
-    language: str = "python",
+    request: ExternalDependenciesRequest,
 ) -> ExternalDependenciesResult:
     """Compute aggregated external dependencies without writing to database.
 
@@ -74,17 +84,18 @@ def compute_external_dependencies_pure(
     ExternalDependenciesResult
         Aggregated dependency rows ready for materialization.
     """
-    patterns = load_dependency_patterns(snapshot.repo_root, dependency_patterns_path)
+    patterns = load_dependency_patterns(snapshot.repo_root, request.dependency_patterns_path)
     if not patterns:
         log.warning("No dependency patterns loaded; returning empty result")
         return ExternalDependenciesResult(rows=())
     return _compute_external_dependencies_pure(
         snapshot,
         ExternalDependenciesInputs(
-            dependency_calls_frame=dependency_calls_frame,
-            config_values_frame=config_values_frame,
+            dependency_calls_frame=request.dependency_calls_frame,
+            config_values_frame=request.config_values_frame,
             patterns=patterns,
-            language=language,
+            language=request.language,
+            ctx=request.ctx,
         ),
     )
 
@@ -93,6 +104,7 @@ __all__ = [
     "EXTERNAL_DEPENDENCIES_COLS",
     "EXTERNAL_DEPENDENCY_CALLS_COLS",
     "DependencyCallsResult",
+    "ExternalDependenciesRequest",
     "ExternalDependenciesResult",
     "compute_dependency_calls_pure",
     "compute_external_dependencies_pure",

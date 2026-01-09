@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
+from codeintel.core.columnar.join_safe import join_safe_projection
 
 NullListPolicy = Literal["error", "empty"]
 NullChildPolicy = Literal["drop", "error"]
@@ -126,6 +127,35 @@ def explode_edges_with_aligned_lists(
         Exploded rows plus error rows.
     """
     return explode_edges(table, spec=spec)
+
+
+def explode_edges_for_join(
+    table: pa.Table,
+    *,
+    spec: ExplodeSpec,
+    allowed_columns: Sequence[str] = (),
+) -> ExplodeResult:
+    """Explode list columns and project to join-safe outputs.
+
+    Parameters
+    ----------
+    table
+        Table containing list payloads.
+    spec
+        Explode specification.
+    allowed_columns
+        Columns allowed to retain list payloads after explode.
+
+    Returns
+    -------
+    ExplodeResult
+        Exploded rows with join-safe projections plus error rows.
+    """
+    result = explode_edges(table, spec=spec)
+    if result.good.num_rows == 0:
+        return result
+    projected = join_safe_projection(result.good, allowed_columns=allowed_columns)
+    return ExplodeResult(good=projected, errors=result.errors)
 
 
 def explode_list_struct(
@@ -652,6 +682,7 @@ __all__ = [
     "ExplodeResult",
     "ExplodeSpec",
     "explode_edges",
+    "explode_edges_for_join",
     "explode_edges_with_aligned_lists",
     "explode_list_struct",
 ]

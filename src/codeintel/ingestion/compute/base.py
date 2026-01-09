@@ -11,14 +11,15 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
 from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
     FinalizeMode,
     FinalizeResult,
-    finalize_reader,
     finalize_spec_for_table,
-    finalize_table,
 )
+from codeintel.core.columnar.ordering import OrderingSpec
 from codeintel.core.query_results import records_from_arrow_table
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.ingestion.compute import queryspecs as ingest_queryspecs
@@ -30,7 +31,6 @@ if TYPE_CHECKING:
 
     from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
     from codeintel.ingestion.ports.tools import IngestToolPort
 
 
@@ -123,28 +123,11 @@ class BaseToolIngestStep:
         self._tools = tools
 
 
-def persist_arrow_tables(
-    storage: IngestStoragePort | None,
-    tables: Mapping[str, pa.Table | pa.RecordBatchReader],
-    *,
-    scope: str | None = None,
-) -> None:
-    """Persist Arrow tables when a storage port is provided."""
-    if storage is None:
-        return
-    for table_key, payload in tables.items():
-        if isinstance(payload, pa.RecordBatchReader):
-            storage.write_reader(table_key, payload, scope=scope)
-            continue
-        if payload.num_rows == 0:
-            continue
-        storage.write_table(table_key, payload, scope=scope)
-
-
 def finalize_arrow_tables(
     tables: Mapping[str, pa.Table],
     *,
     mode: FinalizeMode = "tolerant",
+    ctx: ExecutionContext | None = None,
 ) -> tuple[dict[str, pa.Table], list[str]]:
     """Finalize Arrow tables against their contracts in tolerant mode.
 
@@ -155,6 +138,8 @@ def finalize_arrow_tables(
     """
     finalized: dict[str, pa.Table] = {}
     warnings: list[str] = []
+    resolved_ctx = resolve_execution_context(ctx)
+    ordering = OrderingSpec.implicit(reason="ingest table")
     for table_key, table in tables.items():
         spec = finalize_spec_for_table(
             table_key,
@@ -162,8 +147,13 @@ def finalize_arrow_tables(
             dedupe=FinalizeDedupe(enabled=False),
             emit_artifacts=True,
         )
+        plan = ExecutionPlan.from_table(table, ordering=ordering)
         try:
-            result = finalize_table(table, spec=spec)
+            result = run_pipeline(
+                plan=plan,
+                finalize=spec,
+                options=PipelineRunOptions(ctx=resolved_ctx),
+            )
         except ValueError as exc:
             warnings.append(f"{table_key}: {exc}")
             finalized[table_key] = table
@@ -177,6 +167,7 @@ def finalize_arrow_readers(
     readers: Mapping[str, pa.RecordBatchReader],
     *,
     mode: FinalizeMode = "tolerant",
+    ctx: ExecutionContext | None = None,
 ) -> tuple[dict[str, pa.Table], list[str]]:
     """Finalize Arrow readers against their contracts in tolerant mode.
 
@@ -187,6 +178,8 @@ def finalize_arrow_readers(
     """
     finalized: dict[str, pa.Table] = {}
     warnings: list[str] = []
+    resolved_ctx = resolve_execution_context(ctx)
+    ordering = OrderingSpec.implicit(reason="ingest reader")
     for table_key, reader in readers.items():
         spec = finalize_spec_for_table(
             table_key,
@@ -194,8 +187,13 @@ def finalize_arrow_readers(
             dedupe=FinalizeDedupe(enabled=False),
             emit_artifacts=True,
         )
+        plan = ExecutionPlan.from_reader(reader, ordering=ordering)
         try:
-            result = finalize_reader(reader, spec=spec)
+            result = run_pipeline(
+                plan=plan,
+                finalize=spec,
+                options=PipelineRunOptions(ctx=resolved_ctx),
+            )
         except ValueError as exc:
             warnings.append(f"{table_key}: {exc}")
             finalized[table_key] = pa.Table.from_batches([], schema=reader.schema)
@@ -263,5 +261,4 @@ __all__ = [
     "build_typed_extras",
     "finalize_arrow_readers",
     "finalize_arrow_tables",
-    "persist_arrow_tables",
 ]

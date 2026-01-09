@@ -44,20 +44,54 @@ class ColumnarRowBuffer(Sequence[Mapping[str, object]]):
     row_count: int = 0
 
     def __bool__(self) -> bool:
-        """Return True when the buffer contains rows."""
+        """Return True when the buffer contains rows.
+
+        Returns
+        -------
+        bool
+            True when at least one row is buffered.
+        """
         return self.row_count > 0
 
     def __len__(self) -> int:
-        """Return the number of buffered rows."""
+        """Return the number of buffered rows.
+
+        Returns
+        -------
+        int
+            Row count for the buffer.
+        """
         return self.row_count
 
     def __iter__(self) -> Iterator[Mapping[str, object]]:
-        """Iterate buffered rows as mapping payloads."""
+        """Iterate buffered rows as mapping payloads.
+
+        Yields
+        ------
+        Mapping[str, object]
+            Row mappings in column order.
+        """
         for index in range(self.row_count):
             yield self._row_at(index)
 
     def __getitem__(self, index: int) -> Mapping[str, object]:
-        """Return the buffered row mapping at the requested index."""
+        """Return the buffered row mapping at the requested index.
+
+        Parameters
+        ----------
+        index
+            Row index (supports negative indexing).
+
+        Returns
+        -------
+        Mapping[str, object]
+            Row mapping at the requested index.
+
+        Raises
+        ------
+        IndexError
+            If the index is out of bounds.
+        """
         if index < 0:
             index += self.row_count
         if index < 0 or index >= self.row_count:
@@ -109,11 +143,23 @@ class ColumnarRowBuffer(Sequence[Mapping[str, object]]):
         self.row_count += buffer.row_count
 
     def to_rows(self) -> list[dict[str, object]]:
-        """Return buffered rows as a list of mapping payloads."""
+        """Return buffered rows as a list of mapping payloads.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Materialized list of row mappings.
+        """
         return [self._row_at(index) for index in range(self.row_count)]
 
     def to_tuples(self) -> list[tuple[object, ...]]:
-        """Return buffered rows as tuples in column order."""
+        """Return buffered rows as tuples in column order.
+
+        Returns
+        -------
+        list[tuple[object, ...]]
+            Materialized list of row tuples.
+        """
         return [
             tuple(self.data[name][index] for name in self.columns)
             for index in range(self.row_count)

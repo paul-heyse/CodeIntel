@@ -22,9 +22,10 @@ from codeintel.build.tabular.compute_masks import is_valid_expr
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
 from codeintel.core.columnar.arrowdsl import join_safe_projection
 from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -102,21 +103,27 @@ def cpg2_nodes__import_modules(
         include_source_pk_json=True,
     )
     anchors = _join_ready(anchors)
-    left_plan = Plan.table(normalized).project(
-        {
-            "repo": E.cast(E.field("repo"), "string"),
-            "commit": E.cast(E.field("commit"), "string"),
-            "module": E.cast(E.field("module"), "string"),
-        }
+    left_plan = build_table_plan(
+        table=normalized,
+        options=TablePlanOptions(
+            projection={
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "module": E.cast(E.field("module"), "string"),
+            }
+        ),
     )
-    right_plan = Plan.table(anchors).project(
-        {
-            "repo": E.cast(E.field("repo"), "string"),
-            "commit": E.cast(E.field("commit"), "string"),
-            "module": E.cast(E.field("module"), "string"),
-            "cpg_node_id": E.field("cpg_node_id"),
-            "source_pk_json": E.field("source_pk_json"),
-        }
+    right_plan = build_table_plan(
+        table=anchors,
+        options=TablePlanOptions(
+            projection={
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "module": E.cast(E.field("module"), "string"),
+                "cpg_node_id": E.field("cpg_node_id"),
+                "source_pk_json": E.field("source_pk_json"),
+            }
+        ),
     )
     joined = left_plan.hash_join(
         right=right_plan,
@@ -383,12 +390,18 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
         "confidence": E.field("confidence"),
         "kind": E.field("kind"),
     }
-    edge_plan = Plan.table(normalized_edges).project(edge_project)
-    src_plan = Plan.table(src_anchor).project(
-        {
-            "caller_goid_h128": E.cast(E.field("caller_goid_h128"), "decimal128(38,0)"),
-            "src_cpg_node_id": E.field("src_cpg_node_id"),
-        }
+    edge_plan = build_table_plan(
+        table=normalized_edges,
+        options=TablePlanOptions(projection=edge_project),
+    )
+    src_plan = build_table_plan(
+        table=src_anchor,
+        options=TablePlanOptions(
+            projection={
+                "caller_goid_h128": E.cast(E.field("caller_goid_h128"), "decimal128(38,0)"),
+                "src_cpg_node_id": E.field("src_cpg_node_id"),
+            }
+        ),
     )
     joined = edge_plan.hash_join(
         right=src_plan,
@@ -401,11 +414,14 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
         ),
     )
     joined = joined.filter(E.is_valid("src_cpg_node_id"))
-    dst_plan = Plan.table(dst_anchor).project(
-        {
-            "callee_goid_h128": E.cast(E.field("callee_goid_h128"), "decimal128(38,0)"),
-            "dst_cpg_node_id": E.field("dst_cpg_node_id"),
-        }
+    dst_plan = build_table_plan(
+        table=dst_anchor,
+        options=TablePlanOptions(
+            projection={
+                "callee_goid_h128": E.cast(E.field("callee_goid_h128"), "decimal128(38,0)"),
+                "dst_cpg_node_id": E.field("dst_cpg_node_id"),
+            }
+        ),
     )
     joined = joined.hash_join(
         right=dst_plan,
@@ -500,14 +516,20 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         "cycle_group": E.field("cycle_group"),
         "module_layer": E.field("module_layer"),
     }
-    edge_plan = Plan.table(normalized_edges).project(edge_project)
-    src_plan = Plan.table(src_anchor).project(
-        {
-            "repo": E.cast(E.field("repo"), "string"),
-            "commit": E.cast(E.field("commit"), "string"),
-            "src_module": E.cast(E.field("src_module"), "string"),
-            "src_cpg_node_id": E.field("src_cpg_node_id"),
-        }
+    edge_plan = build_table_plan(
+        table=normalized_edges,
+        options=TablePlanOptions(projection=edge_project),
+    )
+    src_plan = build_table_plan(
+        table=src_anchor,
+        options=TablePlanOptions(
+            projection={
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "src_module": E.cast(E.field("src_module"), "string"),
+                "src_cpg_node_id": E.field("src_cpg_node_id"),
+            }
+        ),
     )
     joined = edge_plan.hash_join(
         right=src_plan,
@@ -520,13 +542,16 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         ),
     )
     joined = joined.filter(E.is_valid("src_cpg_node_id"))
-    dst_plan = Plan.table(dst_anchor).project(
-        {
-            "repo": E.cast(E.field("repo"), "string"),
-            "commit": E.cast(E.field("commit"), "string"),
-            "dst_module": E.cast(E.field("dst_module"), "string"),
-            "dst_cpg_node_id": E.field("dst_cpg_node_id"),
-        }
+    dst_plan = build_table_plan(
+        table=dst_anchor,
+        options=TablePlanOptions(
+            projection={
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "dst_module": E.cast(E.field("dst_module"), "string"),
+                "dst_cpg_node_id": E.field("dst_cpg_node_id"),
+            }
+        ),
     )
     joined = joined.hash_join(
         right=dst_plan,

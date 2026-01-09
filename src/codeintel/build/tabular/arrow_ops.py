@@ -61,6 +61,8 @@ from codeintel.core.columnar.iter import (
 )
 from codeintel.core.columnar.normalization import (
     normalize_array as _ensure_array,
+)
+from codeintel.core.columnar.normalization import (
     normalize_table_for_compute as _normalize_table_for_compute,
 )
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract as _align_reader
@@ -68,12 +70,18 @@ from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.columnar.schema_ops import concat_tables_unified as _concat_tables_unified
 from codeintel.core.columnar.set_ops import (
     index_in as _index_in,
+)
+from codeintel.core.columnar.set_ops import (
     take_by_key as _take_by_key,
+)
+from codeintel.core.columnar.set_ops import (
     value_set_array as _value_set_array,
 )
 from codeintel.core.columnar.streaming import configure_arrow_threading
 from codeintel.core.columnar.type_normalization import (
     normalize_binary_view_array as _normalize_binary_view_array,
+)
+from codeintel.core.columnar.type_normalization import (
     normalize_string_view_array as _normalize_string_view_array,
 )
 from codeintel.core.constants import (

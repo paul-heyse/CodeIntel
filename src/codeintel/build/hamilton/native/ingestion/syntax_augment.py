@@ -16,6 +16,9 @@ from hamilton.function_modifiers import cache
 from codeintel.build.graphs.assembly import select_table_columns
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.ingestion.manifesting import (
+    finalize_ingest_reader_with_manifest,
+)
 from codeintel.build.hamilton.native.options.ingestion import SyntaxAugmentOptions
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
@@ -25,10 +28,7 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.transforms.ingestion_normalize import (
-    finalize_ingest_reader,
-    scoped_table_for_ingest,
-)
+from codeintel.build.hamilton.transforms.ingestion_normalize import scoped_table_for_ingest
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.array_ops import ensure_array
@@ -64,9 +64,16 @@ from codeintel.build.tabular.finalize_ops import (
     record_join_precheck_errors,
 )
 from codeintel.build.tabular.nested_ops import deep_cast_table_to_contract, make_extras_struct
-from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.plan_builder import build_table_plan
+from codeintel.core.columnar.plan_kernels import grouped_rollup_table
+from codeintel.core.columnar.plan_ops import materialize_plan
+from codeintel.core.columnar.rows import (
+    columnar_batch_collector_for_table_key,
+    empty_table_for_table,
+)
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -415,10 +422,11 @@ def _producer_table(nodes_table: pa.Table) -> pa.Table:
     selected = select_table_columns(nodes_table, ["rel_path", "producer"])
     if selected.num_rows == 0:
         return pa.table({"rel_path": [], "producer": []})
-    grouped = (
-        normalize_table_for_compute(selected)
-        .group_by(["rel_path"])
-        .aggregate([("producer", "min")])
+    grouped = grouped_rollup_table(
+        table=normalize_table_for_compute(selected),
+        keys=("rel_path",),
+        aggregates=(("producer", "min", None, "producer_min"),),
+        order_by=(("rel_path", "ascending"),),
     )
     rename: dict[str, str] = {}
     for name in grouped.column_names:
@@ -546,8 +554,8 @@ def _hash_join_tables(
     right_checked = normalize_table_for_join(right_checked)
     left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
     right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
-    left_plan = Plan.table(left_checked).project(left_exprs)
-    right_plan = Plan.table(right_checked).project(right_exprs)
+    left_plan = build_table_plan(table=left_checked).project(left_exprs)
+    right_plan = build_table_plan(table=right_checked).project(right_exprs)
     right_output = [name for name in right_exprs if name not in left_exprs]
     joined = left_plan.hash_join(
         right=right_plan,
@@ -612,7 +620,7 @@ def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
         pa.scalar(SYNTAX_PRODUCER_LIBCST),
         producer,
     )
-    table = pa.table(
+    return pa.table(
         {
             "repo": joined["repo"],
             "commit": joined["commit"],
@@ -625,7 +633,6 @@ def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
             "candidate_count": cast_array(candidate_count, pa.int64(), safe=True),
         }
     )
-    return _reader_from_table(TS_XREF_TABLE_KEY, table)
 
 
 def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
@@ -825,7 +832,7 @@ def _xref_fuzzy(
         producer_table,
         spec=_JoinSpec(left_keys=["rel_path"], right_keys=["rel_path"]),
     )
-    rows: list[dict[str, object]] = []
+    collector = columnar_batch_collector_for_table_key(TS_XREF_TABLE_KEY)
     columns = (
         "repo",
         "commit",
@@ -856,8 +863,8 @@ def _xref_fuzzy(
                 ),
             )
             if row is not None:
-                rows.append(row)
-    return _reader_from_rows(TS_XREF_TABLE_KEY, rows)
+                collector.append(row)
+    return reader_to_table(collector.to_reader())
 
 
 def _xref_union(exact: pa.Table, fuzzy: pa.Table) -> pa.Table:
@@ -1028,14 +1035,18 @@ def _weld_coverage_table(
             empty = {col: [] for col in key_cols}
             empty[name] = []
             return pa.table(empty)
-        grouped = (
-            normalize_table_for_compute(table).group_by(key_cols).aggregate([(count_col, "count")])
+        grouped = grouped_rollup_table(
+            table=normalize_table_for_compute(table),
+            keys=tuple(key_cols),
+            aggregates=((count_col, "count", None, name),),
+            order_by=(
+                ("repo", "ascending"),
+                ("commit", "ascending"),
+                ("rel_path", "ascending"),
+                ("language", "ascending"),
+            ),
         )
-        rename: dict[str, str] = {}
-        for column in grouped.column_names:
-            if column.startswith(f"{count_col}_"):
-                rename[column] = name
-        return _rename_columns(grouped, rename)
+        return grouped.select([*key_cols, name])
 
     ts_counts = _count_by(ts_nodes, count_col="node_id", name="ts_node_count")
     if xref.num_rows == 0 or "ts_node_id" not in xref.column_names:
@@ -1080,28 +1091,6 @@ def _empty_selected(table: pa.Table, columns: Sequence[str]) -> pa.Table:
     return table.select(existing).slice(0, 0)
 
 
-def _table_from_row_dicts(rows: Sequence[Mapping[str, object]]) -> pa.Table:
-    if not rows:
-        return _empty_table()
-    columns: list[str] = []
-    seen: set[str] = set()
-    for row in rows:
-        for name in row:
-            if name not in seen:
-                seen.add(name)
-                columns.append(name)
-    data = {name: [row.get(name) for row in rows] for name in columns}
-    return pa.table(data)
-
-
-def _reader_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.Table:
-    try:
-        table, _ = table_for_rows(table_key, rows)
-    except (KeyError, RuntimeError):
-        table = _table_from_row_dicts(rows)
-    return table
-
-
 def _empty_reader(table_key: str) -> pa.Table:
     try:
         return empty_table_for_table(table_key)
@@ -1109,13 +1098,14 @@ def _empty_reader(table_key: str) -> pa.Table:
         return _empty_table()
 
 
-def _reader_from_table(table_key: str, table: pa.Table) -> pa.Table:
+def _reader_from_table(env: BuildEnv, table_key: str, table: pa.Table) -> pa.Table:
     if table.num_rows == 0:
         return _empty_reader(table_key)
     reader = table_to_reader(table, batch_size=None)
-    return finalize_ingest_reader(
-        table_key,
-        reader,
+    return finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=table_key,
+        reader=reader,
         target_name=SYNTAX_AUGMENT_TARGET_NAME,
     )
 
@@ -1275,19 +1265,25 @@ def _build_xref_table(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
     return _xref_union(xref_exact, xref_fuzzy)
 
 
-def _frame_or_empty(table_key: str, table: pa.Table) -> pa.Table:
+def _frame_or_empty(env: BuildEnv, table_key: str, table: pa.Table) -> pa.Table:
     if table.num_rows == 0 or not table.column_names:
         return _empty_reader(table_key)
     resolved = table
     if table_key == SYNTAX_NODES_AUGMENTED_TABLE_KEY:
         resolved = _deep_cast_syntax_nodes_augmented(table)
-    return _reader_from_table(table_key, resolved)
+    return _reader_from_table(env, table_key, resolved)
 
 
-def _frame_if_enabled(table_key: str, table: pa.Table, *, emit: bool) -> pa.Table:
+def _frame_if_enabled(
+    env: BuildEnv,
+    table_key: str,
+    table: pa.Table,
+    *,
+    emit: bool,
+) -> pa.Table:
     if not emit:
         return _empty_reader(table_key)
-    return _frame_or_empty(table_key, table)
+    return _frame_or_empty(env, table_key, table)
 
 
 def syntax_augment__frames(
@@ -1353,14 +1349,20 @@ def syntax_augment__frames(
         _ts_payloads_by_syntax_node(inputs.ts_nodes, xref_table),
     )
 
-    syntax_nodes_frame = _frame_or_empty(SYNTAX_NODES_AUGMENTED_TABLE_KEY, syntax_nodes_augmented)
-    syntax_edges_frame = _frame_or_empty(SYNTAX_EDGES_AUGMENTED_TABLE_KEY, syntax_edges)
+    syntax_nodes_frame = _frame_or_empty(
+        env,
+        SYNTAX_NODES_AUGMENTED_TABLE_KEY,
+        syntax_nodes_augmented,
+    )
+    syntax_edges_frame = _frame_or_empty(env, SYNTAX_EDGES_AUGMENTED_TABLE_KEY, syntax_edges)
     xref_frame = _frame_if_enabled(
+        env,
         TS_XREF_TABLE_KEY,
         xref_table,
         emit=syntax_augment__options.emit_ts_xref,
     )
     coverage_frame = _frame_or_empty(
+        env,
         TS_WELD_COVERAGE_TABLE_KEY,
         _weld_coverage_table(inputs.ts_nodes, xref_table),
     )

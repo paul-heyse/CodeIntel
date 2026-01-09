@@ -14,21 +14,28 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.functions.parsing import parse_python_file
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan
+from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import materialize_plan
-from codeintel.core.columnar.execution_context import ExecutionContext
-from codeintel.core.columnar.rows import ColumnarRowBuffer
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_ops import Plan
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.paths import normalize_path, safe_relpath
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.columnar.rows import ColumnarRowBuffer
     from codeintel.core.parsing import ParsedModule
 
 log = logging.getLogger(__name__)
 
 CONFIG_REFERENCES_TABLE_KEY = "analytics.config_references"
+CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +45,7 @@ class ConfigReferenceInputs:
     snapshot: SnapshotRef
     config_value_rows: Sequence[Mapping[str, object]] | pa.Table
     module_rows: Sequence[Mapping[str, object]] | pa.Table
-    ctx: ExecutionContext | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,7 +122,7 @@ def _config_entries_from_tabular(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> tuple[list[_ConfigKeyEntry], set[str]]:
     if isinstance(rows, pa.Table):
         entry_table = _config_entry_rowset(rows, repo=repo, commit=commit, ctx=ctx)
@@ -143,7 +150,7 @@ def _config_entry_rowset(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     required = {"config_path", "key"}
     missing = [name for name in required if name not in table.column_names]
@@ -152,23 +159,20 @@ def _config_entry_rowset(
         raise ValueError(msg)
     plan = snapshot_plan(
         table,
-        repo=repo,
-        commit=commit,
-        columns=("config_path", "key"),
-        ctx=ctx,
+        columns=None,
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CONFIG_VALUES_TABLE_KEY,
+        ),
     )
     plan = plan.filter(E.and_(E.is_valid("config_path"), E.is_valid("key")))
-    plan = plan.order_by(
-        sort_keys=[
-            ("config_path", "ascending"),
-            ("key", "ascending"),
-        ]
-    )
     plan = plan.aggregate(
         keys=[E.field("config_path")],
         aggregates=[("key", "list", None, "keys")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _config_entries(
@@ -261,7 +265,7 @@ def _modules_by_path_from_tabular(
     repo: str,
     commit: str,
     repo_root: Path,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[str, set[str]]:
     if isinstance(rows, pa.Table):
         table = _module_rowset(rows, repo=repo, commit=commit, ctx=ctx)
@@ -274,7 +278,7 @@ def _module_rowset(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     required = {"path", "module"}
     missing = [name for name in required if name not in table.column_names]
@@ -286,26 +290,18 @@ def _module_rowset(
         columns.append("language")
     plan = snapshot_plan(
         table,
-        repo=repo,
-        commit=commit,
         columns=tuple(columns),
-        ctx=ctx,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
     )
     filters = [E.is_valid("path"), E.is_valid("module")]
     if "language" in table.column_names:
         filters.append(E.or_(E.is_null("language"), E.field("language") == E.scalar("python")))
     plan = plan.filter(E.and_(*filters))
-    plan = plan.order_by(
-        sort_keys=[
-            ("path", "ascending"),
-            ("module", "ascending"),
-        ]
-    )
     plan = plan.aggregate(
         keys=[E.field("path")],
         aggregates=[("module", "list", None, "modules")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _modules_by_path_from_table(
@@ -401,6 +397,15 @@ def _string_literals(module_ast: ast.AST) -> set[str]:
             if value:
                 literals.add(value)
     return literals
+
+
+def _materialize_plan(
+    plan: Plan,
+    *,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> pa.Table:
+    execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
 
 
 __all__ = [

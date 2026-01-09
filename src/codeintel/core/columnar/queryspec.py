@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pyarrow.compute as pc
-import pyarrow.dataset as ds
 
 from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.schemas.primitives import resolve_default_projection
+
+if TYPE_CHECKING:
+    import pyarrow.dataset as ds
+
+    from codeintel.core.schemas.primitives import TableSchema
 
 PROVENANCE_FIELDS: tuple[tuple[str, str], ...] = (
     ("prov_filename", "__filename"),
@@ -161,6 +166,61 @@ def projection_spec_from_columns(
     return ProjectionSpec(base_cols=tuple(base_cols), computed=tuple(computed))
 
 
+def projection_spec_from_schema_defaults(
+    columns: Sequence[str] | Mapping[str, pc.Expression | ds.Expression] | None,
+    *,
+    table_schema: TableSchema | None,
+    available_columns: Sequence[str],
+    provenance_columns: Sequence[str] = (),
+) -> ProjectionSpec:
+    """Build a ProjectionSpec using schema-driven default columns.
+
+    Parameters
+    ----------
+    columns
+        Column selection or computed expressions.
+    table_schema
+        TableSchema providing default projection policy.
+    available_columns
+        Column names available in the dataset.
+    provenance_columns
+        Additional provenance columns to include in the projection.
+
+    Returns
+    -------
+    ProjectionSpec
+        Projection spec composed from provided columns and schema defaults.
+    """
+    default_columns = _default_projection_columns(
+        table_schema=table_schema,
+        available_columns=available_columns,
+    )
+    return projection_spec_from_columns(
+        columns,
+        default_columns=default_columns,
+        provenance_columns=provenance_columns,
+    )
+
+
+def _default_projection_columns(
+    *,
+    table_schema: TableSchema | None,
+    available_columns: Sequence[str],
+) -> tuple[str, ...]:
+    if not available_columns:
+        return ()
+    default_projection = resolve_default_projection(table_schema)
+    if default_projection is None:
+        return tuple(available_columns)
+    available = set(available_columns)
+    missing = [name for name in default_projection if name not in available]
+    if missing:
+        table_key = "<unknown>" if table_schema is None else table_schema.table_key
+        msg = f"Schema default projection for {table_key} missing columns: {missing}"
+        raise ValueError(msg)
+    return default_projection
+
+
 def _scan_columns_from_projection(
     base_cols: Sequence[str],
     computed: Sequence[tuple[str, pc.Expression]],
@@ -190,4 +250,5 @@ __all__ = [
     "ProjectionSpec",
     "QuerySpec",
     "projection_spec_from_columns",
+    "projection_spec_from_schema_defaults",
 ]

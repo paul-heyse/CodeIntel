@@ -7,7 +7,6 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 log = logging.getLogger(__name__)
@@ -105,10 +104,6 @@ def _agreement_rows(
 def _iter_row_mappings(
     rows: Iterable[Mapping[str, object]] | ColumnarRowBuffer,
 ) -> Iterable[Mapping[str, object]]:
-    if isinstance(rows, ColumnarRowBuffer):
-        table = rows.to_table()
-        yield from iter_rows(table)
-        return
     yield from rows
 
 

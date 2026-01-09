@@ -26,9 +26,12 @@ from codeintel.build.analytics.utilities.ast import (
     safe_unparse,
     snippet_from_lines,
 )
-from codeintel.build.analytics.utilities.snapshot import require_columns, snapshot_table
+from codeintel.build.analytics.utilities.snapshot import (
+    SnapshotContext,
+    require_columns,
+    snapshot_table,
+)
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.hashing import sha256_short
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.paths import normalize_path, path_to_module
@@ -40,6 +43,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.columnar.execution_context import ExecutionContext
 
 
 def _columns_for_table(table_key: str) -> list[str]:
@@ -740,7 +744,10 @@ def _rows_for_snapshot(
     ctx: ExecutionContext | None = None,
 ) -> list[dict[str, object]]:
     require_columns(frame, ("repo", "commit"))
-    filtered = snapshot_table(frame, repo=repo, commit=commit, ctx=ctx)
+    filtered = snapshot_table(
+        frame,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     return list(iter_rows(filtered))
 
 

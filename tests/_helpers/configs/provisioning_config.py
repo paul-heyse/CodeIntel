@@ -11,11 +11,7 @@ if TYPE_CHECKING:
     from codeintel.build.graphs.runtime import GraphMetricsOptions
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths
-    from codeintel.ingestion.adapters import (
-        DuckDBStorageAdapter,
-        FilesystemDiscoveryAdapter,
-        HashChangeDetectionAdapter,
-    )
+    from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter, HashChangeDetectionAdapter
     from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
     from codeintel.ingestion.engine.infrastructure import ToolRunner
     from codeintel.ingestion.engine.service import ToolService
@@ -151,7 +147,6 @@ class ProvisioningSetup:
     runner: ToolRunner
     tool_service: ToolService
     gateway: StorageGateway
-    storage: DuckDBStorageAdapter
     discovery: FilesystemDiscoveryAdapter
     change_detection: HashChangeDetectionAdapter
     tool_adapter: ToolRunnerAdapter

@@ -21,6 +21,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.ingestion_normalize import (
+    IngestFinalizeOptions,
     finalize_ingest_reader,
     scoped_table_for_ingest,
 )
@@ -53,10 +54,13 @@ from codeintel.build.tabular.finalize_ops import (
     record_join_precheck_errors,
 )
 from codeintel.build.tabular.kernels import hash_struct_goid
-from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.plan_builder import build_table_plan
+from codeintel.core.columnar.plan_kernels import grouped_rollup_table
+from codeintel.core.columnar.plan_ops import materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -230,8 +234,8 @@ def _hash_join_tables(
     right_checked = normalize_table_for_join(right_checked)
     left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
     right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
-    left_plan = Plan.table(left_checked).project(left_exprs)
-    right_plan = Plan.table(right_checked).project(right_exprs)
+    left_plan = build_table_plan(table=left_checked).project(left_exprs)
+    right_plan = build_table_plan(table=right_checked).project(right_exprs)
     right_output = [name for name in right_exprs if name not in left_exprs]
     joined = left_plan.hash_join(
         right=right_plan,
@@ -539,8 +543,13 @@ def _goids_by_start_line(goids: pa.Table) -> pa.Table:
     required = {"rel_path", "start_line", "goid_h128"}
     if goids.num_rows == 0 or not required.issubset(set(goids.column_names)):
         return goids
-    grouped = goids.group_by(["rel_path", "start_line"]).aggregate([("goid_h128", "min")])
-    return grouped.rename_columns(["rel_path", "start_line", "goid_h128"])
+    grouped = grouped_rollup_table(
+        table=goids,
+        keys=("rel_path", "start_line"),
+        aggregates=(("goid_h128", "min", None, "goid_h128"),),
+        order_by=(("rel_path", "ascending"), ("start_line", "ascending")),
+    )
+    return grouped.select(["rel_path", "start_line", "goid_h128"])
 
 
 def _attach_match_metadata(
@@ -1031,7 +1040,8 @@ def _occurrence_syntax_occurrences_table(occurrences_table: pa.Table) -> pa.Tabl
         "occ_start_byte": E.field("start_byte"),
         "occ_end_byte": E.field("end_byte"),
     }
-    occurrences = materialize_plan(Plan.table(occurrences_table).project(project), use_threads=True)
+    occurrences_plan = build_table_plan(table=occurrences_table).project(project)
+    occurrences = materialize_plan(occurrences_plan, use_threads=True)
     hashed = hash_struct_goid(occurrences, columns=_OCCURRENCE_ID_COLUMNS)
     occurrence_ids = cast_array(hashed, pa.string(), safe=False)
     return occurrences.append_column("scip_occurrence_id", occurrence_ids)
@@ -1045,7 +1055,7 @@ def _occurrence_syntax_producers_table(nodes_table: pa.Table) -> pa.Table:
         table_key=SYNTAX_NODES_TABLE_KEY,
     )
     project = {name: E.field(name) for name in join_keys}
-    plan = Plan.table(checked).project(project)
+    plan = build_table_plan(table=checked).project(project)
     plan = plan.aggregate(keys=[E.field(name) for name in join_keys], aggregates=[])
     plan = plan.order_by(sort_keys=[(name, "ascending") for name in join_keys])
     return materialize_plan(plan, use_threads=True)
@@ -1065,8 +1075,8 @@ def _occurrence_syntax_pairs_table(occurrences: pa.Table, producers: pa.Table) -
     )
     left_checked = normalize_table_for_join(left_checked)
     right_checked = normalize_table_for_join(right_checked)
-    plan = Plan.table(left_checked).hash_join(
-        right=Plan.table(right_checked),
+    plan = build_table_plan(table=left_checked).hash_join(
+        right=build_table_plan(table=right_checked),
         spec=HashJoinSpec(
             left_keys=list(join_keys),
             right_keys=list(join_keys),
@@ -1104,8 +1114,8 @@ def _occurrence_syntax_match_table(
     right_columns = _unique_columns([*right_keys, "producer", "node_id"])
     left_project = {name: E.field(name) for name in left_columns}
     right_project = {name: E.field(name) for name in right_columns}
-    left_plan = Plan.table(left_checked).project(left_project)
-    right_plan = Plan.table(right_checked).project(right_project)
+    left_plan = build_table_plan(table=left_checked).project(left_project)
+    right_plan = build_table_plan(table=right_checked).project(right_project)
     joined = left_plan.hash_join(
         right=right_plan,
         spec=HashJoinSpec(
@@ -1151,8 +1161,8 @@ def _occurrence_syntax_left_anti(left: pa.Table, right: pa.Table) -> pa.Table:
     )
     left_checked = normalize_table_for_join(left_checked)
     right_checked = normalize_table_for_join(right_checked)
-    plan = Plan.table(left_checked).hash_join(
-        right=Plan.table(right_checked),
+    plan = build_table_plan(table=left_checked).hash_join(
+        right=build_table_plan(table=right_checked),
         spec=HashJoinSpec(
             left_keys=list(_OCCURRENCE_MATCH_KEYS),
             right_keys=list(_OCCURRENCE_MATCH_KEYS),
@@ -1232,7 +1242,7 @@ def scip_resolution__symbol_goid_xref__base(
     return finalize_ingest_reader(
         SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
         reader,
-        target_name=SCIP_RESOLUTION_TARGET_NAME,
+        options=IngestFinalizeOptions(target_name=SCIP_RESOLUTION_TARGET_NAME),
     )
 
 
@@ -1253,7 +1263,7 @@ def scip_resolution__occurrence_span_xref__base(
     return finalize_ingest_reader(
         SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
         reader,
-        target_name=SCIP_RESOLUTION_TARGET_NAME,
+        options=IngestFinalizeOptions(target_name=SCIP_RESOLUTION_TARGET_NAME),
     )
 
 
@@ -1323,8 +1333,8 @@ def scip_resolution__occurrence_syntax_xref__base(
     )
     pairs = normalize_table_for_join(pairs)
     matches = normalize_table_for_join(matches)
-    joined = Plan.table(pairs).hash_join(
-        right=Plan.table(matches),
+    joined = build_table_plan(table=pairs).hash_join(
+        right=build_table_plan(table=matches),
         spec=HashJoinSpec(
             left_keys=list(_OCCURRENCE_MATCH_KEYS),
             right_keys=list(_OCCURRENCE_MATCH_KEYS),
@@ -1359,7 +1369,7 @@ def scip_resolution__occurrence_syntax_xref__base(
     return finalize_ingest_reader(
         SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
         reader,
-        target_name=SCIP_RESOLUTION_TARGET_NAME,
+        options=IngestFinalizeOptions(target_name=SCIP_RESOLUTION_TARGET_NAME),
     )
 
 

@@ -28,7 +28,6 @@ from codeintel.build.analytics.graphs.constants import (
 )
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 MAX_SIMPLE_PATHS = 1000
@@ -38,6 +37,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from codeintel.build.graphs.runtime.context import GraphContext
+    from codeintel.core.columnar.execution_context import ExecutionContext
 
 
 def _to_decimal(value: int) -> Decimal:

@@ -45,11 +45,7 @@ from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.providers import create_default_providers
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.ingestion.adapters import (
-    DuckDBStorageAdapter,
-    FilesystemDiscoveryAdapter,
-    HashChangeDetectionAdapter,
-)
+from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter, HashChangeDetectionAdapter
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.compute.typing_ingest import TypingIngestContext, TypingIngestStep
 from codeintel.ingestion.engine.infrastructure import ToolRunner
@@ -667,9 +663,11 @@ def _build_provisioning_setup(
     gateway_opts = GatewayOptions(file_backed=opts.file_backed)
     gateway = _open_gateway_from_context(ctx, gateway_opts)
 
-    storage = DuckDBStorageAdapter(gateway)
     discovery = FilesystemDiscoveryAdapter(repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
+    change_detection = HashChangeDetectionAdapter(
+        dataset_root=build_paths.dataset_root_dir,
+        snapshot_id=ctx.snapshot.commit,
+    )
     tool_adapter = ToolRunnerAdapter(tool_service)
 
     return ProvisioningSetup(
@@ -679,7 +677,6 @@ def _build_provisioning_setup(
         runner=runner,
         tool_service=tool_service,
         gateway=gateway,
-        storage=storage,
         discovery=discovery,
         change_detection=change_detection,
         tool_adapter=tool_adapter,

@@ -20,14 +20,19 @@ from codeintel.build.analytics.compute.semantic_roles import (
 )
 from codeintel.build.analytics.compute.semantic_roles.classification import decorator_names
 from codeintel.build.analytics.utilities.snapshot import (
+    SnapshotContext,
     require_columns,
-    snapshot_plan,
     snapshot_table,
 )
-from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.core.columnar.conversion import table_to_reader
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+)
+from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_kernels import grouped_rollup_table
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.paths import normalize_path
 from codeintel.core.query_results import coerce_optional_int, coerce_optional_str, coerce_str
 
@@ -65,6 +70,7 @@ class SemanticRoleInputs:
     function_contracts_frame: pa.Table | None = None
     graph_metrics_frame: pa.Table | None = None
     modules_frame: pa.Table | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
 
 def build_semantic_roles_rows(
@@ -93,26 +99,31 @@ def build_semantic_roles_rows(
         inputs.modules_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     function_rows = _function_rows_from_frame(
         inputs.goids_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     effects = _effects_from_frame(
         inputs.function_effects_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     contracts = _contracts_from_frame(
         inputs.function_contracts_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     graph_metrics = _graph_metrics_from_frame(
         inputs.graph_metrics_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
 
     artifacts = RoleArtifacts(
@@ -207,6 +218,7 @@ def _function_rows_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> list[tuple[int, str, str, int | None]]:
     if frame is None or frame.num_rows == 0:
         return []
@@ -222,19 +234,14 @@ def _function_rows_from_frame(
         repo=repo,
         commit=commit,
         goid_column=goid_column,
+        ctx=ctx,
     )
     if table.num_rows == 0:
         return []
     result: list[tuple[int, str, str, int | None]] = []
-    for row in iter_rows(
-        table,
-        [goid_column, "rel_path", "qualname", "start_line", "end_line"],
-    ):
-        goid_raw = row.get(goid_column)
-        rel_path = row.get("rel_path")
-        qualname = row.get("qualname")
-        start_line_raw = row.get("start_line")
-        end_line_raw = row.get("end_line")
+    columns = [goid_column, "rel_path", "qualname", "start_line", "end_line"]
+    for values in iter_tuples(table_to_reader(table), columns=columns):
+        goid_raw, rel_path, qualname, start_line_raw, end_line_raw = values
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -258,32 +265,33 @@ def _function_worklist_table(
     repo: str,
     commit: str,
     goid_column: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     required = {goid_column, "rel_path", "qualname", "start_line", "end_line"}
     missing = [name for name in required if name not in frame.column_names]
     if missing:
         msg = f"Missing function worklist columns: {missing}"
         raise ValueError(msg)
-    plan = _scoped_plan(frame, repo=repo, commit=commit)
-    plan = plan.project(
-        {
-            goid_column: E.field(goid_column),
-            "rel_path": E.field("rel_path"),
-            "qualname": E.field("qualname"),
-            "start_line": E.field("start_line"),
-            "end_line": E.field("end_line"),
-        }
+    scoped = _scoped_table(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=(goid_column, "rel_path", "qualname", "start_line", "end_line"),
+        ctx=ctx,
     )
-    plan = plan.aggregate(
-        keys=[E.field(goid_column)],
+    if scoped.num_rows == 0:
+        return scoped
+    return grouped_rollup_table(
+        scoped,
+        keys=(goid_column,),
         aggregates=[
             ("rel_path", "min", None, "rel_path"),
             ("qualname", "min", None, "qualname"),
             ("start_line", "min", None, "start_line"),
             ("end_line", "max", None, "end_line"),
         ],
+        ctx=resolve_columnar_context(ctx),
     )
-    return materialize_plan(plan, use_threads=True)
 
 
 def _effects_from_frame(
@@ -291,24 +299,31 @@ def _effects_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    plan = _scoped_plan(frame, repo=repo, commit=commit)
-    plan = plan.project(
-        {
-            "function_goid_h128": E.field("function_goid_h128"),
-            "touches_db": E.field("touches_db"),
-            "uses_io": E.field("uses_io"),
-            "uses_time": E.field("uses_time"),
-            "uses_randomness": E.field("uses_randomness"),
-            "modifies_globals": E.field("modifies_globals"),
-            "modifies_closure": E.field("modifies_closure"),
-            "spawns_threads_or_tasks": E.field("spawns_threads_or_tasks"),
-        }
+    scoped = _scoped_table(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=(
+            "function_goid_h128",
+            "touches_db",
+            "uses_io",
+            "uses_time",
+            "uses_randomness",
+            "modifies_globals",
+            "modifies_closure",
+            "spawns_threads_or_tasks",
+        ),
+        ctx=ctx,
     )
-    plan = plan.aggregate(
-        keys=[E.field("function_goid_h128")],
+    if scoped.num_rows == 0:
+        return {}
+    filtered = grouped_rollup_table(
+        scoped,
+        keys=("function_goid_h128",),
         aggregates=[
             ("touches_db", "max", None, "touches_db"),
             ("uses_io", "max", None, "uses_io"),
@@ -318,32 +333,32 @@ def _effects_from_frame(
             ("modifies_closure", "max", None, "modifies_closure"),
             ("spawns_threads_or_tasks", "max", None, "spawns_threads_or_tasks"),
         ],
+        ctx=resolve_columnar_context(ctx),
     )
-    filtered = materialize_plan(plan, use_threads=True)
     if filtered.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, object]] = {}
-    for row in iter_rows(
-        filtered,
-        [
-            "function_goid_h128",
-            "touches_db",
-            "uses_io",
-            "uses_time",
-            "uses_randomness",
-            "modifies_globals",
-            "modifies_closure",
-            "spawns_threads_or_tasks",
-        ],
-    ):
-        goid_raw = row.get("function_goid_h128")
-        touches_db = row.get("touches_db")
-        uses_io = row.get("uses_io")
-        uses_time = row.get("uses_time")
-        uses_randomness = row.get("uses_randomness")
-        modifies_globals = row.get("modifies_globals")
-        modifies_closure = row.get("modifies_closure")
-        spawns_threads_or_tasks = row.get("spawns_threads_or_tasks")
+    columns = [
+        "function_goid_h128",
+        "touches_db",
+        "uses_io",
+        "uses_time",
+        "uses_randomness",
+        "modifies_globals",
+        "modifies_closure",
+        "spawns_threads_or_tasks",
+    ]
+    for values in iter_tuples(table_to_reader(filtered), columns=columns):
+        (
+            goid_raw,
+            touches_db,
+            uses_io,
+            uses_time,
+            uses_randomness,
+            modifies_globals,
+            modifies_closure,
+            spawns_threads_or_tasks,
+        ) = values
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -364,6 +379,7 @@ def _contracts_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
@@ -372,19 +388,15 @@ def _contracts_from_frame(
         repo=repo,
         commit=commit,
         columns=("function_goid_h128", "extras"),
+        ctx=ctx,
     )
     if table.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, object]] = {}
-    for row in iter_rows(
-        table,
-        [
-            "function_goid_h128",
-            "extras",
-        ],
+    for goid_raw, extras in iter_tuples(
+        table_to_reader(table),
+        columns=["function_goid_h128", "extras"],
     ):
-        goid_raw = row.get("function_goid_h128")
-        extras = row.get("extras")
         if isinstance(extras, Mapping):
             preconditions = extras.get("preconditions")
             raises = extras.get("raises")
@@ -409,35 +421,35 @@ def _graph_metrics_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[int, dict[str, int]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    plan = _scoped_plan(frame, repo=repo, commit=commit)
-    plan = plan.project(
-        {
-            "function_goid_h128": E.field("function_goid_h128"),
-            "call_fan_in": E.field("call_fan_in"),
-            "call_fan_out": E.field("call_fan_out"),
-        }
+    scoped = _scoped_table(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=("function_goid_h128", "call_fan_in", "call_fan_out"),
+        ctx=ctx,
     )
-    plan = plan.aggregate(
-        keys=[E.field("function_goid_h128")],
+    if scoped.num_rows == 0:
+        return {}
+    filtered = grouped_rollup_table(
+        scoped,
+        keys=("function_goid_h128",),
         aggregates=[
             ("call_fan_in", "max", None, "call_fan_in"),
             ("call_fan_out", "max", None, "call_fan_out"),
         ],
+        ctx=resolve_columnar_context(ctx),
     )
-    filtered = materialize_plan(plan, use_threads=True)
     if filtered.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, int]] = {}
-    for row in iter_rows(
-        filtered,
-        ["function_goid_h128", "call_fan_in", "call_fan_out"],
+    for goid_raw, call_fan_in, call_fan_out in iter_tuples(
+        table_to_reader(filtered),
+        columns=["function_goid_h128", "call_fan_in", "call_fan_out"],
     ):
-        goid_raw = row.get("function_goid_h128")
-        call_fan_in = row.get("call_fan_in")
-        call_fan_out = row.get("call_fan_out")
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -453,6 +465,7 @@ def _module_meta_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[str, ModuleRecord]:
     if frame is None or frame.num_rows == 0:
         return {}
@@ -461,14 +474,15 @@ def _module_meta_from_frame(
         repo=repo,
         commit=commit,
         columns=("module", "path", "tags"),
+        ctx=ctx,
     )
     if table.num_rows == 0:
         return {}
     meta: dict[str, ModuleRecord] = {}
-    for row in iter_rows(table, ["module", "path", "tags"]):
-        module = row.get("module")
-        path = row.get("path")
-        tags = row.get("tags")
+    for module, path, tags in iter_tuples(
+        table_to_reader(table),
+        columns=["module", "path", "tags"],
+    ):
         path_value = coerce_optional_str(path, ctx="core.modules.path")
         normalized_path = normalize_path(path_value) if path_value else ""
         normalized_tags = _normalize_tags(tags)
@@ -479,25 +493,20 @@ def _module_meta_from_frame(
     return meta
 
 
-def _scoped_plan(
-    frame: pa.Table,
-    *,
-    repo: str,
-    commit: str,
-) -> Plan:
-    require_columns(frame, ("repo", "commit"))
-    return snapshot_plan(frame, repo=repo, commit=commit)
-
-
 def _scoped_table(
     frame: pa.Table,
     *,
     repo: str,
     commit: str,
     columns: Sequence[str],
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     require_columns(frame, ("repo", "commit"))
-    return snapshot_table(frame, repo=repo, commit=commit, columns=columns)
+    return snapshot_table(
+        frame,
+        columns=columns,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
 
 
 def _coerce_json(value: object) -> object:

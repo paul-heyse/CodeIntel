@@ -16,7 +16,11 @@ from codeintel.build.analytics.semantic_roles.core import (
     SemanticRolesResult,
     build_semantic_roles_rows,
 )
-from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.analytics.utilities.catalogs import (
+    CatalogProviderRequest,
+    CatalogScope,
+    catalog_provider_from_frames,
+)
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -256,8 +260,15 @@ def semantic_roles_result(
     if not module_map:
         return SemanticRolesResult(function_rows=[], module_rows=[])
     catalog = catalog_provider_from_frames(
-        goids_frame=semantic_role_module_frames.goids_frame,
-        modules_frame=semantic_role_module_frames.modules_frame,
+        CatalogProviderRequest(
+            goids_frame=semantic_role_module_frames.goids_frame,
+            modules_frame=semantic_role_module_frames.modules_frame,
+            scope=CatalogScope(
+                repo=env.repo,
+                commit=env.commit,
+                ctx=env.execution_context,
+            ),
+        )
     )
     request = FunctionAstLoadRequest(
         repo=env.repo,
@@ -277,6 +288,7 @@ def semantic_roles_result(
             function_contracts_frame=semantic_role_effect_frames.function_contracts_frame,
             graph_metrics_frame=semantic_role_graph_frames.graph_metrics_frame,
             modules_frame=semantic_role_module_frames.modules_frame,
+            ctx=env.execution_context,
         ),
     )
 

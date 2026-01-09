@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
@@ -26,7 +25,6 @@ from codeintel.core.columnar.rows import (
 from codeintel.ingestion.compute.base import (
     BaseExtractStep,
     build_typed_extras,
-    persist_arrow_tables,
 )
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 
@@ -37,7 +35,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
@@ -268,8 +265,8 @@ class ConfigIngestResult:
 
     result: ExecutionResult
     rows: ColumnarRows = field(default_factory=dict)
-    rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(CONFIG_VALUES_TABLE_KEY)
+    rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(CONFIG_VALUES_TABLE_KEY).to_reader()
     )
     row_count: int = 0
 
@@ -293,7 +290,6 @@ class ConfigIngestStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
-        storage: IngestStoragePort | None = None,
     ) -> ConfigIngestResult:
         """Execute configuration file ingestion.
 
@@ -307,8 +303,6 @@ class ConfigIngestStep(BaseExtractStep):
             Commit identifier.
         context
             Optional ingestion context supplying repo/commit defaults.
-        storage
-            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -375,26 +369,15 @@ class ConfigIngestStep(BaseExtractStep):
             buffer.row_count,
         )
 
-        rows_reader, _row_count = reader_for_columnar_rows(
+        rows_reader, row_count = reader_for_columnar_rows(
             CONFIG_VALUES_TABLE_KEY,
             buffer.data,
-        )
-        finalized = finalize_ingest_reader(
-            CONFIG_VALUES_TABLE_KEY,
-            rows_reader,
-            target_name=CONFIG_INGEST_TARGET_NAME,
-        )
-        scope = f"{resolved_repo}@{resolved_commit}"
-        persist_arrow_tables(
-            storage,
-            {CONFIG_VALUES_TABLE_KEY: finalized},
-            scope=scope,
         )
         return ConfigIngestResult(
             result=ExecutionResult.ok(warnings=warnings),
             rows=buffer.data,
-            rows_reader=finalized,
-            row_count=finalized.num_rows,
+            rows_reader=rows_reader,
+            row_count=row_count,
         )
 
 

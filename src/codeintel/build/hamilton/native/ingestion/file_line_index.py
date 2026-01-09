@@ -19,6 +19,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.ingestion_normalize import (
+    IngestFinalizeOptions,
     finalize_ingest_reader,
     scoped_table_for_ingest,
 )
@@ -26,8 +27,9 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.plan_builder import build_table_plan
+from codeintel.core.columnar.plan_ops import materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 log = logging.getLogger(__name__)
@@ -45,7 +47,7 @@ def _resolve_module_paths(modules_table: pa.Table) -> dict[str, str | None]:
     if "language" in modules_table.column_names:
         columns.append("language")
     project = {name: E.field(name) for name in columns}
-    plan = Plan.table(modules_table).project(project)
+    plan = build_table_plan(table=modules_table).project(project)
     plan = plan.filter(E.and_(E.is_valid("path"), E.field("path") != E.scalar("")))
     if "language" in columns:
         plan = plan.aggregate(
@@ -170,7 +172,7 @@ def file_line_index__base(
     return finalize_ingest_reader(
         FILE_LINE_INDEX_TABLE_KEY,
         reader,
-        target_name=FILE_LINE_INDEX_TARGET_NAME,
+        options=IngestFinalizeOptions(target_name=FILE_LINE_INDEX_TARGET_NAME),
     )
 
 

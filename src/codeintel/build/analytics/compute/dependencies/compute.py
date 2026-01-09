@@ -23,8 +23,13 @@ from codeintel.build.analytics.compute.dependencies.detection import (
 )
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
-from codeintel.build.analytics.utilities.snapshot import require_columns, snapshot_table
+from codeintel.build.analytics.utilities.snapshot import (
+    SnapshotContext,
+    require_columns,
+    snapshot_table,
+)
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_models import columns_for_table_key
@@ -35,6 +40,8 @@ if TYPE_CHECKING:
     from codeintel.build.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.columnar.execution_context import ExecutionContext
+    from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
     from codeintel.storage.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
@@ -104,6 +111,7 @@ class ExternalDependenciesInputs:
     config_values_frame: pa.Table | None = None
     patterns: Mapping[str, LibraryPattern] | None = None
     language: str = "python"
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
 
 @dataclass(frozen=True)
@@ -225,10 +233,11 @@ def _dependency_call_rows_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> Iterable[tuple[object, ...]]:
     if frame is None or frame.num_rows == 0:
         return ()
-    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
+    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx)
     rows: list[tuple[object, ...]] = []
     for row in filtered:
         extras = row.get("extras")
@@ -403,11 +412,12 @@ def _config_keys_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[str, set[str]]:
     mapping: dict[str, set[str]] = {}
     if frame is None or frame.num_rows == 0:
         return mapping
-    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
+    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx)
     for row in filtered:
         extras = row.get("extras")
         ref_modules = extras.get("reference_modules") if isinstance(extras, Mapping) else None
@@ -425,9 +435,13 @@ def _rows_for_snapshot(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> list[dict[str, object]]:
     require_columns(frame, ("repo", "commit"))
-    filtered = snapshot_table(frame, repo=repo, commit=commit)
+    filtered = snapshot_table(
+        frame,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     return list(iter_rows(filtered))
 
 
@@ -436,6 +450,7 @@ def load_config_key_map(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None,
 ) -> dict[str, set[str]]:
     """Load config keys keyed by module for a repo snapshot.
 
@@ -444,7 +459,7 @@ def load_config_key_map(
     dict[str, set[str]]
         Mapping of module path to referenced config keys.
     """
-    return _config_keys_from_frame(config_values_frame, repo=repo, commit=commit)
+    return _config_keys_from_frame(config_values_frame, repo=repo, commit=commit, ctx=ctx)
 
 
 def compute_dependency_calls_pure(
@@ -552,11 +567,13 @@ def compute_external_dependencies_pure(
         inputs.config_values_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     call_rows = _dependency_call_rows_from_frame(
         inputs.dependency_calls_frame,
         repo=snapshot.repo,
         commit=snapshot.commit,
+        ctx=inputs.ctx,
     )
     aggregates = _aggregate_dependency_calls(call_rows, patterns_map)
     resolved_now = now or datetime.now(tz=UTC)

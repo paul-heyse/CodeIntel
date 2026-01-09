@@ -11,7 +11,10 @@ from codeintel.build.tabular.arrow_ops import iter_rows, normalize_table_for_joi
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
@@ -82,21 +85,27 @@ def build_subsystem_profile_cache_frame(
     right_output = [
         name for name in right_columns if name not in join_keys and name not in left_columns
     ]
-    joined_plan = (
-        Plan.table(subsystems)
-        .project(left_project)
-        .hash_join(
-            right=Plan.table(metrics).project(right_project),
-            spec=HashJoinSpec(
-                left_keys=join_keys,
-                right_keys=join_keys,
-                how="left outer",
-                left_output=list(left_project.keys()),
-                right_output=right_output,
-            ),
-        )
+    left_plan = build_table_plan(
+        table=subsystems,
+        options=TablePlanOptions(projection=left_project),
     )
-    joined = materialize_plan(joined_plan, use_threads=True)
+    right_plan = build_table_plan(
+        table=metrics,
+        options=TablePlanOptions(projection=right_project),
+    )
+    joined_plan = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=join_keys,
+            right_keys=join_keys,
+            how="left outer",
+            left_output=list(left_project.keys()),
+            right_output=right_output,
+        ),
+    )
+    joined = ExecutionPlan.from_plan(joined_plan).to_table(
+        ctx=resolve_execution_context(None),
+    )
     columns = _profile_cache_columns()
     return _ensure_columns(joined, columns)
 

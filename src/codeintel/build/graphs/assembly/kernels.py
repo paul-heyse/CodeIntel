@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal, cast
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
-from codeintel.core.validation.schema_constraints import is_list_like
+from codeintel.core.columnar.compute_helpers import call_compute, require_array
+from codeintel.core.columnar.kernels import (
+    SortKey,
+)
+from codeintel.core.columnar.kernels import (
+    hash_struct_ordinal as _hash_struct_ordinal,
+)
+from codeintel.core.columnar.kernels import (
+    stable_sort_table as _stable_sort_table,
+)
+from codeintel.core.columnar.plan_kernels import ExplodeSpec
+from codeintel.core.columnar.plan_kernels import (
+    explode_edges_for_join as _explode_edges_for_join,
+)
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
+from codeintel.core.schemas.service import get_schema_service
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,141 +34,158 @@ class ExplodeEdgesResult:
     invalid_parents: pa.Table
 
 
+@dataclass(frozen=True, slots=True)
+class ExplodeEdgesSpec:
+    """Configuration for exploding list-based edges."""
+
+    src_col: str
+    dst_list_col: str
+    repeat_cols: Sequence[str] = ()
+    src_name: str = "src_id"
+    dst_name: str = "dst_id"
+    aligned_list_cols: Sequence[str] = ()
+    nulls_match: bool = True
+
+
 def explode_edges(
     table: pa.Table,
     *,
-    src_col: str,
-    dst_list_col: str,
-    repeat_cols: Sequence[str] = (),
-    src_name: str = "src_id",
-    dst_name: str = "dst_id",
+    spec: ExplodeEdgesSpec,
 ) -> pa.Table:
-    """Explode list-valued destination columns into edges."""
-    _ensure_list_column(table, dst_list_col)
-    parent_idx = pc.list_parent_indices(table[dst_list_col])
-    dst_flat = pc.list_flatten(table[dst_list_col])
-    output: dict[str, pa.Array | pa.ChunkedArray] = {
-        src_name: pc.take(table[src_col], parent_idx),
-        dst_name: dst_flat,
-    }
-    _add_repeated_columns(output, table, parent_idx, repeat_cols)
-    return pa.table(output)
+    """Explode list-valued destination columns into edges.
+
+    Returns
+    -------
+    pyarrow.Table
+        Edge table with list elements flattened into destination rows.
+    """
+    result = _explode_edges_for_join(
+        table,
+        spec=ExplodeSpec(
+            src_col=spec.src_col,
+            dst_list_col=spec.dst_list_col,
+            repeat_cols=spec.repeat_cols,
+            null_list_policy="error",
+            null_child_policy="drop",
+            enforce_parent_valid=True,
+        ),
+    )
+    return _rename_exploded_columns(result.good, spec)
 
 
 def explode_edges_with_aligned_lists(
     table: pa.Table,
     *,
-    src_col: str,
-    dst_list_col: str,
-    aligned_list_cols: Sequence[str],
-    repeat_cols: Sequence[str] = (),
-    src_name: str = "src_id",
-    dst_name: str = "dst_id",
-    nulls_match: bool = True,
+    spec: ExplodeEdgesSpec,
 ) -> ExplodeEdgesResult:
-    """Explode list-valued edges with aligned list attributes."""
-    _ensure_list_column(table, dst_list_col)
-    for column in aligned_list_cols:
-        _ensure_list_column(table, column)
-    mismatch_mask = _alignment_mismatch_mask(
+    """Explode list-valued edges with aligned list attributes.
+
+    Returns
+    -------
+    ExplodeEdgesResult
+        Exploded edge table and any rows with misaligned list lengths.
+    """
+    result = _explode_edges_for_join(
         table,
-        dst_list_col=dst_list_col,
-        aligned_list_cols=aligned_list_cols,
-        nulls_match=nulls_match,
+        spec=ExplodeSpec(
+            src_col=spec.src_col,
+            dst_list_col=spec.dst_list_col,
+            repeat_cols=spec.repeat_cols,
+            aligned_list_cols=spec.aligned_list_cols,
+            null_list_policy="empty" if spec.nulls_match else "error",
+            null_child_policy="drop",
+            enforce_parent_valid=True,
+        ),
     )
-    if mismatch_mask is None:
-        return ExplodeEdgesResult(
-            edges=_explode_edges_table(
-                table,
-                src_col=src_col,
-                dst_list_col=dst_list_col,
-                aligned_list_cols=aligned_list_cols,
-                repeat_cols=repeat_cols,
-                src_name=src_name,
-                dst_name=dst_name,
-            ),
-            invalid_parents=_empty_slice(table),
-        )
-    invalid_parents = table.filter(mismatch_mask)
-    good_table = table.filter(pc.invert(mismatch_mask))
-    edges = _explode_edges_table(
-        good_table,
-        src_col=src_col,
-        dst_list_col=dst_list_col,
-        aligned_list_cols=aligned_list_cols,
-        repeat_cols=repeat_cols,
-        src_name=src_name,
-        dst_name=dst_name,
-    )
+    invalid_parents = _invalid_parent_rows(table, result.errors)
+    edges = _rename_exploded_columns(result.good, spec)
     return ExplodeEdgesResult(edges=edges, invalid_parents=invalid_parents)
 
 
-def _explode_edges_table(
-    table: pa.Table,
-    *,
-    src_col: str,
-    dst_list_col: str,
-    aligned_list_cols: Sequence[str],
-    repeat_cols: Sequence[str],
-    src_name: str,
-    dst_name: str,
-) -> pa.Table:
-    parent_idx = pc.list_parent_indices(table[dst_list_col])
-    output: dict[str, pa.Array | pa.ChunkedArray] = {
-        src_name: pc.take(table[src_col], parent_idx),
-        dst_name: pc.list_flatten(table[dst_list_col]),
-    }
-    _add_repeated_columns(output, table, parent_idx, repeat_cols)
-    for column in aligned_list_cols:
-        if column in output:
-            continue
-        output[column] = pc.list_flatten(table[column])
-    return pa.table(output)
+def _rename_exploded_columns(table: pa.Table, spec: ExplodeEdgesSpec) -> pa.Table:
+    rename: dict[str, str] = {}
+    if spec.src_name != spec.src_col:
+        rename[spec.src_col] = spec.src_name
+    if spec.dst_name != spec.dst_list_col:
+        rename[spec.dst_list_col] = spec.dst_name
+    if not rename:
+        return table
+    return table.rename_columns([rename.get(name, name) for name in table.column_names])
 
 
-def _alignment_mismatch_mask(
-    table: pa.Table,
-    *,
-    dst_list_col: str,
-    aligned_list_cols: Sequence[str],
-    nulls_match: bool,
-) -> pa.Array | pa.ChunkedArray | None:
-    if not aligned_list_cols:
-        return None
-    dst_len = pc.list_value_length(table[dst_list_col])
-    mismatch: pa.Array | pa.ChunkedArray | None = None
-    for column in aligned_list_cols:
-        col_len = pc.list_value_length(table[column])
-        eq = pc.equal(dst_len, col_len)
-        eq = pc.fill_null(eq, nulls_match)
-        col_mismatch = pc.invert(eq)
-        mismatch = col_mismatch if mismatch is None else pc.or_(mismatch, col_mismatch)
-    return mismatch
-
-
-def _add_repeated_columns(
-    output: dict[str, pa.Array | pa.ChunkedArray],
-    table: pa.Table,
-    parent_idx: pa.Array | pa.ChunkedArray,
-    repeat_cols: Sequence[str],
-) -> None:
-    for column in repeat_cols:
-        if column in output:
-            continue
-        output[column] = pc.take(table[column], parent_idx)
-
-
-def _ensure_list_column(table: pa.Table, column: str) -> None:
-    if column not in table.column_names:
-        msg = f"Expected list column {column!r} in table"
-        raise ValueError(msg)
-    if not is_list_like(table[column].type):
-        msg = f"Expected list-like type for column {column!r}"
-        raise TypeError(msg)
+def _invalid_parent_rows(table: pa.Table, errors: pa.Table) -> pa.Table:
+    if errors.num_rows == 0 or "row_id" not in errors.column_names:
+        return _empty_slice(table)
+    row_ids = errors["row_id"]
+    unique_ids = require_array(call_compute("unique", [row_ids]), name="unique")
+    return table.take(unique_ids)
 
 
 def _empty_slice(table: pa.Table) -> pa.Table:
     return table.slice(0, 0)
 
 
-__all__ = ["ExplodeEdgesResult", "explode_edges", "explode_edges_with_aligned_lists"]
+def hash_struct_ordinal(
+    table: pa.Table,
+    *,
+    columns: Sequence[str],
+    modulus: int,
+) -> pa.Array | pa.ChunkedArray:
+    """Return deterministic ordinals by hashing the provided columns.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Hash-based ordinals for each input row.
+    """
+    return _hash_struct_ordinal(table, columns=columns, modulus=modulus)
+
+
+def stable_sort_table(
+    table: pa.Table,
+    *,
+    sort_keys: Sequence[SortKey],
+    null_placement: Literal["at_end", "at_start"] = "at_end",
+) -> pa.Table:
+    """Return a table sorted using stable Arrow sort indices.
+
+    Returns
+    -------
+    pyarrow.Table
+        Stably sorted table.
+    """
+    return _stable_sort_table(table, sort_keys=sort_keys, null_placement=null_placement)
+
+
+def stable_sort_for_contract(
+    table: pa.Table,
+    *,
+    table_key: str,
+    provenance_keys: Sequence[str] = (),
+    null_placement: Literal["at_end", "at_start"] = "at_end",
+) -> pa.Table:
+    """Return a table stably sorted by contract keys with optional provenance tie-breakers.
+
+    Returns
+    -------
+    pyarrow.Table
+        Table sorted using canonical or provenance-aware keys.
+    """
+    schema = get_schema_service().get_table_schema(table_key)
+    canonical_keys = resolve_canonical_sort_keys(schema) or ()
+    if not canonical_keys:
+        return table
+    order_keys = (*canonical_keys, *provenance_keys)
+    sort_keys: list[SortKey] = [cast("SortKey", (key, "ascending")) for key in order_keys]
+    return stable_sort_table(table, sort_keys=sort_keys, null_placement=null_placement)
+
+
+__all__ = [
+    "ExplodeEdgesResult",
+    "ExplodeEdgesSpec",
+    "explode_edges",
+    "explode_edges_with_aligned_lists",
+    "hash_struct_ordinal",
+    "stable_sort_for_contract",
+    "stable_sort_table",
+]

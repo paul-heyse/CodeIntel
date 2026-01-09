@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan
+from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 from codeintel.build.graphs.rx.build_from_edges import (
     BuildStoreOptions,
@@ -22,11 +22,16 @@ from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, DEFAULT_W
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.data_models.ids import as_int
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.columnar.execution_context import ExecutionContext
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +39,7 @@ MIN_SHARED_MODULES = 2
 DEFAULT_IMPORT_WEIGHT = 1.0
 DEFAULT_SYMBOL_WEIGHT = 0.5
 DEFAULT_CONFIG_WEIGHT = 0.3
+CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
 
 
 @dataclass(frozen=True)
@@ -63,6 +69,7 @@ class AffinityContext:
     repo: str
     commit: str
     weights: AffinityWeights
+    ctx: ExecutionContext | None = None
 
 
 def load_modules_from_frame(
@@ -70,6 +77,7 @@ def load_modules_from_frame(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None = None,
 ) -> tuple[set[str], dict[str, list[str]]]:
     """Load modules and tags for subsystem inference.
 
@@ -80,7 +88,7 @@ def load_modules_from_frame(
     """
     if modules_frame is None or modules_frame.num_rows == 0:
         return set(), {}
-    rowset = _module_rowset(modules_frame, repo=repo, commit=commit)
+    rowset = _module_rowset(modules_frame, repo=repo, commit=commit, ctx=ctx)
     modules: set[str] = set()
     tags_by_module: dict[str, list[str]] = {}
     for row in iter_rows(rowset, ("module", "tags")):
@@ -125,7 +133,7 @@ def _import_edge_tuples(
 ) -> list[tuple[str, str, float]]:
     if frame is None or frame.num_rows == 0:
         return []
-    edge_table = _import_edge_rowset(frame, repo=ctx.repo, commit=ctx.commit)
+    edge_table = _import_edge_rowset(frame, repo=ctx.repo, commit=ctx.commit, ctx=ctx.ctx)
     edges: list[tuple[str, str, float]] = []
     for row in iter_rows(edge_table, ("src_module", "dst_module", "edge_count")):
         src = row.get("src_module")
@@ -151,13 +159,19 @@ def _symbol_edge_tuples(
 ) -> list[tuple[str, str, float]]:
     if symbol_use_edges_frame is None or symbol_use_edges_frame.num_rows == 0:
         return []
-    module_lookup = _module_lookup_table(modules_frame, repo=ctx.repo, commit=ctx.commit)
+    module_lookup = _module_lookup_table(
+        modules_frame,
+        repo=ctx.repo,
+        commit=ctx.commit,
+        ctx=ctx.ctx,
+    )
     if module_lookup.num_rows == 0:
         return []
     symbol_edges = _symbol_edge_rowset(
         symbol_use_edges_frame,
         repo=ctx.repo,
         commit=ctx.commit,
+        ctx=ctx.ctx,
     )
     mapped_edges = _symbol_module_edge_table(symbol_edges, module_lookup)
     edges: list[tuple[str, str, float]] = []
@@ -188,6 +202,7 @@ def _config_edge_tuples(
         config_values_frame,
         repo=ctx.repo,
         commit=ctx.commit,
+        ctx=ctx.ctx,
     )
     edges: list[tuple[str, str, float]] = []
     for row in iter_rows(config_rowset, ("reference_modules",)):
@@ -214,6 +229,7 @@ def build_weighted_adjacency(
     frames: AffinityFrames,
     *,
     weights: AffinityWeights | None = None,
+    execution_ctx: ExecutionContext | None = None,
 ) -> dict[str, dict[str, float]]:
     """
     Return a weighted adjacency mapping for the module affinity graph.
@@ -228,6 +244,7 @@ def build_weighted_adjacency(
         modules,
         frames,
         weights=weights,
+        execution_ctx=execution_ctx,
     )
     return graph_to_adjacency(graph)
 
@@ -238,6 +255,7 @@ def build_weighted_graph(
     frames: AffinityFrames,
     *,
     weights: AffinityWeights | None = None,
+    execution_ctx: ExecutionContext | None = None,
 ) -> GraphInput:
     """
     Build an undirected weighted graph representing module affinity.
@@ -253,6 +271,7 @@ def build_weighted_graph(
         repo=snapshot.repo,
         commit=snapshot.commit,
         weights=w,
+        ctx=execution_ctx,
     )
     edges: list[tuple[str, str, float]] = []
     edges.extend(_import_edge_tuples(ctx, frames.import_graph_edges_frame))
@@ -285,11 +304,15 @@ def _module_rowset(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     if "module" not in frame.column_names:
         msg = "Missing module column: module"
         raise ValueError(msg)
-    plan = snapshot_plan(frame, repo=repo, commit=commit)
+    plan = snapshot_plan(
+        frame,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     plan = plan.filter(E.is_valid("module"))
     plan = plan.project(
         {
@@ -297,12 +320,11 @@ def _module_rowset(
             "tags": E.field("tags") if "tags" in frame.column_names else E.scalar(None),
         }
     )
-    plan = plan.order_by(sort_keys=[("module", "ascending")])
     plan = plan.aggregate(
         keys=[E.field("module")],
         aggregates=[("tags", "list", None, "tags")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _module_lookup_table(
@@ -310,6 +332,7 @@ def _module_lookup_table(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     if frame is None or frame.num_rows == 0:
         return pa.Table.from_arrays(
@@ -321,7 +344,10 @@ def _module_lookup_table(
             [pa.array([], type=pa.string()), pa.array([], type=pa.string())],
             names=["path", "module"],
         )
-    plan = snapshot_plan(frame, repo=repo, commit=commit)
+    plan = snapshot_plan(
+        frame,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     plan = plan.project(
         {
             "path": E.cast(E.field("path"), "string"),
@@ -333,7 +359,7 @@ def _module_lookup_table(
         keys=[E.field("path")],
         aggregates=[("module", "min", None, "module")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _symbol_module_edge_table(
@@ -349,23 +375,27 @@ def _symbol_module_edge_table(
             ],
             names=["use_module", "def_module", "edge_count"],
         )
-    symbol_plan = Plan.table(symbol_edges)
-    symbol_plan = symbol_plan.project(
-        {
-            "use_path": E.cast(E.field("use_path"), "string"),
-            "def_path": E.cast(E.field("def_path"), "string"),
-            "edge_count": E.field("edge_count"),
-        }
+    symbol_plan = build_table_plan(
+        table=symbol_edges,
+        options=TablePlanOptions(
+            projection={
+                "use_path": E.cast(E.field("use_path"), "string"),
+                "def_path": E.cast(E.field("def_path"), "string"),
+                "edge_count": E.field("edge_count"),
+            },
+            filter_expr=E.and_(E.is_valid("use_path"), E.is_valid("def_path")),
+        ),
     )
-    symbol_plan = symbol_plan.filter(E.and_(E.is_valid("use_path"), E.is_valid("def_path")))
-    module_plan = Plan.table(module_lookup)
-    module_plan = module_plan.project(
-        {
-            "path": E.cast(E.field("path"), "string"),
-            "module": E.cast(E.field("module"), "string"),
-        }
+    module_plan = build_table_plan(
+        table=module_lookup,
+        options=TablePlanOptions(
+            projection={
+                "path": E.cast(E.field("path"), "string"),
+                "module": E.cast(E.field("module"), "string"),
+            },
+            filter_expr=E.and_(E.is_valid("path"), E.is_valid("module")),
+        ),
     )
-    module_plan = module_plan.filter(E.and_(E.is_valid("path"), E.is_valid("module")))
     def_join = symbol_plan.hash_join(
         right=module_plan,
         spec=HashJoinSpec(
@@ -406,7 +436,7 @@ def _symbol_module_edge_table(
         keys=[E.field("use_module"), E.field("def_module")],
         aggregates=[("edge_count", "sum", None, "edge_count")],
     )
-    return materialize_plan(use_join, use_threads=True)
+    return _materialize_plan(use_join, ctx=None)
 
 
 def _symbol_edge_rowset(
@@ -414,19 +444,24 @@ def _symbol_edge_rowset(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     required = {"use_path", "def_path"}
     missing = [name for name in required if name not in frame.column_names]
     if missing:
         msg = f"Missing symbol edge columns: {missing}"
         raise ValueError(msg)
-    plan = snapshot_plan(frame, repo=repo, commit=commit, columns=("use_path", "def_path"))
+    plan = snapshot_plan(
+        frame,
+        columns=("use_path", "def_path"),
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     plan = plan.filter(E.and_(E.is_valid("use_path"), E.is_valid("def_path")))
     plan = plan.aggregate(
         keys=[E.field("use_path"), E.field("def_path")],
         aggregates=[("use_path", "count", None, "edge_count")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _import_edge_rowset(
@@ -434,19 +469,24 @@ def _import_edge_rowset(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     required = {"src_module", "dst_module"}
     missing = [name for name in required if name not in frame.column_names]
     if missing:
         msg = f"Missing import edge columns: {missing}"
         raise ValueError(msg)
-    plan = snapshot_plan(frame, repo=repo, commit=commit, columns=("src_module", "dst_module"))
+    plan = snapshot_plan(
+        frame,
+        columns=("src_module", "dst_module"),
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     plan = plan.filter(E.and_(E.is_valid("src_module"), E.is_valid("dst_module")))
     plan = plan.aggregate(
         keys=[E.field("src_module"), E.field("dst_module")],
         aggregates=[("src_module", "count", None, "edge_count")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _config_module_rowset(
@@ -454,13 +494,23 @@ def _config_module_rowset(
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | None,
 ) -> pa.Table:
     required = {"config_path", "key", "extras"}
     missing = [name for name in required if name not in frame.column_names]
     if missing:
         msg = f"Missing config reference columns: {missing}"
         raise ValueError(msg)
-    plan = snapshot_plan(frame, repo=repo, commit=commit, columns=("config_path", "key", "extras"))
+    plan = snapshot_plan(
+        frame,
+        columns=None,
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CONFIG_VALUES_TABLE_KEY,
+        ),
+    )
     plan = plan.filter(E.and_(E.is_valid("config_path"), E.is_valid("key")))
     plan = plan.project(
         {
@@ -469,17 +519,11 @@ def _config_module_rowset(
             "reference_modules": E.field(("extras", "reference_modules")),
         }
     )
-    plan = plan.order_by(
-        sort_keys=[
-            ("config_path", "ascending"),
-            ("key", "ascending"),
-        ]
-    )
     plan = plan.aggregate(
         keys=[E.field("config_path"), E.field("key")],
         aggregates=[("reference_modules", "list", None, "reference_modules")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _flatten_tags(raw: object) -> list[str]:
@@ -717,3 +761,12 @@ def cluster_sizes_map(labels: dict[str, str]) -> dict[str, int]:
     for label in labels.values():
         sizes[label] += 1
     return sizes
+
+
+def _materialize_plan(
+    plan: Plan,
+    *,
+    ctx: ExecutionContext | None,
+) -> pa.Table:
+    execution_ctx = resolve_execution_context(ctx)
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)

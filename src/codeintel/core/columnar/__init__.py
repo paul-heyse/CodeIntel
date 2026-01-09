@@ -52,6 +52,9 @@ if TYPE_CHECKING:
         explode_list_struct,
     )
     from codeintel.core.columnar.expr_vocab import E, Expression, ExprVocab
+    from codeintel.core.columnar.external_plans import (
+        register_default_external_plan_runners,
+    )
     from codeintel.core.columnar.finalize_ops import (
         AlignmentReport,
         FinalizeDedupe,
@@ -274,6 +277,7 @@ if TYPE_CHECKING:
         list_external_plan_runners,
         materialize_plan,
         register_external_plan_runner,
+        register_default_external_plan_runners,
         run_external_plan,
         ColumnarRowBuffer,
         ColumnarRows,
@@ -470,6 +474,10 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "codeintel.core.columnar.plan_ops",
         "register_external_plan_runner",
     ),
+    "register_default_external_plan_runners": (
+        "codeintel.core.columnar.external_plans",
+        "register_default_external_plan_runners",
+    ),
     "run_external_plan": ("codeintel.core.columnar.plan_ops", "run_external_plan"),
     "ColumnarRowBuffer": ("codeintel.core.columnar.rows", "ColumnarRowBuffer"),
     "ColumnarRows": ("codeintel.core.columnar.rows", "ColumnarRows"),
@@ -657,6 +665,7 @@ __all__ = (
     "record_join_precheck_errors",
     "regex_match",
     "regex_replace",
+    "register_default_external_plan_runners",
     "register_external_plan_runner",
     "replace_with_mask",
     "require_array",

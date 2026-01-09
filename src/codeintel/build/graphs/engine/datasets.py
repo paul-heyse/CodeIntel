@@ -13,7 +13,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
-from codeintel.build.graphs.assembly import iter_normalized_tuples
+from codeintel.build.graphs.assembly.readers import iter_normalized_tuples
 from codeintel.build.scopes.snapshot import SnapshotScanContext
 from codeintel.core.columnar.arrowdsl import (
     ExecutionPlan,
@@ -28,13 +28,15 @@ from codeintel.core.columnar.finalize_ops import (
     FinalizeResult,
     finalize_spec_for_table,
 )
-from codeintel.core.columnar.ordering import SortDirection, SortKey
+from codeintel.core.columnar.plan_builder import (
+    SchemaPlanDefaultsRequest,
+    plan_from_schema_defaults,
+)
 from codeintel.core.columnar.plan_ops import (
     Plan,
     QueryPlanOptions,
-    build_query_plan_for_context,
 )
-from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_schema_defaults
 from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetWriteOptions,
@@ -45,13 +47,16 @@ from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.core.schemas.primitives import TableSchema, resolve_canonical_sort_keys
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.columnar.dedupe_ops import DedupeTier
     from codeintel.core.columnar.profiles import RuntimeProfile
+    from codeintel.core.columnar.run_manifest import RunManifestOptions
+    from codeintel.core.columnar.streaming import ScanTelemetry
+    from codeintel.core.schemas.primitives import TableSchema
 
 LOG = logging.getLogger(__name__)
 
@@ -94,6 +99,16 @@ class GraphViewScanOptions:
     metrics_enabled: bool = True
     provenance: bool = False
     execution_ctx: ExecutionContext | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotPlanResult:
+    """Plan result with optional scan telemetry."""
+
+    plan: Plan
+    scan_telemetry: ScanTelemetry | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,6 +246,54 @@ class GraphViewFactory:
         )
         return scan_snapshot_plan(request)
 
+    def load_plan_with_telemetry(
+        self,
+        *,
+        table_key: str,
+        columns: Sequence[str] | Mapping[str, pc.Expression] | None = None,
+        scan_options: GraphViewScanOptions | None = None,
+    ) -> SnapshotPlanResult | None:
+        """Return a scan plan plus telemetry for a snapshot table.
+
+        Parameters
+        ----------
+        table_key
+            Dataset table key.
+        columns
+            Optional column selection for the scan.
+        scan_options
+            Optional scan overrides (filter, ordering, metrics).
+
+        Returns
+        -------
+        SnapshotPlanResult | None
+            Plan result with telemetry or None when missing.
+        """
+        resolved_scan_options = scan_options or GraphViewScanOptions()
+        resolved_columns: tuple[str, ...] | Mapping[str, pc.Expression] | None
+        if isinstance(columns, Mapping):
+            resolved_columns = columns
+        elif columns is None:
+            resolved_columns = None
+        else:
+            resolved_columns = tuple(columns)
+        request = SnapshotScanRequest(
+            dataset_root=self.dataset_root,
+            table_key=table_key,
+            snapshot_id=self.snapshot_id,
+            columns=resolved_columns,
+            provenance=resolved_scan_options.provenance,
+            repo=self.scan_context.repo,
+            commit=self.scan_context.commit,
+            scan_context=self.scan_context,
+            apply_filter=resolved_scan_options.apply_filter,
+            implicit_ordering=resolved_scan_options.implicit_ordering,
+            require_sequenced_output=resolved_scan_options.require_sequenced_output,
+            metrics_enabled=resolved_scan_options.metrics_enabled,
+            execution_ctx=resolved_scan_options.execution_ctx,
+        )
+        return scan_snapshot_plan_with_telemetry(request)
+
     @staticmethod
     def iter_tuples(
         reader: pa.RecordBatchReader,
@@ -342,8 +405,10 @@ def dataset_snapshot_exists(
     return snapshot_dir.is_dir()
 
 
-def scan_snapshot_plan(request: SnapshotScanRequest) -> Plan | None:
-    """Return a scan plan for a dataset snapshot or None when missing.
+def scan_snapshot_plan_with_telemetry(
+    request: SnapshotScanRequest,
+) -> SnapshotPlanResult | None:
+    """Return a scan plan and telemetry for a dataset snapshot.
 
     Parameters
     ----------
@@ -352,8 +417,8 @@ def scan_snapshot_plan(request: SnapshotScanRequest) -> Plan | None:
 
     Returns
     -------
-    Plan | None
-        Plan for the dataset snapshot or None when missing.
+    SnapshotPlanResult | None
+        Plan result with telemetry or None when missing.
     """
     dataset = _scan_dataset(request.dataset_root, request.table_key, request.snapshot_id)
     if dataset is None:
@@ -369,11 +434,13 @@ def scan_snapshot_plan(request: SnapshotScanRequest) -> Plan | None:
         return None
     query_spec = _query_spec_for_request(
         dataset,
+        table_key=request.table_key,
         columns=resolved_columns,
         predicate=filter_expression,
     )
+    scan_telemetry = None
     if request.metrics_enabled:
-        _log_scan_telemetry(
+        scan_telemetry = _log_scan_telemetry(
             dataset,
             table_key=request.table_key,
             snapshot_id=request.snapshot_id,
@@ -384,13 +451,37 @@ def scan_snapshot_plan(request: SnapshotScanRequest) -> Plan | None:
         implicit_ordering=request.implicit_ordering,
         require_sequenced_output=request.require_sequenced_output,
     )
-    options = _apply_canonical_order_by(request, options=options)
-    return build_query_plan_for_context(
-        dataset,
-        spec=query_spec,
-        ctx=request.execution_ctx,
-        options=options,
+    plan = plan_from_schema_defaults(
+        schema_service=get_schema_service(),
+        request=SchemaPlanDefaultsRequest(
+            table_key=request.table_key,
+            dataset=dataset,
+            predicate=filter_expression,
+            columns=resolved_columns,
+            options=options,
+            ctx=request.execution_ctx,
+        ),
     )
+    return SnapshotPlanResult(plan=plan, scan_telemetry=scan_telemetry)
+
+
+def scan_snapshot_plan(request: SnapshotScanRequest) -> Plan | None:
+    """Return a scan plan for a dataset snapshot or None when missing.
+
+    Parameters
+    ----------
+    request
+        Snapshot scan request describing the dataset and filters.
+
+    Returns
+    -------
+    Plan | None
+        Plan for the dataset snapshot or None when missing.
+    """
+    result = scan_snapshot_plan_with_telemetry(request)
+    if result is None:
+        return None
+    return result.plan
 
 
 def scan_snapshot_reader(
@@ -442,15 +533,19 @@ def scan_snapshot_table(
     pyarrow.Table | None
         Arrow table for the dataset snapshot or None when missing.
     """
-    plan = scan_snapshot_plan(request)
-    if plan is None:
+    plan_result = scan_snapshot_plan_with_telemetry(request)
+    if plan_result is None:
         return None
+    plan = plan_result.plan
     use_threads = _resolve_use_threads(request)
     execution_ctx = _resolve_execution_context(request, use_threads=use_threads)
     result = run_pipeline(
         plan=ExecutionPlan.from_plan(plan),
         finalize=finalize_spec_for_table(request.table_key, mode="tolerant"),
-        options=PipelineRunOptions(ctx=execution_ctx),
+        options=PipelineRunOptions(
+            ctx=execution_ctx,
+            scan_telemetry=plan_result.scan_telemetry,
+        ),
     )
     return result.good
 
@@ -531,34 +626,19 @@ def _resolve_columns(
     return columns
 
 
-def _apply_canonical_order_by(
-    request: SnapshotScanRequest,
-    *,
-    options: QueryPlanOptions,
-) -> QueryPlanOptions:
-    if options.order_by is not None:
-        return options
-    ctx = request.execution_ctx
-    if ctx is None or ctx.resolve_determinism() != "canonical":
-        return options
-    schema = get_schema_service().get_table_schema(request.table_key)
-    canonical_keys = resolve_canonical_sort_keys(schema)
-    if not canonical_keys:
-        return options
-    direction: SortDirection = "ascending"
-    order_by: tuple[SortKey, ...] = tuple((key, direction) for key in canonical_keys)
-    return replace(options, order_by=order_by)
-
 
 def _query_spec_for_request(
     dataset: ds.Dataset,
     *,
+    table_key: str,
     columns: tuple[str, ...] | Mapping[str, pc.Expression] | None,
     predicate: pc.Expression | None,
 ) -> QuerySpec:
-    projection = projection_spec_from_columns(
+    table_schema = get_schema_service().get_table_schema(table_key)
+    projection = projection_spec_from_schema_defaults(
         columns,
-        default_columns=tuple(dataset.schema.names),
+        table_schema=table_schema,
+        available_columns=tuple(dataset.schema.names),
     )
     return QuerySpec(
         predicate=predicate,
@@ -573,7 +653,7 @@ def _log_scan_telemetry(
     table_key: str,
     snapshot_id: str,
     query_spec: QuerySpec,
-) -> None:
+) -> ScanTelemetry:
     telemetry = scan_telemetry_for_queryspec(dataset, spec=query_spec)
     LOG.debug(
         "Dataset scan telemetry table=%s snapshot=%s fragments=%s rows=%s filter=%s",
@@ -583,6 +663,7 @@ def _log_scan_telemetry(
         telemetry.estimated_rows,
         query_spec.scan_filter_expression(),
     )
+    return telemetry
 
 
 def _resolve_use_threads(request: SnapshotScanRequest) -> bool:
@@ -746,6 +827,7 @@ def _artifact_manifest_extras(
 __all__ = [
     "GraphRunMetadata",
     "GraphViewFactory",
+    "SnapshotPlanResult",
     "SnapshotScanRequest",
     "dataset_snapshot_exists",
     "graph_execution_context",
@@ -753,6 +835,7 @@ __all__ = [
     "persist_finalize_artifacts",
     "resolve_dataset_root",
     "scan_snapshot_plan",
+    "scan_snapshot_plan_with_telemetry",
     "scan_snapshot_reader",
     "scan_snapshot_reader_with_columns",
     "scan_snapshot_table",

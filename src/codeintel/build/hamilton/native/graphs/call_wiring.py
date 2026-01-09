@@ -7,7 +7,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import pyarrow as pa
 from intervaltree import IntervalTree
@@ -18,6 +18,7 @@ from codeintel.build.graphs.assembly import (
 from codeintel.build.graphs.assembly import (
     empty_reader,
     stable_decimal_id,
+    table_to_reader,
     tabular_to_table,
 )
 from codeintel.build.graphs.assembly import (
@@ -38,7 +39,6 @@ from codeintel.build.tabular.arrow_ops import (
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
 from codeintel.build.tabular.compute_helpers import cast_array
-from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeResult,
@@ -48,15 +48,24 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_table,
     record_join_precheck_errors,
 )
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import join_safe_projection
-from codeintel.core.columnar.dedupe_ops import dedupe_keep_first_after_sort
-from codeintel.core.columnar.iter import iter_rows
-from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_kernels import (
+    ExplodeSpec,
+    StableDedupeSpec,
+    explode_edges_for_join,
+    grouped_rollup_table,
+    stable_dedupe_with_ties,
+)
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.intervals.span_resolver import MatchKind, SpanResolver
 from codeintel.core.serialization.payload import PayloadValue, decode_payload, encode_payload
+
+if TYPE_CHECKING:
+    from codeintel.core.columnar.kernels import SortKey
 
 CALL_WIRING_TARGET_NAME = "call_wiring"
 CPG_CALL_TARGETS_TABLE_KEY = "graph.cpg_call_targets"
@@ -644,18 +653,31 @@ def _string_list(value: object) -> tuple[str, ...]:
 def _emit_alignment_report_from_finalize(result: FinalizeResult) -> None:
     if result.alignment.num_rows == 0:
         return
-    row = next(iter_rows(result.alignment), None)
-    if row is None:
+    columns = [
+        "table_key",
+        "target_name",
+        "missing_columns",
+        "extra_columns",
+        "coerced_columns",
+        "row_count",
+    ]
+    values = next(iter_tuples(table_to_reader(result.alignment), columns=columns), None)
+    if values is None:
         return
-    table_key_value = row.get("table_key")
-    target_name_value = row.get("target_name")
-    row_count_value = row.get("row_count")
+    (
+        table_key_value,
+        target_name_value,
+        missing_columns_value,
+        extra_columns_value,
+        coerced_columns_value,
+        row_count_value,
+    ) = values
     report = AlignmentReport(
         table_key=table_key_value if isinstance(table_key_value, str) else "",
         target_name=target_name_value if isinstance(target_name_value, str) else None,
-        missing_columns=_string_list(row.get("missing_columns")),
-        extra_columns=_string_list(row.get("extra_columns")),
-        coerced_columns=_string_list(row.get("coerced_columns")),
+        missing_columns=_string_list(missing_columns_value),
+        extra_columns=_string_list(extra_columns_value),
+        coerced_columns=_string_list(coerced_columns_value),
         row_count=row_count_value if isinstance(row_count_value, int) else None,
     )
     emit_alignment_report(report)
@@ -1310,12 +1332,10 @@ def _dedupe_block_table(
     if table.num_rows == 0:
         return _empty_table(["function_goid_h128", output_column])
     try:
-        grouped = materialize_plan(
-            Plan.table(table).aggregate(
-                keys=[E.field("function_goid_h128")],
-                aggregates=[("block_id", "min", None, "block_id_min")],
-            ),
-            use_threads=True,
+        grouped = grouped_rollup_table(
+            table,
+            keys=("function_goid_h128",),
+            aggregates=[("block_id", "min", None, "block_id_min")],
         )
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _dedupe_block_rows(table, output_column=output_column)
@@ -1344,10 +1364,13 @@ def _dedupe_block_rows(table: pa.Table, *, output_column: str) -> pa.Table:
     if table.num_rows == 0 or not required.issubset(set(table.column_names)):
         return _empty_table(["function_goid_h128", output_column])
     projected = table.select(["function_goid_h128", "block_id"])
-    deduped = dedupe_keep_first_after_sort(
+    deduped = stable_dedupe_with_ties(
         projected,
-        key_columns=("function_goid_h128",),
-        tie_breakers=(("block_id", "ascending"),),
+        spec=StableDedupeSpec(
+            key_columns=("function_goid_h128",),
+            order_by=(("block_id", "ascending"),),
+            hash_tiebreaker=True,
+        ),
     )
     return deduped.rename_columns(["function_goid_h128", output_column])
 
@@ -1357,10 +1380,11 @@ def _entry_blocks(cfg_blocks: pa.Table) -> pa.Table:
     if cfg_blocks.num_rows == 0 or not required.issubset(set(cfg_blocks.column_names)):
         return _empty_table(["function_goid_h128", "entry_block_id"])
     try:
-        filtered = materialize_plan(
-            Plan.table(cfg_blocks).filter(E.field("kind") == E.scalar("entry")),
-            use_threads=True,
+        filtered_plan = build_table_plan(
+            table=cfg_blocks,
+            options=TablePlanOptions(filter_expr=E.field("kind") == E.scalar("entry")),
         )
+        filtered = materialize_plan(filtered_plan, use_threads=True)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _empty_table(["function_goid_h128", "entry_block_id"])
     if filtered.num_rows == 0:
@@ -1374,10 +1398,11 @@ def _exit_blocks(cfg_blocks: pa.Table) -> pa.Table:
     if cfg_blocks.num_rows == 0 or not required.issubset(set(cfg_blocks.column_names)):
         return _empty_table(["function_goid_h128", "exit_block_id"])
     try:
-        filtered = materialize_plan(
-            Plan.table(cfg_blocks).filter(E.field("kind") == E.scalar("exit")),
-            use_threads=True,
+        filtered_plan = build_table_plan(
+            table=cfg_blocks,
+            options=TablePlanOptions(filter_expr=E.field("kind") == E.scalar("exit")),
         )
+        filtered = materialize_plan(filtered_plan, use_threads=True)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _empty_table(["function_goid_h128", "exit_block_id"])
     if filtered.num_rows == 0:
@@ -1451,8 +1476,20 @@ def _hash_join_block_targets(
         right_key: E.cast(E.field(right_key), _GOID_CAST_TYPE),
         output_column: E.field(output_column),
     }
-    left_plan = Plan.table(targets).project(left_exprs).filter(E.is_valid("callee_goid_h128"))
-    right_plan = Plan.table(blocks).project(right_exprs).filter(E.is_valid(right_key))
+    left_plan = build_table_plan(
+        table=targets,
+        options=TablePlanOptions(
+            projection=left_exprs,
+            filter_expr=E.is_valid("callee_goid_h128"),
+        ),
+    )
+    right_plan = build_table_plan(
+        table=blocks,
+        options=TablePlanOptions(
+            projection=right_exprs,
+            filter_expr=E.is_valid(right_key),
+        ),
+    )
     joined = left_plan.hash_join(
         right=right_plan,
         spec=HashJoinSpec(
@@ -2375,7 +2412,7 @@ def cpg_edges_calls(
     candidates = tabular_to_table(cpg_call_candidates)
     if candidates.num_rows == 0:
         return empty_reader(CPG_CALL_EDGES_TABLE_KEY)
-    exploded = explode_edges(
+    exploded = explode_edges_for_join(
         candidates,
         spec=ExplodeSpec(
             src_col="call_id",
@@ -2383,6 +2420,8 @@ def cpg_edges_calls(
             repeat_cols=("repo", "commit", "call_node_id", "extras"),
             error_context_cols=("repo", "commit", "rel_path", "call_id"),
         ),
+        table_key=CPG_CALL_CANDIDATES_TABLE_KEY,
+        schema_service=get_schema_service(),
     )
     if exploded.good.num_rows == 0:
         return empty_reader(CPG_CALL_EDGES_TABLE_KEY)
@@ -2394,10 +2433,10 @@ def cpg_edges_calls(
     exploded_good = normalize_table_for_join(exploded.good)
     entry_blocks = normalize_table_for_join(entry_blocks)
 
-    left_plan = (
-        Plan.table(exploded_good)
-        .project(
-            {
+    left_plan = build_table_plan(
+        table=exploded_good,
+        options=TablePlanOptions(
+            projection={
                 "repo": E.field("repo"),
                 "commit": E.field("commit"),
                 "call_id": E.field("call_id"),
@@ -2409,22 +2448,22 @@ def cpg_edges_calls(
                 ),
                 "confidence": E.field(("candidates", "confidence")),
                 "extras_kv": E.field(("candidates", "extras_kv")),
-            }
-        )
-        .filter(E.is_valid("callee_goid_h128"))
+            },
+            filter_expr=E.is_valid("callee_goid_h128"),
+        ),
     )
-    right_plan = (
-        Plan.table(entry_blocks)
-        .project(
-            {
+    right_plan = build_table_plan(
+        table=entry_blocks,
+        options=TablePlanOptions(
+            projection={
                 "function_goid_h128": E.cast(
                     E.field("function_goid_h128"),
                     "decimal128(38,0)",
                 ),
                 "entry_block_id": E.field("entry_block_id"),
-            }
-        )
-        .filter(E.is_valid("function_goid_h128"))
+            },
+            filter_expr=E.is_valid("function_goid_h128"),
+        ),
     )
     joined = left_plan.hash_join(
         right=right_plan,
@@ -2903,7 +2942,7 @@ def cpg_edges_arg_to_param(
         candidates,
         columns=("repo", "commit", "call_id", "candidates"),
     )
-    exploded = explode_edges(
+    exploded = explode_edges_for_join(
         candidate_table,
         spec=ExplodeSpec(
             src_col="call_id",
@@ -2911,39 +2950,42 @@ def cpg_edges_arg_to_param(
             repeat_cols=("repo", "commit"),
             error_context_cols=("repo", "commit", "call_id"),
         ),
+        table_key=CPG_CALL_CANDIDATES_TABLE_KEY,
+        schema_service=get_schema_service(),
     )
     if exploded.good.num_rows == 0:
         return empty_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
-    plan = Plan.table(exploded.good).project(
-        {
-            "repo": E.field("repo"),
-            "commit": E.field("commit"),
-            "call_id": E.field("call_id"),
-            "src_arg_node_id": E.field(("candidates", "src_arg_node_id")),
-            "dst_param_node_id": E.field(("candidates", "dst_param_node_id")),
-            "edge_kind": E.scalar("ARG_TO_PARAM"),
-            "arg_ordinal": E.field(("candidates", "arg_ordinal")),
-            "param_ordinal": E.field(("candidates", "param_ordinal")),
-            "arg_name": E.field(("candidates", "arg_name")),
-            "param_name": E.field(("candidates", "param_name")),
-            "arg_slot": E.field(("candidates", "arg_slot")),
-            "arg_role": E.field(("candidates", "arg_role")),
-            "arg_is_implicit": E.field(("candidates", "arg_is_implicit")),
-            "call_kind": E.field(("candidates", "call_kind")),
-            "augop": E.field(("candidates", "augop")),
-            "confidence": E.field(("candidates", "confidence")),
-            "extras": E.field(("candidates", "extras")),
-            "extras_kv": E.field(("candidates", "extras_kv")),
-        }
-    )
-    ordered = plan.order_by(
-        sort_keys=[
-            ("repo", "ascending"),
-            ("commit", "ascending"),
-            ("call_id", "ascending"),
-            ("src_arg_node_id", "ascending"),
-            ("dst_param_node_id", "ascending"),
-        ]
+    ordered = build_table_plan(
+        table=exploded.good,
+        options=TablePlanOptions(
+            projection={
+                "repo": E.field("repo"),
+                "commit": E.field("commit"),
+                "call_id": E.field("call_id"),
+                "src_arg_node_id": E.field(("candidates", "src_arg_node_id")),
+                "dst_param_node_id": E.field(("candidates", "dst_param_node_id")),
+                "edge_kind": E.scalar("ARG_TO_PARAM"),
+                "arg_ordinal": E.field(("candidates", "arg_ordinal")),
+                "param_ordinal": E.field(("candidates", "param_ordinal")),
+                "arg_name": E.field(("candidates", "arg_name")),
+                "param_name": E.field(("candidates", "param_name")),
+                "arg_slot": E.field(("candidates", "arg_slot")),
+                "arg_role": E.field(("candidates", "arg_role")),
+                "arg_is_implicit": E.field(("candidates", "arg_is_implicit")),
+                "call_kind": E.field(("candidates", "call_kind")),
+                "augop": E.field(("candidates", "augop")),
+                "confidence": E.field(("candidates", "confidence")),
+                "extras": E.field(("candidates", "extras")),
+                "extras_kv": E.field(("candidates", "extras_kv")),
+            },
+            order_by=(
+                ("repo", "ascending"),
+                ("commit", "ascending"),
+                ("call_id", "ascending"),
+                ("src_arg_node_id", "ascending"),
+                ("dst_param_node_id", "ascending"),
+            ),
+        ),
     )
     result = finalize_reader(
         ordered.to_reader(use_threads=True),
@@ -3018,7 +3060,7 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
         candidates,
         columns=("repo", "commit", "call_id", "candidates"),
     )
-    exploded = explode_edges(
+    exploded = explode_edges_for_join(
         candidate_table,
         spec=ExplodeSpec(
             src_col="call_id",
@@ -3026,33 +3068,36 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
             repeat_cols=("repo", "commit"),
             error_context_cols=("repo", "commit", "call_id"),
         ),
+        table_key=CPG_CALL_CANDIDATES_TABLE_KEY,
+        schema_service=get_schema_service(),
     )
     if exploded.good.num_rows == 0:
         return empty_reader(CPG_RET_TO_CALL_EDGES_TABLE_KEY)
-    plan = Plan.table(exploded.good).project(
-        {
-            "repo": E.field("repo"),
-            "commit": E.field("commit"),
-            "call_id": E.field("call_id"),
-            "exit_block_id": E.field(("candidates", "exit_block_id")),
-            "call_node_id": E.field(("candidates", "call_node_id")),
-            "target_role": E.field(("candidates", "target_role")),
-            "call_kind": E.field(("candidates", "call_kind")),
-            "origin": E.field(("candidates", "origin")),
-            "edge_kind": E.scalar("RET_TO_CALL"),
-            "confidence": E.field(("candidates", "confidence")),
-            "extras": E.field(("candidates", "extras")),
-            "extras_kv": E.field(("candidates", "extras_kv")),
-        }
-    )
-    ordered = plan.order_by(
-        sort_keys=[
-            ("repo", "ascending"),
-            ("commit", "ascending"),
-            ("call_id", "ascending"),
-            ("exit_block_id", "ascending"),
-            ("call_node_id", "ascending"),
-        ]
+    ordered = build_table_plan(
+        table=exploded.good,
+        options=TablePlanOptions(
+            projection={
+                "repo": E.field("repo"),
+                "commit": E.field("commit"),
+                "call_id": E.field("call_id"),
+                "exit_block_id": E.field(("candidates", "exit_block_id")),
+                "call_node_id": E.field(("candidates", "call_node_id")),
+                "target_role": E.field(("candidates", "target_role")),
+                "call_kind": E.field(("candidates", "call_kind")),
+                "origin": E.field(("candidates", "origin")),
+                "edge_kind": E.scalar("RET_TO_CALL"),
+                "confidence": E.field(("candidates", "confidence")),
+                "extras": E.field(("candidates", "extras")),
+                "extras_kv": E.field(("candidates", "extras_kv")),
+            },
+            order_by=(
+                ("repo", "ascending"),
+                ("commit", "ascending"),
+                ("call_id", "ascending"),
+                ("exit_block_id", "ascending"),
+                ("call_node_id", "ascending"),
+            ),
+        ),
     )
     result = finalize_reader(
         ordered.to_reader(use_threads=True),

@@ -142,8 +142,6 @@ def take_by_key(
     ------
     ValueError
         If keys are missing and ``missing_policy`` is ``"error"``.
-    TypeError
-        If Arrow compute kernels fail to return arrays.
     """
     indices = normalize_array(index_in(keys, value_set=key_set))
     missing_mask = require_array(call_compute("less", [indices, pa.scalar(0)]), name="less")

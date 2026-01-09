@@ -21,7 +21,7 @@ from codeintel.core.columnar.kernels import (
     stable_sort_indices,
     stable_sort_table,
 )
-from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
+from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 
@@ -223,10 +223,11 @@ def _winner_indices_for_best_by_score(
         left_output=list(join_left.column_names),
         right_output=(),
     )
-    selected = Plan.table(join_left).hash_join(
+    selected_plan = Plan.table(join_left).hash_join(
         right=Plan.table(join_right),
         spec=join_spec,
-    ).to_table(use_threads=True)
+    )
+    selected = materialize_plan(selected_plan, use_threads=True)
     if row_id_name not in selected.column_names:
         msg = "Order-independent dedupe failed to retain row identifiers."
         raise RuntimeError(msg)
@@ -305,6 +306,43 @@ def dedupe_keep_first_after_sort(
     )
     ordered = stable_sort_table(table, sort_keys=sort_keys) if sort_keys else table
     return _dedupe_keep_first(ordered, key_columns=key_columns)
+
+
+def stable_dedupe_with_ties(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+    order_by: Sequence[SortKey] = (),
+    tie_breakers: Sequence[SortKey] = (),
+    require_tie_breakers: bool = False,
+) -> pa.Table:
+    """Deduplicate by applying a stable sort with explicit tie handling.
+
+    Parameters
+    ----------
+    table
+        Table to deduplicate.
+    key_columns
+        Columns defining duplicate groups.
+    order_by
+        Ordering keys to apply before selecting the first row.
+    tie_breakers
+        Additional tie breakers applied after ``order_by``.
+    require_tie_breakers
+        Whether to enforce non-empty tie breakers for deterministic selection.
+
+    Returns
+    -------
+    pyarrow.Table
+        Deduplicated table with stable ordering applied.
+    """
+    sort_keys = (*order_by, *tie_breakers)
+    return dedupe_keep_first_after_sort(
+        table,
+        key_columns=key_columns,
+        tie_breakers=sort_keys,
+        require_tie_breakers=require_tie_breakers,
+    )
 
 
 def _dedupe_keep_best_by_score(
@@ -656,4 +694,5 @@ __all__ = [
     "dedupe_keep_first_after_sort",
     "dedupe_table_for_table",
     "normalize_dedupe_tier",
+    "stable_dedupe_with_ties",
 ]

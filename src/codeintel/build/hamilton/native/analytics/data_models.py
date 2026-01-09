@@ -17,7 +17,11 @@ from codeintel.build.analytics.data_models.compute import (
     compute_data_models_pure,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
-from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.analytics.utilities.catalogs import (
+    CatalogProviderRequest,
+    CatalogScope,
+    catalog_provider_from_frames,
+)
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -322,7 +326,17 @@ def data_model_usage__base(
     module_map = _module_map(modules_frame)
     if not module_map:
         return empty_table_for_table(DATA_MODEL_USAGE_TABLE_KEY)
-    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
+    catalog = catalog_provider_from_frames(
+        CatalogProviderRequest(
+            goids_frame=goids_frame,
+            modules_frame=modules_frame,
+            scope=CatalogScope(
+                repo=env.repo,
+                commit=env.commit,
+                ctx=env.execution_context,
+            ),
+        )
+    )
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
@@ -340,6 +354,7 @@ def data_model_usage__base(
             subsystems_frame=subsystems_frame,
             function_types_frame=function_types_frame,
             missing_goids=missing,
+            ctx=env.execution_context,
         ),
     )
     if not rows:

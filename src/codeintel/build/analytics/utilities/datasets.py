@@ -22,7 +22,14 @@ from codeintel.build.analytics.utilities.finalize import (
     finalize_artifact_counts,
     finalize_artifact_table_key,
 )
-from codeintel.build.analytics.utilities.pipeline import QuerySource, run_analytics_pipeline
+from codeintel.build.analytics.utilities.pipeline import (
+    AnalyticsPipelineRunRequest,
+    QuerySource,
+    run_analytics_pipeline,
+)
+from codeintel.build.analytics.utilities.snapshot import (
+    SnapshotContext,
+)
 from codeintel.build.analytics.utilities.snapshot import (
     snapshot_plan as _snapshot_plan,
 )
@@ -46,6 +53,7 @@ from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.rows import table_for_rows
+from codeintel.core.columnar.run_manifest import RunManifestOptions
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
@@ -70,13 +78,29 @@ LOG = logging.getLogger(__name__)
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
 
 
+class DatasetSchemaMissingError(ValueError):
+    """Raised when a dataset schema is missing."""
+
+    def __init__(self, table_key: str) -> None:
+        message = f"Dataset schema missing for {table_key}"
+        super().__init__(message)
+        self.table_key = table_key
+
+
+class UnsupportedDeleteScopeError(ValueError):
+    """Raised when delete_scope is unsupported for a table."""
+
+    def __init__(self, table_key: str) -> None:
+        message = f"Unsupported delete target: {table_key}"
+        super().__init__(message)
+        self.table_key = table_key
+
+
 def snapshot_plan(
     table: pa.Table,
     *,
-    repo: str | None = None,
-    commit: str | None = None,
     columns: Sequence[str] | None = None,
-    ctx: ExecutionContext | None = None,
+    context: SnapshotContext | None = None,
 ) -> Plan:
     """Return a snapshot-scoped Plan for analytics tables.
 
@@ -85,16 +109,14 @@ def snapshot_plan(
     Plan
         Snapshot-scoped plan with optional projection applied.
     """
-    return _snapshot_plan(table, repo=repo, commit=commit, columns=columns, ctx=ctx)
+    return _snapshot_plan(table, columns=columns, context=context)
 
 
 def snapshot_table(
     table: pa.Table,
     *,
-    repo: str | None = None,
-    commit: str | None = None,
     columns: Sequence[str] | None = None,
-    ctx: ExecutionContext | None = None,
+    context: SnapshotContext | None = None,
 ) -> pa.Table:
     """Materialize a snapshot-scoped Plan.
 
@@ -105,20 +127,16 @@ def snapshot_table(
     """
     return _snapshot_table(
         table,
-        repo=repo,
-        commit=commit,
         columns=columns,
-        ctx=ctx,
+        context=context,
     )
 
 
 def snapshot_reader(
     table: pa.Table,
     *,
-    repo: str | None = None,
-    commit: str | None = None,
     columns: Sequence[str] | None = None,
-    ctx: ExecutionContext | None = None,
+    context: SnapshotContext | None = None,
 ) -> pa.RecordBatchReader:
     """Materialize a snapshot-scoped Plan as a reader.
 
@@ -129,10 +147,8 @@ def snapshot_reader(
     """
     return _snapshot_reader(
         table,
-        repo=repo,
-        commit=commit,
         columns=columns,
-        ctx=ctx,
+        context=context,
     )
 
 
@@ -571,6 +587,8 @@ class AnalyticsPipelineRequest:
     table_key: str
     ctx: ExecutionContext
     delete_scope: DeleteScope | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
 
 
 def run_analytics_pipeline_to_parquet(
@@ -594,19 +612,19 @@ def run_analytics_pipeline_to_parquet(
 
     Raises
     ------
-    ValueError
-        If the dataset schema is missing or delete_scope is unsupported.
+    DatasetSchemaMissingError
+        If the dataset schema is missing.
+    UnsupportedDeleteScopeError
+        If delete_scope is unsupported for the target table.
     """
     contract = get_analytics_dataset_contract(gateway, request.table_key)
     table_schema = contract.schema
     if table_schema is None:
-        msg = f"Dataset schema missing for {contract.table_key}"
-        raise ValueError(msg)
+        raise DatasetSchemaMissingError(contract.table_key)
     if request.delete_scope is not None and not _table_supports_snapshot_delete(
         contract.table_key
     ):
-        message = f"Unsupported delete target: {contract.table_key}"
-        raise ValueError(message)
+        raise UnsupportedDeleteScopeError(contract.table_key)
     dataset_root_dir, snapshot_id, repo, commit = _resolve_parquet_context(gateway)
     write_context = _WriteContext(
         dataset_root=dataset_root_dir,
@@ -614,11 +632,26 @@ def run_analytics_pipeline_to_parquet(
         repo=repo,
         commit=commit,
     )
-    result = run_analytics_pipeline(
-        source=request.source,
-        spec=request.spec,
+    manifest_dir = request.manifest_dir or _manifest_dir_for_snapshot(
+        dataset_root=write_context.dataset_root,
         table_key=request.table_key,
-        ctx=request.ctx,
+        snapshot_id=write_context.snapshot_id,
+    )
+    manifest_options = request.manifest_options or _manifest_options_for_snapshot(
+        table_key=request.table_key,
+        snapshot_id=write_context.snapshot_id,
+        repo=write_context.repo,
+        commit=write_context.commit,
+    )
+    result = run_analytics_pipeline(
+        AnalyticsPipelineRunRequest(
+            source=request.source,
+            spec=request.spec,
+            table_key=request.table_key,
+            ctx=request.ctx,
+            manifest_dir=manifest_dir,
+            manifest_options=manifest_options,
+        )
     )
     stable_sort_keys = _resolve_manifest_sort_keys(table_schema)
     manifest_extras = _manifest_extras(
@@ -650,6 +683,40 @@ def run_analytics_pipeline_to_parquet(
         snapshot_id=write_context.snapshot_id,
     )
     return result.good.num_rows
+
+
+def _manifest_dir_for_snapshot(
+    *,
+    dataset_root: Path,
+    table_key: str,
+    snapshot_id: str,
+) -> Path | None:
+    try:
+        return dataset_snapshot_dir(
+            dataset_root,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+        )
+    except SnapshotIdError:
+        return None
+
+
+def _manifest_options_for_snapshot(
+    *,
+    table_key: str,
+    snapshot_id: str,
+    repo: str,
+    commit: str,
+) -> RunManifestOptions:
+    filename = f"run_manifest_{table_key.replace('.', '_')}.json"
+    extras = {
+        "table_key": table_key,
+        "snapshot_id": snapshot_id,
+        "repo": repo,
+        "commit": commit,
+        "write_source": "analytics_insert",
+    }
+    return RunManifestOptions(extras=extras, filename=filename)
 
 
 def validate_contract_rows(

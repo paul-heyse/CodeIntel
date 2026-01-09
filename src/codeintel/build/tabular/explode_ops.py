@@ -11,6 +11,7 @@ from codeintel.core.columnar.explode_ops import (
     explode_edges_with_aligned_lists,
     explode_list_struct,
 )
+from codeintel.core.columnar.plan_kernels import explode_edges_for_join
 
 __all__ = [
     "ExplodeResult",
@@ -18,6 +19,7 @@ __all__ = [
     "NullChildPolicy",
     "NullListPolicy",
     "explode_edges",
+    "explode_edges_for_join",
     "explode_edges_with_aligned_lists",
     "explode_list_struct",
 ]

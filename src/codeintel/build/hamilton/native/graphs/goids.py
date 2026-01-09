@@ -29,15 +29,16 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.arrow_ops import iter_rows, normalize_table_for_join
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.arrow_ops import normalize_table_for_join
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.kernels import hash_struct_goid
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import join_safe_projection
-from codeintel.core.columnar.iter import iter_array_values
+from codeintel.core.columnar.iter import iter_array_values, iter_tuples
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
@@ -110,19 +111,20 @@ def _module_frame(modules_table: pa.Table) -> pa.Table:
     required = {"path", "module", "language"}
     if not required.issubset(set(modules_table.column_names)):
         return pa.Table.from_pydict({})
-    plan = Plan.table(modules_table).project(
-        {
-            "path": E.cast(E.field("path"), "string"),
-            "module": E.cast(E.field("module"), "string"),
-            "language": E.cast(E.field("language"), "string"),
-        }
-    )
-    plan = plan.filter(
-        E.and_(
-            _non_empty_expr("path"),
-            _non_empty_expr("module"),
-            _non_empty_expr("language"),
-        )
+    plan = build_table_plan(
+        table=modules_table,
+        options=TablePlanOptions(
+            projection={
+                "path": E.cast(E.field("path"), "string"),
+                "module": E.cast(E.field("module"), "string"),
+                "language": E.cast(E.field("language"), "string"),
+            },
+            filter_expr=E.and_(
+                _non_empty_expr("path"),
+                _non_empty_expr("module"),
+                _non_empty_expr("language"),
+            ),
+        ),
     )
     return materialize_plan(plan, use_threads=True)
 
@@ -239,23 +241,24 @@ def _joined_ast_nodes(
     }
     if not required.issubset(set(ast_nodes_table.column_names)):
         return pa.Table.from_pydict({})
-    ast_plan = Plan.table(ast_nodes_table).project(
-        {
-            "path": E.cast(E.field("path"), "string"),
-            "node_type": E.cast(E.field("node_type"), "string"),
-            "name": E.field("name"),
-            "qualname": E.field("qualname"),
-            "parent_qualname": E.field("parent_qualname"),
-            "lineno": E.field("lineno"),
-            "end_lineno": E.field("end_lineno"),
-        }
-    )
-    ast_plan = ast_plan.filter(
-        E.and_(
-            _non_empty_expr("path"),
-            E.is_valid("node_type"),
-            E.in_("node_type", sorted(_ALLOWED_NODE_TYPES)),
-        )
+    ast_plan = build_table_plan(
+        table=ast_nodes_table,
+        options=TablePlanOptions(
+            projection={
+                "path": E.cast(E.field("path"), "string"),
+                "node_type": E.cast(E.field("node_type"), "string"),
+                "name": E.field("name"),
+                "qualname": E.field("qualname"),
+                "parent_qualname": E.field("parent_qualname"),
+                "lineno": E.field("lineno"),
+                "end_lineno": E.field("end_lineno"),
+            },
+            filter_expr=E.and_(
+                _non_empty_expr("path"),
+                E.is_valid("node_type"),
+                E.in_("node_type", sorted(_ALLOWED_NODE_TYPES)),
+            ),
+        ),
     )
     filtered_ast = materialize_plan(ast_plan, use_threads=True)
     if filtered_ast.num_rows == 0:
@@ -294,21 +297,22 @@ def _joined_ast_nodes(
     modules_table = right_precheck.good
     if modules_table.num_rows == 0:
         return pa.Table.from_pydict({})
-    module_plan = Plan.table(modules_table).project(
-        {
-            "path": E.cast(E.field("path"), "string"),
-            "module_name": E.cast(E.field("module"), "string"),
-            "language": E.cast(E.field("language"), "string"),
-        }
+    module_plan = build_table_plan(
+        table=modules_table,
+        options=TablePlanOptions(
+            projection={
+                "path": E.cast(E.field("path"), "string"),
+                "module_name": E.cast(E.field("module"), "string"),
+                "language": E.cast(E.field("language"), "string"),
+            },
+            filter_expr=E.and_(
+                _non_empty_expr("path"),
+                _non_empty_expr("module_name"),
+                _non_empty_expr("language"),
+            ),
+        ),
     )
-    module_plan = module_plan.filter(
-        E.and_(
-            _non_empty_expr("path"),
-            _non_empty_expr("module_name"),
-            _non_empty_expr("language"),
-        )
-    )
-    joined = Plan.table(filtered_ast).hash_join(
+    joined = build_table_plan(table=filtered_ast).hash_join(
         right=module_plan,
         spec=HashJoinSpec(
             left_keys=["path"],
@@ -320,7 +324,14 @@ def _joined_ast_nodes(
     )
     joined_table = materialize_plan(joined, use_threads=True)
     total = filtered_ast.num_rows
-    matched = sum(1 for row in iter_rows(joined_table) if row.get("module_name") is not None)
+    matched = sum(
+        1
+        for (module_name,) in iter_tuples(
+            table_to_reader(joined_table),
+            columns=["module_name"],
+        )
+        if module_name is not None
+    )
     if total:
         LOG.info(
             "goids join coverage ast_nodes_to_modules matched=%d total=%d",
@@ -347,27 +358,32 @@ def _collect_descriptors(
     required = {"node_type", "path", "module_name", "language"}
     if not required.issubset(set(joined_nodes.column_names)):
         return descriptors
-    for row in iter_rows(joined_nodes):
-        node_type = row.get("node_type")
-        path = row.get("path")
-        module_name = row.get("module_name")
-        language = row.get("language")
-        name = row.get("name")
-        qualname = row.get("qualname")
-        parent_qualname = row.get("parent_qualname")
-        lineno = row.get("lineno")
-        end_lineno = row.get("end_lineno")
+    columns = ["node_type", "path", "module_name", "language"]
+    optional_columns = [
+        name
+        for name in ("name", "qualname", "parent_qualname", "lineno", "end_lineno")
+        if name in joined_nodes.column_names
+    ]
+    columns.extend(optional_columns)
+    for values in iter_tuples(table_to_reader(joined_nodes), columns=columns):
+        row = dict(zip(columns, values, strict=True))
         result = _descriptor_from_values(
             values=_DescriptorValues(
-                node_type=str(node_type) if node_type is not None else None,
-                path=str(path) if path is not None else None,
-                module_name=str(module_name) if module_name is not None else None,
-                language=str(language) if language is not None else None,
-                name=name,
-                qualname=qualname,
-                parent_qualname=parent_qualname,
-                lineno=lineno,
-                end_lineno=end_lineno,
+                node_type=(
+                    str(row["node_type"]) if row.get("node_type") is not None else None
+                ),
+                path=str(row["path"]) if row.get("path") is not None else None,
+                module_name=(
+                    str(row["module_name"]) if row.get("module_name") is not None else None
+                ),
+                language=(
+                    str(row["language"]) if row.get("language") is not None else None
+                ),
+                name=row.get("name"),
+                qualname=row.get("qualname"),
+                parent_qualname=row.get("parent_qualname"),
+                lineno=row.get("lineno"),
+                end_lineno=row.get("end_lineno"),
             ),
             context=_DescriptorContext(repo=repo, commit=commit),
         )

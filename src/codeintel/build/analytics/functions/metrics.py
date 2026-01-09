@@ -22,13 +22,18 @@ from codeintel.build.analytics.functions.config import (
 )
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan
+from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import materialize_plan
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 from codeintel.core.validation.reporters import FunctionValidationReporter
@@ -287,7 +292,7 @@ def _load_goids_from_frame(
     goids_table: pa.Table,
     snapshot: SnapshotRef,
     *,
-    ctx: ExecutionContext | None = None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None,
 ) -> dict[str, list[GoidRow]]:
     """Load function GOIDs from an Arrow table.
 
@@ -297,6 +302,8 @@ def _load_goids_from_frame(
         Arrow ``core.goids`` table.
     snapshot
         Repository and commit identifiers.
+    ctx
+        Optional execution context for scan tuning.
 
     Returns
     -------
@@ -311,10 +318,8 @@ def _load_goids_from_frame(
 
     plan = snapshot_plan(
         goids_table,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
         columns=GOIDS_REQUIRED_COLUMNS,
-        ctx=ctx,
+        context=SnapshotContext(repo=snapshot.repo, commit=snapshot.commit, ctx=ctx),
     )
     plan = plan.filter(E.in_("kind", ["function", "method"]))
     aggregates: list[tuple[str, str, None, str]] = []
@@ -324,7 +329,8 @@ def _load_goids_from_frame(
         agg_fn = "max" if name == "end_line" else "min"
         aggregates.append((name, agg_fn, None, name))
     plan = plan.aggregate(keys=[E.field("goid_h128")], aggregates=aggregates)
-    selected = materialize_plan(plan, use_threads=True)
+    execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
+    selected = ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
     rows = list(iter_rows(selected))
     if not rows:
         log.info("No function GOIDs found for repo=%s commit=%s", snapshot.repo, snapshot.commit)
@@ -438,7 +444,7 @@ def compute_function_analytics_result_from_tabular(
     snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
-    ctx: ExecutionContext | None = None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None,
 ) -> FunctionAnalyticsResult:
     """Compute function analytics result from tabular GOID inputs.
 
@@ -451,6 +457,8 @@ def compute_function_analytics_result_from_tabular(
     options
         Optional hooks for reusing parsed AST context and overriding the
         validation reporter.
+    ctx
+        Optional execution context for scan tuning.
 
     Returns
     -------
@@ -549,7 +557,7 @@ def compute_function_analytics_result(
     snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
-    ctx: ExecutionContext | None = None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None,
 ) -> FunctionAnalyticsResult:
     """
     Compute pure function analytics result without persisting.
@@ -566,6 +574,8 @@ def compute_function_analytics_result(
     options
         Optional hooks for reusing parsed AST context and overriding the
         validation reporter.
+    ctx
+        Optional execution context for scan tuning.
 
     Returns
     -------
@@ -585,7 +595,7 @@ def compute_function_analytics_result_from_table(
     snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
-    ctx: ExecutionContext | None = None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None,
 ) -> FunctionAnalyticsResult:
     """Backward-compatible wrapper around tabular analytics computation.
 

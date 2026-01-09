@@ -2,7 +2,7 @@
 
 This module defines the port protocol for detecting changes between
 repository snapshots. The protocol abstracts file hashing and state
-persistence to enable testing with mock implementations.
+management to enable testing with mock implementations.
 """
 
 from __future__ import annotations
@@ -192,7 +192,7 @@ class ChangeDetectionPort(Protocol):
         repo: str,
         language: str,
     ) -> Mapping[str, FileDigest]:
-        """Load the previous file state from storage.
+        """Load the previous file state from a configured backing store.
 
         Parameters
         ----------
@@ -215,7 +215,7 @@ class ChangeDetectionPort(Protocol):
         language: str,
         state: Mapping[str, FileDigest],
     ) -> None:
-        """Save the current file state to storage.
+        """Save the current file state to a configured backing store.
 
         Parameters
         ----------

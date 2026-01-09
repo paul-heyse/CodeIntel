@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.plan_ops import Plan
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.streaming import sample_reader
 from codeintel.serving.semantic.arrow_plan_builder import ArrowPlanSpec
 from codeintel.serving.semantic.duckdb_relation_builder import (
@@ -64,11 +64,13 @@ def _apply_arrow_plan(
     plan_spec: ArrowPlanSpec,
     use_threads: bool,
 ) -> pa.RecordBatchReader:
-    plan = Plan.table(table)
-    if plan_spec.filter_expr is not None:
-        plan = plan.filter(plan_spec.filter_expr)
-    if plan_spec.order_by:
-        plan = plan.order_by(sort_keys=plan_spec.order_by)
+    plan = build_table_plan(
+        table=table,
+        options=TablePlanOptions(
+            filter_expr=plan_spec.filter_expr,
+            order_by=plan_spec.order_by,
+        ),
+    )
     if plan_spec.projections:
         plan = plan.project(plan_spec.projections)
     reader = plan.to_reader(use_threads=use_threads)

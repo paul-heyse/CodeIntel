@@ -21,6 +21,7 @@ except ImportError:  # pragma: no cover - optional dependency
 if TYPE_CHECKING or acero is not None:
     from codeintel.core.columnar.arrowdsl import ExecutionPlan
     from codeintel.core.columnar.execution_context import resolve_execution_context
+    from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
     from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
 else:
 
@@ -75,9 +76,10 @@ def build_exec_plan(
     if acero is None:
         msg = "pyarrow.acero is unavailable in this environment."
         raise RuntimeError(msg)
-    plan = Plan.table(table)
-    if filter_expr is not None:
-        plan = plan.filter(filter_expr)
+    plan = build_table_plan(
+        table=table,
+        options=TablePlanOptions(filter_expr=filter_expr),
+    )
     if projections:
         expressions = [E.field(name) for name in projections]
         plan = plan.project(expressions, names=list(projections))

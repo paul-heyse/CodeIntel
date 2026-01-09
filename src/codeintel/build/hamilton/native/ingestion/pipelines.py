@@ -13,8 +13,9 @@ from hamilton.function_modifiers.base import NodeTransformLifecycle
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import materialize_plan
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -39,7 +40,10 @@ def _drop_null_rows(
     if not required:
         return table
     exprs = [E.is_valid(name) for name in required]
-    plan = Plan.table(table).filter(E.and_(*exprs))
+    plan = build_table_plan(
+        table=table,
+        options=TablePlanOptions(filter_expr=E.and_(*exprs)),
+    )
     return materialize_plan(plan, use_threads=True)
 
 

@@ -112,8 +112,9 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
 )
 from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -193,7 +194,10 @@ def emit_cpg_diagnostics(
 def _order_table(table: pa.Table, *, sort_keys: Sequence[SortKey]) -> pa.Table:
     if table.num_rows == 0:
         return table
-    plan = Plan.table(table).order_by(sort_keys=list(sort_keys))
+    plan = build_table_plan(
+        table=table,
+        options=TablePlanOptions(order_by=sort_keys),
+    )
     return materialize_plan(plan, use_threads=True)
 
 

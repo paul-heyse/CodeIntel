@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.columnar import compute_config as columnar_compute_config
 from codeintel.core.columnar import profiles as columnar_profiles
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.runtime.loader import load_runtime_settings
 
 if TYPE_CHECKING:
@@ -91,6 +92,26 @@ def resolve_execution_context(ctx: ExecutionContext | None) -> ExecutionContext:
         return ctx
     profile = resolve_runtime_profile_for_context(None)
     return ExecutionContext(runtime_profile=profile)
+
+
+def resolve_columnar_context(
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> ExecutionContext | None:
+    """Resolve a columnar execution context from runtime or columnar contexts.
+
+    Returns
+    -------
+    ExecutionContext | None
+        Columnar execution context when available.
+    """
+    if ctx is None:
+        return None
+    if isinstance(ctx, ExecutionContext):
+        return ctx
+    if isinstance(ctx, RuntimeExecutionContext):
+        profile = runtime_profile_from_settings(ctx.columnar_settings)
+        return ExecutionContext(runtime_profile=profile)
+    return None
 
 
 @dataclass(frozen=True, slots=True)

@@ -21,9 +21,12 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.build.analytics.utilities.snapshot import require_columns, snapshot_table
+from codeintel.build.analytics.utilities.snapshot import (
+    SnapshotContext,
+    require_columns,
+    snapshot_table,
+)
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
@@ -35,6 +38,8 @@ if TYPE_CHECKING:
 
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.columnar.execution_context import ExecutionContext
+    from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 
 DATA_MODEL_USAGE_TABLE_KEY = "analytics.data_model_usage"
 
@@ -91,7 +96,7 @@ class DataModelUsageInputs:
     subsystems_frame: pa.Table | None = None
     function_types_frame: pa.Table | None = None
     missing_goids: set[int] | None = None
-    ctx: ExecutionContext | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
 
 @dataclass(frozen=True)
@@ -176,7 +181,7 @@ def _param_types_from_frame(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[int, dict[str, str]]:
     if frame is None or frame.num_rows == 0:
         return {}
@@ -465,7 +470,7 @@ def _load_models_from_frame(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> list[ModelInfo]:
     if frame is None or frame.num_rows == 0:
         return []
@@ -486,7 +491,7 @@ def _subsystem_by_module_from_frames(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[str, tuple[str, str]]:
     mapping: dict[str, tuple[str, str]] = {}
     if subsystem_modules_frame is None or subsystem_modules_frame.num_rows == 0:
@@ -629,10 +634,13 @@ def _rows_for_snapshot(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> list[dict[str, object]]:
     require_columns(frame, ("repo", "commit"))
-    filtered = snapshot_table(frame, repo=repo, commit=commit, ctx=ctx)
+    filtered = snapshot_table(
+        frame,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     return list(iter_rows(filtered))
 
 

@@ -18,15 +18,16 @@ from codeintel.build.analytics.utilities.ast import (
     literal_value,
     safe_unparse,
 )
-from codeintel.build.analytics.utilities.snapshot import snapshot_table
+from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_table
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.columnar.execution_context import ExecutionContext
+    from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
     from codeintel.storage.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ class FunctionContractInputs:
     docstrings_frame: pa.Table | None = None
     function_types_frame: pa.Table | None = None
     max_conditions_per_func: int = 64
-    ctx: ExecutionContext | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
 
 def build_function_contracts_rows(
@@ -192,7 +193,7 @@ def _doc_map_from_frame(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[tuple[str, str], dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
@@ -229,7 +230,7 @@ def _type_map_from_frame(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
@@ -273,14 +274,12 @@ def _scoped_table(
     repo: str,
     commit: str,
     columns: Sequence[str],
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     return snapshot_table(
         frame,
-        repo=repo,
-        commit=commit,
         columns=columns,
-        ctx=ctx,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
     )
 
 

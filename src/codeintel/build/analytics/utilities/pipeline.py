@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.dataset as ds
 
-from codeintel.build.analytics.utilities.finalize import finalize_analytics_reader
-from codeintel.build.tabular.plan_ops import Plan, QueryPlanOptions, build_query_plan_for_context
-from codeintel.core.columnar.execution_context import ExecutionContext
-from codeintel.core.columnar.queryspec import PROVENANCE_FIELDS, QuerySpec
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+)
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table
+from codeintel.core.columnar.plan_builder import build_plan_from_query_spec
+from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan_for_context
+from codeintel.core.columnar.queryspec import QuerySpec
+from codeintel.core.columnar.run_manifest import RunManifestOptions
+from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 
 if TYPE_CHECKING:
     from codeintel.build.tabular.finalize_ops import FinalizeResult
@@ -18,14 +28,20 @@ if TYPE_CHECKING:
 type QuerySource = ds.Dataset | pa.Table
 
 
-def run_analytics_pipeline(
-    *,
-    source: QuerySource,
-    spec: QuerySpec,
-    table_key: str,
-    ctx: ExecutionContext,
-    options: QueryPlanOptions | None = None,
-) -> FinalizeResult:
+@dataclass(frozen=True, slots=True)
+class AnalyticsPipelineRunRequest:
+    """Inputs required to execute an analytics pipeline."""
+
+    source: QuerySource
+    spec: QuerySpec
+    table_key: str
+    ctx: ExecutionContext | RuntimeExecutionContext
+    options: QueryPlanOptions | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
+
+
+def run_analytics_pipeline(request: AnalyticsPipelineRunRequest) -> FinalizeResult:
     """Execute a QuerySpec and finalize results for analytics outputs.
 
     Returns
@@ -33,34 +49,41 @@ def run_analytics_pipeline(
     FinalizeResult
         Finalize artifacts for the table key.
     """
-    if isinstance(source, ds.Dataset):
-        plan = build_query_plan_for_context(source, spec=spec, ctx=ctx, options=options)
+    scan_telemetry = None
+    if isinstance(request.source, ds.Dataset):
+        plan = build_query_plan_for_context(
+            request.source,
+            spec=request.spec,
+            ctx=resolve_columnar_context(request.ctx),
+            options=request.options,
+        )
+        scan_telemetry = scan_telemetry_for_queryspec(request.source, spec=request.spec)
     else:
-        plan = _plan_for_table(source, spec=spec, ctx=ctx)
-    reader = plan.to_reader(use_threads=ctx.resolve_use_threads())
-    return finalize_analytics_reader(table_key, reader)
+        plan = build_plan_from_query_spec(
+            table=request.source,
+            spec=request.spec,
+            ctx=resolve_columnar_context(request.ctx),
+        )
+    finalize = finalize_spec_for_table(
+        request.table_key,
+        mode="tolerant",
+        emit_artifacts=True,
+    )
+    pipeline_options = PipelineRunOptions(
+        ctx=resolve_columnar_context(request.ctx),
+        manifest_dir=request.manifest_dir,
+        manifest_options=request.manifest_options,
+        scan_telemetry=scan_telemetry,
+    )
+    return run_pipeline(
+        plan=ExecutionPlan.from_plan(plan),
+        finalize=finalize,
+        options=pipeline_options,
+    )
 
 
-def _plan_for_table(
-    table: pa.Table,
-    *,
-    spec: QuerySpec,
-    ctx: ExecutionContext,
-) -> Plan:
-    plan = Plan.table(table)
-    if spec.predicate is not None:
-        plan = plan.filter(spec.predicate)
-    projection = spec.project_expressions(provenance=_include_provenance(table, ctx=ctx))
-    if projection:
-        plan = plan.project(projection)
-    return plan
-
-
-def _include_provenance(table: pa.Table, *, ctx: ExecutionContext) -> bool:
-    if not ctx.provenance:
-        return False
-    column_names = set(table.column_names)
-    return all(output_name in column_names for output_name, _source_name in PROVENANCE_FIELDS)
-
-
-__all__ = ["QuerySource", "run_analytics_pipeline"]
+__all__ = [
+    "AnalyticsPipelineRunRequest",
+    "QuerySource",
+    "run_analytics_pipeline",
+]

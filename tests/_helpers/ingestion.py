@@ -20,11 +20,7 @@ from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.columnar.rows import ColumnarRows
 from codeintel.core.storage import StorageContext
-from codeintel.ingestion.adapters import (
-    DuckDBStorageAdapter,
-    FilesystemDiscoveryAdapter,
-    HashChangeDetectionAdapter,
-)
+from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter, HashChangeDetectionAdapter
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.compute.docstrings_extract import DocstringsExtractStep
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
@@ -152,7 +148,6 @@ class IngestionContextBundle:
     repo_root: Path
     gateway: StorageGateway
     ctx: BuildEnv
-    storage: DuckDBStorageAdapter
     discovery: FilesystemDiscoveryAdapter
     change_detection: HashChangeDetectionAdapter
     tools: ToolRunnerAdapter
@@ -178,7 +173,6 @@ class ScanSetup:
     gateway: StorageGateway
     profile: ScanProfile
     scan_step: RepoScanStep
-    storage: DuckDBStorageAdapter
     discovery: FilesystemDiscoveryAdapter
 
 
@@ -190,7 +184,6 @@ class ModuleInventoryContext:
     gateway: StorageGateway
     profile: ScanProfile
     scan_step: RepoScanStep
-    storage: DuckDBStorageAdapter
     discovery: FilesystemDiscoveryAdapter
 
 
@@ -271,25 +264,21 @@ def build_target_context_for_target(
 
 def build_ingestion_adapters(
     ctx: BuildEnv,
-) -> tuple[
-    DuckDBStorageAdapter,
-    FilesystemDiscoveryAdapter,
-    HashChangeDetectionAdapter,
-    ToolRunnerAdapter,
-]:
+) -> tuple[FilesystemDiscoveryAdapter, HashChangeDetectionAdapter, ToolRunnerAdapter]:
     """Create ingestion adapters aligned with a target context.
 
     Returns
     -------
     tuple
-        storage, discovery, change detection, and tool adapters.
+        Discovery, change detection, and tool adapters.
     """
-    gateway = _require_gateway(ctx)
-    storage = DuckDBStorageAdapter(gateway)
     discovery = FilesystemDiscoveryAdapter(ctx.snapshot.repo_root)
-    change_detection = HashChangeDetectionAdapter(storage)
+    change_detection = HashChangeDetectionAdapter(
+        dataset_root=ctx.paths.dataset_root_dir,
+        snapshot_id=ctx.snapshot.commit,
+    )
     tools = ToolRunnerAdapter(ctx.providers.tool_service)
-    return storage, discovery, change_detection, tools
+    return discovery, change_detection, tools
 
 
 def _require_gateway(ctx: BuildEnv) -> BuildGateway:
@@ -398,7 +387,7 @@ def build_ingestion_context_bundle(
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
     )
-    storage, discovery, change_detection, tools = build_ingestion_adapters(ctx)
+    discovery, change_detection, tools = build_ingestion_adapters(ctx)
     if opts.module_paths is not None:
         seeded_paths = tuple(opts.module_paths)
     else:
@@ -409,7 +398,6 @@ def build_ingestion_context_bundle(
         repo_root=repo_root,
         gateway=gateway,
         ctx=ctx,
-        storage=storage,
         discovery=discovery,
         change_detection=change_detection,
         tools=tools,
@@ -669,13 +657,13 @@ def create_scan_step(
     gateway: StorageGateway,
     repo_root: Path,
     tmp_path: Path,
-) -> tuple[RepoScanStep, DuckDBStorageAdapter, FilesystemDiscoveryAdapter]:
+) -> tuple[RepoScanStep, FilesystemDiscoveryAdapter]:
     """Create scan step and adapters for a repository.
 
     Returns
     -------
-    tuple[RepoScanStep, DuckDBStorageAdapter, FilesystemDiscoveryAdapter]
-        Repo scan step plus the storage and discovery adapters backing it.
+    tuple[RepoScanStep, FilesystemDiscoveryAdapter]
+        Repo scan step plus the discovery adapter backing it.
     """
     target = _make_ingestion_target("repo_scan", "Repository scan step")
     ctx = build_target_context_for_target(
@@ -683,9 +671,9 @@ def create_scan_step(
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
     )
-    storage, discovery, change_detection, _ = build_ingestion_adapters(ctx)
+    discovery, change_detection, _ = build_ingestion_adapters(ctx)
     scan_step = RepoScanStep(discovery=discovery, change_detection=change_detection)
-    return scan_step, storage, discovery
+    return scan_step, discovery
 
 
 def make_scan_setup(
@@ -714,13 +702,12 @@ def make_scan_setup(
         log_every=opts.log_every,
         log_interval=opts.log_interval,
     )
-    scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
+    scan_step, discovery = create_scan_step(gateway, repo_root, tmp_path)
     return ScanSetup(
         repo_root=repo_root,
         gateway=gateway,
         profile=profile,
         scan_step=scan_step,
-        storage=storage,
         discovery=discovery,
     )
 
@@ -752,7 +739,7 @@ def create_scan_and_docstring_steps(
     tuple[RepoScanStep, DocstringsExtractStep]
         Configured repo scan and docstring extraction steps.
     """
-    scan_step, _storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
+    scan_step, discovery = create_scan_step(gateway, repo_root, tmp_path)
     doc_step = DocstringsExtractStep(discovery=discovery)
     return scan_step, doc_step
 
@@ -763,7 +750,6 @@ class ScipIngestContext:
 
     repo_root: Path
     gateway: StorageGateway
-    storage: DuckDBStorageAdapter
     tools: ToolRunnerAdapter
     build_dir: Path
 
@@ -806,7 +792,7 @@ def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
         tmp_path,
         config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
     )
-    storage, discovery, change_detection, _ = build_ingestion_adapters(ctx)
+    discovery, change_detection, _ = build_ingestion_adapters(ctx)
     _ = discovery, change_detection
     tools_config = ToolsConfig.default()
     runner = ToolRunner(tools_config=tools_config, cache_dir=build_dir / ".tool_cache")
@@ -815,7 +801,6 @@ def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
     return ScipIngestContext(
         repo_root=repo_root,
         gateway=gateway,
-        storage=storage,
         tools=tool_adapter,
         build_dir=build_dir,
     )
@@ -908,13 +893,12 @@ def module_inventory_context(
     snapshot = make_snapshot(repo="demo", commit="abc123", repo_root=repo_root)
     gateway = _open_gateway(gateway_factory)
     profile = default_code_profile(repo_root)
-    scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
+    scan_step, discovery = create_scan_step(gateway, repo_root, tmp_path)
     ctx = ModuleInventoryContext(
         snapshot=snapshot,
         gateway=gateway,
         profile=profile,
         scan_step=scan_step,
-        storage=storage,
         discovery=discovery,
     )
     with closing_gateway(gateway):

@@ -7,20 +7,25 @@ and dfg_core.py to eliminate code duplication.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan
+from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import equal_expr, is_in_expr, is_valid_expr
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.data_models.ids import normalize_decimal_id
+
+if TYPE_CHECKING:
+    from codeintel.core.columnar.execution_context import ExecutionContext
 
 
 def degree_dict(
@@ -121,7 +126,13 @@ def prefilter_table(
     if expr is None:
         return table
     try:
-        return materialize_plan(Plan.table(table).filter(expr), use_threads=True)
+        return _materialize_plan(
+            build_table_plan(
+                table=table,
+                options=TablePlanOptions(filter_expr=expr),
+            ),
+            ctx=None,
+        )
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return safe_filter_expr(table, expr)
 
@@ -149,7 +160,11 @@ def cfg_blocks_rowset(
     )
     if not set(required).issubset(table.column_names):
         return pa.Table.from_pylist([])
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required, ctx=ctx)
+    plan = snapshot_plan(
+        table,
+        columns=required,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     plan = plan.filter(
         E.and_(
             E.is_valid("function_goid_h128"),
@@ -171,7 +186,7 @@ def cfg_blocks_rowset(
             ("out_degree", "list", None, "out_degree"),
         ],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def cfg_edges_rowset(
@@ -191,7 +206,11 @@ def cfg_edges_rowset(
     required = ("function_goid_h128", "src_block_id", "dst_block_id", "edge_kind")
     if not set(required).issubset(table.column_names):
         return pa.Table.from_pylist([])
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required, ctx=ctx)
+    plan = snapshot_plan(
+        table,
+        columns=required,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     plan = plan.filter(
         E.and_(
             E.is_valid("function_goid_h128"),
@@ -215,7 +234,7 @@ def cfg_edges_rowset(
             ("edge_kind", "list", None, "edge_kind"),
         ],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def dfg_edges_rowset(
@@ -243,7 +262,11 @@ def dfg_edges_rowset(
     )
     if not set(required).issubset(table.column_names):
         return pa.Table.from_pylist([])
-    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required, ctx=ctx)
+    plan = snapshot_plan(
+        table,
+        columns=required,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     plan = plan.filter(
         E.and_(
             E.is_valid("function_goid_h128"),
@@ -275,7 +298,7 @@ def dfg_edges_rowset(
             ("use_kind", "list", None, "use_kind"),
         ],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def load_function_metadata(
@@ -298,6 +321,8 @@ def load_function_metadata(
         Repository identifier.
     commit
         Commit identifier.
+    ctx
+        Optional execution context for determinism and profiling.
 
     Returns
     -------
@@ -345,14 +370,17 @@ def _module_metadata_table(
 ) -> pa.Table:
     if "path" not in table.column_names or "module" not in table.column_names:
         return pa.Table.from_batches([], schema=table.schema)
-    plan = snapshot_plan(table, repo=repo, commit=commit, ctx=ctx)
+    plan = snapshot_plan(
+        table,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     plan = plan.filter(E.and_(E.is_valid("path"), E.is_valid("module")))
     plan = plan.project({"path": E.field("path"), "module": E.field("module")})
     plan = plan.aggregate(
         keys=[E.field("path")],
         aggregates=[("module", "min", None, "module")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _goid_metadata_table(
@@ -365,7 +393,10 @@ def _goid_metadata_table(
     required = {"goid_h128", "rel_path"}
     if not required.issubset(table.column_names):
         return pa.Table.from_batches([], schema=table.schema)
-    plan = snapshot_plan(table, repo=repo, commit=commit, ctx=ctx)
+    plan = snapshot_plan(
+        table,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     filters: list[Expression] = []
     if "kind" in table.column_names:
         filters.append(E.in_("kind", ["function", "method"]))
@@ -388,7 +419,16 @@ def _goid_metadata_table(
             ("qualname", "min", None, "qualname"),
         ],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
+
+
+def _materialize_plan(
+    plan: Plan,
+    *,
+    ctx: ExecutionContext | None,
+) -> pa.Table:
+    execution_ctx = resolve_execution_context(ctx)
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
 
 
 __all__ = [

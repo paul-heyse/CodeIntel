@@ -3,73 +3,88 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import pyarrow as pa
 
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
-from codeintel.core.columnar.expr_vocab import E, Expression
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
+from codeintel.core.columnar.expr_vocab import Expression
+from codeintel.core.columnar.plan_builder import (
+    build_snapshot_plan as _build_snapshot_plan,
+)
+from codeintel.core.columnar.plan_builder import (
+    build_snapshot_query_spec as _build_snapshot_query_spec,
+)
+from codeintel.core.columnar.plan_builder import (
+    require_columns,
+)
 from codeintel.core.columnar.plan_ops import Plan
-from codeintel.core.columnar.queryspec import PROVENANCE_FIELDS, ProjectionSpec, QuerySpec
+from codeintel.core.columnar.queryspec import QuerySpec
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
+from codeintel.core.schemas.primitives import resolve_default_projection
+from codeintel.core.schemas.service import get_schema_service
 
 
-def require_columns(table: pa.Table, columns: Sequence[str]) -> None:
-    """Require that the provided columns exist on a table.
+@dataclass(frozen=True, slots=True)
+class SnapshotContext:
+    """Snapshot context for analytics plan helpers."""
 
-    Raises
-    ------
-    ValueError
-        If any required columns are missing from the table.
-    """
-    missing = [name for name in columns if name not in table.column_names]
-    if missing:
-        msg = f"Missing snapshot columns: {missing}"
-        raise ValueError(msg)
+    repo: str | None = None
+    commit: str | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
+    table_key: str | None = None
 
 
 def build_snapshot_query_spec(
     *,
     base_cols: Sequence[str],
-    repo: str | None = None,
-    commit: str | None = None,
+    context: SnapshotContext | None = None,
     computed: Sequence[tuple[str, Expression]] = (),
     table: pa.Table | None = None,
 ) -> QuerySpec:
     """Build a QuerySpec scoped to a repo/commit snapshot.
+
+    Parameters
+    ----------
+    base_cols
+        Base columns to include in the projection.
+    context
+        Snapshot context containing repo/commit scope and defaults.
+    computed
+        Computed projection expressions.
+    table
+        Optional table used to validate column availability.
 
     Returns
     -------
     QuerySpec
         Snapshot-scoped query specification with optional projection.
     """
-    if table is not None:
-        require_columns(table, base_cols)
-        available = set(table.column_names)
-    else:
-        available = None
-    predicate = _snapshot_predicate(
-        available=available,
-        repo=repo,
-        commit=commit,
+    resolved_context = context or SnapshotContext()
+    resolved_base_cols = _resolve_default_projection(
+        base_cols=base_cols,
+        table_key=resolved_context.table_key,
     )
-    projection = ProjectionSpec(
-        base_cols=tuple(base_cols),
-        computed=tuple(computed),
-    )
-    return QuerySpec(
-        predicate=predicate,
-        pushdown_predicate=predicate,
-        projection=projection,
+    return _build_snapshot_query_spec(
+        base_cols=resolved_base_cols,
+        repo=resolved_context.repo,
+        commit=resolved_context.commit,
+        computed=computed,
+        table=table,
     )
 
 
 def snapshot_plan(
     table: pa.Table,
     *,
-    repo: str | None = None,
-    commit: str | None = None,
     columns: Sequence[str] | None = None,
-    ctx: ExecutionContext | None = None,
+    context: SnapshotContext | None = None,
 ) -> Plan:
     """Build a Plan scoped to a repo/commit snapshot.
 
@@ -77,14 +92,10 @@ def snapshot_plan(
     ----------
     table
         Input table to scope.
-    repo
-        Optional repository identifier to filter on.
-    commit
-        Optional commit identifier to filter on.
     columns
         Optional column projection to apply after filtering.
-    ctx
-        Optional execution context to determine provenance inclusion.
+    context
+        Snapshot context containing repo/commit scope and defaults.
 
     Returns
     -------
@@ -92,28 +103,24 @@ def snapshot_plan(
         Plan filtered to the snapshot and optionally projected.
     """
     base_cols = tuple(columns or ())
+    resolved_context = context or SnapshotContext()
     spec = build_snapshot_query_spec(
         base_cols=base_cols,
-        repo=repo,
-        commit=commit,
+        context=resolved_context,
         table=table,
     )
-    plan = Plan.table(table)
-    if spec.predicate is not None:
-        plan = plan.filter(spec.predicate)
-    projection = spec.project_expressions(provenance=_include_provenance(table, ctx=ctx))
-    if projection:
-        plan = plan.project(projection)
-    return plan
+    return _build_snapshot_plan(
+        table=table,
+        spec=spec,
+        ctx=resolve_columnar_context(resolved_context.ctx),
+    )
 
 
 def snapshot_table(
     table: pa.Table,
     *,
-    repo: str | None = None,
-    commit: str | None = None,
     columns: Sequence[str] | None = None,
-    ctx: ExecutionContext | None = None,
+    context: SnapshotContext | None = None,
 ) -> pa.Table:
     """Materialize a snapshot-scoped Plan.
 
@@ -124,22 +131,20 @@ def snapshot_table(
     """
     plan = snapshot_plan(
         table,
-        repo=repo,
-        commit=commit,
         columns=columns,
-        ctx=ctx,
+        context=context,
     )
-    execution_ctx = resolve_execution_context(ctx)
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    resolved_context = context or SnapshotContext()
+    execution_ctx = resolve_execution_context(resolve_columnar_context(resolved_context.ctx))
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def snapshot_reader(
     table: pa.Table,
     *,
-    repo: str | None = None,
-    commit: str | None = None,
     columns: Sequence[str] | None = None,
-    ctx: ExecutionContext | None = None,
+    context: SnapshotContext | None = None,
 ) -> pa.RecordBatchReader:
     """Materialize a snapshot-scoped Plan as a reader.
 
@@ -150,38 +155,32 @@ def snapshot_reader(
     """
     plan = snapshot_plan(
         table,
-        repo=repo,
-        commit=commit,
         columns=columns,
-        ctx=ctx,
+        context=context,
     )
-    execution_ctx = resolve_execution_context(ctx)
+    resolved_context = context or SnapshotContext()
+    execution_ctx = resolve_execution_context(resolve_columnar_context(resolved_context.ctx))
     return ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
 
 
-def _snapshot_predicate(
+def _resolve_default_projection(
     *,
-    available: set[str] | None,
-    repo: str | None,
-    commit: str | None,
-) -> Expression | None:
-    filters: list[Expression] = []
-    if repo is not None and (available is None or "repo" in available):
-        filters.append(E.field("repo") == E.scalar(repo))
-    if commit is not None and (available is None or "commit" in available):
-        filters.append(E.field("commit") == E.scalar(commit))
-    if not filters:
-        return None
-    return E.and_(*filters)
+    base_cols: Sequence[str],
+    table_key: str | None,
+) -> Sequence[str]:
+    if base_cols:
+        return base_cols
+    if table_key is None:
+        return base_cols
+    table_schema = get_schema_service().get_table_schema(table_key)
+    default_projection = resolve_default_projection(table_schema)
+    if default_projection is None:
+        return base_cols
+    return default_projection or base_cols
 
-
-def _include_provenance(table: pa.Table, *, ctx: ExecutionContext | None) -> bool:
-    if ctx is None or not ctx.provenance:
-        return False
-    column_names = set(table.column_names)
-    return all(output_name in column_names for output_name, _source_name in PROVENANCE_FIELDS)
 
 __all__ = [
+    "SnapshotContext",
     "build_snapshot_query_spec",
     "require_columns",
     "snapshot_plan",

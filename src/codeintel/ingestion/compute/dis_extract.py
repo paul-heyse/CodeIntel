@@ -27,11 +27,7 @@ from codeintel.core.columnar.rows import (
     columnar_batch_collector_for_table_key,
     empty_table_for_table,
 )
-from codeintel.ingestion.compute.base import (
-    BaseExtractStep,
-    finalize_arrow_readers,
-    persist_arrow_tables,
-)
+from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 
@@ -42,7 +38,6 @@ if TYPE_CHECKING:
 
     from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 LOG = logging.getLogger(__name__)
 
@@ -76,23 +71,23 @@ class DisExtractResult:
     block_rows: ColumnarRows = field(default_factory=dict)
     cfg_edge_rows: ColumnarRows = field(default_factory=dict)
     defuse_event_rows: ColumnarRows = field(default_factory=dict)
-    code_unit_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_CODE_UNITS_TABLE_KEY)
+    code_unit_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_CODE_UNITS_TABLE_KEY).to_reader()
     )
-    instruction_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY)
+    instruction_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY).to_reader()
     )
-    exception_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_EXCEPTION_TABLE_KEY)
+    exception_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_EXCEPTION_TABLE_KEY).to_reader()
     )
-    block_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_BLOCKS_TABLE_KEY)
+    block_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_BLOCKS_TABLE_KEY).to_reader()
     )
-    cfg_edge_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_CFG_EDGES_TABLE_KEY)
+    cfg_edge_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_CFG_EDGES_TABLE_KEY).to_reader()
     )
-    defuse_event_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY)
+    defuse_event_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY).to_reader()
     )
     code_unit_row_count: int = 0
     instruction_row_count: int = 0
@@ -278,12 +273,18 @@ class _ModuleDisResult:
 
 @dataclass(frozen=True, slots=True)
 class _DisTables:
-    code_units: pa.Table
-    instructions: pa.Table
-    exceptions: pa.Table
-    blocks: pa.Table
-    cfg_edges: pa.Table
-    defuse_events: pa.Table
+    code_units: pa.RecordBatchReader
+    instructions: pa.RecordBatchReader
+    exceptions: pa.RecordBatchReader
+    blocks: pa.RecordBatchReader
+    cfg_edges: pa.RecordBatchReader
+    defuse_events: pa.RecordBatchReader
+    code_unit_row_count: int
+    instruction_row_count: int
+    exception_row_count: int
+    block_row_count: int
+    cfg_edge_row_count: int
+    defuse_event_row_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -1578,7 +1579,6 @@ class DisExtractStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
-        storage: IngestStoragePort | None = None,
     ) -> DisExtractResult:
         """Execute bytecode extraction for the provided modules.
 
@@ -1655,37 +1655,19 @@ class DisExtractStep(BaseExtractStep):
             collectors.code_units.row_count,
             collectors.instructions.row_count,
         )
-        finalized_tables, finalize_warnings = finalize_arrow_readers(
-            {
-                PY_BC_CODE_UNITS_TABLE_KEY: collectors.code_units.to_reader(),
-                PY_BC_INSTRUCTIONS_TABLE_KEY: collectors.instructions.to_reader(),
-                PY_BC_EXCEPTION_TABLE_KEY: collectors.exceptions.to_reader(),
-                PY_BC_BLOCKS_TABLE_KEY: collectors.blocks.to_reader(),
-                PY_BC_CFG_EDGES_TABLE_KEY: collectors.cfg_edges.to_reader(),
-                PY_BC_DEFUSE_EVENTS_TABLE_KEY: collectors.defuse_events.to_reader(),
-            }
-        )
-        warnings.extend(finalize_warnings)
         tables = _DisTables(
-            code_units=finalized_tables[PY_BC_CODE_UNITS_TABLE_KEY],
-            instructions=finalized_tables[PY_BC_INSTRUCTIONS_TABLE_KEY],
-            exceptions=finalized_tables[PY_BC_EXCEPTION_TABLE_KEY],
-            blocks=finalized_tables[PY_BC_BLOCKS_TABLE_KEY],
-            cfg_edges=finalized_tables[PY_BC_CFG_EDGES_TABLE_KEY],
-            defuse_events=finalized_tables[PY_BC_DEFUSE_EVENTS_TABLE_KEY],
-        )
-        scope = f"{resolved_repo}@{resolved_commit}"
-        persist_arrow_tables(
-            storage,
-            {
-                PY_BC_CODE_UNITS_TABLE_KEY: tables.code_units,
-                PY_BC_INSTRUCTIONS_TABLE_KEY: tables.instructions,
-                PY_BC_EXCEPTION_TABLE_KEY: tables.exceptions,
-                PY_BC_BLOCKS_TABLE_KEY: tables.blocks,
-                PY_BC_CFG_EDGES_TABLE_KEY: tables.cfg_edges,
-                PY_BC_DEFUSE_EVENTS_TABLE_KEY: tables.defuse_events,
-            },
-            scope=scope,
+            code_units=collectors.code_units.to_reader(),
+            instructions=collectors.instructions.to_reader(),
+            exceptions=collectors.exceptions.to_reader(),
+            blocks=collectors.blocks.to_reader(),
+            cfg_edges=collectors.cfg_edges.to_reader(),
+            defuse_events=collectors.defuse_events.to_reader(),
+            code_unit_row_count=collectors.code_units.row_count,
+            instruction_row_count=collectors.instructions.row_count,
+            exception_row_count=collectors.exceptions.row_count,
+            block_row_count=collectors.blocks.row_count,
+            cfg_edge_row_count=collectors.cfg_edges.row_count,
+            defuse_event_row_count=collectors.defuse_events.row_count,
         )
         return DisExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
@@ -1701,12 +1683,12 @@ class DisExtractStep(BaseExtractStep):
             block_rows_reader=tables.blocks,
             cfg_edge_rows_reader=tables.cfg_edges,
             defuse_event_rows_reader=tables.defuse_events,
-            code_unit_row_count=tables.code_units.num_rows,
-            instruction_row_count=tables.instructions.num_rows,
-            exception_row_count=tables.exceptions.num_rows,
-            block_row_count=tables.blocks.num_rows,
-            cfg_edge_row_count=tables.cfg_edges.num_rows,
-            defuse_event_row_count=tables.defuse_events.num_rows,
+            code_unit_row_count=tables.code_unit_row_count,
+            instruction_row_count=tables.instruction_row_count,
+            exception_row_count=tables.exception_row_count,
+            block_row_count=tables.block_row_count,
+            cfg_edge_row_count=tables.cfg_edge_row_count,
+            defuse_event_row_count=tables.defuse_event_row_count,
         )
 
     def _iter_python_source_bundles(

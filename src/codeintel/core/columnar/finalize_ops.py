@@ -242,6 +242,17 @@ def finalize_spec_for_table(
     return _resolve_finalize_spec(spec)
 
 
+def resolve_finalize_spec(spec: FinalizeSpec) -> FinalizeSpec:
+    """Resolve schema defaults for a finalize spec.
+
+    Returns
+    -------
+    FinalizeSpec
+        Spec with schema policy defaults applied.
+    """
+    return _resolve_finalize_spec(spec)
+
+
 def _resolve_finalize_schema_fields(
     table_key: str,
     *,
@@ -1871,4 +1882,5 @@ __all__ = [
     "finalize_spec_for_table",
     "finalize_table",
     "record_join_precheck_errors",
+    "resolve_finalize_spec",
 ]

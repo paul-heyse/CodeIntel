@@ -16,15 +16,21 @@ from codeintel.build.analytics.compute.evidence.collection import EvidenceCollec
 from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan
+from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import materialize_plan
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.query_results import coerce_int
 
 if TYPE_CHECKING:
@@ -149,7 +155,7 @@ class FunctionEffectsInputs:
     missing_goids: set[int] | None = None
     call_graph_edges: pa.Table | None = None
     call_graph_nodes: pa.Table | None = None
-    ctx: ExecutionContext | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
 
 @dataclass(frozen=True)
@@ -161,7 +167,7 @@ class _EffectInputs:
     missing_goids: set[int] | None = None
     call_graph_edges: pa.Table | None = None
     call_graph_nodes: pa.Table | None = None
-    ctx: ExecutionContext | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
 
 @dataclass(frozen=True)
@@ -483,7 +489,7 @@ def _unresolved_call_counts_from_frame(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[int, int]:
     counts: dict[int, int] = {}
     if edges_frame is None or edges_frame.num_rows == 0:
@@ -508,7 +514,7 @@ def _call_graph_from_frames(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> GraphInput:
     if edges_frame is None or edges_frame.num_rows == 0:
         return RxGraphStore.directed()
@@ -534,7 +540,7 @@ def _call_graph_rowset(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     required = ("caller_goid_h128", "callee_goid_h128")
     missing = [name for name in required if name not in edges_frame.column_names]
@@ -543,10 +549,8 @@ def _call_graph_rowset(
         raise ValueError(msg)
     plan = snapshot_plan(
         edges_frame,
-        repo=repo,
-        commit=commit,
         columns=required,
-        ctx=ctx,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
     )
     plan = plan.filter(
         E.and_(
@@ -555,17 +559,11 @@ def _call_graph_rowset(
             E.field("callee_goid_h128") != E.scalar(-1),
         )
     )
-    plan = plan.order_by(
-        sort_keys=[
-            ("caller_goid_h128", "ascending"),
-            ("callee_goid_h128", "ascending"),
-        ]
-    )
     plan = plan.aggregate(
         keys=[E.field("caller_goid_h128")],
         aggregates=[("callee_goid_h128", "list", None, "callee_goid_h128")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _unresolved_call_rowset(
@@ -573,7 +571,7 @@ def _unresolved_call_rowset(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     required = ("caller_goid_h128", "callee_goid_h128")
     missing = [name for name in required if name not in edges_frame.column_names]
@@ -582,10 +580,8 @@ def _unresolved_call_rowset(
         raise ValueError(msg)
     plan = snapshot_plan(
         edges_frame,
-        repo=repo,
-        commit=commit,
         columns=required,
-        ctx=ctx,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
     )
     plan = plan.filter(
         E.and_(
@@ -600,7 +596,7 @@ def _unresolved_call_rowset(
         keys=[E.field("caller_goid_h128")],
         aggregates=[("caller_goid_h128", "count", None, "unresolved_call_count")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _ensure_call_graph_nodes(
@@ -609,7 +605,7 @@ def _ensure_call_graph_nodes(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> None:
     if nodes_frame is None or nodes_frame.num_rows == 0:
         return
@@ -617,13 +613,11 @@ def _ensure_call_graph_nodes(
         return
     plan = snapshot_plan(
         nodes_frame,
-        repo=repo,
-        commit=commit,
         columns=("goid_h128",),
-        ctx=ctx,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
     )
     plan = plan.filter(E.is_valid("goid_h128"))
-    table = materialize_plan(plan, use_threads=True)
+    table = _materialize_plan(plan, ctx=ctx)
     for row in iter_rows(table, ("goid_h128",)):
         goid = normalize_decimal_id(row.get("goid_h128"))
         if goid is not None:
@@ -781,3 +775,12 @@ def _matches_api(target: str, patterns: dict[str, list[str]]) -> bool:
         if simple in funcs:
             return True
     return False
+
+
+def _materialize_plan(
+    plan: Plan,
+    *,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> pa.Table:
+    execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)

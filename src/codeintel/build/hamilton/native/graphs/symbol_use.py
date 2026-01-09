@@ -27,10 +27,11 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
@@ -55,9 +56,16 @@ def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
     if not {"path", "module"}.issubset(set(modules_table.column_names)):
         return module_by_path
     filtered = _python_modules_table(modules_table)
-    for path, module in iter_tuples(table_to_reader(filtered), columns=("path", "module")):
-        if isinstance(path, str) and isinstance(module, str):
-            module_by_path[path] = module
+    module_by_path.update(
+        {
+            path: module
+            for path, module in iter_tuples(
+                table_to_reader(filtered),
+                columns=("path", "module"),
+            )
+            if isinstance(path, str) and isinstance(module, str)
+        }
+    )
     return module_by_path
 
 
@@ -105,7 +113,7 @@ def _symbol_occurrences(occurrences_table: pa.Table) -> list[SymbolOccurrence]:
     if not required.issubset(set(occurrences_table.column_names)):
         return occurrences
     filtered = _filtered_occurrences_table(occurrences_table)
-    for symbol, rel_path, start_line, roles in iter_tuples(
+    for symbol, rel_path, start_line, raw_roles in iter_tuples(
         table_to_reader(filtered),
         columns=("symbol", "rel_path", "start_line", "roles"),
     ):
@@ -113,7 +121,7 @@ def _symbol_occurrences(occurrences_table: pa.Table) -> list[SymbolOccurrence]:
             continue
         if not isinstance(start_line, int):
             continue
-        roles = parse_symbol_roles(roles)
+        roles = parse_symbol_roles(raw_roles)
         occurrences.append(
             SymbolOccurrence(
                 symbol=symbol,
@@ -259,20 +267,21 @@ def _filtered_occurrences_table(occurrences_table: pa.Table) -> pa.Table:
         set(occurrences_table.column_names)
     ):
         return occurrences_table
-    plan = Plan.table(occurrences_table).project(
-        {
-            "symbol": E.cast(E.field("symbol"), "string"),
-            "rel_path": E.cast(E.field("rel_path"), "string"),
-            "start_line": E.field("start_line"),
-            "roles": E.field("roles"),
-        }
-    )
-    plan = plan.filter(
-        E.and_(
-            _non_empty_expr("symbol"),
-            _non_empty_expr("rel_path"),
-            E.is_valid("start_line"),
-        )
+    plan = build_table_plan(
+        table=occurrences_table,
+        options=TablePlanOptions(
+            projection={
+                "symbol": E.cast(E.field("symbol"), "string"),
+                "rel_path": E.cast(E.field("rel_path"), "string"),
+                "start_line": E.field("start_line"),
+                "roles": E.field("roles"),
+            },
+            filter_expr=E.and_(
+                _non_empty_expr("symbol"),
+                _non_empty_expr("rel_path"),
+                E.is_valid("start_line"),
+            ),
+        ),
     )
     return materialize_plan(plan, use_threads=True)
 
@@ -287,13 +296,16 @@ def _filtered_goids_table(goids_table: pa.Table) -> pa.Table:
         "start_line": E.field("start_line"),
         "end_line": E.field("end_line"),
     }
-    plan = Plan.table(goids_table).project(projection)
-    plan = plan.filter(
-        E.and_(
-            _non_empty_expr("rel_path"),
-            E.is_valid("goid_h128"),
-            E.is_valid("start_line"),
-        )
+    plan = build_table_plan(
+        table=goids_table,
+        options=TablePlanOptions(
+            projection=projection,
+            filter_expr=E.and_(
+                _non_empty_expr("rel_path"),
+                E.is_valid("goid_h128"),
+                E.is_valid("start_line"),
+            ),
+        ),
     )
     return materialize_plan(plan, use_threads=True)
 
@@ -308,11 +320,16 @@ def _python_modules_table(modules_table: pa.Table) -> pa.Table:
     }
     if "language" in modules_table.column_names:
         projection["language"] = E.cast(E.field("language"), "string")
-    plan = Plan.table(modules_table).project(projection)
     exprs: list[Expression] = [_non_empty_expr("path"), _non_empty_expr("module")]
     if "language" in projection:
         exprs.append(_python_language_expr())
-    plan = plan.filter(E.and_(*exprs))
+    plan = build_table_plan(
+        table=modules_table,
+        options=TablePlanOptions(
+            projection=projection,
+            filter_expr=E.and_(*exprs),
+        ),
+    )
     return materialize_plan(plan, use_threads=True)
 
 

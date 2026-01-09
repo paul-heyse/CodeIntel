@@ -33,8 +33,9 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_table,
     record_join_precheck_errors,
 )
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
 from codeintel.core.columnar.arrowdsl import join_safe_projection
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
 
@@ -115,8 +116,14 @@ def _scip_symbol_joined_table(
         "cpg_node_id": E.field("cpg_node_id"),
         "source_pk_json": E.field("source_pk_json"),
     }
-    left_plan = Plan.table(normalized).project(left_exprs)
-    right_plan = Plan.table(anchors).project(right_exprs)
+    left_plan = build_table_plan(
+        table=normalized,
+        options=TablePlanOptions(projection=left_exprs),
+    )
+    right_plan = build_table_plan(
+        table=anchors,
+        options=TablePlanOptions(projection=right_exprs),
+    )
     joined = left_plan.hash_join(
         right=right_plan,
         spec=HashJoinSpec(

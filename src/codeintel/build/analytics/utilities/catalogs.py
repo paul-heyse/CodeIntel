@@ -3,26 +3,52 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 
 import pyarrow as pa
 
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan, snapshot_table
+from codeintel.build.analytics.utilities.snapshot import (
+    SnapshotContext,
+    snapshot_plan,
+    snapshot_table,
+)
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import materialize_plan
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.storage.catalog import CatalogService, build_function_catalog_from_rows
 
 _FUNCTION_KINDS = {"function", "method"}
 type RowSource = pa.Table | pa.RecordBatchReader
 
 
+@dataclass(frozen=True, slots=True)
+class CatalogScope:
+    """Snapshot scope details for catalog helpers."""
+
+    repo: str | None = None
+    commit: str | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogProviderRequest:
+    """Inputs required to build a catalog provider."""
+
+    goids_frame: RowSource
+    modules_frame: RowSource
+    module_map_override: Mapping[str, str] | None = None
+    scope: CatalogScope | None = None
+
+
 def module_map_from_frame(
     modules_frame: RowSource,
-    *,
-    repo: str | None = None,
-    commit: str | None = None,
-    ctx: ExecutionContext | None = None,
+    scope: CatalogScope | None = None,
 ) -> dict[str, str]:
     """Build module mapping from core.modules frame.
 
@@ -32,12 +58,13 @@ def module_map_from_frame(
         Mapping of file path to module name.
     """
     module_map: dict[str, str] = {}
+    resolved_scope = scope or CatalogScope()
     source = _snapshot_source(
         modules_frame,
-        repo=repo,
-        commit=commit,
+        repo=resolved_scope.repo,
+        commit=resolved_scope.commit,
         columns=("path", "module"),
-        ctx=ctx,
+        ctx=resolved_scope.ctx,
     )
     for row in _iter_rows_from_source(source):
         path = row.get("path")
@@ -48,13 +75,7 @@ def module_map_from_frame(
 
 
 def catalog_provider_from_frames(
-    *,
-    goids_frame: RowSource,
-    modules_frame: RowSource,
-    module_map_override: Mapping[str, str] | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
-    ctx: ExecutionContext | None = None,
+    request: CatalogProviderRequest,
 ) -> CatalogService:
     """Build a CatalogService from goids and modules frames.
 
@@ -63,12 +84,18 @@ def catalog_provider_from_frames(
     CatalogService
         Catalog provider backed by the input frames.
     """
+    resolved_scope = request.scope or CatalogScope()
     module_map = dict(
-        module_map_override
-        or module_map_from_frame(modules_frame, repo=repo, commit=commit, ctx=ctx)
+        request.module_map_override
+        or module_map_from_frame(request.modules_frame, scope=resolved_scope)
     )
     rows: list[dict[str, object]] = []
-    source = _goids_source(goids_frame, repo=repo, commit=commit, ctx=ctx)
+    source = _goids_source(
+        request.goids_frame,
+        repo=resolved_scope.repo,
+        commit=resolved_scope.commit,
+        ctx=resolved_scope.ctx,
+    )
     for row in _iter_rows_from_source(source):
         kind = row.get("kind")
         if kind is not None and str(kind) not in _FUNCTION_KINDS:
@@ -101,7 +128,7 @@ def _snapshot_source(
     repo: str | None,
     commit: str | None,
     columns: Sequence[str],
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> RowSource:
     if not isinstance(source, pa.Table):
         return source
@@ -109,10 +136,8 @@ def _snapshot_source(
         return source
     return snapshot_table(
         source,
-        repo=repo,
-        commit=commit,
         columns=columns,
-        ctx=ctx,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
     )
 
 
@@ -121,7 +146,7 @@ def _goids_source(
     *,
     repo: str | None,
     commit: str | None,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> RowSource:
     if not isinstance(source, pa.Table):
         return source
@@ -136,12 +161,19 @@ def _goids_source(
     )
     if not set(required).issubset(source.column_names):
         return source
-    plan = snapshot_plan(source, repo=repo, commit=commit, columns=required, ctx=ctx)
+    plan = snapshot_plan(
+        source,
+        columns=required,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     plan = plan.filter(E.in_("kind", sorted(_FUNCTION_KINDS)))
-    return materialize_plan(plan, use_threads=True)
+    execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
 
 
 __all__ = [
+    "CatalogProviderRequest",
+    "CatalogScope",
     "catalog_provider_from_frames",
     "module_map_from_frame",
 ]

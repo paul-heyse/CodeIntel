@@ -231,6 +231,8 @@ def normalize_table_schema_types(table_schema: TableSchema) -> TableSchema:
         indexes=table_schema.indexes,
         description=table_schema.description,
         write_policy=table_schema.write_policy,
+        finalize_policy=table_schema.finalize_policy,
+        plan_policy=table_schema.plan_policy,
     )
 
 

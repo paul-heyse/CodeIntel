@@ -12,6 +12,9 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.ingestion.manifesting import (
+    finalize_ingest_reader_with_manifest,
+)
 from codeintel.build.hamilton.native.options.ingestion import TreeSitterIndexOptions
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
@@ -26,14 +29,8 @@ from codeintel.build.hamilton.native.target_decorators import TargetSpecDescript
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import (
-    finalize_ingest_reader,
-    scoped_table_for_ingest,
-)
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.conversion import table_to_reader
-from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.tree_sitter_index import (
@@ -75,32 +72,34 @@ TREE_SITTER_TABLE_KEYS = (
 class TreeSitterToolOutput(ToolStepOutput):
     """Tool step output for tree-sitter indexing."""
 
-    parse_manifest_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_table_for_table(TS_PARSE_MANIFEST_TABLE_KEY)
+    parse_manifest_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(TS_PARSE_MANIFEST_TABLE_KEY).to_reader()
     )
-    captures_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_table_for_table(TS_CAPTURES_TABLE_KEY)
+    captures_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(TS_CAPTURES_TABLE_KEY).to_reader()
     )
-    nodes_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_table_for_table(TS_NODES_TABLE_KEY)
+    nodes_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(TS_NODES_TABLE_KEY).to_reader()
     )
-    edges_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_table_for_table(TS_EDGES_TABLE_KEY)
+    edges_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(TS_EDGES_TABLE_KEY).to_reader()
     )
-    parse_errors_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_table_for_table(TS_PARSE_ERRORS_TABLE_KEY)
+    parse_errors_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(TS_PARSE_ERRORS_TABLE_KEY).to_reader()
     )
-    changed_ranges_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_table_for_table(TS_CHANGED_RANGES_TABLE_KEY)
+    changed_ranges_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(TS_CHANGED_RANGES_TABLE_KEY).to_reader()
     )
-    tokens_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_table_for_table(TS_TOKENS_TABLE_KEY)
+    tokens_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(TS_TOKENS_TABLE_KEY).to_reader()
     )
-    trivia_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_table_for_table(TS_TRIVIA_TABLE_KEY)
+    trivia_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(TS_TRIVIA_TABLE_KEY).to_reader()
     )
-    language_metadata_rows: InferableTabularInput = field(
-        default_factory=lambda: empty_table_for_table(TS_LANGUAGE_METADATA_TABLE_KEY)
+    language_metadata_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(
+            TS_LANGUAGE_METADATA_TABLE_KEY
+        ).to_reader()
     )
     parse_manifest_row_count: int = 0
     captures_row_count: int = 0
@@ -195,15 +194,17 @@ def _coerce_tree_sitter_output(
     )
     return TreeSitterToolOutput(
         result=merged,
-        parse_manifest_rows=empty_table_for_table(TS_PARSE_MANIFEST_TABLE_KEY),
-        captures_rows=empty_table_for_table(TS_CAPTURES_TABLE_KEY),
-        nodes_rows=empty_table_for_table(TS_NODES_TABLE_KEY),
-        edges_rows=empty_table_for_table(TS_EDGES_TABLE_KEY),
-        parse_errors_rows=empty_table_for_table(TS_PARSE_ERRORS_TABLE_KEY),
-        changed_ranges_rows=empty_table_for_table(TS_CHANGED_RANGES_TABLE_KEY),
-        tokens_rows=empty_table_for_table(TS_TOKENS_TABLE_KEY),
-        trivia_rows=empty_table_for_table(TS_TRIVIA_TABLE_KEY),
-        language_metadata_rows=empty_table_for_table(TS_LANGUAGE_METADATA_TABLE_KEY),
+        parse_manifest_rows=empty_table_for_table(TS_PARSE_MANIFEST_TABLE_KEY).to_reader(),
+        captures_rows=empty_table_for_table(TS_CAPTURES_TABLE_KEY).to_reader(),
+        nodes_rows=empty_table_for_table(TS_NODES_TABLE_KEY).to_reader(),
+        edges_rows=empty_table_for_table(TS_EDGES_TABLE_KEY).to_reader(),
+        parse_errors_rows=empty_table_for_table(TS_PARSE_ERRORS_TABLE_KEY).to_reader(),
+        changed_ranges_rows=empty_table_for_table(TS_CHANGED_RANGES_TABLE_KEY).to_reader(),
+        tokens_rows=empty_table_for_table(TS_TOKENS_TABLE_KEY).to_reader(),
+        trivia_rows=empty_table_for_table(TS_TRIVIA_TABLE_KEY).to_reader(),
+        language_metadata_rows=empty_table_for_table(
+            TS_LANGUAGE_METADATA_TABLE_KEY
+        ).to_reader(),
         parse_manifest_row_count=0,
         captures_row_count=0,
         nodes_row_count=0,
@@ -293,6 +294,7 @@ def t__tree_sitter_index__run(
 
 
 def t__tree_sitter_index__ingest(
+    env: BuildEnv,
     t__tree_sitter_index__run: TreeSitterToolOutput,
 ) -> IngestStep[TabularByTable]:
     """Package tree-sitter rows for table materialization.
@@ -320,44 +322,37 @@ def t__tree_sitter_index__ingest(
 
     tolerant_keys = {TS_PARSE_ERRORS_TABLE_KEY, TS_CHANGED_RANGES_TABLE_KEY}
 
-    def _finalize_table(table_key: str, value: InferableTabularInput) -> pa.Table:
-        table = scoped_table_for_ingest(
-            value,
-            table_key=table_key,
-            columns=None,
-            scope=None,
-            require_scope_columns=False,
-        )
+    def _finalize_reader(table_key: str, reader: pa.RecordBatchReader) -> pa.Table:
         mode = "tolerant" if table_key in tolerant_keys else None
-        reader = table_to_reader(table, batch_size=None)
-        return finalize_ingest_reader(
-            table_key,
-            reader,
+        return finalize_ingest_reader_with_manifest(
+            env=env,
+            table_key=table_key,
+            reader=reader,
             target_name=TREE_SITTER_TARGET_NAME,
             mode=mode,
         )
 
-    parse_manifest_table = _finalize_table(
+    parse_manifest_table = _finalize_reader(
         TS_PARSE_MANIFEST_TABLE_KEY,
         t__tree_sitter_index__run.parse_manifest_rows,
     )
-    captures_table = _finalize_table(
+    captures_table = _finalize_reader(
         TS_CAPTURES_TABLE_KEY,
         t__tree_sitter_index__run.captures_rows,
     )
-    nodes_table = _finalize_table(TS_NODES_TABLE_KEY, t__tree_sitter_index__run.nodes_rows)
-    edges_table = _finalize_table(TS_EDGES_TABLE_KEY, t__tree_sitter_index__run.edges_rows)
-    parse_errors_table = _finalize_table(
+    nodes_table = _finalize_reader(TS_NODES_TABLE_KEY, t__tree_sitter_index__run.nodes_rows)
+    edges_table = _finalize_reader(TS_EDGES_TABLE_KEY, t__tree_sitter_index__run.edges_rows)
+    parse_errors_table = _finalize_reader(
         TS_PARSE_ERRORS_TABLE_KEY,
         t__tree_sitter_index__run.parse_errors_rows,
     )
-    changed_ranges_table = _finalize_table(
+    changed_ranges_table = _finalize_reader(
         TS_CHANGED_RANGES_TABLE_KEY,
         t__tree_sitter_index__run.changed_ranges_rows,
     )
-    tokens_table = _finalize_table(TS_TOKENS_TABLE_KEY, t__tree_sitter_index__run.tokens_rows)
-    trivia_table = _finalize_table(TS_TRIVIA_TABLE_KEY, t__tree_sitter_index__run.trivia_rows)
-    language_metadata_table = _finalize_table(
+    tokens_table = _finalize_reader(TS_TOKENS_TABLE_KEY, t__tree_sitter_index__run.tokens_rows)
+    trivia_table = _finalize_reader(TS_TRIVIA_TABLE_KEY, t__tree_sitter_index__run.trivia_rows)
+    language_metadata_table = _finalize_reader(
         TS_LANGUAGE_METADATA_TABLE_KEY,
         t__tree_sitter_index__run.language_metadata_rows,
     )

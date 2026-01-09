@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from codeintel.core.columnar.normalization import (
     normalize_array as ensure_array,
+)
+from codeintel.core.columnar.normalization import (
     normalize_array_for_compute,
     normalize_table_for_compute,
 )
@@ -12,7 +14,6 @@ from codeintel.core.columnar.type_normalization import (
     normalize_binary_view_array,
     normalize_string_view_array,
 )
-
 
 __all__ = [
     "ensure_array",

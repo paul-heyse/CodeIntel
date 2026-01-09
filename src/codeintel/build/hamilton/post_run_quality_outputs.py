@@ -27,7 +27,10 @@ from codeintel.build.analytics.utilities.finalize import (
     finalize_artifact_counts,
     finalize_artifact_table_key,
 )
-from codeintel.build.analytics.utilities.pipeline import run_analytics_pipeline
+from codeintel.build.analytics.utilities.pipeline import (
+    AnalyticsPipelineRunRequest,
+    run_analytics_pipeline,
+)
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.validation.runner import (
     GraphValidationRunRequest,
@@ -48,7 +51,7 @@ from codeintel.build.tabular.finalize_ops import FinalizeResult
 from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
-    runtime_profile_from_settings,
+    resolve_columnar_context,
 )
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.ordering import OrderingSpec, SortDirection, SortKey
@@ -311,11 +314,13 @@ def _scan_snapshot_result(
             ctx = _scan_execution_context(env)
             try:
                 result = run_analytics_pipeline(
-                    source=dataset,
-                    spec=query_spec,
-                    table_key=table_key,
-                    ctx=ctx,
-                    options=options,
+                    AnalyticsPipelineRunRequest(
+                        source=dataset,
+                        spec=query_spec,
+                        table_key=table_key,
+                        ctx=ctx,
+                        options=options,
+                    )
                 )
             except (
                 pa.ArrowInvalid,
@@ -342,10 +347,10 @@ def _scan_snapshot_result(
 
 def _scan_execution_context(env: BuildEnv) -> ExecutionContext:
     runtime_ctx = env.execution_context
-    if runtime_ctx is None:
+    resolved = resolve_columnar_context(runtime_ctx)
+    if resolved is None:
         return ExecutionContext(use_threads=True)
-    profile = runtime_profile_from_settings(runtime_ctx.columnar_settings)
-    return ExecutionContext(use_threads=True, runtime_profile=profile)
+    return ExecutionContext(use_threads=True, runtime_profile=resolved.runtime_profile)
 
 
 def _scan_snapshot_dataset(
@@ -445,8 +450,9 @@ def _emit_run_manifest(
     )
     determinism = _determinism_for_sort_keys(sort_keys)
     filename = f"run_manifest_{table_key.replace('.', '_')}.json"
+    resolved_ctx = resolve_columnar_context(env.execution_context)
     options = run_manifest_options_for_context(
-        ctx=None,
+        ctx=resolved_ctx,
         ordering=ordering,
         scan_telemetry=telemetry,
         options=RunManifestOptions(

@@ -29,8 +29,10 @@ from codeintel.build.tabular.compute_helpers import (
 from codeintel.build.tabular.compute_masks import is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.core.columnar.arrowdsl import join_safe_projection
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -125,25 +127,31 @@ def cpg2_nodes__cfg_blocks(
         join_keys=["function_goid_h128"],
     )
     goid_ctx = goid_precheck.good
-    block_plan = Plan.table(normalized_blocks).project(
-        {
-            "function_goid_h128": E.cast(
-                E.field("function_goid_h128"),
-                "decimal128(38,0)",
-            ),
-            "block_idx": E.field("block_idx"),
-            "file_path": E.field("file_path"),
-        }
+    block_plan = build_table_plan(
+        table=normalized_blocks,
+        options=TablePlanOptions(
+            projection={
+                "function_goid_h128": E.cast(
+                    E.field("function_goid_h128"),
+                    "decimal128(38,0)",
+                ),
+                "block_idx": E.field("block_idx"),
+                "file_path": E.field("file_path"),
+            }
+        ),
     )
-    goid_plan = Plan.table(goid_ctx).project(
-        {
-            "function_goid_h128": E.cast(
-                E.field("function_goid_h128"),
-                "decimal128(38,0)",
-            ),
-            "repo": E.cast(E.field("repo"), "string"),
-            "commit": E.cast(E.field("commit"), "string"),
-        }
+    goid_plan = build_table_plan(
+        table=goid_ctx,
+        options=TablePlanOptions(
+            projection={
+                "function_goid_h128": E.cast(
+                    E.field("function_goid_h128"),
+                    "decimal128(38,0)",
+                ),
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+            }
+        ),
     )
     joined = block_plan.hash_join(
         right=goid_plan,
@@ -162,16 +170,19 @@ def cpg2_nodes__cfg_blocks(
         include_source_pk_json=True,
     )
     anchors = _join_ready(anchors)
-    anchor_plan = Plan.table(anchors).project(
-        {
-            "function_goid_h128": E.cast(
-                E.field("function_goid_h128"),
-                "decimal128(38,0)",
-            ),
-            "block_idx": E.field("block_idx"),
-            "cpg_node_id": E.field("cpg_node_id"),
-            "source_pk_json": E.field("source_pk_json"),
-        }
+    anchor_plan = build_table_plan(
+        table=anchors,
+        options=TablePlanOptions(
+            projection={
+                "function_goid_h128": E.cast(
+                    E.field("function_goid_h128"),
+                    "decimal128(38,0)",
+                ),
+                "block_idx": E.field("block_idx"),
+                "cpg_node_id": E.field("cpg_node_id"),
+                "source_pk_json": E.field("source_pk_json"),
+            }
+        ),
     )
     joined = joined.hash_join(
         right=anchor_plan,
@@ -295,10 +306,11 @@ def cpg2_edges__cfg_edges(
         ]
         if "cfg_edge_kind" in joined.column_names:
             sort_keys.append(("cfg_edge_kind", "ascending"))
-        joined = materialize_plan(
-            Plan.table(joined).order_by(sort_keys=sort_keys),
-            use_threads=True,
+        ordered_plan = build_table_plan(
+            table=joined,
+            options=TablePlanOptions(order_by=sort_keys),
         )
+        joined = materialize_plan(ordered_plan, use_threads=True)
     selected = joined.select(
         [
             "repo",
@@ -392,10 +404,11 @@ def cpg2_edges__dfg_edges(
                 if name in joined.column_names
             ]
         )
-        joined = materialize_plan(
-            Plan.table(joined).order_by(sort_keys=sort_keys),
-            use_threads=True,
+        ordered_plan = build_table_plan(
+            table=joined,
+            options=TablePlanOptions(order_by=sort_keys),
         )
+        joined = materialize_plan(ordered_plan, use_threads=True)
     selected = joined.select(
         [
             "repo",
@@ -487,10 +500,11 @@ def cpg2_edges__cdg_edges(
                 if name in joined.column_names
             ]
         )
-        joined = materialize_plan(
-            Plan.table(joined).order_by(sort_keys=sort_keys),
-            use_threads=True,
+        ordered_plan = build_table_plan(
+            table=joined,
+            options=TablePlanOptions(order_by=sort_keys),
         )
+        joined = materialize_plan(ordered_plan, use_threads=True)
     selected = joined.select(
         [
             "repo",
@@ -576,26 +590,32 @@ def _cfg_block_lookup(cfg_blocks: pa.Table, goids: pa.Table) -> pa.Table:
         join_keys=["function_goid_h128"],
     )
     goid_ctx = goid_precheck.good
-    block_plan = Plan.table(normalized_blocks).project(
-        {
-            "function_goid_h128": E.cast(
-                E.field("function_goid_h128"),
-                "decimal128(38,0)",
-            ),
-            "block_id": E.cast(E.field("block_id"), "string"),
-            "block_idx": E.field("block_idx"),
-            "file_path": E.field("file_path"),
-        }
+    block_plan = build_table_plan(
+        table=normalized_blocks,
+        options=TablePlanOptions(
+            projection={
+                "function_goid_h128": E.cast(
+                    E.field("function_goid_h128"),
+                    "decimal128(38,0)",
+                ),
+                "block_id": E.cast(E.field("block_id"), "string"),
+                "block_idx": E.field("block_idx"),
+                "file_path": E.field("file_path"),
+            }
+        ),
     )
-    goid_plan = Plan.table(goid_ctx).project(
-        {
-            "function_goid_h128": E.cast(
-                E.field("function_goid_h128"),
-                "decimal128(38,0)",
-            ),
-            "repo": E.cast(E.field("repo"), "string"),
-            "commit": E.cast(E.field("commit"), "string"),
-        }
+    goid_plan = build_table_plan(
+        table=goid_ctx,
+        options=TablePlanOptions(
+            projection={
+                "function_goid_h128": E.cast(
+                    E.field("function_goid_h128"),
+                    "decimal128(38,0)",
+                ),
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+            }
+        ),
     )
     joined = block_plan.hash_join(
         right=goid_plan,
@@ -697,7 +717,10 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table, *, table_key: str) -> 
             edge_project[name] = E.cast(E.field(name), "string")
         else:
             edge_project[name] = E.field(name)
-    edge_plan = Plan.table(edges).project(edge_project)
+    edge_plan = build_table_plan(
+        table=edges,
+        options=TablePlanOptions(projection=edge_project),
+    )
     src_project = {
         "function_goid_h128": E.cast(E.field("function_goid_h128"), "decimal128(38,0)"),
         "src_block_id": E.cast(E.field("src_block_id"), "string"),
@@ -706,7 +729,10 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table, *, table_key: str) -> 
         "src_repo": E.field("src_repo"),
         "src_commit": E.field("src_commit"),
     }
-    src_plan = Plan.table(src_lookup).project(src_project)
+    src_plan = build_table_plan(
+        table=src_lookup,
+        options=TablePlanOptions(projection=src_project),
+    )
     joined = edge_plan.hash_join(
         right=src_plan,
         spec=HashJoinSpec(
@@ -725,7 +751,10 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table, *, table_key: str) -> 
         "dst_repo": E.field("dst_repo"),
         "dst_commit": E.field("dst_commit"),
     }
-    dst_plan = Plan.table(dst_lookup).project(dst_project)
+    dst_plan = build_table_plan(
+        table=dst_lookup,
+        options=TablePlanOptions(projection=dst_project),
+    )
     joined = joined.hash_join(
         right=dst_plan,
         spec=HashJoinSpec(
@@ -783,13 +812,19 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table, *, table_key: str) -
             edge_project[name] = E.cast(E.field(name), "int64")
         else:
             edge_project[name] = E.field(name)
-    edge_plan = Plan.table(edges).project(edge_project)
+    edge_plan = build_table_plan(
+        table=edges,
+        options=TablePlanOptions(projection=edge_project),
+    )
     src_project = {
         "function_goid_h128": E.cast(E.field("function_goid_h128"), "decimal128(38,0)"),
         "src_block_idx": E.cast(E.field("src_block_idx"), "int64"),
         "src_cpg_node_id": E.field("src_cpg_node_id"),
     }
-    src_plan = Plan.table(src_anchor).project(src_project)
+    src_plan = build_table_plan(
+        table=src_anchor,
+        options=TablePlanOptions(projection=src_project),
+    )
     joined = edge_plan.hash_join(
         right=src_plan,
         spec=HashJoinSpec(
@@ -805,7 +840,10 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table, *, table_key: str) -
         "dst_block_idx": E.cast(E.field("dst_block_idx"), "int64"),
         "dst_cpg_node_id": E.field("dst_cpg_node_id"),
     }
-    dst_plan = Plan.table(dst_anchor).project(dst_project)
+    dst_plan = build_table_plan(
+        table=dst_anchor,
+        options=TablePlanOptions(projection=dst_project),
+    )
     joined = joined.hash_join(
         right=dst_plan,
         spec=HashJoinSpec(

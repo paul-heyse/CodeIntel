@@ -11,10 +11,11 @@ from codeintel.build.hamilton.native.graphs.cpg.constants import (
     CPG_EDGES_TABLE_KEY,
     CPG_TARGET_NAME,
 )
-from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
 from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.columnar.arrowdsl import project_struct_fields
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_kernels import ExplodeSpec, explode_edges_for_join
+from codeintel.core.columnar.plan_ops import materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 SortDirection = Literal["ascending", "descending"]
@@ -79,19 +80,23 @@ def finalize_cpg_edge_rows(
         parent_data["edge"].append([edge])
 
     parent_table = pa.Table.from_pydict(parent_data)
-    exploded = explode_edges(
+    exploded = explode_edges_for_join(
         parent_table,
         spec=ExplodeSpec(
             src_col="edge_id",
             dst_list_col="edge",
             error_context_cols=error_context_cols,
         ),
+        allowed_columns=("edge",),
     )
     if exploded.good.num_rows == 0:
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
 
     projection = project_struct_fields("edge", _CPG_EDGE_FIELDS)
-    plan = Plan.table(exploded.good).project(projection)
+    plan = build_table_plan(
+        table=exploded.good,
+        options=TablePlanOptions(projection=projection),
+    )
     edges = materialize_plan(plan, use_threads=True)
     resolved_sort_keys = sort_keys if sort_keys is not None else _DEFAULT_SORT_KEYS
 

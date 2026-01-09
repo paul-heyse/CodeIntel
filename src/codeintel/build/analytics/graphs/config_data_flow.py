@@ -16,14 +16,20 @@ import rustworkx as rx
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan
+from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import materialize_plan
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_models import columns_for_table_key
@@ -36,6 +42,7 @@ if TYPE_CHECKING:
 
 
 CONFIG_DATA_FLOW_TABLE_KEY = "analytics.config_data_flow"
+CONFIG_REFERENCES_TABLE_KEY = "analytics.config_references"
 
 
 def _columns_for_table(table_key: str) -> tuple[str, ...]:
@@ -266,7 +273,7 @@ def _config_reference_rowset(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     required = {"config_path", "key", "extras"}
     missing = [name for name in required if name not in table.column_names]
@@ -275,10 +282,13 @@ def _config_reference_rowset(
         raise ValueError(msg)
     plan = snapshot_plan(
         table,
-        repo=repo,
-        commit=commit,
-        columns=("config_path", "key", "extras"),
-        ctx=ctx,
+        columns=None,
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CONFIG_REFERENCES_TABLE_KEY,
+        ),
     )
     plan = plan.filter(E.and_(E.is_valid("config_path"), E.is_valid("key")))
     plan = plan.project(
@@ -288,17 +298,11 @@ def _config_reference_rowset(
             "reference_paths": E.field(("extras", "reference_paths")),
         }
     )
-    plan = plan.order_by(
-        sort_keys=[
-            ("config_path", "ascending"),
-            ("key", "ascending"),
-        ]
-    )
     plan = plan.aggregate(
         keys=[E.field("config_path"), E.field("key")],
         aggregates=[("reference_paths", "list", None, "reference_paths")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _entrypoint_rowset(
@@ -306,21 +310,19 @@ def _entrypoint_rowset(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     if "handler_goid_h128" not in table.column_names:
         msg = "Missing entrypoint column: handler_goid_h128"
         raise ValueError(msg)
     plan = snapshot_plan(
         table,
-        repo=repo,
-        commit=commit,
         columns=("handler_goid_h128",),
-        ctx=ctx,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
     )
     plan = plan.filter(E.is_valid("handler_goid_h128"))
     plan = plan.aggregate(keys=[E.field("handler_goid_h128")], aggregates=[])
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _config_references_from_rows(
@@ -430,7 +432,7 @@ class ConfigDataFlowInputs:
     call_graph: GraphInput
     ast_by_goid: dict[int, FunctionAst]
     missing_goids: set[int] | None = None
-    ctx: ExecutionContext | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
 
 def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataFlowResult:
@@ -565,7 +567,7 @@ def _config_reference_rows_from_tabular(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
         table = _config_reference_rowset(
@@ -587,7 +589,7 @@ def _entrypoint_rows_from_tabular(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
         table = _entrypoint_rowset(
@@ -619,3 +621,12 @@ def _flatten_paths(raw: object) -> list[str]:
             paths.extend(_coerce_paths(item))
         return paths
     return _coerce_paths(raw)
+
+
+def _materialize_plan(
+    plan: Plan,
+    *,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> pa.Table:
+    execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)

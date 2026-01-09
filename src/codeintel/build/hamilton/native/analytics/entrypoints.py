@@ -20,7 +20,11 @@ from codeintel.build.analytics.entrypoints.core import (
     EntrypointContextInputs,
 )
 from codeintel.build.analytics.entrypoints.runtime import load_entrypoint_module_sources
-from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.analytics.utilities.catalogs import (
+    CatalogProviderRequest,
+    CatalogScope,
+    catalog_provider_from_frames,
+)
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -290,9 +294,15 @@ def entrypoints_result(
             test_rows=buffer_for_table(ENTRYPOINT_TESTS_TABLE_KEY),
         )
     catalog = catalog_provider_from_frames(
-        goids_frame=entrypoint_module_frames.goids_frame,
-        modules_frame=entrypoint_module_frames.modules_frame,
-        ctx=env.execution_context,
+        CatalogProviderRequest(
+            goids_frame=entrypoint_module_frames.goids_frame,
+            modules_frame=entrypoint_module_frames.modules_frame,
+            scope=CatalogScope(
+                repo=env.repo,
+                commit=env.commit,
+                ctx=env.execution_context,
+            ),
+        )
     )
     inputs = EntrypointBuildInputs(
         catalog_provider=catalog,

@@ -12,14 +12,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
     empty_table_for_table,
     reader_for_columnar_rows,
 )
-from codeintel.ingestion.compute.base import persist_arrow_tables
 from codeintel.ingestion.context import (
     IngestionContext,
     resolve_repo_commit,
@@ -38,7 +36,6 @@ if TYPE_CHECKING:
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.ports.change_detection import ChangeDetectionPort, ChangeSet
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 MODULES_TABLE_KEY = "core.modules"
@@ -70,14 +67,14 @@ class RepoScanResult:
     module_rows: ColumnarRows
     file_state_rows: ColumnarRows
     repo_map_rows: ColumnarRows
-    module_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(MODULES_TABLE_KEY)
+    module_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(MODULES_TABLE_KEY).to_reader()
     )
-    file_state_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(FILE_STATE_TABLE_KEY)
+    file_state_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(FILE_STATE_TABLE_KEY).to_reader()
     )
-    repo_map_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(REPO_MAP_TABLE_KEY)
+    repo_map_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(REPO_MAP_TABLE_KEY).to_reader()
     )
 
 
@@ -95,15 +92,15 @@ class _RepoScanTables:
     module_rows: ColumnarRows
     file_state_rows: ColumnarRows
     repo_map_rows: ColumnarRows
-    module_rows_table: pa.Table
-    file_state_rows_table: pa.Table
-    repo_map_rows_table: pa.Table
+    module_rows_reader: pa.RecordBatchReader
+    file_state_rows_reader: pa.RecordBatchReader
+    repo_map_rows_reader: pa.RecordBatchReader
 
-    def as_mapping(self) -> dict[str, pa.Table]:
+    def as_mapping(self) -> dict[str, pa.RecordBatchReader]:
         return {
-            MODULES_TABLE_KEY: self.module_rows_table,
-            FILE_STATE_TABLE_KEY: self.file_state_rows_table,
-            REPO_MAP_TABLE_KEY: self.repo_map_rows_table,
+            MODULES_TABLE_KEY: self.module_rows_reader,
+            FILE_STATE_TABLE_KEY: self.file_state_rows_reader,
+            REPO_MAP_TABLE_KEY: self.repo_map_rows_reader,
         }
 
 
@@ -169,7 +166,6 @@ class RepoScanStep:
         discovery: ModuleDiscoveryPort,
         change_detection: ChangeDetectionPort,
         module_filter: Callable[[Sequence[ModuleRecord]], Sequence[ModuleRecord]] | None = None,
-        storage: IngestStoragePort | None = None,
     ) -> None:
         """Initialize the step.
 
@@ -181,13 +177,10 @@ class RepoScanStep:
             Change detection port for computing changes.
         module_filter
             Optional filter applied to discovered modules before persistence.
-        storage
-            Optional storage port for persisting Arrow outputs.
         """
         self._discovery = discovery
         self._change_detection = change_detection
         self._module_filter = module_filter
-        self._storage = storage
 
     def execute(
         self,
@@ -237,8 +230,6 @@ class RepoScanStep:
             repo=resolved.repo,
             commit=resolved.commit,
         )
-        scope = f"{resolved.repo}@{resolved.commit}"
-        persist_arrow_tables(self._storage, tables.as_mapping(), scope=scope)
 
         log.info(
             "Repo scan: repo=%s commit=%s modules=%d added=%d modified=%d deleted=%d",
@@ -256,9 +247,9 @@ class RepoScanStep:
             module_rows=tables.module_rows,
             file_state_rows=tables.file_state_rows,
             repo_map_rows=tables.repo_map_rows,
-            module_rows_reader=tables.module_rows_table,
-            file_state_rows_reader=tables.file_state_rows_table,
-            repo_map_rows_reader=tables.repo_map_rows_table,
+            module_rows_reader=tables.module_rows_reader,
+            file_state_rows_reader=tables.file_state_rows_reader,
+            repo_map_rows_reader=tables.repo_map_rows_reader,
         )
 
     def _build_repo_scan_tables(
@@ -300,28 +291,13 @@ class RepoScanStep:
             REPO_MAP_TABLE_KEY,
             repo_map_rows,
         )
-        module_rows_table = finalize_ingest_reader(
-            MODULES_TABLE_KEY,
-            module_rows_reader,
-            target_name=REPO_SCAN_TARGET_NAME,
-        )
-        file_state_rows_table = finalize_ingest_reader(
-            FILE_STATE_TABLE_KEY,
-            file_state_rows_reader,
-            target_name=REPO_SCAN_TARGET_NAME,
-        )
-        repo_map_rows_table = finalize_ingest_reader(
-            REPO_MAP_TABLE_KEY,
-            repo_map_rows_reader,
-            target_name=REPO_SCAN_TARGET_NAME,
-        )
         return _RepoScanTables(
             module_rows=module_buffer.data,
             file_state_rows=change_set.state_rows,
             repo_map_rows=repo_map_rows,
-            module_rows_table=module_rows_table,
-            file_state_rows_table=file_state_rows_table,
-            repo_map_rows_table=repo_map_rows_table,
+            module_rows_reader=module_rows_reader,
+            file_state_rows_reader=file_state_rows_reader,
+            repo_map_rows_reader=repo_map_rows_reader,
         )
 
     @staticmethod

@@ -22,10 +22,11 @@ from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabul
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
@@ -251,11 +252,16 @@ def _python_modules_table(modules_table: pa.Table) -> pa.Table:
     }
     if "language" in modules_table.column_names:
         projection["language"] = E.cast(E.field("language"), "string")
-    plan = Plan.table(modules_table).project(projection)
     exprs: list[Expression] = [_non_empty_expr("path"), _non_empty_expr("module")]
     if "language" in projection:
         exprs.append(_python_language_expr())
-    plan = plan.filter(E.and_(*exprs))
+    plan = build_table_plan(
+        table=modules_table,
+        options=TablePlanOptions(
+            projection=projection,
+            filter_expr=E.and_(*exprs),
+        ),
+    )
     return materialize_plan(plan, use_threads=True)
 
 

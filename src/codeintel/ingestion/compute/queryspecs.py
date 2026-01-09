@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from codeintel.core.columnar.expr_vocab import E, Expression
-from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_schema_defaults
+from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.service import get_schema_service
 
 
@@ -16,6 +17,7 @@ def build_ingest_query_spec(
     repo: str | None = None,
     commit: str | None = None,
     rel_path: str | None = None,
+    available_columns: Sequence[str] | None = None,
 ) -> QuerySpec:
     """Build an ingestion-friendly QuerySpec for repo/commit/rel_path scoping.
 
@@ -24,14 +26,23 @@ def build_ingest_query_spec(
     QuerySpec
         Query specification with optional repo/commit/path filtering.
     """
-    resolved_columns = _resolve_query_columns(table_key, columns)
+    table_schema = get_schema_service().get_table_schema(table_key)
+    resolved_available = _resolve_available_columns(
+        table_schema,
+        available_columns=available_columns,
+        columns=columns,
+    )
     predicate = _ingest_scope_predicate(
-        column_names=set(resolved_columns),
+        column_names=set(resolved_available),
         repo=repo,
         commit=commit,
         rel_path=rel_path,
     )
-    projection = ProjectionSpec(base_cols=tuple(resolved_columns))
+    projection = projection_spec_from_schema_defaults(
+        columns,
+        table_schema=table_schema,
+        available_columns=resolved_available,
+    )
     return QuerySpec(
         predicate=predicate,
         pushdown_predicate=predicate,
@@ -39,13 +50,17 @@ def build_ingest_query_spec(
     )
 
 
-def _resolve_query_columns(table_key: str, columns: Sequence[str] | None) -> list[str]:
-    if columns is not None:
-        return list(columns)
-    schema = get_schema_service().get_table_schema(table_key)
-    if schema is None:
-        return []
-    return list(schema.column_names())
+def _resolve_available_columns(
+    table_schema: TableSchema | None,
+    *,
+    available_columns: Sequence[str] | None,
+    columns: Sequence[str] | None,
+) -> list[str]:
+    if available_columns is not None:
+        return list(available_columns)
+    if table_schema is None:
+        return list(columns) if columns is not None else []
+    return list(table_schema.column_names())
 
 
 def _ingest_scope_predicate(

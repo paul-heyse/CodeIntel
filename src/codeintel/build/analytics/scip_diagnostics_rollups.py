@@ -9,13 +9,19 @@ from datetime import UTC, datetime
 import pyarrow as pa
 
 from codeintel.build.analytics.compute.row_builders import buffer_for_table
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan
+from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan
 from codeintel.core.columnar.rows import ColumnarRowBuffer, table_for_rows
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.query_results import coerce_int
 
 SCIP_DIAGNOSTICS_TABLE_KEY = "core.scip_diagnostics"
@@ -37,12 +43,24 @@ class ScipDiagnosticsRollups:
     top_message_rows: ColumnarRowBuffer
 
 
+@dataclass(frozen=True, slots=True)
+class RollupSpec:
+    """Rollup specification for diagnostics aggregation."""
+
+    repo: str
+    commit: str
+    created_at: datetime
+    table_key: str
+    group_columns: Sequence[str]
+    ctx: ExecutionContext | RuntimeExecutionContext | None
+
+
 def build_scip_diagnostics_rollups(
     *,
     repo: str,
     commit: str,
     rows: RollupSource,
-    ctx: ExecutionContext | None = None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None,
 ) -> ScipDiagnosticsRollups:
     """Build rollup rows for SCIP diagnostics datasets.
 
@@ -62,30 +80,36 @@ def build_scip_diagnostics_rollups(
     return ScipDiagnosticsRollups(
         summary_rows=_aggregate_rollup_rows(
             table,
-            repo=repo,
-            commit=commit,
-            created_at=created_at,
-            table_key=SCIP_DIAGNOSTICS_SUMMARY_TABLE_KEY,
-            group_columns=("severity", "source"),
-            ctx=ctx,
+            RollupSpec(
+                repo=repo,
+                commit=commit,
+                created_at=created_at,
+                table_key=SCIP_DIAGNOSTICS_SUMMARY_TABLE_KEY,
+                group_columns=("severity", "source"),
+                ctx=ctx,
+            ),
         ),
         by_file_rows=_aggregate_rollup_rows(
             table,
-            repo=repo,
-            commit=commit,
-            created_at=created_at,
-            table_key=SCIP_DIAGNOSTICS_BY_FILE_TABLE_KEY,
-            group_columns=("rel_path", "severity", "source"),
-            ctx=ctx,
+            RollupSpec(
+                repo=repo,
+                commit=commit,
+                created_at=created_at,
+                table_key=SCIP_DIAGNOSTICS_BY_FILE_TABLE_KEY,
+                group_columns=("rel_path", "severity", "source"),
+                ctx=ctx,
+            ),
         ),
         top_message_rows=_aggregate_rollup_rows(
             table,
-            repo=repo,
-            commit=commit,
-            created_at=created_at,
-            table_key=SCIP_DIAGNOSTICS_TOP_MESSAGES_TABLE_KEY,
-            group_columns=("severity", "source", "code", "message"),
-            ctx=ctx,
+            RollupSpec(
+                repo=repo,
+                commit=commit,
+                created_at=created_at,
+                table_key=SCIP_DIAGNOSTICS_TOP_MESSAGES_TABLE_KEY,
+                group_columns=("severity", "source", "code", "message"),
+                ctx=ctx,
+            ),
         ),
     )
 
@@ -112,34 +136,25 @@ def _normalized_text_expr(column: str, *, columns: set[str]) -> Expression:
     return E.if_else(non_empty, trimmed, E.scalar("unknown"))
 
 
-def _aggregate_rollup_rows(
-    table: pa.Table,
-    *,
-    repo: str,
-    commit: str,
-    created_at: datetime,
-    table_key: str,
-    group_columns: Sequence[str],
-    ctx: ExecutionContext | None,
-) -> ColumnarRowBuffer:
-    if not group_columns:
-        return buffer_for_table(table_key)
+def _aggregate_rollup_rows(table: pa.Table, spec: RollupSpec) -> ColumnarRowBuffer:
+    if not spec.group_columns:
+        return buffer_for_table(spec.table_key)
     aggregated = _aggregate_rollup_table(
         table,
-        repo=repo,
-        commit=commit,
-        group_columns=group_columns,
-        ctx=ctx,
+        repo=spec.repo,
+        commit=spec.commit,
+        group_columns=spec.group_columns,
+        ctx=spec.ctx,
     )
-    buffer = buffer_for_table(table_key)
-    selected = [*group_columns, "diagnostic_count"]
+    buffer = buffer_for_table(spec.table_key)
+    selected = [*spec.group_columns, "diagnostic_count"]
     for row in iter_rows(aggregated, selected):
         payload: dict[str, object] = {
-            "repo": repo,
-            "commit": commit,
-            "created_at": created_at,
+            "repo": spec.repo,
+            "commit": spec.commit,
+            "created_at": spec.created_at,
         }
-        for column in group_columns:
+        for column in spec.group_columns:
             payload[column] = _coerce_text(row.get(column))
         count_value = row.get("diagnostic_count")
         count = coerce_int(count_value, ctx="diagnostic_count") if count_value is not None else 0
@@ -154,19 +169,23 @@ def _aggregate_rollup_table(
     repo: str,
     commit: str,
     group_columns: Sequence[str],
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     column_names = set(table.column_names)
-    plan = snapshot_plan(table, repo=repo, commit=commit, ctx=ctx)
+    plan = snapshot_plan(
+        table,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     project = {
         column: _normalized_text_expr(column, columns=column_names) for column in group_columns
     }
     plan = plan.project(project)
-    plan = plan.aggregate(
-        keys=[E.field(column) for column in group_columns],
+    plan = build_grouped_rollup_plan(
+        plan,
+        keys=group_columns,
         aggregates=[(group_columns[0], "count", None, "diagnostic_count")],
     )
-    execution_ctx = resolve_execution_context(ctx)
+    execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
     return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
 
 

@@ -14,7 +14,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     ColumnarRows,
@@ -22,7 +21,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
     reader_for_columnar_rows,
 )
-from codeintel.ingestion.compute.base import build_typed_extras, persist_arrow_tables
+from codeintel.ingestion.compute.base import build_typed_extras
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.engine.results import parse_test_duration, parse_test_markers
 
@@ -33,7 +32,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 TEST_CATALOG_TABLE_KEY = "analytics.test_catalog"
@@ -103,7 +101,6 @@ class TestsIngestStep:
         commit: str | None = None,
         json_report_path: Path,
         context: IngestionContext | None = None,
-        storage: IngestStoragePort | None = None,
     ) -> TestsIngestResult:
         """Execute test catalog ingestion.
 
@@ -119,8 +116,6 @@ class TestsIngestStep:
             Path to the pytest JSON report.
         context
             Optional ingestion context supplying repo/commit defaults.
-        storage
-            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -165,26 +160,15 @@ class TestsIngestStep:
             len(tests),
         )
 
-        rows_reader, _row_count = reader_for_columnar_rows(
+        rows_reader, row_count = reader_for_columnar_rows(
             TEST_CATALOG_TABLE_KEY,
             buffer.data,
-        )
-        finalized = finalize_ingest_reader(
-            TEST_CATALOG_TABLE_KEY,
-            rows_reader,
-            target_name=TESTS_INGEST_TARGET_NAME,
-        )
-        scope = f"{resolved_repo}@{resolved_commit}"
-        persist_arrow_tables(
-            storage,
-            {TEST_CATALOG_TABLE_KEY: finalized},
-            scope=scope,
         )
         return TestsIngestResult(
             result=ExecutionResult.ok(),
             rows=buffer.data,
-            rows_reader=finalized,
-            row_count=finalized.num_rows,
+            rows_reader=rows_reader,
+            row_count=row_count,
         )
 
 
@@ -194,8 +178,8 @@ class TestsIngestResult:
 
     result: ExecutionResult
     rows: ColumnarRows = field(default_factory=dict)
-    rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(TEST_CATALOG_TABLE_KEY)
+    rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(TEST_CATALOG_TABLE_KEY).to_reader()
     )
     row_count: int = 0
 

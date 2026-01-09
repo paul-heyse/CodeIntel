@@ -25,9 +25,11 @@ from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.core.columnar.arrowdsl import join_safe_projection
 from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
@@ -109,18 +111,19 @@ def cpg2_edges__scip_symbol_relationships(
         pa.array(extras_kv, type=pa.map_(pa.string(), pa.string())),
     )
     if joined.num_rows > 0:
-        joined = materialize_plan(
-            Plan.table(joined).order_by(
-                sort_keys=[
+        ordered_plan = build_table_plan(
+            table=joined,
+            options=TablePlanOptions(
+                order_by=(
                     ("repo", "ascending"),
                     ("commit", "ascending"),
                     ("symbol", "ascending"),
                     ("related_symbol", "ascending"),
                     ("relationship_kind", "ascending"),
-                ],
+                ),
             ),
-            use_threads=True,
         )
+        joined = materialize_plan(ordered_plan, use_threads=True)
     joined = append_constant_columns(
         joined,
         {
@@ -318,15 +321,19 @@ def _symbol_goid_joined_table(
         "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
         "dst_cpg_node_id": E.field("dst_cpg_node_id"),
     }
-    symbol_plan = (
-        Plan.table(symbol_anchors)
-        .project(symbol_project)
-        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid("scip_symbol")))
+    symbol_plan = build_table_plan(
+        table=symbol_anchors,
+        options=TablePlanOptions(
+            projection=symbol_project,
+            filter_expr=E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid("scip_symbol")),
+        ),
     )
-    goid_plan = (
-        Plan.table(goid_rows)
-        .project(goid_project)
-        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid("scip_symbol")))
+    goid_plan = build_table_plan(
+        table=goid_rows,
+        options=TablePlanOptions(
+            projection=goid_project,
+            filter_expr=E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid("scip_symbol")),
+        ),
     )
     joined = goid_plan.hash_join(
         right=symbol_plan,
@@ -339,8 +346,12 @@ def _symbol_goid_joined_table(
         ),
     )
     joined = joined.filter(E.is_valid("src_cpg_node_id"))
-    goid_anchor_plan = (
-        Plan.table(goid_anchors).project(goid_anchor_project).filter(E.is_valid("goid_h128"))
+    goid_anchor_plan = build_table_plan(
+        table=goid_anchors,
+        options=TablePlanOptions(
+            projection=goid_anchor_project,
+            filter_expr=E.is_valid("goid_h128"),
+        ),
     )
     joined = joined.hash_join(
         right=goid_anchor_plan,
@@ -509,15 +520,19 @@ def _join_symbol_relationship_anchor(
         symbol_field: E.cast(E.field(symbol_field), "string"),
         id_field: E.field(id_field),
     }
-    left_plan = (
-        Plan.table(left)
-        .project(left_project)
-        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid(symbol_field)))
+    left_plan = build_table_plan(
+        table=left,
+        options=TablePlanOptions(
+            projection=left_project,
+            filter_expr=E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid(symbol_field)),
+        ),
     )
-    right_plan = (
-        Plan.table(renamed)
-        .project(right_project)
-        .filter(E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid(symbol_field)))
+    right_plan = build_table_plan(
+        table=renamed,
+        options=TablePlanOptions(
+            projection=right_project,
+            filter_expr=E.and_(E.is_valid("repo"), E.is_valid("commit"), E.is_valid(symbol_field)),
+        ),
     )
     joined = left_plan.hash_join(
         right=right_plan,

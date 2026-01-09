@@ -463,6 +463,29 @@ class FinalizePolicy:
 
 
 @dataclass(frozen=True)
+class PlanPolicy:
+    """Plan defaults for query/scan behavior."""
+
+    default_projection: tuple[str, ...] | None = None
+    join_safe_columns: tuple[str, ...] = ()
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable representation of this plan policy.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable plan policy payload.
+        """
+        payload: dict[str, object] = {}
+        if self.default_projection is not None:
+            payload["default_projection"] = list(self.default_projection)
+        if self.join_safe_columns:
+            payload["join_safe_columns"] = list(self.join_safe_columns)
+        return payload
+
+
+@dataclass(frozen=True)
 class Column:
     """Definition of a single table column.
 
@@ -560,6 +583,7 @@ class TableSchema:
     description: str | None = None
     write_policy: TableWritePolicy | None = None
     finalize_policy: FinalizePolicy | None = None
+    plan_policy: PlanPolicy | None = None
 
     @property
     def table_key(self) -> str:
@@ -612,8 +636,13 @@ class TableSchema:
         }
         if self.write_policy is None:
             if self.finalize_policy is None:
+                if self.plan_policy is None:
+                    return payload
+                payload["plan_policy"] = self.plan_policy.to_json_obj()
                 return payload
             payload["finalize_policy"] = self.finalize_policy.to_json_obj()
+            if self.plan_policy is not None:
+                payload["plan_policy"] = self.plan_policy.to_json_obj()
             return payload
         write_policy_payload: dict[str, object] = {
             "mode": self.write_policy.mode,
@@ -628,6 +657,8 @@ class TableSchema:
         payload["write_policy"] = write_policy_payload
         if self.finalize_policy is not None:
             payload["finalize_policy"] = self.finalize_policy.to_json_obj()
+        if self.plan_policy is not None:
+            payload["plan_policy"] = self.plan_policy.to_json_obj()
         return payload
 
 
@@ -668,6 +699,38 @@ def resolve_canonical_sort_keys(table_schema: TableSchema | None) -> tuple[str, 
     return resolve_stable_sort_keys(table_schema)
 
 
+def resolve_default_projection(table_schema: TableSchema | None) -> tuple[str, ...] | None:
+    """Resolve default projection columns from a table schema plan policy.
+
+    Returns
+    -------
+    tuple[str, ...] | None
+        Default projection columns, or None when no policy is configured.
+    """
+    if table_schema is None:
+        return None
+    plan_policy = table_schema.plan_policy
+    if plan_policy is None:
+        return None
+    return plan_policy.default_projection
+
+
+def resolve_join_safe_columns(table_schema: TableSchema | None) -> tuple[str, ...]:
+    """Resolve join-safe allowlist columns from a table schema plan policy.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Join-safe allowlist column names (empty when not configured).
+    """
+    if table_schema is None:
+        return ()
+    plan_policy = table_schema.plan_policy
+    if plan_policy is None:
+        return ()
+    return plan_policy.join_safe_columns
+
+
 __all__ = [
     "COLUMN_TYPE_BASE_VALUES",
     "COLUMN_TYPE_REGISTRY",
@@ -684,6 +747,7 @@ __all__ = [
     "FinalizeNullListPolicy",
     "FinalizePolicy",
     "Index",
+    "PlanPolicy",
     "ReplaceScope",
     "SortDirection",
     "TableSchema",
@@ -694,5 +758,7 @@ __all__ = [
     "is_allowed_column_promotion",
     "normalize_column_type",
     "resolve_canonical_sort_keys",
+    "resolve_default_projection",
+    "resolve_join_safe_columns",
     "resolve_stable_sort_keys",
 ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -22,6 +23,12 @@ from codeintel.core.columnar.finalize_ops import (
     finalize_reader,
     finalize_table,
     record_join_precheck_errors,
+    resolve_finalize_spec,
+)
+from codeintel.core.columnar.join_safe import (
+    join_safe_projection,
+    list_payload_columns,
+    require_join_safe_schema,
 )
 from codeintel.core.columnar.kernels import SortKey, stable_sort_table
 from codeintel.core.columnar.normalization import normalize_table_for_compute
@@ -33,7 +40,6 @@ from codeintel.core.columnar.run_manifest import (
     write_run_manifest,
 )
 from codeintel.core.columnar.streaming import configure_arrow_threading_for_context
-from codeintel.core.validation.schema_constraints import is_list_like
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -232,26 +238,68 @@ def run_pipeline(
         Finalized result containing good rows, errors, and artifacts.
     """
     resolved_options = options or PipelineRunOptions()
+    start = time.monotonic()
     resolved_ctx = resolve_execution_context(resolved_options.ctx)
     finalize_spec = _resolve_finalize_spec(finalize, plan=plan, ctx=resolved_ctx)
-    if resolved_options.post:
-        table = plan.to_table(ctx=resolved_ctx)
-        for step in resolved_options.post:
-            table = step(table)
-        result = finalize_table(table, spec=finalize_spec)
-    else:
-        reader = plan.to_reader(ctx=resolved_ctx)
-        result = finalize_reader(reader, spec=finalize_spec)
+    result, timings = _execute_plan_with_finalize(
+        plan=plan,
+        finalize_spec=finalize_spec,
+        ctx=resolved_ctx,
+        post_steps=resolved_options.post,
+    )
+    duration_seconds = time.monotonic() - start
     if resolved_options.manifest_dir is not None:
         resolved_options.manifest_dir.mkdir(parents=True, exist_ok=True)
-        options = run_manifest_options_for_context(
+        manifest_options = resolved_options.manifest_options
+        extras = {
+            "duration_seconds": duration_seconds,
+            **timings,
+        }
+        if manifest_options is None:
+            manifest_options = RunManifestOptions(extras=extras)
+        else:
+            merged_extras = {**extras, **(manifest_options.extras or {})}
+            manifest_options = replace(manifest_options, extras=merged_extras)
+        resolved_manifest_options = run_manifest_options_for_context(
             ctx=resolved_ctx,
             ordering=finalize_spec.ordering or plan.ordering,
             scan_telemetry=resolved_options.scan_telemetry,
-            options=resolved_options.manifest_options,
+            options=manifest_options,
         )
-        write_run_manifest(resolved_options.manifest_dir, options=options)
+        write_run_manifest(resolved_options.manifest_dir, options=resolved_manifest_options)
     return result
+
+
+def _execute_plan_with_finalize(
+    *,
+    plan: ExecutionPlan,
+    finalize_spec: FinalizeSpec,
+    ctx: ExecutionContext,
+    post_steps: Sequence[PostStep],
+) -> tuple[FinalizeResult, dict[str, float]]:
+    plan_start = time.monotonic()
+    post_seconds = 0.0
+    if post_steps:
+        table = plan.to_table(ctx=ctx)
+        plan_seconds = time.monotonic() - plan_start
+        post_start = time.monotonic()
+        for step in post_steps:
+            table = step(table)
+        post_seconds = time.monotonic() - post_start
+        finalize_start = time.monotonic()
+        result = finalize_table(table, spec=finalize_spec)
+        finalize_seconds = time.monotonic() - finalize_start
+    else:
+        reader = plan.to_reader(ctx=ctx)
+        plan_seconds = time.monotonic() - plan_start
+        finalize_start = time.monotonic()
+        result = finalize_reader(reader, spec=finalize_spec)
+        finalize_seconds = time.monotonic() - finalize_start
+    return result, {
+        "plan_seconds": plan_seconds,
+        "post_seconds": post_seconds,
+        "finalize_seconds": finalize_seconds,
+    }
 
 
 def run_pipeline_good(
@@ -281,8 +329,10 @@ def _resolve_finalize_spec(
         determinism = plan.determinism or ctx.resolve_determinism()
     ordering = spec.ordering or plan.ordering
     if determinism == spec.determinism and ordering == spec.ordering:
-        return spec
-    return replace(spec, determinism=determinism, ordering=ordering)
+        return resolve_finalize_spec(spec)
+    return resolve_finalize_spec(
+        replace(spec, determinism=determinism, ordering=ordering)
+    )
 
 
 def precheck_join_keys(
@@ -319,90 +369,6 @@ def precheck_join_keys(
             join_keys=spec.required_non_null,
         )
     return result
-
-
-def list_payload_columns(table: pa.Table) -> tuple[str, ...]:
-    """Return column names containing list-like payloads.
-
-    Parameters
-    ----------
-    table
-        Table to inspect for list payloads.
-
-    Returns
-    -------
-    tuple[str, ...]
-        Column names containing list-like Arrow types.
-    """
-    return tuple(field.name for field in table.schema if is_list_like(field.type))
-
-
-def require_join_safe_schema(
-    table: pa.Table,
-    *,
-    allowed_columns: Sequence[str] = (),
-) -> None:
-    """Raise when list payloads are present in join inputs.
-
-    Parameters
-    ----------
-    table
-        Table to validate for join safety.
-    allowed_columns
-        Column names allowed to contain list payloads.
-
-    Raises
-    ------
-    ValueError
-        Raised when list payloads remain in disallowed columns.
-    """
-    allowed = set(allowed_columns)
-    list_columns = [
-        field.name
-        for field in table.schema
-        if is_list_like(field.type) and field.name not in allowed
-    ]
-    if not list_columns:
-        return
-    msg = f"Join inputs contain list payload columns: {list_columns}"
-    raise ValueError(msg)
-
-
-def join_safe_projection(
-    table: pa.Table,
-    *,
-    allowed_columns: Sequence[str] = (),
-) -> pa.Table:
-    """Return a table projected to join-safe columns.
-
-    Parameters
-    ----------
-    table
-        Input table to project.
-    allowed_columns
-        Columns to retain when explicitly provided.
-
-    Returns
-    -------
-    pyarrow.Table
-        Join-safe projection of the input table.
-
-    Raises
-    ------
-    ValueError
-        Raised when projection removes all columns.
-    """
-    if allowed_columns:
-        allowed_set = set(allowed_columns)
-        keep = [name for name in table.column_names if name in allowed_set]
-    else:
-        keep = [field.name for field in table.schema if not is_list_like(field.type)]
-    if not keep:
-        msg = "Join-safe projection removed all columns; explode or whitelist columns."
-        raise ValueError(msg)
-    if keep == list(table.column_names):
-        return table
-    return table.select(keep)
 
 
 def project_struct_fields(

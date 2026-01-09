@@ -25,9 +25,12 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
 from codeintel.build.analytics.compute.row_builders import buffer_for_table
-from codeintel.build.analytics.utilities.snapshot import require_columns, snapshot_table
+from codeintel.build.analytics.utilities.snapshot import (
+    SnapshotContext,
+    require_columns,
+    snapshot_table,
+)
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha1_short
@@ -63,6 +66,8 @@ if TYPE_CHECKING:
         EntryPointCandidate,
     )
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.columnar.execution_context import ExecutionContext
+    from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.storage.catalog import FunctionCatalogProvider
 
@@ -149,7 +154,7 @@ class EntrypointContextInputs:
     test_catalog_frame: pa.Table | None = None
     subsystem_modules_frame: pa.Table | None = None
     subsystems_frame: pa.Table | None = None
-    ctx: ExecutionContext | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
 
 def collect_entrypoint_rows(
@@ -340,7 +345,7 @@ def _module_context_from_frame(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[str, ModuleContext]:
     if frame is None or frame.num_rows == 0:
         return {}
@@ -365,7 +370,7 @@ def _test_meta_from_frame(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[str, TestMeta]:
     meta: dict[str, TestMeta] = {}
     if frame is None or frame.num_rows == 0:
@@ -395,7 +400,7 @@ def _subsystem_maps_from_frame(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> tuple[dict[str, str], dict[str, str]]:
     subsystem_by_module: dict[str, str] = {}
     subsystem_names: dict[str, str] = {}
@@ -433,10 +438,13 @@ def _rows_for_snapshot(
     *,
     repo: str,
     commit: str,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> list[dict[str, object]]:
     require_columns(frame, ("repo", "commit"))
-    filtered = snapshot_table(frame, repo=repo, commit=commit, ctx=ctx)
+    filtered = snapshot_table(
+        frame,
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
     return list(iter_rows(filtered))
 
 

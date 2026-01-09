@@ -5,7 +5,8 @@ from __future__ import annotations
 import pyarrow as pa
 
 from codeintel.build.tabular.expr_vocab import Expression
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import materialize_plan
 
 
 def plan_filter_or_fallback(
@@ -19,7 +20,11 @@ def plan_filter_or_fallback(
     pyarrow.Table
         Filtered table from the plan lane.
     """
-    return materialize_plan(Plan.table(table).filter(expr), use_threads=True)
+    plan = build_table_plan(
+        table=table,
+        options=TablePlanOptions(filter_expr=expr),
+    )
+    return materialize_plan(plan, use_threads=True)
 
 
 __all__ = ["plan_filter_or_fallback"]

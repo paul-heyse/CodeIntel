@@ -17,6 +17,7 @@ from codeintel.core.schemas.primitives import (
     FinalizeNullListPolicy,
     FinalizePolicy,
     Index,
+    PlanPolicy,
     ReplaceScope,
     SortDirection,
     TableSchema,
@@ -83,6 +84,8 @@ def table_schema_to_json_obj(schema: TableSchema) -> dict[str, object]:
         payload["write_policy"] = _write_policy_to_json_obj(schema.write_policy)
     if schema.finalize_policy is not None:
         payload["finalize_policy"] = schema.finalize_policy.to_json_obj()
+    if schema.plan_policy is not None:
+        payload["plan_policy"] = schema.plan_policy.to_json_obj()
     return payload
 
 
@@ -376,6 +379,35 @@ def _parse_finalize_policy(value: object) -> FinalizePolicy | None:
     )
 
 
+def _parse_plan_policy(value: object) -> PlanPolicy | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        msg = "Expected object for plan_policy"
+        raise TypeError(msg)
+    projection_obj = value.get("default_projection")
+    if projection_obj is None:
+        default_projection = None
+    else:
+        if not isinstance(projection_obj, list):
+            msg = "Expected list for plan_policy.default_projection"
+            raise TypeError(msg)
+        default_projection = tuple(
+            _require_str(item, field="plan_policy.default_projection[]") for item in projection_obj
+        )
+    join_safe_obj = value.get("join_safe_columns", [])
+    if not isinstance(join_safe_obj, list):
+        msg = "Expected list for plan_policy.join_safe_columns"
+        raise TypeError(msg)
+    join_safe_columns = tuple(
+        _require_str(item, field="plan_policy.join_safe_columns[]") for item in join_safe_obj
+    )
+    return PlanPolicy(
+        default_projection=default_projection,
+        join_safe_columns=join_safe_columns,
+    )
+
+
 def column_from_json_obj(obj: Mapping[str, object]) -> Column:
     """Parse a Column from a JSON object.
 
@@ -477,6 +509,7 @@ def table_schema_from_json_obj(obj: Mapping[str, object]) -> TableSchema:
     write_policy_obj = obj.get("write_policy")
     write_policy = _parse_write_policy(write_policy_obj) if write_policy_obj is not None else None
     finalize_policy = _parse_finalize_policy(obj.get("finalize_policy"))
+    plan_policy = _parse_plan_policy(obj.get("plan_policy"))
 
     return TableSchema(
         schema=schema,
@@ -487,6 +520,7 @@ def table_schema_from_json_obj(obj: Mapping[str, object]) -> TableSchema:
         description=description,
         write_policy=write_policy,
         finalize_policy=finalize_policy,
+        plan_policy=plan_policy,
     )
 
 

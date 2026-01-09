@@ -11,7 +11,11 @@ from codeintel.build.analytics.functions.function_contracts import (
     build_function_contracts_rows,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
-from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.analytics.utilities.catalogs import (
+    CatalogProviderRequest,
+    CatalogScope,
+    catalog_provider_from_frames,
+)
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -80,9 +84,15 @@ def function_contracts__base(
         require_scope_columns=True,
     )
     catalog = catalog_provider_from_frames(
-        goids_frame=goids_frame,
-        modules_frame=modules_frame,
-        ctx=env.execution_context,
+        CatalogProviderRequest(
+            goids_frame=goids_frame,
+            modules_frame=modules_frame,
+            scope=CatalogScope(
+                repo=env.repo,
+                commit=env.commit,
+                ctx=env.execution_context,
+            ),
+        )
     )
     request = FunctionAstLoadRequest(
         repo=env.repo,

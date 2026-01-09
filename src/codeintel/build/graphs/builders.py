@@ -23,8 +23,9 @@ from codeintel.build.graphs.rx.policies import (
 )
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.columnar.iter import iter_array_values, iter_tuples
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import materialize_plan
 from codeintel.core.data_models.ids import as_int, normalize_decimal_id
 
 
@@ -374,13 +375,15 @@ def _call_graph_edge_table(
     if missing:
         msg = f"Missing call graph edge columns: {missing}"
         raise ValueError(msg)
-    plan = Plan.table(edges_table)
     filters: list[object] = [
         E.is_valid("caller_goid_h128"),
         E.is_valid("callee_goid_h128"),
     ]
     _append_snapshot_filters(filters, table=edges_table, repo=repo, commit=commit)
-    plan = plan.filter(E.and_(*filters))
+    plan = build_table_plan(
+        table=edges_table,
+        options=TablePlanOptions(filter_expr=E.and_(*filters)),
+    )
     plan = plan.project(
         {
             "src": E.field("caller_goid_h128"),
@@ -404,11 +407,12 @@ def _call_graph_node_attrs(
     if "goid_h128" not in nodes_table.column_names:
         msg = "Missing call graph node column: goid_h128"
         raise ValueError(msg)
-    plan = Plan.table(nodes_table)
     filters: list[object] = []
     _append_snapshot_filters(filters, table=nodes_table, repo=repo, commit=commit)
-    if filters:
-        plan = plan.filter(E.and_(*filters))
+    plan = build_table_plan(
+        table=nodes_table,
+        options=TablePlanOptions(filter_expr=E.and_(*filters)) if filters else None,
+    )
     projection: dict[str, object] = {"goid_h128": E.field("goid_h128")}
     if "kind" in nodes_table.column_names:
         projection["kind"] = E.field("kind")
@@ -442,10 +446,12 @@ def _import_graph_edge_table(
     if missing:
         msg = f"Missing import graph edge columns: {missing}"
         raise ValueError(msg)
-    plan = Plan.table(edges_table)
     filters: list[object] = [E.is_valid("src_module"), E.is_valid("dst_module")]
     _append_snapshot_filters(filters, table=edges_table, repo=repo, commit=commit)
-    plan = plan.filter(E.and_(*filters))
+    plan = build_table_plan(
+        table=edges_table,
+        options=TablePlanOptions(filter_expr=E.and_(*filters)),
+    )
     plan = plan.project({"src": E.field("src_module"), "dst": E.field("dst_module")})
     plan = plan.aggregate(
         keys=[E.field("src"), E.field("dst")],
@@ -463,10 +469,12 @@ def _import_layer_fallback(
 ) -> dict[str, int]:
     if "module_layer" not in edges_table.column_names:
         return {}
-    plan = Plan.table(edges_table)
     filters: list[object] = [E.is_valid("src_module"), E.is_valid("module_layer")]
     _append_snapshot_filters(filters, table=edges_table, repo=repo, commit=commit)
-    plan = plan.filter(E.and_(*filters))
+    plan = build_table_plan(
+        table=edges_table,
+        options=TablePlanOptions(filter_expr=E.and_(*filters)),
+    )
     plan = plan.project(
         {"src_module": E.field("src_module"), "module_layer": E.field("module_layer")}
     )
@@ -499,11 +507,12 @@ def _import_module_attrs(
     if "module" not in modules_table.column_names:
         msg = "Missing import module column: module"
         raise ValueError(msg)
-    plan = Plan.table(modules_table)
     filters: list[object] = []
     _append_snapshot_filters(filters, table=modules_table, repo=repo, commit=commit)
-    if filters:
-        plan = plan.filter(E.and_(*filters))
+    plan = build_table_plan(
+        table=modules_table,
+        options=TablePlanOptions(filter_expr=E.and_(*filters)) if filters else None,
+    )
     projection: dict[str, object] = {"module": E.field("module")}
     for column in ("scc_id", "component_size", "layer"):
         if column in modules_table.column_names:

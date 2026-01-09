@@ -16,6 +16,7 @@ from codeintel.build.analytics.graphs.config_data_flow import (
     compute_config_data_flow_result,
 )
 from codeintel.build.analytics.graphs.config_graph_metrics import (
+    ConfigGraphMetricsRequest,
     ConfigGraphMetricsResult,
     compute_config_graph_metrics_result,
 )
@@ -389,7 +390,7 @@ def config_graph_metrics_result(
         scope=scope,
     )
     runtime_options = _graph_runtime_options(env)
-    return compute_config_graph_metrics_result(
+    request = ConfigGraphMetricsRequest(
         repo=env.repo,
         commit=env.commit,
         config_value_rows=config_reference_rows,
@@ -397,6 +398,7 @@ def config_graph_metrics_result(
         runtime=runtime_options,
         ctx=env.execution_context,
     )
+    return compute_config_graph_metrics_result(request)
 
 
 def config_graph_metrics_keys__base(

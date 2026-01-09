@@ -19,8 +19,9 @@ from codeintel.build.tabular.compute_masks import is_valid_expr
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
 from codeintel.core.columnar.arrowdsl import join_safe_projection
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -87,28 +88,28 @@ def cpg2_nodes__goids(
         join_keys=join_keys,
     )
     anchors = right_precheck.good
-    left_plan = (
-        Plan.table(normalized)
-        .project(
-            {
+    left_plan = build_table_plan(
+        table=normalized,
+        options=TablePlanOptions(
+            projection={
                 "repo": E.cast(E.field("repo"), "string"),
                 "commit": E.cast(E.field("commit"), "string"),
                 "rel_path": E.cast(E.field("rel_path"), "string"),
                 "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
-            }
-        )
-        .filter(E.is_valid("goid_h128"))
+            },
+            filter_expr=E.is_valid("goid_h128"),
+        ),
     )
-    right_plan = (
-        Plan.table(anchors)
-        .project(
-            {
+    right_plan = build_table_plan(
+        table=anchors,
+        options=TablePlanOptions(
+            projection={
                 "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
                 "cpg_node_id": E.field("cpg_node_id"),
                 "source_pk_json": E.field("source_pk_json"),
-            }
-        )
-        .filter(E.is_valid("goid_h128"))
+            },
+            filter_expr=E.is_valid("goid_h128"),
+        ),
     )
     joined_plan = left_plan.hash_join(
         right=right_plan,

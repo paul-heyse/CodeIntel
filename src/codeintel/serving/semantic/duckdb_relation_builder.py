@@ -22,7 +22,6 @@ from codeintel.core.columnar.plan_ops import (
     ExternalPlanRequest,
     ScanPlanOptions,
     build_scan_plan,
-    run_external_plan,
 )
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_alignment import (
@@ -970,7 +969,9 @@ def _external_plan_reader(
             scan_options=scan_options,
             use_threads=resolved_use_threads,
         )
-        return run_external_plan(request)
+        execution_ctx = ExecutionContext(use_threads=resolved_use_threads)
+        plan = ExecutionPlan.from_external_plan(request)
+        return plan.to_reader(ctx=execution_ctx)
     except (
         pa.ArrowInvalid,
         pa.ArrowNotImplementedError,

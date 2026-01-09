@@ -22,11 +22,14 @@ from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.streaming import configure_arrow_threading_for_context
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     import pyarrow.dataset as ds
 
     from codeintel.core.columnar.streaming import DatasetScanOptions
+    type ReaderThunk = Callable[[], pa.RecordBatchReader]
+else:
+    type ReaderThunk = object
 
 JoinType = Literal[
     "left semi",
@@ -263,7 +266,10 @@ class Plan:
             options,
             inputs=[self.declaration, right.declaration],
         )
-        ordering = OrderingSpec.unordered(reason="hash join output")
+        ordering = OrderingSpec.unordered(
+            reason="hash join output",
+            pipeline_breaker=True,
+        )
         return Plan(decl, ordering=ordering)
 
     def order_by(
@@ -399,6 +405,7 @@ def _project_ordering(
 def materialize_plan(
     plan: Plan,
     *,
+    ctx: ExecutionContext | None = None,
     use_threads: bool = True,
     combine_chunks: bool = True,
 ) -> pa.Table:
@@ -423,8 +430,16 @@ def materialize_plan(
     Deprecated. Prefer ``ExecutionPlan.from_plan(plan)`` with an
     ``ExecutionContext`` to preserve ordering metadata.
     """
-    reader = plan.to_reader(use_threads=use_threads)
-    return normalize_table_for_compute(reader_to_table(reader), combine_chunks=combine_chunks)
+    execution_ctx = resolve_execution_context(ctx)
+    if ctx is None:
+        execution_ctx = replace(
+            execution_ctx,
+            use_threads=use_threads,
+            combine_chunks=combine_chunks,
+        )
+    from codeintel.core.columnar.arrowdsl import ExecutionPlan
+
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
 
 
 @dataclass(frozen=True, slots=True)
@@ -627,8 +642,8 @@ class ExternalPlanRunner(Protocol):
         self,
         *,
         request: ExternalPlanRequest,
-    ) -> pa.RecordBatchReader:
-        """Execute an external plan and return a record batch reader.
+    ) -> pa.RecordBatchReader | ReaderThunk | Plan:
+        """Execute an external plan and return a reader or reader thunk.
 
         Parameters
         ----------
@@ -637,8 +652,8 @@ class ExternalPlanRunner(Protocol):
 
         Returns
         -------
-        pyarrow.RecordBatchReader
-            Record batch reader for plan results.
+        pyarrow.RecordBatchReader | ReaderThunk | Plan
+            Record batch reader, thunk returning the reader, or an Acero plan.
         """
         ...
 
@@ -689,17 +704,35 @@ def run_external_plan(request: ExternalPlanRequest) -> pa.RecordBatchReader:
     normalized = _normalize_external_engine(request.spec.engine)
     runner = _EXTERNAL_PLAN_RUNNERS.get(normalized)
     if runner is None:
+        _register_default_external_plan_runners()
+        runner = _EXTERNAL_PLAN_RUNNERS.get(normalized)
+    if runner is None:
         msg = f"No external plan runner registered for engine '{normalized}'."
         raise ValueError(msg)
-    reader = runner(request=request)
-    if isinstance(reader, pa.RecordBatchReader):
-        return reader
-    if isinstance(reader, pa.Table):
-        to_reader = getattr(reader, "to_reader", None)
-        if callable(to_reader):
-            return to_reader()
+    result = runner(request=request)
+    if isinstance(result, pa.RecordBatchReader):
+        return result
+    if isinstance(result, Plan):
+        use_threads = True if request.use_threads is None else request.use_threads
+        return result.declaration.to_reader(use_threads=use_threads)
+    if callable(result):
+        reader = result()
+        if isinstance(reader, pa.RecordBatchReader):
+            return reader
+        msg = "External plan reader thunk did not return a RecordBatchReader."
+        raise TypeError(msg)
     msg = "External plan runner did not return a RecordBatchReader."
     raise TypeError(msg)
+
+
+def _register_default_external_plan_runners() -> None:
+    try:
+        from codeintel.core.columnar.external_plans import (
+            register_default_external_plan_runners,
+        )
+    except ImportError:
+        return
+    register_default_external_plan_runners()
 
 
 __all__ = [

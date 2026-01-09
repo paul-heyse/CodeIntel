@@ -27,21 +27,25 @@ from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.iter import iter_array_values
+from codeintel.core.columnar.kernels import stable_sort_table
 from codeintel.core.columnar.masks import (
     filter_valid,
     is_valid_mask,
 )
+from codeintel.core.columnar.ordering import SortKey
 from codeintel.core.columnar.plan_ops import Plan, ScanPlanOptions, build_scan_plan
 from codeintel.core.columnar.streaming import DatasetScanOptions, build_scanner
 from codeintel.core.datasets.arrow_store import dataset_stats, scan_dataset
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.datasets.scanning import ParquetScanOptions, scan_parquet_table
 from codeintel.core.query_results import ScalarCoercionError
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.table_key import is_valid_table_key
 from codeintel.storage.query_results import coerce_optional_float
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
 
 LOG = logging.getLogger(__name__)
 
@@ -293,7 +297,7 @@ def safe_count_non_positive(
     filtered_count = _count_non_positive_filtered(dataset, column=column)
     if filtered_count is not None:
         return filtered_count
-    table = _read_table(dataset, columns=[column])
+    table = _read_table(dataset, columns=[column], table_key=table_key)
     if table is None:
         return 0
     values = table.column(column)
@@ -525,7 +529,13 @@ def _read_table(
     *,
     columns: Iterable[str] | None = None,
     filter_expr: ds.Expression | None = None,
+    table_key: str | None = None,
+    order_by: Sequence[SortKey] | None = None,
 ) -> pa.Table | None:
+    resolved_order_by = order_by
+    if resolved_order_by is None and table_key is not None:
+        resolved_order_by = _canonical_order_by(table_key)
+    order_by_option = resolved_order_by or None
     try:
         plan = build_scan_plan(
             dataset,
@@ -534,11 +544,26 @@ def _read_table(
                 filter_expr=filter_expr,
                 implicit_ordering=True,
                 require_sequenced_output=True,
+                order_by=order_by_option,
             ),
         )
         return _materialize_plan(plan, use_threads=True)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        pass
+        return _read_table_fallback(
+            dataset,
+            columns=columns,
+            filter_expr=filter_expr,
+            order_by=order_by_option,
+        )
+
+
+def _read_table_fallback(
+    dataset: ds.Dataset,
+    *,
+    columns: Iterable[str] | None,
+    filter_expr: ds.Expression | None,
+    order_by: Sequence[SortKey] | None,
+) -> pa.Table | None:
     try:
         options = DatasetScanOptions(
             columns=list(columns) if columns is not None else None,
@@ -548,9 +573,12 @@ def _read_table(
             unify_schemas=True,
         )
         scanner = build_scanner(dataset, options=options)
-        return scanner.to_table()
-    except (pa.ArrowInvalid, pa.ArrowTypeError, OSError, ValueError):
+        table = scanner.to_table()
+        if order_by:
+            table = stable_sort_table(table, sort_keys=order_by)
+    except (pa.ArrowInvalid, pa.ArrowTypeError, OSError, TypeError, ValueError):
         return None
+    return table
 
 
 def _table_for_column(
@@ -592,6 +620,14 @@ def _as_int(value: object | None) -> int:
     if isinstance(raw, float):
         return int(raw)
     return 0
+
+
+def _canonical_order_by(table_key: str) -> tuple[SortKey, ...]:
+    schema = get_schema_service().get_table_schema(table_key)
+    canonical_keys = resolve_canonical_sort_keys(schema)
+    if not canonical_keys:
+        return ()
+    return tuple((key, "ascending") for key in canonical_keys)
 
 
 def _coerce_optional_float(value: object | None, *, ctx: str) -> float | None:

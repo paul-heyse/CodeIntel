@@ -20,11 +20,7 @@ from codeintel.core.columnar.rows import (
     columnar_batch_collector_for_table_key,
     empty_table_for_table,
 )
-from codeintel.ingestion.compute.base import (
-    BaseExtractStep,
-    finalize_arrow_readers,
-    persist_arrow_tables,
-)
+from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstSpan,
@@ -41,7 +37,6 @@ if TYPE_CHECKING:
 
     from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 LOG = logging.getLogger(__name__)
 _INT32_MIN = -(2**31)
@@ -77,26 +72,28 @@ class SymtableExtractResult:
     function_partition_rows: ColumnarRows = field(default_factory=dict)
     binding_rows: ColumnarRows = field(default_factory=dict)
     resolution_edge_rows: ColumnarRows = field(default_factory=dict)
-    scope_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_SCOPES_TABLE_KEY)
+    scope_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_SCOPES_TABLE_KEY).to_reader()
     )
-    symbol_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_SYMBOLS_TABLE_KEY)
+    symbol_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_SYMBOLS_TABLE_KEY).to_reader()
     )
-    scope_edge_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY)
+    scope_edge_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY).to_reader()
     )
-    namespace_edge_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY)
+    namespace_edge_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY).to_reader()
     )
-    function_partition_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY)
+    function_partition_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(
+            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY
+        ).to_reader()
     )
-    binding_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_BINDINGS_TABLE_KEY)
+    binding_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_BINDINGS_TABLE_KEY).to_reader()
     )
-    resolution_edge_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY)
+    resolution_edge_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY).to_reader()
     )
     scope_row_count: int = 0
     symbol_row_count: int = 0
@@ -109,23 +106,30 @@ class SymtableExtractResult:
 
 @dataclass(frozen=True, slots=True)
 class _SymtableTables:
-    scope_rows_table: pa.Table
-    symbol_rows_table: pa.Table
-    scope_edge_rows_table: pa.Table
-    namespace_edge_rows_table: pa.Table
-    function_partition_rows_table: pa.Table
-    binding_rows_table: pa.Table
-    resolution_edge_rows_table: pa.Table
+    scope_rows_reader: pa.RecordBatchReader
+    symbol_rows_reader: pa.RecordBatchReader
+    scope_edge_rows_reader: pa.RecordBatchReader
+    namespace_edge_rows_reader: pa.RecordBatchReader
+    function_partition_rows_reader: pa.RecordBatchReader
+    binding_rows_reader: pa.RecordBatchReader
+    resolution_edge_rows_reader: pa.RecordBatchReader
+    scope_row_count: int
+    symbol_row_count: int
+    scope_edge_row_count: int
+    namespace_edge_row_count: int
+    function_partition_row_count: int
+    binding_row_count: int
+    resolution_edge_row_count: int
 
-    def as_mapping(self) -> dict[str, pa.Table]:
+    def as_mapping(self) -> dict[str, pa.RecordBatchReader]:
         return {
-            PY_SYM_SCOPES_TABLE_KEY: self.scope_rows_table,
-            PY_SYM_SYMBOLS_TABLE_KEY: self.symbol_rows_table,
-            PY_SYM_SCOPE_EDGES_TABLE_KEY: self.scope_edge_rows_table,
-            PY_SYM_NAMESPACE_EDGES_TABLE_KEY: self.namespace_edge_rows_table,
-            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: self.function_partition_rows_table,
-            PY_SYM_BINDINGS_TABLE_KEY: self.binding_rows_table,
-            PY_SYM_RESOLUTION_EDGES_TABLE_KEY: self.resolution_edge_rows_table,
+            PY_SYM_SCOPES_TABLE_KEY: self.scope_rows_reader,
+            PY_SYM_SYMBOLS_TABLE_KEY: self.symbol_rows_reader,
+            PY_SYM_SCOPE_EDGES_TABLE_KEY: self.scope_edge_rows_reader,
+            PY_SYM_NAMESPACE_EDGES_TABLE_KEY: self.namespace_edge_rows_reader,
+            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: self.function_partition_rows_reader,
+            PY_SYM_BINDINGS_TABLE_KEY: self.binding_rows_reader,
+            PY_SYM_RESOLUTION_EDGES_TABLE_KEY: self.resolution_edge_rows_reader,
         }
 
 
@@ -1068,7 +1072,6 @@ class SymtableExtractStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
-        storage: IngestStoragePort | None = None,
     ) -> SymtableExtractResult:
         """Execute symtable extraction for the provided modules.
 
@@ -1105,11 +1108,8 @@ class SymtableExtractStep(BaseExtractStep):
             _process_module(module_context, collectors, warnings=warnings)
             _flush_symtable_collectors(collectors)
 
-        tables, finalize_warnings = _finalize_symtable_tables(collectors)
-        warnings.extend(finalize_warnings)
-        scope = f"{resolved_repo}@{resolved_commit}"
-        persist_arrow_tables(storage, tables.as_mapping(), scope=scope)
-        return _symtable_result(tables, warnings)
+        readers = _build_symtable_readers(collectors)
+        return _symtable_result(readers, warnings)
 
     def _iter_python_source_bundles(
         self,
@@ -1135,36 +1135,29 @@ class SymtableExtractStep(BaseExtractStep):
             yield module, source_text, source_index, None
 
 
-def _finalize_symtable_tables(
+def _build_symtable_readers(
     collectors: _SymtableCollectors,
-) -> tuple[_SymtableTables, list[str]]:
-    finalized_tables, finalize_warnings = finalize_arrow_readers(
-        {
-            PY_SYM_SCOPES_TABLE_KEY: collectors.scopes.to_reader(),
-            PY_SYM_SYMBOLS_TABLE_KEY: collectors.symbols.to_reader(),
-            PY_SYM_SCOPE_EDGES_TABLE_KEY: collectors.scope_edges.to_reader(),
-            PY_SYM_NAMESPACE_EDGES_TABLE_KEY: collectors.namespace_edges.to_reader(),
-            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: collectors.function_partitions.to_reader(),
-            PY_SYM_BINDINGS_TABLE_KEY: collectors.bindings.to_reader(),
-            PY_SYM_RESOLUTION_EDGES_TABLE_KEY: collectors.resolution_edges.to_reader(),
-        }
-    )
-    return (
-        _SymtableTables(
-            scope_rows_table=finalized_tables[PY_SYM_SCOPES_TABLE_KEY],
-            symbol_rows_table=finalized_tables[PY_SYM_SYMBOLS_TABLE_KEY],
-            scope_edge_rows_table=finalized_tables[PY_SYM_SCOPE_EDGES_TABLE_KEY],
-            namespace_edge_rows_table=finalized_tables[PY_SYM_NAMESPACE_EDGES_TABLE_KEY],
-            function_partition_rows_table=finalized_tables[PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY],
-            binding_rows_table=finalized_tables[PY_SYM_BINDINGS_TABLE_KEY],
-            resolution_edge_rows_table=finalized_tables[PY_SYM_RESOLUTION_EDGES_TABLE_KEY],
-        ),
-        finalize_warnings,
+) -> _SymtableTables:
+    return _SymtableTables(
+        scope_rows_reader=collectors.scopes.to_reader(),
+        symbol_rows_reader=collectors.symbols.to_reader(),
+        scope_edge_rows_reader=collectors.scope_edges.to_reader(),
+        namespace_edge_rows_reader=collectors.namespace_edges.to_reader(),
+        function_partition_rows_reader=collectors.function_partitions.to_reader(),
+        binding_rows_reader=collectors.bindings.to_reader(),
+        resolution_edge_rows_reader=collectors.resolution_edges.to_reader(),
+        scope_row_count=collectors.scopes.row_count,
+        symbol_row_count=collectors.symbols.row_count,
+        scope_edge_row_count=collectors.scope_edges.row_count,
+        namespace_edge_row_count=collectors.namespace_edges.row_count,
+        function_partition_row_count=collectors.function_partitions.row_count,
+        binding_row_count=collectors.bindings.row_count,
+        resolution_edge_row_count=collectors.resolution_edges.row_count,
     )
 
 
 def _symtable_result(
-    tables: _SymtableTables,
+    readers: _SymtableTables,
     warnings: Iterable[str],
 ) -> SymtableExtractResult:
     return SymtableExtractResult(
@@ -1176,20 +1169,20 @@ def _symtable_result(
         function_partition_rows={},
         binding_rows={},
         resolution_edge_rows={},
-        scope_rows_reader=tables.scope_rows_table,
-        symbol_rows_reader=tables.symbol_rows_table,
-        scope_edge_rows_reader=tables.scope_edge_rows_table,
-        namespace_edge_rows_reader=tables.namespace_edge_rows_table,
-        function_partition_rows_reader=tables.function_partition_rows_table,
-        binding_rows_reader=tables.binding_rows_table,
-        resolution_edge_rows_reader=tables.resolution_edge_rows_table,
-        scope_row_count=tables.scope_rows_table.num_rows,
-        symbol_row_count=tables.symbol_rows_table.num_rows,
-        scope_edge_row_count=tables.scope_edge_rows_table.num_rows,
-        namespace_edge_row_count=tables.namespace_edge_rows_table.num_rows,
-        function_partition_row_count=tables.function_partition_rows_table.num_rows,
-        binding_row_count=tables.binding_rows_table.num_rows,
-        resolution_edge_row_count=tables.resolution_edge_rows_table.num_rows,
+        scope_rows_reader=readers.scope_rows_reader,
+        symbol_rows_reader=readers.symbol_rows_reader,
+        scope_edge_rows_reader=readers.scope_edge_rows_reader,
+        namespace_edge_rows_reader=readers.namespace_edge_rows_reader,
+        function_partition_rows_reader=readers.function_partition_rows_reader,
+        binding_rows_reader=readers.binding_rows_reader,
+        resolution_edge_rows_reader=readers.resolution_edge_rows_reader,
+        scope_row_count=readers.scope_row_count,
+        symbol_row_count=readers.symbol_row_count,
+        scope_edge_row_count=readers.scope_edge_row_count,
+        namespace_edge_row_count=readers.namespace_edge_row_count,
+        function_partition_row_count=readers.function_partition_row_count,
+        binding_row_count=readers.binding_row_count,
+        resolution_edge_row_count=readers.resolution_edge_row_count,
     )
 
 

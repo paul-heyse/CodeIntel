@@ -29,11 +29,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
 )
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.ingestion.compute.base import (
-    BaseExtractStep,
-    finalize_arrow_readers,
-    persist_arrow_tables,
-)
+from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstCollectContext,
@@ -57,7 +53,6 @@ if TYPE_CHECKING:
 
     from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 
@@ -127,41 +122,41 @@ class CstExtractResult:
     syntax_call_args_rows: ColumnarRows = field(default_factory=dict)
     syntax_func_params_rows: ColumnarRows = field(default_factory=dict)
     syntax_imports_rows: ColumnarRows = field(default_factory=dict)
-    rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(CST_NODES_TABLE_KEY)
+    rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(CST_NODES_TABLE_KEY).to_reader()
     )
-    parse_manifest_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PARSE_MANIFEST_TABLE_KEY)
+    parse_manifest_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PARSE_MANIFEST_TABLE_KEY).to_reader()
     )
-    syntax_spans_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_SPANS_TABLE_KEY)
+    syntax_spans_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SPANS_TABLE_KEY).to_reader()
     )
-    syntax_nodes_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_NODES_TABLE_KEY)
+    syntax_nodes_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_NODES_TABLE_KEY).to_reader()
     )
-    syntax_edges_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_EDGES_TABLE_KEY)
+    syntax_edges_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_EDGES_TABLE_KEY).to_reader()
     )
-    syntax_scopes_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY)
+    syntax_scopes_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY).to_reader()
     )
-    syntax_defs_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_DEFS_TABLE_KEY)
+    syntax_defs_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_DEFS_TABLE_KEY).to_reader()
     )
-    syntax_refs_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_REFS_TABLE_KEY)
+    syntax_refs_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_REFS_TABLE_KEY).to_reader()
     )
-    syntax_calls_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_CALLS_TABLE_KEY)
+    syntax_calls_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALLS_TABLE_KEY).to_reader()
     )
-    syntax_call_args_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
+    syntax_call_args_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY).to_reader()
     )
-    syntax_func_params_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
+    syntax_func_params_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY).to_reader()
     )
-    syntax_imports_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY)
+    syntax_imports_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY).to_reader()
     )
     row_count: int = 0
     parse_manifest_row_count: int = 0
@@ -229,18 +224,18 @@ class _CstCollectors:
 
 @dataclass(frozen=True, slots=True)
 class _CstReaderBundle:
-    cst: pa.Table
-    parse_manifest: pa.Table
-    spans: pa.Table
-    syntax_nodes: pa.Table
-    syntax_edges: pa.Table
-    scopes: pa.Table
-    defs: pa.Table
-    refs: pa.Table
-    calls: pa.Table
-    call_args: pa.Table
-    func_params: pa.Table
-    imports: pa.Table
+    cst: pa.RecordBatchReader
+    parse_manifest: pa.RecordBatchReader
+    spans: pa.RecordBatchReader
+    syntax_nodes: pa.RecordBatchReader
+    syntax_edges: pa.RecordBatchReader
+    scopes: pa.RecordBatchReader
+    defs: pa.RecordBatchReader
+    refs: pa.RecordBatchReader
+    calls: pa.RecordBatchReader
+    call_args: pa.RecordBatchReader
+    func_params: pa.RecordBatchReader
+    imports: pa.RecordBatchReader
 
 
 class CstVisitor(CstCaptureVisitor):
@@ -2136,7 +2131,6 @@ class CstExtractStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
-        storage: IngestStoragePort | None = None,
     ) -> CstExtractResult:
         """Execute CST extraction on the provided modules.
 
@@ -2150,8 +2144,6 @@ class CstExtractStep(BaseExtractStep):
             Commit identifier.
         context
             Optional ingestion context supplying repo/commit defaults.
-        storage
-            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -2197,61 +2189,25 @@ class CstExtractStep(BaseExtractStep):
             )
             _flush_cst_collectors(collectors)
 
-        finalized_tables, finalize_warnings = finalize_arrow_readers(
-            {
-                CST_NODES_TABLE_KEY: collectors.cst.to_reader(),
-                PARSE_MANIFEST_TABLE_KEY: collectors.parse_manifest.to_reader(),
-                SYNTAX_SPANS_TABLE_KEY: collectors.spans.to_reader(),
-                SYNTAX_NODES_TABLE_KEY: collectors.syntax_nodes.to_reader(),
-                SYNTAX_EDGES_TABLE_KEY: collectors.syntax_edges.to_reader(),
-                SYNTAX_SCOPES_TABLE_KEY: collectors.scopes.to_reader(),
-                SYNTAX_DEFS_TABLE_KEY: collectors.defs.to_reader(),
-                SYNTAX_REFS_TABLE_KEY: collectors.refs.to_reader(),
-                SYNTAX_CALLS_TABLE_KEY: collectors.calls.to_reader(),
-                SYNTAX_CALL_ARGS_TABLE_KEY: collectors.call_args.to_reader(),
-                SYNTAX_FUNC_PARAMS_TABLE_KEY: collectors.func_params.to_reader(),
-                SYNTAX_IMPORTS_TABLE_KEY: collectors.imports.to_reader(),
-            }
-        )
-        warnings.extend(finalize_warnings)
         readers = _CstReaderBundle(
-            cst=finalized_tables[CST_NODES_TABLE_KEY],
-            parse_manifest=finalized_tables[PARSE_MANIFEST_TABLE_KEY],
-            spans=finalized_tables[SYNTAX_SPANS_TABLE_KEY],
-            syntax_nodes=finalized_tables[SYNTAX_NODES_TABLE_KEY],
-            syntax_edges=finalized_tables[SYNTAX_EDGES_TABLE_KEY],
-            scopes=finalized_tables[SYNTAX_SCOPES_TABLE_KEY],
-            defs=finalized_tables[SYNTAX_DEFS_TABLE_KEY],
-            refs=finalized_tables[SYNTAX_REFS_TABLE_KEY],
-            calls=finalized_tables[SYNTAX_CALLS_TABLE_KEY],
-            call_args=finalized_tables[SYNTAX_CALL_ARGS_TABLE_KEY],
-            func_params=finalized_tables[SYNTAX_FUNC_PARAMS_TABLE_KEY],
-            imports=finalized_tables[SYNTAX_IMPORTS_TABLE_KEY],
+            cst=collectors.cst.to_reader(),
+            parse_manifest=collectors.parse_manifest.to_reader(),
+            spans=collectors.spans.to_reader(),
+            syntax_nodes=collectors.syntax_nodes.to_reader(),
+            syntax_edges=collectors.syntax_edges.to_reader(),
+            scopes=collectors.scopes.to_reader(),
+            defs=collectors.defs.to_reader(),
+            refs=collectors.refs.to_reader(),
+            calls=collectors.calls.to_reader(),
+            call_args=collectors.call_args.to_reader(),
+            func_params=collectors.func_params.to_reader(),
+            imports=collectors.imports.to_reader(),
         )
         log.info(
             "CST extraction: repo=%s commit=%s rows=%d",
             resolved_repo,
             resolved_commit,
-            readers.cst.num_rows,
-        )
-        scope = f"{resolved_repo}@{resolved_commit}"
-        persist_arrow_tables(
-            storage,
-            {
-                CST_NODES_TABLE_KEY: readers.cst,
-                PARSE_MANIFEST_TABLE_KEY: readers.parse_manifest,
-                SYNTAX_SPANS_TABLE_KEY: readers.spans,
-                SYNTAX_NODES_TABLE_KEY: readers.syntax_nodes,
-                SYNTAX_EDGES_TABLE_KEY: readers.syntax_edges,
-                SYNTAX_SCOPES_TABLE_KEY: readers.scopes,
-                SYNTAX_DEFS_TABLE_KEY: readers.defs,
-                SYNTAX_REFS_TABLE_KEY: readers.refs,
-                SYNTAX_CALLS_TABLE_KEY: readers.calls,
-                SYNTAX_CALL_ARGS_TABLE_KEY: readers.call_args,
-                SYNTAX_FUNC_PARAMS_TABLE_KEY: readers.func_params,
-                SYNTAX_IMPORTS_TABLE_KEY: readers.imports,
-            },
-            scope=scope,
+            collectors.cst.row_count,
         )
         return CstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
@@ -2279,18 +2235,18 @@ class CstExtractStep(BaseExtractStep):
             syntax_call_args_rows_reader=readers.call_args,
             syntax_func_params_rows_reader=readers.func_params,
             syntax_imports_rows_reader=readers.imports,
-            row_count=readers.cst.num_rows,
-            parse_manifest_row_count=readers.parse_manifest.num_rows,
-            syntax_spans_row_count=readers.spans.num_rows,
-            syntax_nodes_row_count=readers.syntax_nodes.num_rows,
-            syntax_edges_row_count=readers.syntax_edges.num_rows,
-            syntax_scopes_row_count=readers.scopes.num_rows,
-            syntax_defs_row_count=readers.defs.num_rows,
-            syntax_refs_row_count=readers.refs.num_rows,
-            syntax_calls_row_count=readers.calls.num_rows,
-            syntax_call_args_row_count=readers.call_args.num_rows,
-            syntax_func_params_row_count=readers.func_params.num_rows,
-            syntax_imports_row_count=readers.imports.num_rows,
+            row_count=collectors.cst.row_count,
+            parse_manifest_row_count=collectors.parse_manifest.row_count,
+            syntax_spans_row_count=collectors.spans.row_count,
+            syntax_nodes_row_count=collectors.syntax_nodes.row_count,
+            syntax_edges_row_count=collectors.syntax_edges.row_count,
+            syntax_scopes_row_count=collectors.scopes.row_count,
+            syntax_defs_row_count=collectors.defs.row_count,
+            syntax_refs_row_count=collectors.refs.row_count,
+            syntax_calls_row_count=collectors.calls.row_count,
+            syntax_call_args_row_count=collectors.call_args.row_count,
+            syntax_func_params_row_count=collectors.func_params.row_count,
+            syntax_imports_row_count=collectors.imports.row_count,
         )
 
     def _iter_python_source_bytes(

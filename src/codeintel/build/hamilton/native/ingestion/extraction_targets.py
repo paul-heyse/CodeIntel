@@ -29,6 +29,10 @@ import pyarrow as pa
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.native.ingestion.manifesting import (
+    finalize_ingest_reader_with_manifest,
+    finalize_ingest_table_with_manifest,
+)
 from codeintel.build.hamilton.native.options.ingestion import (
     AstExtractOptions,
     BytecodeExtractOptions,
@@ -49,10 +53,6 @@ from codeintel.build.hamilton.native.target_decorators import TargetSpecDescript
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import (
-    finalize_ingest_reader,
-    finalize_ingest_table,
-)
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import (
@@ -69,7 +69,9 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_table,
     record_join_precheck_errors,
 )
-from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.plan_builder import build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.execution.ids import RUN_PREFIX_INGEST, new_run_id
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
@@ -263,7 +265,9 @@ def py_frontend(
 class DocstringsToolOutput(ToolStepOutput):
     """Tool step output for docstrings extraction."""
 
-    rows: pa.Table = field(default_factory=lambda: empty_table_for_table(DOCSTRINGS_TABLE_KEY))
+    rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(DOCSTRINGS_TABLE_KEY).to_reader()
+    )
     row_count: int = 0
 
 
@@ -271,9 +275,11 @@ class DocstringsToolOutput(ToolStepOutput):
 class AstToolOutput(ToolStepOutput):
     """Tool step output for AST extraction."""
 
-    ast_rows: pa.Table = field(default_factory=lambda: empty_table_for_table(AST_NODES_TABLE_KEY))
-    metric_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(AST_METRICS_TABLE_KEY)
+    ast_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(AST_NODES_TABLE_KEY).to_reader()
+    )
+    metric_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(AST_METRICS_TABLE_KEY).to_reader()
     )
     ast_row_count: int = 0
     metric_row_count: int = 0
@@ -283,7 +289,9 @@ class AstToolOutput(ToolStepOutput):
 class CstToolOutput(ToolStepOutput):
     """Tool step output for CST extraction."""
 
-    rows: pa.Table = field(default_factory=lambda: empty_table_for_table(CST_NODES_TABLE_KEY))
+    rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(CST_NODES_TABLE_KEY).to_reader()
+    )
     row_count: int = 0
 
 
@@ -291,39 +299,41 @@ class CstToolOutput(ToolStepOutput):
 class CstSyntaxIndexToolOutput(ToolStepOutput):
     """Tool step output for combined CST + syntax index extraction."""
 
-    cst_rows: pa.Table = field(default_factory=lambda: empty_table_for_table(CST_NODES_TABLE_KEY))
-    parse_manifest_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PARSE_MANIFEST_TABLE_KEY)
+    cst_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(CST_NODES_TABLE_KEY).to_reader()
     )
-    syntax_spans_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_SPANS_TABLE_KEY)
+    parse_manifest_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PARSE_MANIFEST_TABLE_KEY).to_reader()
     )
-    syntax_nodes_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_NODES_TABLE_KEY)
+    syntax_spans_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SPANS_TABLE_KEY).to_reader()
     )
-    syntax_edges_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_EDGES_TABLE_KEY)
+    syntax_nodes_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_NODES_TABLE_KEY).to_reader()
     )
-    syntax_scopes_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY)
+    syntax_edges_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_EDGES_TABLE_KEY).to_reader()
     )
-    syntax_defs_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_DEFS_TABLE_KEY)
+    syntax_scopes_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY).to_reader()
     )
-    syntax_refs_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_REFS_TABLE_KEY)
+    syntax_defs_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_DEFS_TABLE_KEY).to_reader()
     )
-    syntax_calls_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_CALLS_TABLE_KEY)
+    syntax_refs_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_REFS_TABLE_KEY).to_reader()
     )
-    syntax_call_args_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
+    syntax_calls_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALLS_TABLE_KEY).to_reader()
     )
-    syntax_func_params_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
+    syntax_call_args_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY).to_reader()
     )
-    syntax_imports_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY)
+    syntax_func_params_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY).to_reader()
+    )
+    syntax_imports_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY).to_reader()
     )
     cst_row_count: int = 0
     parse_manifest_row_count: int = 0
@@ -343,38 +353,38 @@ class CstSyntaxIndexToolOutput(ToolStepOutput):
 class SyntaxIndexToolOutput(ToolStepOutput):
     """Tool step output for syntax index extraction."""
 
-    parse_manifest_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PARSE_MANIFEST_TABLE_KEY)
+    parse_manifest_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PARSE_MANIFEST_TABLE_KEY).to_reader()
     )
-    syntax_spans_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_SPANS_TABLE_KEY)
+    syntax_spans_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SPANS_TABLE_KEY).to_reader()
     )
-    syntax_nodes_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_NODES_TABLE_KEY)
+    syntax_nodes_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_NODES_TABLE_KEY).to_reader()
     )
-    syntax_edges_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_EDGES_TABLE_KEY)
+    syntax_edges_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_EDGES_TABLE_KEY).to_reader()
     )
-    syntax_scopes_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY)
+    syntax_scopes_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY).to_reader()
     )
-    syntax_defs_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_DEFS_TABLE_KEY)
+    syntax_defs_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_DEFS_TABLE_KEY).to_reader()
     )
-    syntax_refs_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_REFS_TABLE_KEY)
+    syntax_refs_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_REFS_TABLE_KEY).to_reader()
     )
-    syntax_calls_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_CALLS_TABLE_KEY)
+    syntax_calls_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALLS_TABLE_KEY).to_reader()
     )
-    syntax_call_args_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY)
+    syntax_call_args_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY).to_reader()
     )
-    syntax_func_params_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY)
+    syntax_func_params_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY).to_reader()
     )
-    syntax_imports_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY)
+    syntax_imports_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY).to_reader()
     )
     parse_manifest_row_count: int = 0
     syntax_spans_row_count: int = 0
@@ -393,26 +403,32 @@ class SyntaxIndexToolOutput(ToolStepOutput):
 class SymtableToolOutput(ToolStepOutput):
     """Tool step output for symtable extraction."""
 
-    scope_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_SCOPES_TABLE_KEY)
+    scope_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_SCOPES_TABLE_KEY).to_reader()
     )
-    symbol_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_SYMBOLS_TABLE_KEY)
+    symbol_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_SYMBOLS_TABLE_KEY).to_reader()
     )
-    scope_edge_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY)
+    scope_edge_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY).to_reader()
     )
-    namespace_edge_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY)
+    namespace_edge_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(
+            PY_SYM_NAMESPACE_EDGES_TABLE_KEY
+        ).to_reader()
     )
-    function_partition_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY)
+    function_partition_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(
+            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY
+        ).to_reader()
     )
-    binding_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_BINDINGS_TABLE_KEY)
+    binding_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_SYM_BINDINGS_TABLE_KEY).to_reader()
     )
-    resolution_edge_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY)
+    resolution_edge_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(
+            PY_SYM_RESOLUTION_EDGES_TABLE_KEY
+        ).to_reader()
     )
     scope_row_count: int = 0
     symbol_row_count: int = 0
@@ -427,26 +443,28 @@ class SymtableToolOutput(ToolStepOutput):
 class BytecodeToolOutput(ToolStepOutput):
     """Tool step output for bytecode extraction."""
 
-    compiler_meta_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_COMPILER_META_TABLE_KEY)
+    compiler_meta_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_COMPILER_META_TABLE_KEY).to_reader()
     )
-    code_unit_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_CODE_UNITS_TABLE_KEY)
+    code_unit_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_CODE_UNITS_TABLE_KEY).to_reader()
     )
-    instruction_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY)
+    instruction_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(
+            PY_BC_INSTRUCTIONS_TABLE_KEY
+        ).to_reader()
     )
-    exception_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_EXCEPTION_TABLE_KEY)
+    exception_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_EXCEPTION_TABLE_KEY).to_reader()
     )
-    block_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_BLOCKS_TABLE_KEY)
+    block_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_BLOCKS_TABLE_KEY).to_reader()
     )
-    cfg_edge_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_CFG_EDGES_TABLE_KEY)
+    cfg_edge_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_CFG_EDGES_TABLE_KEY).to_reader()
     )
-    defuse_event_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY)
+    defuse_event_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY).to_reader()
     )
     compiler_meta_row_count: int = 0
     code_unit_row_count: int = 0
@@ -461,35 +479,39 @@ class BytecodeToolOutput(ToolStepOutput):
 class InspectToolOutput(ToolStepOutput):
     """Tool step output for inspect extraction."""
 
-    object_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_INSPECT_OBJECTS_TABLE_KEY)
+    object_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_OBJECTS_TABLE_KEY).to_reader()
     )
-    member_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_INSPECT_MEMBERS_TABLE_KEY)
+    member_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_MEMBERS_TABLE_KEY).to_reader()
     )
-    class_mro_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY)
+    class_mro_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY).to_reader()
     )
-    class_attr_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY)
+    class_attr_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY).to_reader()
     )
-    unwrap_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_INSPECT_UNWRAP_TABLE_KEY)
+    unwrap_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_UNWRAP_TABLE_KEY).to_reader()
     )
-    signature_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY)
+    signature_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY).to_reader()
     )
-    signature_param_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY)
+    signature_param_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(
+            PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY
+        ).to_reader()
     )
-    annotation_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY)
+    annotation_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY).to_reader()
     )
-    source_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_INSPECT_SOURCE_TABLE_KEY)
+    source_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_SOURCE_TABLE_KEY).to_reader()
     )
-    runtime_state_rows: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY)
+    runtime_state_rows: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(
+            PY_INSPECT_RUNTIME_STATE_TABLE_KEY
+        ).to_reader()
     )
     object_row_count: int = 0
     member_row_count: int = 0
@@ -571,8 +593,8 @@ def _coerce_ast_output(
     )
     return AstToolOutput(
         result=merged,
-        ast_rows=empty_table_for_table(AST_NODES_TABLE_KEY),
-        metric_rows=empty_table_for_table(AST_METRICS_TABLE_KEY),
+        ast_rows=empty_table_for_table(AST_NODES_TABLE_KEY).to_reader(),
+        metric_rows=empty_table_for_table(AST_METRICS_TABLE_KEY).to_reader(),
         ast_row_count=0,
         metric_row_count=0,
     )
@@ -602,7 +624,7 @@ def _coerce_cst_output(
     )
     return CstToolOutput(
         result=merged,
-        rows=empty_table_for_table(CST_NODES_TABLE_KEY),
+        rows=empty_table_for_table(CST_NODES_TABLE_KEY).to_reader(),
         row_count=0,
     )
 
@@ -653,18 +675,18 @@ def _coerce_cst_syntax_index_output(
     )
     return CstSyntaxIndexToolOutput(
         result=merged,
-        cst_rows=empty_table_for_table(CST_NODES_TABLE_KEY),
-        parse_manifest_rows=empty_table_for_table(PARSE_MANIFEST_TABLE_KEY),
-        syntax_spans_rows=empty_table_for_table(SYNTAX_SPANS_TABLE_KEY),
-        syntax_nodes_rows=empty_table_for_table(SYNTAX_NODES_TABLE_KEY),
-        syntax_edges_rows=empty_table_for_table(SYNTAX_EDGES_TABLE_KEY),
-        syntax_scopes_rows=empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY),
-        syntax_defs_rows=empty_table_for_table(SYNTAX_DEFS_TABLE_KEY),
-        syntax_refs_rows=empty_table_for_table(SYNTAX_REFS_TABLE_KEY),
-        syntax_calls_rows=empty_table_for_table(SYNTAX_CALLS_TABLE_KEY),
-        syntax_call_args_rows=empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY),
-        syntax_func_params_rows=empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY),
-        syntax_imports_rows=empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY),
+        cst_rows=empty_table_for_table(CST_NODES_TABLE_KEY).to_reader(),
+        parse_manifest_rows=empty_table_for_table(PARSE_MANIFEST_TABLE_KEY).to_reader(),
+        syntax_spans_rows=empty_table_for_table(SYNTAX_SPANS_TABLE_KEY).to_reader(),
+        syntax_nodes_rows=empty_table_for_table(SYNTAX_NODES_TABLE_KEY).to_reader(),
+        syntax_edges_rows=empty_table_for_table(SYNTAX_EDGES_TABLE_KEY).to_reader(),
+        syntax_scopes_rows=empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY).to_reader(),
+        syntax_defs_rows=empty_table_for_table(SYNTAX_DEFS_TABLE_KEY).to_reader(),
+        syntax_refs_rows=empty_table_for_table(SYNTAX_REFS_TABLE_KEY).to_reader(),
+        syntax_calls_rows=empty_table_for_table(SYNTAX_CALLS_TABLE_KEY).to_reader(),
+        syntax_call_args_rows=empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY).to_reader(),
+        syntax_func_params_rows=empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY).to_reader(),
+        syntax_imports_rows=empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY).to_reader(),
         cst_row_count=0,
         parse_manifest_row_count=0,
         syntax_spans_row_count=0,
@@ -724,17 +746,17 @@ def _coerce_syntax_index_output(
     )
     return SyntaxIndexToolOutput(
         result=merged,
-        parse_manifest_rows=empty_table_for_table(PARSE_MANIFEST_TABLE_KEY),
-        syntax_spans_rows=empty_table_for_table(SYNTAX_SPANS_TABLE_KEY),
-        syntax_nodes_rows=empty_table_for_table(SYNTAX_NODES_TABLE_KEY),
-        syntax_edges_rows=empty_table_for_table(SYNTAX_EDGES_TABLE_KEY),
-        syntax_scopes_rows=empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY),
-        syntax_defs_rows=empty_table_for_table(SYNTAX_DEFS_TABLE_KEY),
-        syntax_refs_rows=empty_table_for_table(SYNTAX_REFS_TABLE_KEY),
-        syntax_calls_rows=empty_table_for_table(SYNTAX_CALLS_TABLE_KEY),
-        syntax_call_args_rows=empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY),
-        syntax_func_params_rows=empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY),
-        syntax_imports_rows=empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY),
+        parse_manifest_rows=empty_table_for_table(PARSE_MANIFEST_TABLE_KEY).to_reader(),
+        syntax_spans_rows=empty_table_for_table(SYNTAX_SPANS_TABLE_KEY).to_reader(),
+        syntax_nodes_rows=empty_table_for_table(SYNTAX_NODES_TABLE_KEY).to_reader(),
+        syntax_edges_rows=empty_table_for_table(SYNTAX_EDGES_TABLE_KEY).to_reader(),
+        syntax_scopes_rows=empty_table_for_table(SYNTAX_SCOPES_TABLE_KEY).to_reader(),
+        syntax_defs_rows=empty_table_for_table(SYNTAX_DEFS_TABLE_KEY).to_reader(),
+        syntax_refs_rows=empty_table_for_table(SYNTAX_REFS_TABLE_KEY).to_reader(),
+        syntax_calls_rows=empty_table_for_table(SYNTAX_CALLS_TABLE_KEY).to_reader(),
+        syntax_call_args_rows=empty_table_for_table(SYNTAX_CALL_ARGS_TABLE_KEY).to_reader(),
+        syntax_func_params_rows=empty_table_for_table(SYNTAX_FUNC_PARAMS_TABLE_KEY).to_reader(),
+        syntax_imports_rows=empty_table_for_table(SYNTAX_IMPORTS_TABLE_KEY).to_reader(),
         parse_manifest_row_count=0,
         syntax_spans_row_count=0,
         syntax_nodes_row_count=0,
@@ -785,13 +807,19 @@ def _coerce_symtable_output(
     )
     return SymtableToolOutput(
         result=merged,
-        scope_rows=empty_table_for_table(PY_SYM_SCOPES_TABLE_KEY),
-        symbol_rows=empty_table_for_table(PY_SYM_SYMBOLS_TABLE_KEY),
-        scope_edge_rows=empty_table_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY),
-        namespace_edge_rows=empty_table_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY),
-        function_partition_rows=empty_table_for_table(PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY),
-        binding_rows=empty_table_for_table(PY_SYM_BINDINGS_TABLE_KEY),
-        resolution_edge_rows=empty_table_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY),
+        scope_rows=empty_table_for_table(PY_SYM_SCOPES_TABLE_KEY).to_reader(),
+        symbol_rows=empty_table_for_table(PY_SYM_SYMBOLS_TABLE_KEY).to_reader(),
+        scope_edge_rows=empty_table_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY).to_reader(),
+        namespace_edge_rows=empty_table_for_table(
+            PY_SYM_NAMESPACE_EDGES_TABLE_KEY
+        ).to_reader(),
+        function_partition_rows=empty_table_for_table(
+            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY
+        ).to_reader(),
+        binding_rows=empty_table_for_table(PY_SYM_BINDINGS_TABLE_KEY).to_reader(),
+        resolution_edge_rows=empty_table_for_table(
+            PY_SYM_RESOLUTION_EDGES_TABLE_KEY
+        ).to_reader(),
         scope_row_count=0,
         symbol_row_count=0,
         scope_edge_row_count=0,
@@ -838,13 +866,13 @@ def _coerce_bytecode_output(
     )
     return BytecodeToolOutput(
         result=merged,
-        compiler_meta_rows=empty_table_for_table(PY_COMPILER_META_TABLE_KEY),
-        code_unit_rows=empty_table_for_table(PY_BC_CODE_UNITS_TABLE_KEY),
-        instruction_rows=empty_table_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY),
-        exception_rows=empty_table_for_table(PY_BC_EXCEPTION_TABLE_KEY),
-        block_rows=empty_table_for_table(PY_BC_BLOCKS_TABLE_KEY),
-        cfg_edge_rows=empty_table_for_table(PY_BC_CFG_EDGES_TABLE_KEY),
-        defuse_event_rows=empty_table_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY),
+        compiler_meta_rows=empty_table_for_table(PY_COMPILER_META_TABLE_KEY).to_reader(),
+        code_unit_rows=empty_table_for_table(PY_BC_CODE_UNITS_TABLE_KEY).to_reader(),
+        instruction_rows=empty_table_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY).to_reader(),
+        exception_rows=empty_table_for_table(PY_BC_EXCEPTION_TABLE_KEY).to_reader(),
+        block_rows=empty_table_for_table(PY_BC_BLOCKS_TABLE_KEY).to_reader(),
+        cfg_edge_rows=empty_table_for_table(PY_BC_CFG_EDGES_TABLE_KEY).to_reader(),
+        defuse_event_rows=empty_table_for_table(PY_BC_DEFUSE_EVENTS_TABLE_KEY).to_reader(),
         compiler_meta_row_count=0,
         code_unit_row_count=0,
         instruction_row_count=0,
@@ -865,7 +893,7 @@ def _resolve_ingest_run_id(env: BuildEnv) -> str:
 def _py_compiler_meta_frame(
     env: BuildEnv,
     options: BytecodeExtractOptions,
-) -> pa.Table:
+) -> pa.RecordBatchReader:
     run_id = _resolve_ingest_run_id(env)
     rows = [
         {
@@ -879,8 +907,8 @@ def _py_compiler_meta_frame(
             "flags": options.compile_flags,
         }
     ]
-    reader, _ = table_for_rows(PY_COMPILER_META_TABLE_KEY, rows)
-    return reader
+    table, _ = table_for_rows(PY_COMPILER_META_TABLE_KEY, rows)
+    return table.to_reader()
 
 
 def _coerce_inspect_output(
@@ -925,16 +953,22 @@ def _coerce_inspect_output(
     )
     return InspectToolOutput(
         result=merged,
-        object_rows=empty_table_for_table(PY_INSPECT_OBJECTS_TABLE_KEY),
-        member_rows=empty_table_for_table(PY_INSPECT_MEMBERS_TABLE_KEY),
-        class_mro_rows=empty_table_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY),
-        class_attr_rows=empty_table_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY),
-        unwrap_rows=empty_table_for_table(PY_INSPECT_UNWRAP_TABLE_KEY),
-        signature_rows=empty_table_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY),
-        signature_param_rows=empty_table_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY),
-        annotation_rows=empty_table_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY),
-        source_rows=empty_table_for_table(PY_INSPECT_SOURCE_TABLE_KEY),
-        runtime_state_rows=empty_table_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY),
+        object_rows=empty_table_for_table(PY_INSPECT_OBJECTS_TABLE_KEY).to_reader(),
+        member_rows=empty_table_for_table(PY_INSPECT_MEMBERS_TABLE_KEY).to_reader(),
+        class_mro_rows=empty_table_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY).to_reader(),
+        class_attr_rows=empty_table_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY).to_reader(),
+        unwrap_rows=empty_table_for_table(PY_INSPECT_UNWRAP_TABLE_KEY).to_reader(),
+        signature_rows=empty_table_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY).to_reader(),
+        signature_param_rows=empty_table_for_table(
+            PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY
+        ).to_reader(),
+        annotation_rows=empty_table_for_table(
+            PY_INSPECT_ANNOTATIONS_TABLE_KEY
+        ).to_reader(),
+        source_rows=empty_table_for_table(PY_INSPECT_SOURCE_TABLE_KEY).to_reader(),
+        runtime_state_rows=empty_table_for_table(
+            PY_INSPECT_RUNTIME_STATE_TABLE_KEY
+        ).to_reader(),
         object_row_count=0,
         member_row_count=0,
         class_mro_row_count=0,
@@ -972,7 +1006,7 @@ def _coerce_docstrings_output(
     )
     return DocstringsToolOutput(
         result=merged,
-        rows=empty_table_for_table(DOCSTRINGS_TABLE_KEY),
+        rows=empty_table_for_table(DOCSTRINGS_TABLE_KEY).to_reader(),
         row_count=0,
     )
 
@@ -1034,6 +1068,7 @@ def t__ast__run(
 
 
 def t__ast__ingest(
+    env: BuildEnv,
     t__ast__run: AstToolOutput,
 ) -> IngestStep[TabularByTable]:
     """Package AST rows for table materialization.
@@ -1059,13 +1094,25 @@ def t__ast__ingest(
             )
         )
 
+    ast_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=AST_NODES_TABLE_KEY,
+        reader=t__ast__run.ast_rows,
+        target_name=AST_TARGET_NAME,
+    )
+    metric_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=AST_METRICS_TABLE_KEY,
+        reader=t__ast__run.metric_rows,
+        target_name=AST_TARGET_NAME,
+    )
     payload = {
-        AST_NODES_TABLE_KEY: t__ast__run.ast_rows,
-        AST_METRICS_TABLE_KEY: t__ast__run.metric_rows,
+        AST_NODES_TABLE_KEY: ast_rows,
+        AST_METRICS_TABLE_KEY: metric_rows,
     }
     table_counts = {
-        AST_NODES_TABLE_KEY: t__ast__run.ast_row_count,
-        AST_METRICS_TABLE_KEY: t__ast__run.metric_row_count,
+        AST_NODES_TABLE_KEY: ast_rows.num_rows,
+        AST_METRICS_TABLE_KEY: metric_rows.num_rows,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -1174,6 +1221,7 @@ def t__cst__run(
 
 
 def t__cst__ingest(
+    env: BuildEnv,
     t__cst__run: CstToolOutput,
 ) -> IngestStep[TabularByTable]:
     """Package CST rows for table materialization.
@@ -1199,8 +1247,14 @@ def t__cst__ingest(
             )
         )
 
-    payload = {CST_NODES_TABLE_KEY: t__cst__run.rows}
-    table_counts = {CST_NODES_TABLE_KEY: t__cst__run.row_count}
+    cst_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=CST_NODES_TABLE_KEY,
+        reader=t__cst__run.rows,
+        target_name=CST_TARGET_NAME,
+    )
+    payload = {CST_NODES_TABLE_KEY: cst_rows}
+    table_counts = {CST_NODES_TABLE_KEY: cst_rows.num_rows}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
@@ -1246,6 +1300,7 @@ def t__syntax_index__run(
 
 
 def t__syntax_index__ingest(
+    env: BuildEnv,
     t__syntax_index__run: SyntaxIndexToolOutput,
 ) -> IngestStep[TabularByTable]:
     """Package syntax index rows for table materialization.
@@ -1271,31 +1326,97 @@ def t__syntax_index__ingest(
             )
         )
 
+    parse_manifest_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PARSE_MANIFEST_TABLE_KEY,
+        reader=t__syntax_index__run.parse_manifest_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+    syntax_spans_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SYNTAX_SPANS_TABLE_KEY,
+        reader=t__syntax_index__run.syntax_spans_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+    syntax_nodes_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SYNTAX_NODES_TABLE_KEY,
+        reader=t__syntax_index__run.syntax_nodes_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+    syntax_edges_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SYNTAX_EDGES_TABLE_KEY,
+        reader=t__syntax_index__run.syntax_edges_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+    syntax_scopes_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SYNTAX_SCOPES_TABLE_KEY,
+        reader=t__syntax_index__run.syntax_scopes_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+    syntax_defs_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SYNTAX_DEFS_TABLE_KEY,
+        reader=t__syntax_index__run.syntax_defs_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+    syntax_refs_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SYNTAX_REFS_TABLE_KEY,
+        reader=t__syntax_index__run.syntax_refs_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+    syntax_calls_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SYNTAX_CALLS_TABLE_KEY,
+        reader=t__syntax_index__run.syntax_calls_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+    syntax_call_args_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SYNTAX_CALL_ARGS_TABLE_KEY,
+        reader=t__syntax_index__run.syntax_call_args_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+    syntax_func_params_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SYNTAX_FUNC_PARAMS_TABLE_KEY,
+        reader=t__syntax_index__run.syntax_func_params_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
+    syntax_imports_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SYNTAX_IMPORTS_TABLE_KEY,
+        reader=t__syntax_index__run.syntax_imports_rows,
+        target_name=SYNTAX_INDEX_TARGET_NAME,
+    )
     payload = {
-        PARSE_MANIFEST_TABLE_KEY: t__syntax_index__run.parse_manifest_rows,
-        SYNTAX_SPANS_TABLE_KEY: t__syntax_index__run.syntax_spans_rows,
-        SYNTAX_NODES_TABLE_KEY: t__syntax_index__run.syntax_nodes_rows,
-        SYNTAX_EDGES_TABLE_KEY: t__syntax_index__run.syntax_edges_rows,
-        SYNTAX_SCOPES_TABLE_KEY: t__syntax_index__run.syntax_scopes_rows,
-        SYNTAX_DEFS_TABLE_KEY: t__syntax_index__run.syntax_defs_rows,
-        SYNTAX_REFS_TABLE_KEY: t__syntax_index__run.syntax_refs_rows,
-        SYNTAX_CALLS_TABLE_KEY: t__syntax_index__run.syntax_calls_rows,
-        SYNTAX_CALL_ARGS_TABLE_KEY: t__syntax_index__run.syntax_call_args_rows,
-        SYNTAX_FUNC_PARAMS_TABLE_KEY: t__syntax_index__run.syntax_func_params_rows,
-        SYNTAX_IMPORTS_TABLE_KEY: t__syntax_index__run.syntax_imports_rows,
+        PARSE_MANIFEST_TABLE_KEY: parse_manifest_rows,
+        SYNTAX_SPANS_TABLE_KEY: syntax_spans_rows,
+        SYNTAX_NODES_TABLE_KEY: syntax_nodes_rows,
+        SYNTAX_EDGES_TABLE_KEY: syntax_edges_rows,
+        SYNTAX_SCOPES_TABLE_KEY: syntax_scopes_rows,
+        SYNTAX_DEFS_TABLE_KEY: syntax_defs_rows,
+        SYNTAX_REFS_TABLE_KEY: syntax_refs_rows,
+        SYNTAX_CALLS_TABLE_KEY: syntax_calls_rows,
+        SYNTAX_CALL_ARGS_TABLE_KEY: syntax_call_args_rows,
+        SYNTAX_FUNC_PARAMS_TABLE_KEY: syntax_func_params_rows,
+        SYNTAX_IMPORTS_TABLE_KEY: syntax_imports_rows,
     }
     table_counts = {
-        PARSE_MANIFEST_TABLE_KEY: t__syntax_index__run.parse_manifest_row_count,
-        SYNTAX_SPANS_TABLE_KEY: t__syntax_index__run.syntax_spans_row_count,
-        SYNTAX_NODES_TABLE_KEY: t__syntax_index__run.syntax_nodes_row_count,
-        SYNTAX_EDGES_TABLE_KEY: t__syntax_index__run.syntax_edges_row_count,
-        SYNTAX_SCOPES_TABLE_KEY: t__syntax_index__run.syntax_scopes_row_count,
-        SYNTAX_DEFS_TABLE_KEY: t__syntax_index__run.syntax_defs_row_count,
-        SYNTAX_REFS_TABLE_KEY: t__syntax_index__run.syntax_refs_row_count,
-        SYNTAX_CALLS_TABLE_KEY: t__syntax_index__run.syntax_calls_row_count,
-        SYNTAX_CALL_ARGS_TABLE_KEY: t__syntax_index__run.syntax_call_args_row_count,
-        SYNTAX_FUNC_PARAMS_TABLE_KEY: t__syntax_index__run.syntax_func_params_row_count,
-        SYNTAX_IMPORTS_TABLE_KEY: t__syntax_index__run.syntax_imports_row_count,
+        PARSE_MANIFEST_TABLE_KEY: parse_manifest_rows.num_rows,
+        SYNTAX_SPANS_TABLE_KEY: syntax_spans_rows.num_rows,
+        SYNTAX_NODES_TABLE_KEY: syntax_nodes_rows.num_rows,
+        SYNTAX_EDGES_TABLE_KEY: syntax_edges_rows.num_rows,
+        SYNTAX_SCOPES_TABLE_KEY: syntax_scopes_rows.num_rows,
+        SYNTAX_DEFS_TABLE_KEY: syntax_defs_rows.num_rows,
+        SYNTAX_REFS_TABLE_KEY: syntax_refs_rows.num_rows,
+        SYNTAX_CALLS_TABLE_KEY: syntax_calls_rows.num_rows,
+        SYNTAX_CALL_ARGS_TABLE_KEY: syntax_call_args_rows.num_rows,
+        SYNTAX_FUNC_PARAMS_TABLE_KEY: syntax_func_params_rows.num_rows,
+        SYNTAX_IMPORTS_TABLE_KEY: syntax_imports_rows.num_rows,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -1480,8 +1601,8 @@ def _hash_join_reader(
     right_checked = normalize_table_for_join(right_checked)
     left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
     right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
-    left_plan = Plan.table(left_checked).project(left_exprs)
-    right_plan = Plan.table(right_checked).project(right_exprs)
+    left_plan = build_table_plan(table=left_checked).project(left_exprs)
+    right_plan = build_table_plan(table=right_checked).project(right_exprs)
     joined = left_plan.hash_join(
         right=right_plan,
         spec=HashJoinSpec(
@@ -1498,6 +1619,8 @@ def _hash_join_reader(
 def _build_py_sym_unresolved_bindings(
     resolution_edges: pa.Table,
     bindings: pa.Table,
+    *,
+    env: BuildEnv,
 ) -> pa.Table:
     table_key = PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY
     required = {"repo", "commit", "rel_path", "dst_binding_id", "kind"}
@@ -1528,9 +1651,10 @@ def _build_py_sym_unresolved_bindings(
     )
     binding_required = {"repo", "commit", "rel_path", "binding_id"}
     if bindings.num_rows == 0 or not binding_required.issubset(bindings.column_names):
-        return finalize_ingest_table(
-            table_key,
-            unknown,
+        return finalize_ingest_table_with_manifest(
+            env=env,
+            table_key=table_key,
+            table=unknown,
             target_name=SYMTABLE_TARGET_NAME,
         )
     left = normalize_table_for_join(unknown)
@@ -1547,14 +1671,16 @@ def _build_py_sym_unresolved_bindings(
         ),
         how="left anti",
     )
-    return finalize_ingest_reader(
-        table_key,
-        joined_reader,
+    return finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=table_key,
+        reader=joined_reader,
         target_name=SYMTABLE_TARGET_NAME,
     )
 
 
 def t__symtable__ingest(
+    env: BuildEnv,
     t__symtable__run: SymtableToolOutput,
 ) -> IngestStep[TabularByTable]:
     """Package symtable rows for table materialization.
@@ -1580,43 +1706,53 @@ def t__symtable__ingest(
             )
         )
 
+    resolution_edge_rows_table = reader_to_table(t__symtable__run.resolution_edge_rows)
+    binding_rows_table = reader_to_table(t__symtable__run.binding_rows)
     unresolved_bindings = _build_py_sym_unresolved_bindings(
-        t__symtable__run.resolution_edge_rows,
-        t__symtable__run.binding_rows,
+        resolution_edge_rows_table,
+        binding_rows_table,
+        env=env,
     )
-    scope_rows = finalize_ingest_table(
-        PY_SYM_SCOPES_TABLE_KEY,
-        t__symtable__run.scope_rows,
+    scope_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_SYM_SCOPES_TABLE_KEY,
+        reader=t__symtable__run.scope_rows,
         target_name=SYMTABLE_TARGET_NAME,
     )
-    symbol_rows = finalize_ingest_table(
-        PY_SYM_SYMBOLS_TABLE_KEY,
-        t__symtable__run.symbol_rows,
+    symbol_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_SYM_SYMBOLS_TABLE_KEY,
+        reader=t__symtable__run.symbol_rows,
         target_name=SYMTABLE_TARGET_NAME,
     )
-    scope_edge_rows = finalize_ingest_table(
-        PY_SYM_SCOPE_EDGES_TABLE_KEY,
-        t__symtable__run.scope_edge_rows,
+    scope_edge_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_SYM_SCOPE_EDGES_TABLE_KEY,
+        reader=t__symtable__run.scope_edge_rows,
         target_name=SYMTABLE_TARGET_NAME,
     )
-    namespace_edge_rows = finalize_ingest_table(
-        PY_SYM_NAMESPACE_EDGES_TABLE_KEY,
-        t__symtable__run.namespace_edge_rows,
+    namespace_edge_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_SYM_NAMESPACE_EDGES_TABLE_KEY,
+        reader=t__symtable__run.namespace_edge_rows,
         target_name=SYMTABLE_TARGET_NAME,
     )
-    function_partition_rows = finalize_ingest_table(
-        PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY,
-        t__symtable__run.function_partition_rows,
+    function_partition_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY,
+        reader=t__symtable__run.function_partition_rows,
         target_name=SYMTABLE_TARGET_NAME,
     )
-    binding_rows = finalize_ingest_table(
-        PY_SYM_BINDINGS_TABLE_KEY,
-        t__symtable__run.binding_rows,
+    binding_rows = finalize_ingest_table_with_manifest(
+        env=env,
+        table_key=PY_SYM_BINDINGS_TABLE_KEY,
+        table=binding_rows_table,
         target_name=SYMTABLE_TARGET_NAME,
     )
-    resolution_edge_rows = finalize_ingest_table(
-        PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
-        t__symtable__run.resolution_edge_rows,
+    resolution_edge_rows = finalize_ingest_table_with_manifest(
+        env=env,
+        table_key=PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
+        table=resolution_edge_rows_table,
         target_name=SYMTABLE_TARGET_NAME,
     )
     payload = {
@@ -1719,6 +1855,7 @@ def t__bytecode__run(
 
 
 def t__bytecode__ingest(
+    env: BuildEnv,
     t__bytecode__run: BytecodeToolOutput,
 ) -> IngestStep[TabularByTable]:
     """Package bytecode rows for table materialization.
@@ -1744,23 +1881,65 @@ def t__bytecode__ingest(
             )
         )
 
+    compiler_meta_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_COMPILER_META_TABLE_KEY,
+        reader=t__bytecode__run.compiler_meta_rows,
+        target_name=BYTECODE_TARGET_NAME,
+    )
+    code_unit_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_BC_CODE_UNITS_TABLE_KEY,
+        reader=t__bytecode__run.code_unit_rows,
+        target_name=BYTECODE_TARGET_NAME,
+    )
+    instruction_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_BC_INSTRUCTIONS_TABLE_KEY,
+        reader=t__bytecode__run.instruction_rows,
+        target_name=BYTECODE_TARGET_NAME,
+    )
+    exception_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_BC_EXCEPTION_TABLE_KEY,
+        reader=t__bytecode__run.exception_rows,
+        target_name=BYTECODE_TARGET_NAME,
+    )
+    block_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_BC_BLOCKS_TABLE_KEY,
+        reader=t__bytecode__run.block_rows,
+        target_name=BYTECODE_TARGET_NAME,
+    )
+    cfg_edge_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_BC_CFG_EDGES_TABLE_KEY,
+        reader=t__bytecode__run.cfg_edge_rows,
+        target_name=BYTECODE_TARGET_NAME,
+    )
+    defuse_event_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_BC_DEFUSE_EVENTS_TABLE_KEY,
+        reader=t__bytecode__run.defuse_event_rows,
+        target_name=BYTECODE_TARGET_NAME,
+    )
     payload = {
-        PY_COMPILER_META_TABLE_KEY: t__bytecode__run.compiler_meta_rows,
-        PY_BC_CODE_UNITS_TABLE_KEY: t__bytecode__run.code_unit_rows,
-        PY_BC_INSTRUCTIONS_TABLE_KEY: t__bytecode__run.instruction_rows,
-        PY_BC_EXCEPTION_TABLE_KEY: t__bytecode__run.exception_rows,
-        PY_BC_BLOCKS_TABLE_KEY: t__bytecode__run.block_rows,
-        PY_BC_CFG_EDGES_TABLE_KEY: t__bytecode__run.cfg_edge_rows,
-        PY_BC_DEFUSE_EVENTS_TABLE_KEY: t__bytecode__run.defuse_event_rows,
+        PY_COMPILER_META_TABLE_KEY: compiler_meta_rows,
+        PY_BC_CODE_UNITS_TABLE_KEY: code_unit_rows,
+        PY_BC_INSTRUCTIONS_TABLE_KEY: instruction_rows,
+        PY_BC_EXCEPTION_TABLE_KEY: exception_rows,
+        PY_BC_BLOCKS_TABLE_KEY: block_rows,
+        PY_BC_CFG_EDGES_TABLE_KEY: cfg_edge_rows,
+        PY_BC_DEFUSE_EVENTS_TABLE_KEY: defuse_event_rows,
     }
     table_counts = {
-        PY_COMPILER_META_TABLE_KEY: t__bytecode__run.compiler_meta_row_count,
-        PY_BC_CODE_UNITS_TABLE_KEY: t__bytecode__run.code_unit_row_count,
-        PY_BC_INSTRUCTIONS_TABLE_KEY: t__bytecode__run.instruction_row_count,
-        PY_BC_EXCEPTION_TABLE_KEY: t__bytecode__run.exception_row_count,
-        PY_BC_BLOCKS_TABLE_KEY: t__bytecode__run.block_row_count,
-        PY_BC_CFG_EDGES_TABLE_KEY: t__bytecode__run.cfg_edge_row_count,
-        PY_BC_DEFUSE_EVENTS_TABLE_KEY: t__bytecode__run.defuse_event_row_count,
+        PY_COMPILER_META_TABLE_KEY: compiler_meta_rows.num_rows,
+        PY_BC_CODE_UNITS_TABLE_KEY: code_unit_rows.num_rows,
+        PY_BC_INSTRUCTIONS_TABLE_KEY: instruction_rows.num_rows,
+        PY_BC_EXCEPTION_TABLE_KEY: exception_rows.num_rows,
+        PY_BC_BLOCKS_TABLE_KEY: block_rows.num_rows,
+        PY_BC_CFG_EDGES_TABLE_KEY: cfg_edge_rows.num_rows,
+        PY_BC_DEFUSE_EVENTS_TABLE_KEY: defuse_event_rows.num_rows,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -1837,6 +2016,7 @@ def t__inspect__run(
 
 
 def t__inspect__ingest(
+    env: BuildEnv,
     t__inspect__run: InspectToolOutput,
 ) -> IngestStep[TabularByTable]:
     """Package inspect rows for table materialization.
@@ -1862,29 +2042,89 @@ def t__inspect__ingest(
             )
         )
 
+    object_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_INSPECT_OBJECTS_TABLE_KEY,
+        reader=t__inspect__run.object_rows,
+        target_name=INSPECT_TARGET_NAME,
+    )
+    member_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_INSPECT_MEMBERS_TABLE_KEY,
+        reader=t__inspect__run.member_rows,
+        target_name=INSPECT_TARGET_NAME,
+    )
+    class_mro_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_INSPECT_CLASS_MRO_TABLE_KEY,
+        reader=t__inspect__run.class_mro_rows,
+        target_name=INSPECT_TARGET_NAME,
+    )
+    class_attr_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_INSPECT_CLASS_ATTRS_TABLE_KEY,
+        reader=t__inspect__run.class_attr_rows,
+        target_name=INSPECT_TARGET_NAME,
+    )
+    unwrap_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_INSPECT_UNWRAP_TABLE_KEY,
+        reader=t__inspect__run.unwrap_rows,
+        target_name=INSPECT_TARGET_NAME,
+    )
+    signature_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_INSPECT_SIGNATURES_TABLE_KEY,
+        reader=t__inspect__run.signature_rows,
+        target_name=INSPECT_TARGET_NAME,
+    )
+    signature_param_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY,
+        reader=t__inspect__run.signature_param_rows,
+        target_name=INSPECT_TARGET_NAME,
+    )
+    annotation_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_INSPECT_ANNOTATIONS_TABLE_KEY,
+        reader=t__inspect__run.annotation_rows,
+        target_name=INSPECT_TARGET_NAME,
+    )
+    source_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_INSPECT_SOURCE_TABLE_KEY,
+        reader=t__inspect__run.source_rows,
+        target_name=INSPECT_TARGET_NAME,
+    )
+    runtime_state_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
+        reader=t__inspect__run.runtime_state_rows,
+        target_name=INSPECT_TARGET_NAME,
+    )
     payload = {
-        PY_INSPECT_OBJECTS_TABLE_KEY: t__inspect__run.object_rows,
-        PY_INSPECT_MEMBERS_TABLE_KEY: t__inspect__run.member_rows,
-        PY_INSPECT_CLASS_MRO_TABLE_KEY: t__inspect__run.class_mro_rows,
-        PY_INSPECT_CLASS_ATTRS_TABLE_KEY: t__inspect__run.class_attr_rows,
-        PY_INSPECT_UNWRAP_TABLE_KEY: t__inspect__run.unwrap_rows,
-        PY_INSPECT_SIGNATURES_TABLE_KEY: t__inspect__run.signature_rows,
-        PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY: t__inspect__run.signature_param_rows,
-        PY_INSPECT_ANNOTATIONS_TABLE_KEY: t__inspect__run.annotation_rows,
-        PY_INSPECT_SOURCE_TABLE_KEY: t__inspect__run.source_rows,
-        PY_INSPECT_RUNTIME_STATE_TABLE_KEY: t__inspect__run.runtime_state_rows,
+        PY_INSPECT_OBJECTS_TABLE_KEY: object_rows,
+        PY_INSPECT_MEMBERS_TABLE_KEY: member_rows,
+        PY_INSPECT_CLASS_MRO_TABLE_KEY: class_mro_rows,
+        PY_INSPECT_CLASS_ATTRS_TABLE_KEY: class_attr_rows,
+        PY_INSPECT_UNWRAP_TABLE_KEY: unwrap_rows,
+        PY_INSPECT_SIGNATURES_TABLE_KEY: signature_rows,
+        PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY: signature_param_rows,
+        PY_INSPECT_ANNOTATIONS_TABLE_KEY: annotation_rows,
+        PY_INSPECT_SOURCE_TABLE_KEY: source_rows,
+        PY_INSPECT_RUNTIME_STATE_TABLE_KEY: runtime_state_rows,
     }
     table_counts = {
-        PY_INSPECT_OBJECTS_TABLE_KEY: t__inspect__run.object_row_count,
-        PY_INSPECT_MEMBERS_TABLE_KEY: t__inspect__run.member_row_count,
-        PY_INSPECT_CLASS_MRO_TABLE_KEY: t__inspect__run.class_mro_row_count,
-        PY_INSPECT_CLASS_ATTRS_TABLE_KEY: t__inspect__run.class_attr_row_count,
-        PY_INSPECT_UNWRAP_TABLE_KEY: t__inspect__run.unwrap_row_count,
-        PY_INSPECT_SIGNATURES_TABLE_KEY: t__inspect__run.signature_row_count,
-        PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY: t__inspect__run.signature_param_row_count,
-        PY_INSPECT_ANNOTATIONS_TABLE_KEY: t__inspect__run.annotation_row_count,
-        PY_INSPECT_SOURCE_TABLE_KEY: t__inspect__run.source_row_count,
-        PY_INSPECT_RUNTIME_STATE_TABLE_KEY: t__inspect__run.runtime_state_row_count,
+        PY_INSPECT_OBJECTS_TABLE_KEY: object_rows.num_rows,
+        PY_INSPECT_MEMBERS_TABLE_KEY: member_rows.num_rows,
+        PY_INSPECT_CLASS_MRO_TABLE_KEY: class_mro_rows.num_rows,
+        PY_INSPECT_CLASS_ATTRS_TABLE_KEY: class_attr_rows.num_rows,
+        PY_INSPECT_UNWRAP_TABLE_KEY: unwrap_rows.num_rows,
+        PY_INSPECT_SIGNATURES_TABLE_KEY: signature_rows.num_rows,
+        PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY: signature_param_rows.num_rows,
+        PY_INSPECT_ANNOTATIONS_TABLE_KEY: annotation_rows.num_rows,
+        PY_INSPECT_SOURCE_TABLE_KEY: source_rows.num_rows,
+        PY_INSPECT_RUNTIME_STATE_TABLE_KEY: runtime_state_rows.num_rows,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -1941,6 +2181,7 @@ def t__docstrings__run(
 
 
 def t__docstrings__ingest(
+    env: BuildEnv,
     t__docstrings__run: DocstringsToolOutput,
 ) -> IngestStep[TabularByTable]:
     """Package docstrings rows for table materialization.
@@ -1966,8 +2207,14 @@ def t__docstrings__ingest(
             )
         )
 
-    payload = {DOCSTRINGS_TABLE_KEY: t__docstrings__run.rows}
-    table_counts = {DOCSTRINGS_TABLE_KEY: t__docstrings__run.row_count}
+    docstring_rows = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=DOCSTRINGS_TABLE_KEY,
+        reader=t__docstrings__run.rows,
+        target_name=DOCSTRINGS_TARGET_NAME,
+    )
+    payload = {DOCSTRINGS_TABLE_KEY: docstring_rows}
+    table_counts = {DOCSTRINGS_TABLE_KEY: docstring_rows.num_rows}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,

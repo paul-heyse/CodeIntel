@@ -54,7 +54,10 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
+from codeintel.build.hamilton.transforms.ingestion_normalize import (
+    IngestFinalizeOptions,
+    finalize_ingest_reader,
+)
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.tabular.arrow_ops import (
@@ -76,8 +79,10 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_table,
     record_join_precheck_errors,
 )
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.plan_builder import build_table_plan
+from codeintel.core.columnar.plan_ops import materialize_plan
 from codeintel.core.columnar.rows import (
     columnar_row_count,
     empty_table_for_table,
@@ -1428,7 +1433,11 @@ def _scip_payload_table(
 
 def _finalize_scip_table(table_key: str, table: pa.Table) -> pa.Table:
     reader = table_to_reader(table, batch_size=None)
-    return finalize_ingest_reader(table_key, reader, target_name=SCIP_TARGET_NAME)
+    return finalize_ingest_reader(
+        table_key,
+        reader,
+        options=IngestFinalizeOptions(target_name=SCIP_TARGET_NAME),
+    )
 
 
 def scip__symbol_rows__base(
@@ -1604,12 +1613,12 @@ def _distinct_external_symbol_rows(symbols: pa.Table) -> pa.Table:
         join_keys=join_keys,
     )
     project = {name: E.field(name) for name in join_keys}
-    plan = (
-        Plan.table(checked)
-        .project(project)
-        .aggregate(keys=[E.field(key) for key in join_keys], aggregates=[])
-        .order_by(sort_keys=[(key, "ascending") for key in join_keys])
+    plan = build_table_plan(table=checked).project(project)
+    plan = plan.aggregate(
+        keys=[E.field(key) for key in join_keys],
+        aggregates=[],
     )
+    plan = plan.order_by(sort_keys=[(key, "ascending") for key in join_keys])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -1630,8 +1639,8 @@ def _left_anti_external_symbols(left: pa.Table, right: pa.Table) -> pa.Table:
     )
     left_checked = normalize_table_for_join(left_checked)
     right_checked = normalize_table_for_join(right_checked)
-    left_plan = Plan.table(left_checked).project(project)
-    right_plan = Plan.table(right_checked).project(project)
+    left_plan = build_table_plan(table=left_checked).project(project)
+    right_plan = build_table_plan(table=right_checked).project(project)
     joined = left_plan.hash_join(
         right=right_plan,
         spec=HashJoinSpec(

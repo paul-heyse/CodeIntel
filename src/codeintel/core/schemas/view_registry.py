@@ -15,6 +15,7 @@ from codeintel.core.schemas.primitives import (
     Column,
     FinalizeListPolicySpec,
     FinalizePolicy,
+    PlanPolicy,
     TableSchema,
 )
 from codeintel.core.sqlglot_tools import (
@@ -70,11 +71,17 @@ def build_view_schema_overrides(
         finalize_policy = (
             FinalizePolicy(list_policies=list_policies) if list_policies else None
         )
+        plan_policy = (
+            PlanPolicy(default_projection=tuple(column.name for column in columns))
+            if columns
+            else None
+        )
         overrides[table_key] = TableSchema(
             schema=schema_name,
             name=table_name,
             columns=columns,
             finalize_policy=finalize_policy,
+            plan_policy=plan_policy,
             description=_VIEW_SCHEMA_DESCRIPTION,
         )
     return overrides

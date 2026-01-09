@@ -22,8 +22,9 @@ from codeintel.build.tabular.compute_masks import is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_payload
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
 from codeintel.core.columnar.arrowdsl import join_safe_projection
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
@@ -118,28 +119,34 @@ def cpg2_nodes__syntax_nodes(
     anchor_map = join_safe_projection(
         normalize_table_for_join(_syntax_anchor_map(normalized, include_source_pk_json=True))
     )
-    left_plan = Plan.table(normalized).project(
-        {
-            "repo": E.cast(E.field("repo"), "string"),
-            "commit": E.cast(E.field("commit"), "string"),
-            "rel_path": E.cast(E.field("rel_path"), "string"),
-            "producer": E.cast(E.field("producer"), "string"),
-            "node_id": E.cast(E.field("node_id"), "string"),
-            "start_byte": E.field("start_byte"),
-            "end_byte": E.field("end_byte"),
-            "extras_kv": E.field("extras_kv"),
-        }
+    left_plan = build_table_plan(
+        table=normalized,
+        options=TablePlanOptions(
+            projection={
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "rel_path": E.cast(E.field("rel_path"), "string"),
+                "producer": E.cast(E.field("producer"), "string"),
+                "node_id": E.cast(E.field("node_id"), "string"),
+                "start_byte": E.field("start_byte"),
+                "end_byte": E.field("end_byte"),
+                "extras_kv": E.field("extras_kv"),
+            }
+        ),
     )
-    right_plan = Plan.table(anchor_map).project(
-        {
-            "repo": E.cast(E.field("repo"), "string"),
-            "commit": E.cast(E.field("commit"), "string"),
-            "rel_path": E.cast(E.field("rel_path"), "string"),
-            "producer": E.cast(E.field("producer"), "string"),
-            "node_id": E.cast(E.field("node_id"), "string"),
-            "cpg_node_id": E.field("cpg_node_id"),
-            "source_pk_json": E.field("source_pk_json"),
-        }
+    right_plan = build_table_plan(
+        table=anchor_map,
+        options=TablePlanOptions(
+            projection={
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "rel_path": E.cast(E.field("rel_path"), "string"),
+                "producer": E.cast(E.field("producer"), "string"),
+                "node_id": E.cast(E.field("node_id"), "string"),
+                "cpg_node_id": E.field("cpg_node_id"),
+                "source_pk_json": E.field("source_pk_json"),
+            }
+        ),
     )
     joined = left_plan.hash_join(
         right=right_plan,
@@ -230,20 +237,23 @@ def cpg2_edges__syntax_edges(
         join_keys=join_keys,
     )
     normalized_edges = precheck.good
-    anchor_plan = Plan.table(anchor_map).project(
-        {
-            "repo": E.cast(E.field("repo"), "string"),
-            "commit": E.cast(E.field("commit"), "string"),
-            "rel_path": E.cast(E.field("rel_path"), "string"),
-            "producer": E.cast(E.field("producer"), "string"),
-            "node_id": E.cast(E.field("node_id"), "string"),
-            "cpg_node_id": E.field("cpg_node_id"),
-        }
+    anchor_plan = build_table_plan(
+        table=anchor_map,
+        options=TablePlanOptions(
+            projection={
+                "repo": E.cast(E.field("repo"), "string"),
+                "commit": E.cast(E.field("commit"), "string"),
+                "rel_path": E.cast(E.field("rel_path"), "string"),
+                "producer": E.cast(E.field("producer"), "string"),
+                "node_id": E.cast(E.field("node_id"), "string"),
+                "cpg_node_id": E.field("cpg_node_id"),
+            }
+        ),
     )
-    parent_join = (
-        Plan.table(normalized_edges)
-        .project(
-            {
+    parent_plan = build_table_plan(
+        table=normalized_edges,
+        options=TablePlanOptions(
+            projection={
                 "repo": E.cast(E.field("repo"), "string"),
                 "commit": E.cast(E.field("commit"), "string"),
                 "rel_path": E.cast(E.field("rel_path"), "string"),
@@ -252,42 +262,42 @@ def cpg2_edges__syntax_edges(
                 "child_node_id": E.cast(E.field("child_node_id"), "string"),
                 "child_ordinal": E.field("child_ordinal"),
             }
-        )
-        .hash_join(
-            right=anchor_plan,
-            spec=HashJoinSpec(
-                left_keys=["repo", "commit", "rel_path", "producer", "node_id"],
-                right_keys=["repo", "commit", "rel_path", "producer", "node_id"],
-                how="left outer",
-                left_output=[
-                    "repo",
-                    "commit",
-                    "rel_path",
-                    "producer",
-                    "child_node_id",
-                    "child_ordinal",
-                ],
-                right_output=["cpg_node_id"],
-            ),
-        )
-        .order_by(
-            sort_keys=[
-                ("repo", "ascending"),
-                ("commit", "ascending"),
-                ("rel_path", "ascending"),
-                ("producer", "ascending"),
-                ("child_node_id", "ascending"),
-                ("child_ordinal", "ascending"),
-            ]
-        )
+        ),
+    )
+    parent_join = parent_plan.hash_join(
+        right=anchor_plan,
+        spec=HashJoinSpec(
+            left_keys=["repo", "commit", "rel_path", "producer", "node_id"],
+            right_keys=["repo", "commit", "rel_path", "producer", "node_id"],
+            how="left outer",
+            left_output=[
+                "repo",
+                "commit",
+                "rel_path",
+                "producer",
+                "child_node_id",
+                "child_ordinal",
+            ],
+            right_output=["cpg_node_id"],
+        ),
+    )
+    parent_join = parent_join.order_by(
+        sort_keys=[
+            ("repo", "ascending"),
+            ("commit", "ascending"),
+            ("rel_path", "ascending"),
+            ("producer", "ascending"),
+            ("child_node_id", "ascending"),
+            ("child_ordinal", "ascending"),
+        ]
     )
     parent_join = materialize_plan(parent_join, use_threads=True)
     if parent_join.num_rows == 0:
         return _empty_edge_table()
-    child_join = (
-        Plan.table(parent_join)
-        .project(
-            {
+    child_plan = build_table_plan(
+        table=parent_join,
+        options=TablePlanOptions(
+            projection={
                 "repo": E.field("repo"),
                 "commit": E.field("commit"),
                 "rel_path": E.field("rel_path"),
@@ -296,36 +306,36 @@ def cpg2_edges__syntax_edges(
                 "child_ordinal": E.field("child_ordinal"),
                 "src_cpg_node_id": E.field("cpg_node_id"),
             }
-        )
-        .hash_join(
-            right=anchor_plan,
-            spec=HashJoinSpec(
-                left_keys=["repo", "commit", "rel_path", "producer", "node_id"],
-                right_keys=["repo", "commit", "rel_path", "producer", "node_id"],
-                how="left outer",
-                left_output=[
-                    "repo",
-                    "commit",
-                    "rel_path",
-                    "producer",
-                    "child_ordinal",
-                    "src_cpg_node_id",
-                ],
-                right_output=["cpg_node_id"],
-                output_suffix_for_right="_child",
-            ),
-        )
-        .order_by(
-            sort_keys=[
-                ("repo", "ascending"),
-                ("commit", "ascending"),
-                ("rel_path", "ascending"),
-                ("producer", "ascending"),
-                ("src_cpg_node_id", "ascending"),
-                ("cpg_node_id_child", "ascending"),
-                ("child_ordinal", "ascending"),
-            ]
-        )
+        ),
+    )
+    child_join = child_plan.hash_join(
+        right=anchor_plan,
+        spec=HashJoinSpec(
+            left_keys=["repo", "commit", "rel_path", "producer", "node_id"],
+            right_keys=["repo", "commit", "rel_path", "producer", "node_id"],
+            how="left outer",
+            left_output=[
+                "repo",
+                "commit",
+                "rel_path",
+                "producer",
+                "child_ordinal",
+                "src_cpg_node_id",
+            ],
+            right_output=["cpg_node_id"],
+            output_suffix_for_right="_child",
+        ),
+    )
+    child_join = child_join.order_by(
+        sort_keys=[
+            ("repo", "ascending"),
+            ("commit", "ascending"),
+            ("rel_path", "ascending"),
+            ("producer", "ascending"),
+            ("src_cpg_node_id", "ascending"),
+            ("cpg_node_id_child", "ascending"),
+            ("child_ordinal", "ascending"),
+        ]
     )
     child_join = materialize_plan(child_join, use_threads=True)
     if child_join.num_rows == 0:

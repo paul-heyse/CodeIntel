@@ -10,11 +10,16 @@ import pyarrow as pa
 from codeintel.build.analytics.ast_features.model import FunctionAstFeatures, IoFlags
 from codeintel.build.analytics.compute.dependencies.compute import ExternalDependencyInputs
 from codeintel.build.analytics.dependencies.compute import (
+    ExternalDependenciesRequest,
     compute_dependency_calls_pure,
     compute_external_dependencies_pure,
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
-from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_frames
+from codeintel.build.analytics.utilities.catalogs import (
+    CatalogProviderRequest,
+    CatalogScope,
+    catalog_provider_from_frames,
+)
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -158,7 +163,17 @@ def external_dependency_calls__base(
     module_map = _module_map(modules_frame)
     if not module_map:
         return empty_table_for_table(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)
-    catalog = catalog_provider_from_frames(goids_frame=goids_frame, modules_frame=modules_frame)
+    catalog = catalog_provider_from_frames(
+        CatalogProviderRequest(
+            goids_frame=goids_frame,
+            modules_frame=modules_frame,
+            scope=CatalogScope(
+                repo=env.repo,
+                commit=env.commit,
+                ctx=env.execution_context,
+            ),
+        )
+    )
     request = FunctionAstLoadRequest(
         repo=env.repo,
         commit=env.commit,
@@ -204,11 +219,12 @@ def external_dependencies__base(
         scope=scope,
         require_scope_columns=True,
     )
-    result = compute_external_dependencies_pure(
-        env.snapshot,
+    request = ExternalDependenciesRequest(
         dependency_calls_frame=dependency_calls_frame,
         config_values_frame=config_values_frame,
+        ctx=env.execution_context,
     )
+    result = compute_external_dependencies_pure(env.snapshot, request)
     if not result.rows:
         return empty_table_for_table(EXTERNAL_DEPENDENCIES_TABLE_KEY)
     return finalize_analytics_rows(EXTERNAL_DEPENDENCIES_TABLE_KEY, result.rows)

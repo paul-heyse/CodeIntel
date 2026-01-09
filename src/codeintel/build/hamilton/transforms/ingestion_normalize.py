@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, Unpack
 
 import pyarrow as pa
@@ -20,14 +21,16 @@ from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.finalize_ops import (
     FinalizeMode,
     FinalizeResult,
-    finalize_reader,
     finalize_spec_for_table,
-    finalize_table,
 )
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
 from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.columnar.ordering import OrderingSpec
+from codeintel.core.columnar.plan_ops import materialize_plan
+from codeintel.core.columnar.run_manifest import RunManifestOptions
+from codeintel.core.columnar.streaming import ScanTelemetry
 from codeintel.ingestion.compute.plan_surface import IngestQuery, ingest_plan_for_table
 
 if TYPE_CHECKING:
@@ -51,6 +54,17 @@ class NormalizationOptions:
     add_missing: bool = True
     keep_extras: bool | None = None
     reporter: AlignmentReporter | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IngestFinalizeOptions:
+    """Options for ingestion finalization."""
+
+    target_name: str | None = None
+    mode: FinalizeMode | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
+    scan_telemetry: ScanTelemetry | None = None
 
 
 _TOLERANT_INGEST_TABLE_KEYS = frozenset(
@@ -121,8 +135,7 @@ def finalize_ingest_table(
     table_key: str,
     table: pa.Table,
     *,
-    target_name: str | None,
-    mode: FinalizeMode | None = None,
+    options: IngestFinalizeOptions | None = None,
 ) -> pa.Table:
     """Finalize an ingestion table using the shared policy table.
 
@@ -132,18 +145,31 @@ def finalize_ingest_table(
         Fully qualified table key.
     table
         Arrow table to finalize.
-    target_name
-        Target name used for finalize artifacts.
-    mode
-        Optional override for the finalize mode.
+    options
+        Optional finalize options for target name, mode, and run manifests.
 
     Returns
     -------
     pa.Table
         Finalized table containing valid rows.
     """
-    spec = _ingest_finalize_spec(table_key, target_name=target_name, mode=mode)
-    result = finalize_table(table, spec=spec)
+    resolved = options or IngestFinalizeOptions()
+    spec = _ingest_finalize_spec(
+        table_key,
+        target_name=resolved.target_name,
+        mode=resolved.mode,
+    )
+    resolved_ctx = resolve_execution_context(None)
+    plan = ExecutionPlan.from_table(
+        table,
+        ordering=OrderingSpec.implicit(reason="ingest table"),
+    )
+    run_options = _pipeline_run_options(
+        table_key=table_key,
+        ctx=resolved_ctx,
+        options=resolved,
+    )
+    result = run_pipeline(plan=plan, finalize=spec, options=run_options)
     _emit_alignment_report_from_finalize(result)
     return result.good
 
@@ -152,8 +178,7 @@ def finalize_ingest_reader(
     table_key: str,
     reader: pa.RecordBatchReader,
     *,
-    target_name: str | None,
-    mode: FinalizeMode | None = None,
+    options: IngestFinalizeOptions | None = None,
 ) -> pa.Table:
     """Finalize an ingestion reader using the shared policy table.
 
@@ -163,20 +188,67 @@ def finalize_ingest_reader(
         Fully qualified table key.
     reader
         Arrow record batch reader to finalize.
-    target_name
-        Target name used for finalize artifacts.
-    mode
-        Optional override for the finalize mode.
+    options
+        Optional finalize options for target name, mode, and run manifests.
 
     Returns
     -------
     pa.Table
         Finalized table containing valid rows.
     """
-    spec = _ingest_finalize_spec(table_key, target_name=target_name, mode=mode)
-    result = finalize_reader(reader, spec=spec)
+    resolved = options or IngestFinalizeOptions()
+    spec = _ingest_finalize_spec(
+        table_key,
+        target_name=resolved.target_name,
+        mode=resolved.mode,
+    )
+    resolved_ctx = resolve_execution_context(None)
+    plan = ExecutionPlan.from_reader(
+        reader,
+        ordering=OrderingSpec.implicit(reason="ingest reader"),
+    )
+    run_options = _pipeline_run_options(
+        table_key=table_key,
+        ctx=resolved_ctx,
+        options=resolved,
+    )
+    result = run_pipeline(plan=plan, finalize=spec, options=run_options)
     _emit_alignment_report_from_finalize(result)
     return result.good
+
+
+def _pipeline_run_options(
+    *,
+    table_key: str,
+    ctx: ExecutionContext,
+    options: IngestFinalizeOptions,
+) -> PipelineRunOptions:
+    if options.manifest_dir is None:
+        return PipelineRunOptions(ctx=ctx)
+    manifest_options = options.manifest_options or RunManifestOptions(
+        filename=f"run_manifest_{table_key.replace('.', '_')}.json",
+        extras=_manifest_extras(
+            table_key=table_key,
+            target_name=options.target_name,
+        ),
+    )
+    return PipelineRunOptions(
+        ctx=ctx,
+        manifest_dir=options.manifest_dir,
+        manifest_options=manifest_options,
+        scan_telemetry=options.scan_telemetry,
+    )
+
+
+def _manifest_extras(
+    *,
+    table_key: str,
+    target_name: str | None,
+) -> dict[str, object]:
+    extras: dict[str, object] = {"table_key": table_key}
+    if target_name is not None:
+        extras["target_name"] = target_name
+    return extras
 
 
 def scoped_table_for_ingest(
@@ -223,15 +295,16 @@ def scoped_table_for_ingest(
             msg = f"Missing snapshot columns: {missing}"
             raise ValueError(msg)
         return table.select(list(columns)) if columns is not None else table
-    projection_columns = tuple(columns) if columns is not None else tuple(table.column_names)
+    projection_columns = tuple(columns) if columns is not None else None
     query = IngestQuery(
         table_key=table_key,
         columns=projection_columns,
         repo=scope.repo,
         commit=scope.commit,
     )
-    plan = ingest_plan_for_table(table, query=query)
-    return ExecutionPlan.from_plan(plan).to_table(ctx=ExecutionContext())
+    resolved_ctx = resolve_execution_context(None)
+    plan = ingest_plan_for_table(table, query=query, ctx=resolved_ctx)
+    return materialize_plan(plan, ctx=resolved_ctx)
 
 
 def normalize_ingest_frame(
@@ -285,6 +358,7 @@ def normalize_ingest_frame(
 
 
 __all__ = [
+    "IngestFinalizeOptions",
     "finalize_ingest_reader",
     "finalize_ingest_table",
     "normalize_ingest_frame",

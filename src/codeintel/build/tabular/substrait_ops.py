@@ -15,7 +15,13 @@ except ImportError:
     _substrait = None
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.core.columnar.plan_ops import ExternalPlanRequest
+
+    type ReaderThunk = Callable[[], pa.RecordBatchReader]
+else:
+    type ReaderThunk = object
 
 
 def substrait_available() -> bool:
@@ -69,13 +75,13 @@ def run_substrait_plan(plan: bytes | bytearray | memoryview) -> pa.RecordBatchRe
 def substrait_plan_runner(
     *,
     request: ExternalPlanRequest,
-) -> pa.RecordBatchReader:
+) -> ReaderThunk:
     """Execute a Substrait plan via ExternalPlanSpec.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Record batch reader for plan results.
+    Callable[[], pyarrow.RecordBatchReader]
+        Thunk returning record batch reader for plan results.
 
     Raises
     ------
@@ -91,7 +97,8 @@ def substrait_plan_runner(
     )
     payload = request.spec.payload
     if isinstance(payload, (bytes, bytearray, memoryview)):
-        return run_substrait_plan(payload)
+        plan_bytes = bytes(payload)
+        return lambda: run_substrait_plan(plan_bytes)
     msg = "Substrait plan payload must be bytes-like."
     raise TypeError(msg)
 

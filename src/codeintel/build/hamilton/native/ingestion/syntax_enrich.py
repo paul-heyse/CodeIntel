@@ -20,6 +20,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.ingestion_normalize import (
+    IngestFinalizeOptions,
     finalize_ingest_reader,
     scoped_table_for_ingest,
 )
@@ -36,9 +37,11 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_table,
     record_join_precheck_errors,
 )
-from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.table_ops import ensure_table_columns
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 
@@ -236,8 +239,8 @@ def _hash_join_tables(
     right_checked = normalize_table_for_join(right_checked)
     left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
     right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
-    left_plan = Plan.table(left_checked).project(left_exprs)
-    right_plan = Plan.table(right_checked).project(right_exprs)
+    left_plan = build_table_plan(table=left_checked).project(left_exprs)
+    right_plan = build_table_plan(table=right_checked).project(right_exprs)
     right_output = [name for name in right_exprs if name not in left_exprs]
     joined = left_plan.hash_join(
         right=right_plan,
@@ -404,7 +407,7 @@ def _resolve_facts(
     return finalize_ingest_reader(
         table_key,
         reader,
-        target_name=SYNTAX_ENRICH_TARGET_NAME,
+        options=IngestFinalizeOptions(target_name=SYNTAX_ENRICH_TARGET_NAME),
     )
 
 
@@ -444,7 +447,11 @@ def _valid_pair_expr(start_col: str, end_col: str) -> Expression:
 def _filter_table_expr(table: pa.Table, expr: Expression) -> pa.Table:
     if table.num_rows == 0:
         return table
-    return materialize_plan(Plan.table(table).filter(expr), use_threads=True)
+    plan = build_table_plan(
+        table=table,
+        options=TablePlanOptions(filter_expr=expr),
+    )
+    return materialize_plan(plan, use_threads=True)
 
 
 def _line_join_occurrences(left: pa.Table, occurrences: pa.Table) -> pa.Table:

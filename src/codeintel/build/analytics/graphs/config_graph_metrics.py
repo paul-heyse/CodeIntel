@@ -18,16 +18,22 @@ from codeintel.build.analytics.compute.graphs import (
 )
 from codeintel.build.analytics.graphs.constants import MAX_BETWEENNESS_NODES
 from codeintel.build.analytics.utilities.datasets import validate_contract_rows
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan
+from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import materialize_plan
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.iter import iter_tuples
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.plan_ops import Plan
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
@@ -43,6 +49,7 @@ CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY = "analytics.config_graph_metrics_keys"
 CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY = "analytics.config_graph_metrics_modules"
 CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY = "analytics.config_projection_key_edges"
 CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY = "analytics.config_projection_module_edges"
+CONFIG_REFERENCES_TABLE_KEY = "analytics.config_references"
 
 
 def _columns_for_table(table_key: str) -> tuple[str, ...]:
@@ -87,6 +94,18 @@ class _ProjectionPlan:
     context: ProjectionContext
     key_targets: ProjectionTargets
     module_targets: ProjectionTargets
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigGraphMetricsRequest:
+    """Inputs required to compute config graph metrics."""
+
+    repo: str
+    commit: str
+    config_value_rows: Iterable[Mapping[str, object]] | pa.Table
+    allowed_modules: set[str] | None = None
+    runtime: GraphRuntimeOptions | None = None
+    ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
 
 def _projection_rows(
@@ -249,10 +268,13 @@ def _config_reference_rowset(
         raise ValueError(msg)
     plan = snapshot_plan(
         table,
-        repo=repo,
-        commit=commit,
-        columns=("key", "extras"),
-        ctx=ctx,
+        columns=None,
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CONFIG_REFERENCES_TABLE_KEY,
+        ),
     )
     plan = plan.filter(E.is_valid("key"))
     plan = plan.project(
@@ -261,12 +283,11 @@ def _config_reference_rowset(
             "reference_modules": E.field(("extras", "reference_modules")),
         }
     )
-    plan = plan.order_by(sort_keys=[("key", "ascending")])
     plan = plan.aggregate(
         keys=[E.field("key")],
         aggregates=[("reference_modules", "list", None, "reference_modules")],
     )
-    return materialize_plan(plan, use_threads=True)
+    return _materialize_plan(plan, ctx=ctx)
 
 
 def _add_bipartite_edge(graph: RxGraphStore, *, key: str, module: str) -> None:
@@ -361,6 +382,8 @@ def build_config_module_bipartite(
         Optional repo identifier for filtering.
     commit
         Optional commit identifier for filtering.
+    ctx
+        Optional execution context for scan tuning.
 
     Returns
     -------
@@ -499,13 +522,7 @@ def _build_projection_plan(
 
 
 def compute_config_graph_metrics_result(
-    *,
-    repo: str,
-    commit: str,
-    config_value_rows: Iterable[Mapping[str, object]] | pa.Table,
-    allowed_modules: set[str] | None = None,
-    runtime: GraphRuntimeOptions | None = None,
-    ctx: ExecutionContext | None = None,
+    request: ConfigGraphMetricsRequest,
 ) -> ConfigGraphMetricsResult:
     """Compute config graph metrics rows without persisting.
 
@@ -514,33 +531,26 @@ def compute_config_graph_metrics_result(
 
     Parameters
     ----------
-    repo
-        Repository identifier anchoring the metrics.
-    commit
-        Commit hash anchoring the metrics snapshot.
-    config_value_rows
-        Config value rows containing reference modules.
-    allowed_modules
-        Optional module allowlist for reference modules.
-    runtime
-        Optional runtime options used to set graph execution preferences.
+    request
+        Config graph metrics request with snapshot scope and inputs.
 
     Returns
     -------
     ConfigGraphMetricsResult
         Container with rows for all four config graph metrics tables.
     """
-    runtime_opts = runtime or GraphRuntimeOptions()
+    runtime_opts = request.runtime or GraphRuntimeOptions()
+    resolved_ctx = resolve_columnar_context(request.ctx)
     graph = build_config_module_bipartite(
-        config_value_rows,
-        allowed_modules=allowed_modules,
-        repo=repo,
-        commit=commit,
-        ctx=ctx,
+        request.config_value_rows,
+        allowed_modules=request.allowed_modules,
+        repo=request.repo,
+        commit=request.commit,
+        ctx=resolved_ctx,
     )
     plan = _build_projection_plan(
-        repo=repo,
-        commit=commit,
+        repo=request.repo,
+        commit=request.commit,
         graph=graph,
         runtime_opts=runtime_opts,
     )
@@ -567,3 +577,12 @@ def compute_config_graph_metrics_result(
         key_edge_rows=_finalize_rows(key_edges),
         module_edge_rows=_finalize_rows(module_edges),
     )
+
+
+def _materialize_plan(
+    plan: Plan,
+    *,
+    ctx: ExecutionContext | None,
+) -> pa.Table:
+    execution_ctx = resolve_execution_context(ctx)
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)

@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     ColumnarRows,
@@ -21,7 +20,6 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
     reader_for_columnar_rows,
 )
-from codeintel.ingestion.compute.base import persist_arrow_tables
 from codeintel.ingestion.context import IngestionContext
 from codeintel.ingestion.ports.tools import DiagnosticResult, ToolStatus
 
@@ -34,7 +32,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
     from codeintel.ingestion.ports.tools import IngestToolPort
 
 log = logging.getLogger(__name__)
@@ -188,7 +185,6 @@ class TypingIngestStep:
         context: TypingIngestContext | IngestionContext,
         scope_paths: Sequence[Path] | None = None,
         run_diagnostics: bool | None = None,
-        storage: IngestStoragePort | None = None,
     ) -> TypingIngestResult:
         """Execute typing analysis on the provided modules.
 
@@ -202,8 +198,6 @@ class TypingIngestStep:
             Optional paths to scope diagnostics (relative to repo_root or absolute).
         run_diagnostics
             Whether to run external diagnostic tools.
-        storage
-            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -241,26 +235,15 @@ class TypingIngestStep:
             diagnostic_buffer.row_count,
         )
 
-        diagnostic_rows_reader, _row_count = reader_for_columnar_rows(
+        diagnostic_rows_reader, row_count = reader_for_columnar_rows(
             DIAGNOSTICS_TABLE_KEY,
             diagnostic_buffer.data,
-        )
-        finalized = finalize_ingest_reader(
-            DIAGNOSTICS_TABLE_KEY,
-            diagnostic_rows_reader,
-            target_name=TYPING_INGEST_TARGET_NAME,
-        )
-        scope = f"{resolved_context.repo}@{resolved_context.commit}"
-        persist_arrow_tables(
-            storage,
-            {DIAGNOSTICS_TABLE_KEY: finalized},
-            scope=scope,
         )
         return TypingIngestResult(
             result=ExecutionResult.ok(),
             diagnostic_rows=diagnostic_buffer.data,
-            diagnostic_rows_reader=finalized,
-            diagnostic_row_count=finalized.num_rows,
+            diagnostic_rows_reader=diagnostic_rows_reader,
+            diagnostic_row_count=row_count,
         )
 
     @staticmethod
@@ -319,7 +302,6 @@ class TypingIngestStep:
         modules: Sequence[ModuleRecord],
         *,
         context: TypingIngestContext | IngestionContext,
-        storage: IngestStoragePort | None = None,
     ) -> TypingIngestResult:
         """Execute typing analysis synchronously (without diagnostics).
 
@@ -329,8 +311,6 @@ class TypingIngestStep:
             Modules to process.
         context
             Typing ingestion context for repository metadata and scope.
-        storage
-            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -348,7 +328,6 @@ class TypingIngestStep:
                         run_diagnostics=False,
                     )
                 ),
-                storage=storage,
             )
         )
 
@@ -359,8 +338,8 @@ class TypingIngestResult:
 
     result: ExecutionResult
     diagnostic_rows: ColumnarRows = field(default_factory=dict)
-    diagnostic_rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(DIAGNOSTICS_TABLE_KEY)
+    diagnostic_rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(DIAGNOSTICS_TABLE_KEY).to_reader()
     )
     diagnostic_row_count: int = 0
 

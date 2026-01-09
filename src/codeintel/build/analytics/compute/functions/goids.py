@@ -19,11 +19,16 @@ from typing import TYPE_CHECKING, TypedDict
 
 import pyarrow as pa
 
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan
+from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import materialize_plan
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
+from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 
 if TYPE_CHECKING:
@@ -128,7 +133,7 @@ class FunctionGoidLoader:
         self,
         goids_frame: pa.Table,
         snapshot: SnapshotRef,
-        ctx: ExecutionContext | None = None,
+        ctx: ExecutionContext | RuntimeExecutionContext | None = None,
     ) -> None:
         """Initialize the loader.
 
@@ -138,6 +143,8 @@ class FunctionGoidLoader:
             LazyFrame for core.goids data.
         snapshot
             Repository snapshot reference.
+        ctx
+            Optional execution context for scan tuning.
         """
         self._goids_frame = goids_frame
         self._snapshot = snapshot
@@ -210,7 +217,7 @@ def _worklist_table(
     frame: pa.Table,
     snapshot: SnapshotRef,
     *,
-    ctx: ExecutionContext | None,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     required = (
         "goid_h128",
@@ -226,10 +233,12 @@ def _worklist_table(
     )
     plan = snapshot_plan(
         frame,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
         columns=required,
-        ctx=ctx,
+        context=SnapshotContext(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            ctx=ctx,
+        ),
     )
     plan = plan.filter(E.in_("kind", ["function", "method"]))
     aggregates: list[tuple[str, str, None, str]] = []
@@ -239,7 +248,8 @@ def _worklist_table(
         agg_fn = "max" if name == "end_line" else "min"
         aggregates.append((name, agg_fn, None, name))
     plan = plan.aggregate(keys=[E.field("goid_h128")], aggregates=aggregates)
-    return materialize_plan(plan, use_threads=True)
+    execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
+    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
 
 
 __all__ = [

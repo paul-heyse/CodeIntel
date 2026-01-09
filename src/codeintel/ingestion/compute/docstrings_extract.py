@@ -16,14 +16,13 @@ from typing import TYPE_CHECKING, TypedDict
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
     empty_table_for_table,
     reader_for_columnar_rows,
 )
-from codeintel.ingestion.compute.base import BaseExtractStep, persist_arrow_tables
+from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 
 if TYPE_CHECKING:
@@ -31,7 +30,6 @@ if TYPE_CHECKING:
 
     from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 DOCSTRINGS_TABLE_KEY = "core.docstrings"
@@ -270,8 +268,8 @@ class DocstringsExtractResult:
 
     result: ExecutionResult
     rows: ColumnarRows = field(default_factory=dict)
-    rows_reader: pa.Table = field(
-        default_factory=lambda: empty_table_for_table(DOCSTRINGS_TABLE_KEY)
+    rows_reader: pa.RecordBatchReader = field(
+        default_factory=lambda: empty_table_for_table(DOCSTRINGS_TABLE_KEY).to_reader()
     )
     row_count: int = 0
 
@@ -303,7 +301,6 @@ class DocstringsExtractStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
-        storage: IngestStoragePort | None = None,
     ) -> DocstringsExtractResult:
         """Execute docstring extraction on the provided modules.
 
@@ -317,8 +314,6 @@ class DocstringsExtractStep(BaseExtractStep):
             Commit identifier.
         context
             Optional ingestion context supplying repo/commit defaults.
-        storage
-            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -354,26 +349,15 @@ class DocstringsExtractStep(BaseExtractStep):
             buffer.row_count,
         )
 
-        rows_reader, _row_count = reader_for_columnar_rows(
+        rows_reader, row_count = reader_for_columnar_rows(
             DOCSTRINGS_TABLE_KEY,
             buffer.data,
-        )
-        finalized = finalize_ingest_reader(
-            DOCSTRINGS_TABLE_KEY,
-            rows_reader,
-            target_name=DOCSTRINGS_TARGET_NAME,
-        )
-        scope = f"{resolved_repo}@{resolved_commit}"
-        persist_arrow_tables(
-            storage,
-            {DOCSTRINGS_TABLE_KEY: finalized},
-            scope=scope,
         )
         return DocstringsExtractResult(
             result=ExecutionResult.ok(),
             rows=buffer.data,
-            rows_reader=finalized,
-            row_count=finalized.num_rows,
+            rows_reader=rows_reader,
+            row_count=row_count,
         )
 
 

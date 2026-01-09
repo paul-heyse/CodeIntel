@@ -15,7 +15,13 @@ except ImportError:
     _datafusion = None
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.core.columnar.plan_ops import ExternalPlanRequest
+
+    type ReaderThunk = Callable[[], pa.RecordBatchReader]
+else:
+    type ReaderThunk = object
 
 
 @runtime_checkable
@@ -168,13 +174,13 @@ def run_substrait_plan(
 def datafusion_plan_runner(
     *,
     request: ExternalPlanRequest,
-) -> pa.RecordBatchReader:
+) -> ReaderThunk:
     """Execute a DataFusion plan via ExternalPlanSpec.
 
     Returns
     -------
-    pyarrow.RecordBatchReader
-        Record batch reader for plan results.
+    Callable[[], pyarrow.RecordBatchReader]
+        Thunk returning record batch reader for plan results.
 
     Raises
     ------
@@ -188,19 +194,22 @@ def datafusion_plan_runner(
         request.scan_options,
         request.use_threads,
     )
-    ctx = session_context()
     payload = request.spec.payload
     if isinstance(payload, str):
-        return run_sql(ctx, payload)
+        sql = payload
+        return lambda: run_sql(session_context(), sql)
     if isinstance(payload, (bytes, bytearray, memoryview)):
-        return run_substrait_plan(ctx, payload)
+        plan_bytes = bytes(payload)
+        return lambda: run_substrait_plan(session_context(), plan_bytes)
     if isinstance(payload, Mapping):
         sql = payload.get("sql")
         if isinstance(sql, str):
-            return run_sql(ctx, sql)
+            sql_text = sql
+            return lambda: run_sql(session_context(), sql_text)
         plan = payload.get("plan")
         if isinstance(plan, (bytes, bytearray, memoryview)):
-            return run_substrait_plan(ctx, plan)
+            plan_bytes = bytes(plan)
+            return lambda: run_substrait_plan(session_context(), plan_bytes)
     msg = "DataFusion payload must be SQL text or Substrait bytes."
     raise TypeError(msg)
 

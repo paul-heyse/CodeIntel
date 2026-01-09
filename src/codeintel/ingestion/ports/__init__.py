@@ -6,7 +6,6 @@ testable in isolation.
 
 Port Categories
 ---------------
-- Storage: Persisting data to database tables
 - Tools: Executing external analysis tools
 - Discovery: Finding and reading source modules
 - ChangeDetection: Computing file changes between snapshots
@@ -24,11 +23,6 @@ from codeintel.ingestion.ports.discovery import (
     ModuleDiscoveryPort,
     ModuleRecord,
 )
-from codeintel.ingestion.ports.storage import (
-    BatchResult,
-    IngestStoragePort,
-    QueryResult,
-)
 from codeintel.ingestion.ports.tools import (
     DiagnosticResult,
     IngestToolPort,
@@ -37,17 +31,14 @@ from codeintel.ingestion.ports.tools import (
 )
 
 __all__ = [
-    "BatchResult",
     "ChangeDetectionPort",
     "ChangeRequest",
     "ChangeSet",
     "DiagnosticResult",
     "FileDigest",
-    "IngestStoragePort",
     "IngestToolPort",
     "ModuleDiscoveryPort",
     "ModuleRecord",
-    "QueryResult",
     "ScipResult",
     "TestResult",
 ]

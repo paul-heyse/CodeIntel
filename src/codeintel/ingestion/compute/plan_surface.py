@@ -9,7 +9,8 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
+from codeintel.core.columnar.plan_builder import build_plan_from_query_spec
 from codeintel.core.columnar.plan_ops import (
     Plan,
     QueryPlanOptions,
@@ -30,7 +31,11 @@ class IngestQuery:
     commit: str | None = None
     rel_path: str | None = None
 
-    def to_query_spec(self) -> QuerySpec:
+    def to_query_spec(
+        self,
+        *,
+        available_columns: Sequence[str] | None = None,
+    ) -> QuerySpec:
         """Build a QuerySpec for this ingestion query.
 
         Returns
@@ -44,6 +49,7 @@ class IngestQuery:
             repo=self.repo,
             commit=self.commit,
             rel_path=self.rel_path,
+            available_columns=available_columns,
         )
 
 
@@ -72,18 +78,14 @@ def ingest_plan_for_table(
     Plan
         Plan with filter/project nodes derived from QuerySpec.
     """
-    spec = query.to_query_spec()
-    resolved = query_plan_options_for_context(ctx=ctx, options=options)
-    plan = Plan.table(table)
-    scan_filter = spec.scan_filter_expression()
-    if scan_filter is not None:
-        plan = plan.filter(scan_filter)
-    post_filter = spec.post_filter_expression()
-    if post_filter is not None:
-        plan = plan.filter(post_filter)
-    projection = spec.project_expressions(provenance=resolved.provenance)
-    if projection:
-        plan = plan.project(projection)
+    resolved_ctx = resolve_execution_context(ctx)
+    spec = query.to_query_spec(available_columns=table.column_names)
+    resolved = query_plan_options_for_context(ctx=resolved_ctx, options=options)
+    plan = build_plan_from_query_spec(
+        table=table,
+        spec=spec,
+        ctx=resolved_ctx,
+    )
     if resolved.order_by is not None:
         plan = plan.order_by(sort_keys=resolved.order_by)
     return plan
@@ -114,8 +116,9 @@ def ingest_plan_for_dataset(
     Plan
         Plan compiled from a QuerySpec and execution context.
     """
-    spec = query.to_query_spec()
-    return build_query_plan_for_context(dataset, spec=spec, ctx=ctx, options=options)
+    resolved_ctx = resolve_execution_context(ctx)
+    spec = query.to_query_spec(available_columns=dataset.schema.names)
+    return build_query_plan_for_context(dataset, spec=spec, ctx=resolved_ctx, options=options)
 
 
 def ingest_reader_for_plan(
@@ -137,7 +140,7 @@ def ingest_reader_for_plan(
     pyarrow.RecordBatchReader
         Reader for the plan output.
     """
-    resolved_ctx = ctx or ExecutionContext()
+    resolved_ctx = resolve_execution_context(ctx)
     return ExecutionPlan.from_plan(plan).to_reader(ctx=resolved_ctx)
 
 
