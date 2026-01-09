@@ -99,7 +99,7 @@ def test_py_bc_stack_edges_basic() -> None:
     }
     assert set(edges.column("src_cpg_node_id").to_pylist()) == expected_src_ids
     payloads = [
-        cast("dict[str, object]", decode_payload(row["extras_json"])) for row in edges.to_pylist()
+        cast("dict[str, object]", decode_payload(row["extras"])) for row in edges.to_pylist()
     ]
     pop_indexes = {payload.get("pop_index") for payload in payloads}
     opnames = {payload.get("opname") for payload in payloads}
@@ -175,6 +175,6 @@ def test_py_bc_callsite_symbol_edges_match_display_name() -> None:
         {"repo": "repo", "commit": "commit", "symbol": "sym1"},
     )
     assert row["dst_cpg_node_id"] == expected_dst
-    payload = cast("dict[str, object]", decode_payload(row["extras_json"]))
+    payload = cast("dict[str, object]", decode_payload(row["extras"]))
     assert payload["match_kind"] == "display_name"
     assert payload["callee_text"] == "module.func"

@@ -19,7 +19,10 @@ from codeintel.build.schemas import iter_contracts
 from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.manifests import dataset_manifest_path
-from codeintel.core.datasets.scanning import ParquetScanOptions, scan_parquet_dataset
+from codeintel.core.datasets.scanning import (
+    ParquetScanOptions,
+    scan_parquet_dataset_with_telemetry,
+)
 from codeintel.core.errors.taxonomy import ErrorCode
 from codeintel.core.ports.export import ExportRelation
 from codeintel.core.schemas.hashing import schema_digest
@@ -245,12 +248,19 @@ def build_export_reader(
         If the dataset snapshot is missing.
     """
     dataset_root_dir, snapshot_id = resolve_export_snapshot(gateway)
-    reader = scan_parquet_dataset(
+    reader, telemetry = scan_parquet_dataset_with_telemetry(
         dataset_root=dataset_root_dir,
         table_key=table_key,
         snapshot_id=snapshot_id,
-        options=ParquetScanOptions(batch_size=batch_size),
+        options=ParquetScanOptions(
+            batch_size=batch_size,
+            implicit_ordering=True,
+            require_sequenced_output=True,
+            metrics_enabled=True,
+        ),
     )
+    if telemetry is not None:
+        log.debug("Export scan telemetry: %s", telemetry.to_mapping())
     if reader is None:
         msg = f"Dataset snapshot missing for {table_key}@{snapshot_id}"
         raise FileNotFoundError(msg)
@@ -287,12 +297,19 @@ def build_export_reader_from_snapshot(
     FileNotFoundError
         If the dataset snapshot is missing.
     """
-    reader = scan_parquet_dataset(
+    reader, telemetry = scan_parquet_dataset_with_telemetry(
         dataset_root=dataset_root_dir,
         table_key=table_key,
         snapshot_id=snapshot_id,
-        options=ParquetScanOptions(batch_size=batch_size),
+        options=ParquetScanOptions(
+            batch_size=batch_size,
+            implicit_ordering=True,
+            require_sequenced_output=True,
+            metrics_enabled=True,
+        ),
     )
+    if telemetry is not None:
+        log.debug("Export scan telemetry: %s", telemetry.to_mapping())
     if reader is None:
         msg = f"Dataset snapshot missing for {table_key}@{snapshot_id}"
         raise FileNotFoundError(msg)

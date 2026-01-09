@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import pyarrow as pa
@@ -22,6 +23,7 @@ from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_f
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     TableTargetTableContext,
@@ -33,11 +35,9 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.query_results import coerce_optional_int
-from codeintel.core.serialization.json import decode_json_list
-from codeintel.core.serialization.payload import decode_payload
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -84,12 +84,12 @@ class EntrypointSubsystemFrames:
     subsystem_modules_frame: pa.Table
 
 
-def _parse_json_list(value: object) -> list[str]:
-    decoded = decode_payload(value)
-    if isinstance(decoded, list):
-        return [str(item) for item in decoded]
-    if isinstance(decoded, str):
-        return [str(item) for item in decode_json_list(decoded)]
+def _extras_list(extras: Mapping[str, object] | None, key: str) -> list[str]:
+    if extras is None:
+        return []
+    value = extras.get(key)
+    if isinstance(value, list):
+        return [str(item) for item in value]
     return []
 
 
@@ -119,8 +119,6 @@ def _features_by_goid(features_frame: pa.Table) -> dict[int, FunctionAstFeatures
         "rel_path",
         "qualname",
         "is_async",
-        "decorators",
-        "libraries_used",
         "uses_network",
         "uses_db",
         "uses_filesystem",
@@ -128,12 +126,9 @@ def _features_by_goid(features_frame: pa.Table) -> dict[int, FunctionAstFeatures
         "uses_concurrency_lib",
         "uses_threading",
         "uses_asyncio_lib",
-        "http_client_libs",
-        "http_server_libs",
-        "db_libs",
-        "message_libs",
         "config_read_count",
         "feature_flag_count",
+        "extras",
     ]
     for row in iter_rows(features_frame, columns):
         feature = _feature_from_row(row)
@@ -149,14 +144,16 @@ def _feature_from_row(row: dict[str, object]) -> FunctionAstFeatures | None:
     qualname = row.get("qualname")
     if goid_value is None or not isinstance(rel_path, str) or not isinstance(qualname, str):
         return None
+    extras = row.get("extras")
+    extras_map = extras if isinstance(extras, Mapping) else None
     return FunctionAstFeatures(
         goid=int(goid_value),
         rel_path=rel_path,
         qualname=qualname,
         is_async=bool(row.get("is_async")),
-        decorators=tuple(_parse_json_list(row.get("decorators"))),
+        decorators=tuple(_extras_list(extras_map, "decorators")),
         imports={},
-        libraries_used=frozenset(_parse_json_list(row.get("libraries_used"))),
+        libraries_used=frozenset(_extras_list(extras_map, "libraries_used")),
         io_flags=IoFlags(
             uses_network=bool(row.get("uses_network")),
             uses_db=bool(row.get("uses_db")),
@@ -166,10 +163,10 @@ def _feature_from_row(row: dict[str, object]) -> FunctionAstFeatures | None:
         uses_concurrency_lib=bool(row.get("uses_concurrency_lib")),
         uses_threading=bool(row.get("uses_threading")),
         uses_asyncio_lib=bool(row.get("uses_asyncio_lib")),
-        http_client_libs=frozenset(_parse_json_list(row.get("http_client_libs"))),
-        http_server_libs=frozenset(_parse_json_list(row.get("http_server_libs"))),
-        db_libs=frozenset(_parse_json_list(row.get("db_libs"))),
-        message_libs=frozenset(_parse_json_list(row.get("message_libs"))),
+        http_client_libs=frozenset(_extras_list(extras_map, "http_client_libs")),
+        http_server_libs=frozenset(_extras_list(extras_map, "http_server_libs")),
+        db_libs=frozenset(_extras_list(extras_map, "db_libs")),
+        message_libs=frozenset(_extras_list(extras_map, "message_libs")),
         config_read_count=coerce_optional_int(
             row.get("config_read_count"),
             ctx="entrypoints.config_read_count",
@@ -326,11 +323,10 @@ def entrypoints__base(entrypoints_result: EntrypointsResult) -> pa.Table:
     """
     if not entrypoints_result.entrypoint_rows:
         return empty_table_for_table(ENTRYPOINTS_TABLE_KEY)
-    reader, _ = table_for_rows(
+    return finalize_analytics_rows(
         ENTRYPOINTS_TABLE_KEY,
         entrypoints_result.entrypoint_rows,
     )
-    return reader
 
 
 def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pa.Table:
@@ -343,11 +339,10 @@ def entrypoint_tests__base(entrypoints_result: EntrypointsResult) -> pa.Table:
     """
     if not entrypoints_result.test_rows:
         return empty_table_for_table(ENTRYPOINT_TESTS_TABLE_KEY)
-    reader, _ = table_for_rows(
+    return finalize_analytics_rows(
         ENTRYPOINT_TESTS_TABLE_KEY,
         entrypoints_result.test_rows,
     )
-    return reader
 
 
 _MODULE = sys.modules[__name__]

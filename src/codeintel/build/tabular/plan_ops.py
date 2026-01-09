@@ -11,6 +11,7 @@ import pyarrow.compute as pc
 from pyarrow import acero
 
 from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.normalization import normalize_table_for_compute
 
 if TYPE_CHECKING:
     import pyarrow.dataset as ds
@@ -274,7 +275,7 @@ class Plan:
             Materialized table result.
         """
         reader = self.declaration.to_reader(use_threads=use_threads)
-        return reader_to_table(reader)
+        return normalize_table_for_compute(reader_to_table(reader))
 
     def to_reader(self, *, use_threads: bool = True) -> pa.RecordBatchReader:
         """Materialize the plan as an Arrow reader.
@@ -292,4 +293,23 @@ class Plan:
         return self.declaration.to_reader(use_threads=use_threads)
 
 
-__all__ = ["HashJoinSpec", "Plan"]
+def materialize_plan(plan: Plan, *, use_threads: bool = True) -> pa.Table:
+    """Materialize a plan into a normalized Arrow table.
+
+    Parameters
+    ----------
+    plan
+        Plan to materialize.
+    use_threads
+        Whether to allow compute parallelism.
+
+    Returns
+    -------
+    pyarrow.Table
+        Materialized table with compute-normalized chunks.
+    """
+    reader = plan.to_reader(use_threads=use_threads)
+    return normalize_table_for_compute(reader_to_table(reader))
+
+
+__all__ = ["HashJoinSpec", "Plan", "materialize_plan"]

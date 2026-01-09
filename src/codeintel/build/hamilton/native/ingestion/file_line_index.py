@@ -18,6 +18,7 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
@@ -143,8 +144,12 @@ def file_line_index__base(
             )
         )
 
-    reader, _ = table_for_rows(FILE_LINE_INDEX_TABLE_KEY, rows)
-    return reader
+    table, _ = table_for_rows(FILE_LINE_INDEX_TABLE_KEY, rows)
+    return finalize_ingest_table(
+        FILE_LINE_INDEX_TABLE_KEY,
+        table,
+        target_name=FILE_LINE_INDEX_TARGET_NAME,
+    )
 
 
 _MODULE = sys.modules[__name__]

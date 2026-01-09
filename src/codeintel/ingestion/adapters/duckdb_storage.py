@@ -27,8 +27,14 @@ import logging
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.core.columnar.compute_helpers import combine_table_chunks
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.kernels import SortKey, stable_sort_indices
+from codeintel.core.columnar.nested_ops import deep_cast_table_to_contract
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBError
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
@@ -62,6 +68,35 @@ def _columns_for_table(table_key: str) -> list[str] | None:
     if schema_columns is not None:
         return schema_columns
     return load_columns_by_table().get(table_key)
+
+
+def _required_non_null_columns(table_key: str) -> tuple[str, ...]:
+    schema_service = get_schema_service()
+    table_schema = schema_service.require_table_schema(table_key)
+    return tuple(column.name for column in table_schema.columns if not column.nullable)
+
+
+def _prepare_table_for_write(table_key: str, table: pa.Table) -> pa.Table:
+    schema_service = get_schema_service()
+    table_schema = schema_service.require_table_schema(table_key)
+    contract = arrow_contract_for_table_schema(table_schema=table_schema)
+    compact = combine_table_chunks(table)
+    casted = deep_cast_table_to_contract(compact, contract)
+    finalized = finalize_table(
+        casted,
+        spec=FinalizeSpec(
+            table_key=table_key,
+            mode="strict",
+            required_non_null=_required_non_null_columns(table_key),
+            invariants=(),
+            emit_artifacts=True,
+        ),
+    )
+    good = finalized.good
+    if table_schema.primary_key:
+        sort_keys: list[SortKey] = [(key, "ascending") for key in table_schema.primary_key]
+        return good.take(stable_sort_indices(good, sort_keys=sort_keys))
+    return good
 
 
 def build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
@@ -180,6 +215,64 @@ class DuckDBStorageAdapter:
             columns=columns,
         )
         return BatchResult.ok(table_key, inserted, duration_s=0.0)
+
+    def write_table(
+        self,
+        table_key: str,
+        table: pa.Table,
+        *,
+        scope: str | None = None,
+    ) -> BatchResult:
+        """Insert an Arrow table using policy backend bulk insert.
+
+        Returns
+        -------
+        BatchResult
+            Result including rows written.
+
+        Raises
+        ------
+        RuntimeError
+            If the table key is missing from the schema registry.
+        """
+        _ = scope
+        self._validate_table_exists(table_key)
+        if table.num_rows == 0:
+            return BatchResult.ok(table_key, 0, duration_s=0.0)
+        columns = _columns_for_table(table_key)
+        if columns is None:
+            message = f"Table {table_key} missing from schema registry"
+            raise RuntimeError(message)
+        prepared = _prepare_table_for_write(table_key, table)
+        if prepared.num_rows == 0:
+            return BatchResult.ok(table_key, 0, duration_s=0.0)
+        reader = table_to_reader(prepared, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        rows = list(iter_tuples_from_arrow_reader(reader, columns=columns))
+        if not rows:
+            return BatchResult.ok(table_key, 0, duration_s=0.0)
+        inserted = self._backend.bulk_insert(
+            table_key,
+            rows,
+            columns=columns,
+        )
+        return BatchResult.ok(table_key, inserted, duration_s=0.0)
+
+    def write_reader(
+        self,
+        table_key: str,
+        reader: pa.RecordBatchReader,
+        *,
+        scope: str | None = None,
+    ) -> BatchResult:
+        """Insert an Arrow reader by materializing to a table.
+
+        Returns
+        -------
+        BatchResult
+            Result including rows written.
+        """
+        table = reader_to_table(reader)
+        return self.write_table(table_key, table, scope=scope)
 
     def delete_by_params(
         self,

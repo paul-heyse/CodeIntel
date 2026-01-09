@@ -97,7 +97,7 @@ def _parse_column_type(value: object, *, field: str) -> ColumnType:
 
 
 def _write_policy_to_json_obj(policy: TableWritePolicy) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "mode": policy.mode,
         "replace_scope": policy.replace_scope,
         "conflict_columns": list(policy.conflict_columns or ()),
@@ -105,6 +105,9 @@ def _write_policy_to_json_obj(policy: TableWritePolicy) -> dict[str, object]:
         "hash_column": policy.hash_column,
         "use_staging": policy.use_staging,
     }
+    if policy.stable_sort_keys is not None:
+        payload["stable_sort_keys"] = list(policy.stable_sort_keys)
+    return payload
 
 
 def _parse_write_mode(value: object, *, field: str) -> WriteMode:
@@ -141,6 +144,16 @@ def _parse_write_policy(value: object) -> TableWritePolicy:
     update_columns = tuple(_require_str(item, field="update_columns[]") for item in update_obj)
     hash_value = value.get("hash_column")
     hash_column = hash_value if isinstance(hash_value, str) else None
+    sort_obj = value.get("stable_sort_keys")
+    if sort_obj is None:
+        stable_sort_keys = None
+    else:
+        if not isinstance(sort_obj, list):
+            msg = "Expected list for write_policy.stable_sort_keys"
+            raise TypeError(msg)
+        stable_sort_keys = tuple(
+            _require_str(item, field="stable_sort_keys[]") for item in sort_obj
+        )
     return TableWritePolicy(
         mode=_parse_write_mode(value.get("mode"), field="write_policy.mode"),
         replace_scope=_parse_replace_scope(value.get("replace_scope"), field="write_policy.scope"),
@@ -151,6 +164,7 @@ def _parse_write_policy(value: object) -> TableWritePolicy:
             value.get("use_staging", False),
             field="write_policy.use_staging",
         ),
+        stable_sort_keys=stable_sort_keys,
     )
 
 

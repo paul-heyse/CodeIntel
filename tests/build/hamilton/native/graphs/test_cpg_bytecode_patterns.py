@@ -109,7 +109,7 @@ def test_cpg_bytecode_edges_patterns(tmp_path: Path) -> None:
         pytest.xfail("Callsite edges are not emitted for bytecode patterns.")
     assert callsite_edges.num_rows > 0
 
-    payloads = [decode_payload(row.get("extras_json")) for row in callsite_edges.to_pylist()]
+    payloads = [decode_payload(row.get("extras")) for row in callsite_edges.to_pylist()]
     callees = {
         _callee_leaf(payload.get("callee_text"))
         for payload in payloads

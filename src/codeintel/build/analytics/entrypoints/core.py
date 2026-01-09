@@ -25,7 +25,6 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
 from codeintel.build.analytics.compute.row_builders import row_tuple_for_table
-from codeintel.build.analytics.utilities.ast import RowDecoder
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -276,17 +275,19 @@ def _materialize_candidate(
             "handler_qualname": cand.qualname,
             "http_method": cand.http_method,
             "route_path": cand.route_path,
-            "status_codes": cand.status_codes,
             "auth_required": cand.auth_required,
             "command_name": cand.command_name,
-            "arguments_schema": cand.arguments_schema,
             "schedule": cand.schedule,
             "trigger": cand.trigger,
-            "extra": _normalize_json(extra_payload),
             "subsystem_id": subsystem_id,
             "subsystem_name": subsystem_name,
-            "tags": _normalize_json(module_info.tags),
-            "owners": _normalize_json(module_info.owners),
+            "extras": {
+                "status_codes": cand.status_codes,
+                "arguments_schema": cand.arguments_schema,
+                "extra": _normalize_json(extra_payload),
+                "tags": _normalize_json(module_info.tags),
+                "owners": _normalize_json(module_info.owners),
+            },
             "tests_touching": summary.tests_touching,
             "failing_tests": summary.failing_tests,
             "slow_tests": summary.slow_tests,
@@ -339,14 +340,12 @@ def _module_context_from_frame(
     if frame is None or frame.num_rows == 0:
         return {}
     filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
-    decoder = RowDecoder(columns=("tags", "owners"))
     context: dict[str, ModuleContext] = {}
     for row in filtered:
-        decoded = decoder.decode(row)
         rel_path = row.get("path")
         module = row.get("module")
-        tags = decoded.get("tags")
-        owners = decoded.get("owners")
+        tags = _normalize_json(row.get("tags"))
+        owners = _normalize_json(row.get("owners"))
         normalized = normalize_path(coerce_str(rel_path, ctx="core.modules.path"))
         context[normalized] = ModuleContext(
             module=coerce_str(module, ctx="core.modules.module"),

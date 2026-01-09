@@ -17,7 +17,6 @@ from codeintel.build.analytics.compute.graphs import (
     projection_metrics,
 )
 from codeintel.build.analytics.graphs.constants import MAX_BETWEENNESS_NODES
-from codeintel.build.analytics.utilities.ast import RowDecoder
 from codeintel.build.analytics.utilities.datasets import validate_contract_rows
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -256,8 +255,15 @@ def _config_bipartite_from_rows(
         key = row.get("key")
         if key is None:
             continue
+        extras = row.get("extras")
+        if isinstance(extras, Mapping):
+            reference_modules = extras.get("reference_modules")
+        else:
+            reference_modules = None
+        if reference_modules is None:
+            reference_modules = row.get("reference_modules")
         modules = _normalize_reference_modules(
-            row.get("reference_modules"),
+            reference_modules,
             allowed_modules=allowed_modules,
         )
         if not modules:
@@ -274,11 +280,10 @@ def _rows_from_tabular(
     repo: str | None,
     commit: str | None,
 ) -> list[dict[str, object]]:
-    decoder = RowDecoder(columns=("reference_modules",))
     if isinstance(rows, pa.Table):
         table = _filter_table_by_scope(cast("pa.Table", rows), repo=repo, commit=commit)
-        return [decoder.decode(row) for row in iter_rows(table)]
-    return [decoder.decode(dict(row)) for row in rows]
+        return [dict(row) for row in iter_rows(table)]
+    return [dict(row) for row in rows]
 
 
 def _partition_bipartite_nodes(store: RxGraphStore) -> tuple[set[Hashable], set[Hashable]]:

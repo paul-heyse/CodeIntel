@@ -20,6 +20,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
     table_for_columnar_rows,
 )
+from codeintel.ingestion.compute.base import persist_arrow_tables
 from codeintel.ingestion.context import IngestionContext
 from codeintel.ingestion.ports.tools import DiagnosticResult, ToolStatus
 
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
+    from codeintel.ingestion.ports.storage import IngestStoragePort
     from codeintel.ingestion.ports.tools import IngestToolPort
 
 log = logging.getLogger(__name__)
@@ -184,6 +186,7 @@ class TypingIngestStep:
         context: TypingIngestContext | IngestionContext,
         scope_paths: Sequence[Path] | None = None,
         run_diagnostics: bool | None = None,
+        storage: IngestStoragePort | None = None,
     ) -> TypingIngestResult:
         """Execute typing analysis on the provided modules.
 
@@ -197,6 +200,8 @@ class TypingIngestStep:
             Optional paths to scope diagnostics (relative to repo_root or absolute).
         run_diagnostics
             Whether to run external diagnostic tools.
+        storage
+            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -238,6 +243,12 @@ class TypingIngestStep:
             DIAGNOSTICS_TABLE_KEY,
             diagnostic_buffer.data,
             extras_policy="retain",
+        )
+        scope = f"{resolved_context.repo}@{resolved_context.commit}"
+        persist_arrow_tables(
+            storage,
+            {DIAGNOSTICS_TABLE_KEY: diagnostic_rows_reader},
+            scope=scope,
         )
         return TypingIngestResult(
             result=ExecutionResult.ok(),
@@ -302,6 +313,7 @@ class TypingIngestStep:
         modules: Sequence[ModuleRecord],
         *,
         context: TypingIngestContext | IngestionContext,
+        storage: IngestStoragePort | None = None,
     ) -> TypingIngestResult:
         """Execute typing analysis synchronously (without diagnostics).
 
@@ -311,6 +323,8 @@ class TypingIngestStep:
             Modules to process.
         context
             Typing ingestion context for repository metadata and scope.
+        storage
+            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -328,6 +342,7 @@ class TypingIngestStep:
                         run_diagnostics=False,
                     )
                 ),
+                storage=storage,
             )
         )
 

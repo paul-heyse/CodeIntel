@@ -11,6 +11,7 @@ from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.datasets.scanning import (
     ParquetScanOptions,
     ParquetScanTelemetry,
+    collect_parquet_scan_telemetry,
     scan_parquet_dataset,
     scan_parquet_dataset_with_telemetry,
     scan_parquet_table,
@@ -22,6 +23,7 @@ __all__ = [
     "ParquetScanTelemetry",
     "QueryPlanSpec",
     "build_scanner",
+    "collect_parquet_scan_telemetry",
     "dataset_for_manifest",
     "resolve_partitioning",
     "scan_parquet_dataset",

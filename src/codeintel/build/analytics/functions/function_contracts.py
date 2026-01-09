@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -12,7 +13,6 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.build.analytics.utilities.ast import (
-    RowDecoder,
     literal_int,
     literal_value,
     safe_unparse,
@@ -142,10 +142,12 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
                     "repo": inputs.repo,
                     "commit": inputs.commit,
                     "function_goid_h128": goid,
-                    "preconditions_json": [],
-                    "postconditions_json": [],
-                    "raises_json": [],
-                    "param_nullability_json": {},
+                    "extras": {
+                        "preconditions": [],
+                        "postconditions": [],
+                        "raises": [],
+                        "param_nullability": {},
+                    },
                     "return_nullability": None,
                     "contract_confidence": 0.0,
                     "created_at": inputs.now,
@@ -164,10 +166,12 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
                 "repo": inputs.repo,
                 "commit": inputs.commit,
                 "function_goid_h128": goid,
-                "preconditions_json": contracts["preconditions"],
-                "postconditions_json": contracts["postconditions"],
-                "raises_json": contracts["raises"],
-                "param_nullability_json": contracts["param_nullability"],
+                "extras": {
+                    "preconditions": contracts["preconditions"],
+                    "postconditions": contracts["postconditions"],
+                    "raises": contracts["raises"],
+                    "param_nullability": contracts["param_nullability"],
+                },
                 "return_nullability": contracts["return_nullability"],
                 "contract_confidence": contracts["confidence"],
                 "created_at": inputs.now,
@@ -186,20 +190,18 @@ def _doc_map_from_frame(
         return {}
     has_repo = "repo" in frame.column_names
     has_commit = "commit" in frame.column_names
-    decoder = RowDecoder(columns=("params", "returns"))
     mapping: dict[tuple[str, str], dict[str, object]] = {}
     for row in iter_rows(frame):
-        decoded = decoder.decode(row)
-        if has_repo and decoded.get("repo") != repo:
+        if has_repo and row.get("repo") != repo:
             continue
-        if has_commit and decoded.get("commit") != commit:
+        if has_commit and row.get("commit") != commit:
             continue
-        rel_path = decoded.get("rel_path")
-        qualname = decoded.get("qualname")
+        rel_path = row.get("rel_path")
+        qualname = row.get("qualname")
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
             continue
-        params = decoded.get("params")
-        returns = decoded.get("returns")
+        params = row.get("params")
+        returns = row.get("returns")
         mapping[rel_path, qualname] = {
             "params": _coerce_json(params) or [],
             "returns": _coerce_json(returns),
@@ -217,21 +219,24 @@ def _type_map_from_frame(
         return {}
     has_repo = "repo" in frame.column_names
     has_commit = "commit" in frame.column_names
-    decoder = RowDecoder(columns=("param_types",))
     mapping: dict[int, dict[str, object]] = {}
     for row in iter_rows(frame):
-        decoded = decoder.decode(row)
-        if has_repo and decoded.get("repo") != repo:
+        if has_repo and row.get("repo") != repo:
             continue
-        if has_commit and decoded.get("commit") != commit:
+        if has_commit and row.get("commit") != commit:
             continue
-        goid = normalize_decimal_id(decoded.get("function_goid_h128"))
+        goid = normalize_decimal_id(row.get("function_goid_h128"))
         if goid is None:
             continue
-        return_type = decoded.get("return_type")
+        return_type = row.get("return_type")
+        extras = row.get("extras")
+        if isinstance(extras, Mapping):
+            param_types = extras.get("param_types")
+        else:
+            param_types = row.get("param_types")
         mapping[goid] = {
             "return_type": str(return_type) if return_type is not None else None,
-            "param_types": _coerce_json(decoded.get("param_types")) or {},
+            "param_types": _coerce_json(param_types) or {},
         }
     return mapping
 

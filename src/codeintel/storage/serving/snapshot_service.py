@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,12 +11,18 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 from sqlglot import exp
 
+from codeintel.core.columnar.compute_helpers import combine_table_chunks
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.kernels import SortKey, hash_struct_ordinal, stable_sort_indices
+from codeintel.core.columnar.nested_ops import deep_cast_table_to_contract
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
 from codeintel.core.datasets.manifests import read_dataset_manifest
 from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
@@ -36,11 +43,13 @@ from codeintel.storage.schema.duckdb_contracts import (
 from codeintel.storage.serving.search_index import build_search_documents_table, ensure_fts_index
 
 if TYPE_CHECKING:
+    from codeintel.core.schemas.primitives import TableSchema
     from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
 
 
 DEFAULT_FRAGMENT_READAHEAD = 2
 _MANIFEST_ROOT_INDEX = 3
+_HASH_ORDINAL_MODULUS = 2**31 - 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,6 +372,9 @@ def _dataset_read_parquet_relation(
         batch_size=DEFAULT_ARROW_BATCH_SIZE,
         fragment_readahead=DEFAULT_FRAGMENT_READAHEAD,
         schema=contract_schema,
+        implicit_ordering=True,
+        require_sequenced_output=True,
+        metrics_enabled=True,
     )
     scanner = dataset_scanner_for_entry(entry, options=scan_options)
     if contract_schema is not None:
@@ -372,8 +384,25 @@ def _dataset_read_parquet_relation(
             contract_schema,
             extras_policy=extras_policy_from_schema(contract_schema),
         )
+        table = reader_to_table(aligned)
+        finalized = finalize_table(
+            table,
+            spec=FinalizeSpec(
+                table_key=manifest.table_key,
+                mode="tolerant",
+            ),
+        )
+        good = combine_table_chunks(finalized.good)
+        with contextlib.suppress(
+            TypeError,
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+        ):
+            good = deep_cast_table_to_contract(good, contract_schema)
+        good = _apply_table_ordering(good, table_key=manifest.table_key)
         try:
-            return con.from_arrow(aligned)
+            return con.from_arrow(good)
         except (TypeError, ValueError):
             return con.from_arrow(scanner)
     try:
@@ -394,6 +423,85 @@ def _current_schema(con: DuckDBConnection) -> str:
         msg = "DuckDB returned empty current_schema()"
         raise RuntimeError(msg)
     return str(row[0])
+
+
+def _lookup_table_schema(table_key: str) -> TableSchema | None:
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        return None
+    return service.get_table_schema(table_key)
+
+
+def _resolve_stable_sort_keys(table_schema: TableSchema | None) -> tuple[str, ...] | None:
+    if table_schema is None:
+        return None
+    policy = table_schema.write_policy
+    if policy is not None and policy.stable_sort_keys is not None:
+        return policy.stable_sort_keys
+    return table_schema.primary_key or None
+
+
+def _temp_column_name(table: pa.Table, *, base: str) -> str:
+    existing = set(table.column_names)
+    name = base
+    suffix = 1
+    while name in existing:
+        name = f"{base}_{suffix}"
+        suffix += 1
+    return name
+
+
+def _stable_order_by_hash(table: pa.Table, *, columns: list[str]) -> pa.Table:
+    if table.num_rows <= 1:
+        return table
+    available = [name for name in columns if name in table.column_names]
+    if not available:
+        return table
+    try:
+        ordinal = hash_struct_ordinal(
+            table,
+            columns=available,
+            modulus=_HASH_ORDINAL_MODULUS,
+        )
+    except (RuntimeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError, TypeError):
+        return table
+    temp_name = _temp_column_name(table, base="__stable_ordinal")
+    try:
+        table_with = table.append_column(temp_name, ordinal)
+        indices = stable_sort_indices(table_with, sort_keys=[(temp_name, "ascending")])
+    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
+        return table
+    return table.take(indices)
+
+
+def _apply_table_ordering(table: pa.Table, *, table_key: str) -> pa.Table:
+    if table.num_rows <= 1:
+        return table
+    table_schema = _lookup_table_schema(table_key)
+    stable_keys = _resolve_stable_sort_keys(table_schema)
+    if stable_keys:
+        available = [key for key in stable_keys if key in table.column_names]
+        if available:
+            sort_keys: list[SortKey] = [(key, "ascending") for key in available]
+            try:
+                indices = stable_sort_indices(table, sort_keys=sort_keys)
+            except (
+                pa.ArrowInvalid,
+                pa.ArrowNotImplementedError,
+                pa.ArrowTypeError,
+                TypeError,
+                ValueError,
+            ):
+                indices = None
+            if indices is not None:
+                return table.take(indices)
+    hash_columns = (
+        [name for name in table_schema.primary_key if name in table.column_names]
+        if table_schema is not None and table_schema.primary_key
+        else list(table.column_names)
+    )
+    return _stable_order_by_hash(table, columns=hash_columns)
 
 
 def _set_schema(con: DuckDBConnection, schema: str) -> None:

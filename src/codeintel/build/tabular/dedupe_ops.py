@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import polars as pl
 import pyarrow as pa
 
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.compute_helpers import array_from_compute, call_compute, sort_options
+from codeintel.build.tabular.compute_helpers import array_from_compute
 from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_reader
+from codeintel.build.tabular.kernels import SortKey, stable_sort_indices
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_rows
 
@@ -46,11 +47,39 @@ def _row_index_name(table: pa.Table, *, base: str) -> str:
     return name
 
 
-def _sort_table_for_preference(table: pa.Table, prefer_columns: Sequence[str]) -> pa.Table:
-    sort_keys = [(name, "descending") for name in prefer_columns]
-    options = sort_options(sort_keys, null_placement="at_end")
-    indices = call_compute("sort_indices", [table], options=options)
-    if indices is None:
+def _dedupe_sort_columns(
+    *,
+    available_columns: set[str],
+    key_columns: Sequence[str],
+    prefer_columns: Sequence[str],
+) -> tuple[list[str], list[bool]]:
+    keys = [name for name in key_columns if name in available_columns]
+    prefer = [name for name in prefer_columns if name in available_columns and name not in keys]
+    columns = [*keys, *prefer]
+    descending = [False] * len(keys) + [True] * len(prefer)
+    return columns, descending
+
+
+def _sort_table_for_dedupe(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+    prefer_columns: Sequence[str],
+) -> pa.Table:
+    columns, descending = _dedupe_sort_columns(
+        available_columns=set(table.column_names),
+        key_columns=key_columns,
+        prefer_columns=prefer_columns,
+    )
+    if not columns:
+        return table
+    sort_keys: list[SortKey] = []
+    for name, is_desc in zip(columns, descending, strict=True):
+        order: Literal["ascending", "descending"] = "descending" if is_desc else "ascending"
+        sort_keys.append((name, order))
+    try:
+        indices = stable_sort_indices(table, sort_keys=sort_keys, null_placement="at_end")
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         return table
     return table.take(indices)
 
@@ -99,10 +128,12 @@ def dedupe_table_for_table(
     if schema is None or not schema.primary_key:
         return table
     key_columns = list(schema.primary_key)
-    if prefer_columns:
-        prefer = [name for name in prefer_columns if name in set(table.column_names)]
-        if prefer:
-            table = _sort_table_for_preference(table, prefer)
+    prefer = list(prefer_columns or ())
+    table = _sort_table_for_dedupe(
+        table,
+        key_columns=key_columns,
+        prefer_columns=prefer,
+    )
     try:
         return table.drop_duplicates(key_columns)
     except (AttributeError, pa.ArrowNotImplementedError, pa.ArrowTypeError):
@@ -133,10 +164,17 @@ def _dedupe_lazyframe_for_table(
     if schema is None or not schema.primary_key:
         return frame
     key_columns = list(schema.primary_key)
-    if prefer_columns:
-        prefer = [column for column in prefer_columns if column in set(schema.column_names())]
-        if prefer:
-            frame = frame.sort(by=prefer, descending=[True] * len(prefer), nulls_last=True)
+    try:
+        available = set(frame.collect_schema().names())
+    except (AttributeError, pl.exceptions.PolarsError, ValueError):
+        available = set()
+    columns, descending = _dedupe_sort_columns(
+        available_columns=available if available else set(schema.column_names()),
+        key_columns=key_columns,
+        prefer_columns=list(prefer_columns or ()),
+    )
+    if columns:
+        frame = frame.sort(by=columns, descending=descending, nulls_last=True)
     return frame.unique(subset=key_columns, keep="first")
 
 

@@ -58,7 +58,7 @@ def test_inspect_to_ast_uses_source_span_match() -> None:
     assert edges.num_rows == 1
     row = edges.to_pylist()[0]
     assert row["edge_kind"] == "INSPECT_ANCHORS_AST"
-    extras = decode_payload(row.get("extras_json"))
+    extras = decode_payload(row.get("extras"))
     assert isinstance(extras, dict)
     assert extras.get("match_kind") == "SOURCE_SPAN"
     assert extras.get("match_confidence") is not None

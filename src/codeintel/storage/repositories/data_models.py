@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import SupportsInt, cast
@@ -197,7 +197,7 @@ class DataModelsRepository(BaseRepository):
             "module",
             "rel_path",
             "model_kind",
-            "base_classes_json",
+            "extras",
             "doc_short",
             "doc_long",
             "created_at",
@@ -207,6 +207,12 @@ class DataModelsRepository(BaseRepository):
         result: list[DataModelRow] = []
         for row in rows:
             created_at = _normalize_created_at(row.get("created_at"), default=_DEFAULT_CREATED_AT)
+            extras = row.get("extras")
+            base_classes = (
+                extras.get("base_classes")
+                if isinstance(extras, Mapping)
+                else row.get("base_classes_json")
+            )
             result.append(
                 DataModelRow(
                     repo=str(row.get("repo") or self.repo),
@@ -217,7 +223,7 @@ class DataModelsRepository(BaseRepository):
                     module=str(row.get("module") or ""),
                     rel_path=str(row.get("rel_path") or ""),
                     model_kind=str(row.get("model_kind") or ""),
-                    base_classes=_decode_base_classes(row.get("base_classes_json")),
+                    base_classes=_decode_base_classes(base_classes),
                     doc_short=str(row["doc_short"]) if row.get("doc_short") is not None else None,
                     doc_long=str(row["doc_long"]) if row.get("doc_long") is not None else None,
                     created_at=created_at,
@@ -254,7 +260,7 @@ class DataModelsRepository(BaseRepository):
             "required",
             "has_default",
             "default_expr",
-            "constraints_json",
+            "extras",
             "source",
             "rel_path",
             "lineno",
@@ -265,6 +271,12 @@ class DataModelsRepository(BaseRepository):
         result: list[DataModelFieldRow] = []
         for row in rows:
             created_at = _normalize_created_at(row.get("created_at"), default=_DEFAULT_CREATED_AT)
+            extras = row.get("extras")
+            constraints = (
+                extras.get("constraints")
+                if isinstance(extras, Mapping)
+                else row.get("constraints_json")
+            )
             result.append(
                 DataModelFieldRow(
                     repo=str(row.get("repo") or self.repo),
@@ -279,7 +291,7 @@ class DataModelsRepository(BaseRepository):
                     default_expr=str(row["default_expr"])
                     if row.get("default_expr") is not None
                     else None,
-                    constraints=decode_json_dict(row.get("constraints_json")),
+                    constraints=decode_json_dict(constraints),
                     source=str(row.get("source") or ""),
                     rel_path=str(row.get("rel_path") or ""),
                     lineno=_as_int(row.get("lineno")),
@@ -323,7 +335,7 @@ class DataModelsRepository(BaseRepository):
             "relationship_kind",
             "multiplicity",
             "via",
-            "evidence_json",
+            "extras",
             "rel_path",
             "lineno",
             "created_at",
@@ -333,6 +345,10 @@ class DataModelsRepository(BaseRepository):
         result: list[DataModelRelationshipRow] = []
         for row in rows:
             created_at = _normalize_created_at(row.get("created_at"), default=_DEFAULT_CREATED_AT)
+            extras = row.get("extras")
+            evidence = (
+                extras.get("evidence") if isinstance(extras, Mapping) else row.get("evidence_json")
+            )
             result.append(
                 DataModelRelationshipRow(
                     repo=str(row.get("repo") or self.repo),
@@ -353,7 +369,7 @@ class DataModelsRepository(BaseRepository):
                     if row.get("multiplicity") is not None
                     else None,
                     via=str(row["via"]) if row.get("via") is not None else None,
-                    evidence=decode_json_dict(row.get("evidence_json")),
+                    evidence=decode_json_dict(evidence),
                     rel_path=str(row.get("rel_path") or ""),
                     lineno=_as_int(row.get("lineno")),
                     created_at=created_at,
@@ -395,7 +411,7 @@ class DataModelsRepository(BaseRepository):
             "module",
             "rel_path",
             "model_kind",
-            "base_classes_json",
+            "extras",
             "fields",
             "relationships",
             "doc_short",
@@ -410,6 +426,12 @@ class DataModelsRepository(BaseRepository):
             repo = str(row.get("repo") or self.repo)
             commit = str(row.get("commit") or self.commit)
             model_id = str(row.get("model_id") or "")
+            extras = row.get("extras")
+            base_classes = (
+                extras.get("base_classes")
+                if isinstance(extras, Mapping)
+                else row.get("base_classes_json")
+            )
             result.append(
                 NormalizedDataModel(
                     repo=repo,
@@ -420,7 +442,7 @@ class DataModelsRepository(BaseRepository):
                     module=str(row.get("module") or ""),
                     rel_path=str(row.get("rel_path") or ""),
                     model_kind=str(row.get("model_kind") or ""),
-                    base_classes=_decode_base_classes(row.get("base_classes_json")),
+                    base_classes=_decode_base_classes(base_classes),
                     fields=_decode_field_structs(
                         row.get("fields"),
                         repo=repo,

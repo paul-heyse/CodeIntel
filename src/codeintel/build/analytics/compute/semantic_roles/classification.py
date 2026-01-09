@@ -256,7 +256,12 @@ def classify_modules(
                 module_name,
                 role,
                 confidence,
-                {"function_roles": role_scores, "tag_signals": tag_signals},
+                {
+                    "role_sources": {
+                        "function_roles": role_scores,
+                        "tag_signals": tag_signals,
+                    }
+                },
                 now,
             )
         )

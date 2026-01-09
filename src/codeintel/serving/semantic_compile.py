@@ -29,6 +29,7 @@ from codeintel.core.hamilton.semantic_tags import (
 )
 from codeintel.core.hamilton.tag_filters import tf_semantic_views
 from codeintel.core.hamilton.tag_query import TagQuery
+from codeintel.core.schemas.primitives import column_type_is_nested
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
 
     from hamilton.driver import Driver
 
+    from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
 
 
@@ -78,6 +80,100 @@ def _parse_joins(s: str | None) -> list[dict[str, object]]:
             raise TypeError(msg)
         joins.append({str(k): v for k, v in item.items()})
     return joins
+
+
+_ORDER_BY_PRIORITY: tuple[str, ...] = (
+    "repo",
+    "commit",
+    "run_id",
+    "snapshot_id",
+    "rel_path",
+    "path",
+    "module",
+    "symbol",
+    "symbol_id",
+    "node_id",
+    "cpg_node_id",
+    "goid_h128",
+    "id",
+    "name",
+    "start_byte",
+    "start_line",
+    "start_col",
+    "end_byte",
+    "end_line",
+    "end_col",
+    "ordinal",
+)
+_ORDER_BY_BLOCKLIST: frozenset[str] = frozenset(
+    {
+        "extras",
+        "extras_kv",
+        "extra",
+        "metadata",
+        "owners",
+        "tags",
+    }
+)
+_ORDER_BY_ID_SUFFIXES: tuple[str, ...] = ("_id", "_hash", "_sha", "_digest", "_h128")
+
+
+def _looks_identifier(column: str) -> bool:
+    if column in _ORDER_BY_PRIORITY:
+        return True
+    return column.endswith(_ORDER_BY_ID_SUFFIXES)
+
+
+def _filter_order_by_candidates(
+    *,
+    schema: TableSchema | None,
+    columns: list[str],
+) -> list[str]:
+    if not columns:
+        return []
+    type_by_name: dict[str, str] | None = None
+    if schema is not None:
+        type_by_name = {column.name: column.type for column in schema.columns}
+    candidates: list[str] = []
+    for column in columns:
+        if column in _ORDER_BY_BLOCKLIST:
+            continue
+        if type_by_name is None:
+            candidates.append(column)
+            continue
+        column_type = type_by_name.get(column)
+        if column_type is None:
+            candidates.append(column)
+            continue
+        if not column_type_is_nested(column_type):
+            candidates.append(column)
+    return candidates
+
+
+def _resolve_default_order_by(
+    *,
+    schema: TableSchema | None,
+    columns: list[str],
+    primary_key: list[str],
+    explicit_order: list[str],
+) -> list[str]:
+    if explicit_order:
+        return explicit_order
+    if primary_key:
+        return []
+    if schema is not None and schema.primary_key:
+        schema_pk = [column for column in schema.primary_key if column in columns]
+        if schema_pk:
+            return schema_pk
+    candidates = _filter_order_by_candidates(schema=schema, columns=columns)
+    if candidates:
+        prioritized = [column for column in _ORDER_BY_PRIORITY if column in candidates]
+        if prioritized:
+            return prioritized
+        id_like = [column for column in candidates if _looks_identifier(column)]
+        if id_like:
+            return sorted(id_like)
+    return []
 
 
 @dataclass(frozen=True)
@@ -135,16 +231,21 @@ def compile_semantic_registry_from_views(
         if not semantic_id or not table_key:
             continue
 
+        schema = schema_provider.get_table_schema(table_key)
         explicit_cols = _split_csv(tags.get(TAG_SEMANTIC_COLS))
         columns_dynamic = not explicit_cols
-        if explicit_cols:
-            cols = explicit_cols
-        else:
-            schema = schema_provider.get_table_schema(table_key)
-            cols = schema.column_names() if schema else []
+        cols = explicit_cols or (schema.column_names() if schema else [])
 
         entity = tags.get(TAG_SEMANTIC_ENTITY) or tags.get(ht.TAG_ENTITY) or "unknown"
         grain = tags.get(TAG_SEMANTIC_GRAIN) or tags.get(ht.TAG_GRAIN) or "unknown"
+        primary_key = _split_csv(tags.get(TAG_SEMANTIC_PK))
+        explicit_order = _split_csv(tags.get(TAG_DEFAULT_ORDER))
+        resolved_order = _resolve_default_order_by(
+            schema=schema,
+            columns=cols,
+            primary_key=primary_key,
+            explicit_order=explicit_order,
+        )
         view_entry: dict[str, object] = {
             "id": semantic_id,
             "kind": tags.get(TAG_SEMANTIC_KIND, "view"),
@@ -152,13 +253,13 @@ def compile_semantic_registry_from_views(
             "entity": entity,
             "grain": grain,
             "description": tags.get(TAG_SEMANTIC_DESC),
-            "primary_key": _split_csv(tags.get(TAG_SEMANTIC_PK)),
+            "primary_key": primary_key,
             "columns": cols,
             "columns_dynamic": columns_dynamic,
             "joins": _parse_joins(tags.get(TAG_SEMANTIC_JOINS)),
             "defaults": {
                 "limit": int(tags.get(TAG_DEFAULT_LIMIT, "200")),
-                "order_by": _split_csv(tags.get(TAG_DEFAULT_ORDER)),
+                "order_by": resolved_order,
             },
             "sensitivity": tags.get(TAG_SENSITIVITY, "internal"),
         }

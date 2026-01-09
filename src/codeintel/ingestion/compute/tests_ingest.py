@@ -21,6 +21,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
     table_for_columnar_rows,
 )
+from codeintel.ingestion.compute.base import persist_arrow_tables
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.engine.results import parse_test_duration, parse_test_markers
 
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
+    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 TEST_CATALOG_TABLE_KEY = "analytics.test_catalog"
@@ -73,7 +75,7 @@ def _build_test_catalog_rows(
                 "kind": "test",
                 "status": outcome,
                 "duration_ms": duration_ms,
-                "markers": list(markers),
+                "extras": {"markers": list(markers)},
                 "parametrized": parametrized,
                 "flaky": flaky,
                 "created_at": created_at,
@@ -96,6 +98,7 @@ class TestsIngestStep:
         commit: str | None = None,
         json_report_path: Path,
         context: IngestionContext | None = None,
+        storage: IngestStoragePort | None = None,
     ) -> TestsIngestResult:
         """Execute test catalog ingestion.
 
@@ -111,6 +114,8 @@ class TestsIngestStep:
             Path to the pytest JSON report.
         context
             Optional ingestion context supplying repo/commit defaults.
+        storage
+            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -159,6 +164,12 @@ class TestsIngestStep:
             TEST_CATALOG_TABLE_KEY,
             buffer.data,
             extras_policy="retain",
+        )
+        scope = f"{resolved_repo}@{resolved_commit}"
+        persist_arrow_tables(
+            storage,
+            {TEST_CATALOG_TABLE_KEY: rows_reader},
+            scope=scope,
         )
         return TestsIngestResult(
             result=ExecutionResult.ok(),

@@ -6,6 +6,8 @@ import logging
 import sys
 from dataclasses import dataclass, field
 
+import pyarrow as pa
+
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
@@ -24,8 +26,10 @@ from codeintel.build.hamilton.native.target_decorators import TargetSpecDescript
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
@@ -311,27 +315,69 @@ def t__tree_sitter_index__ingest(
             )
         )
 
+    tolerant_keys = {TS_PARSE_ERRORS_TABLE_KEY, TS_CHANGED_RANGES_TABLE_KEY}
+
+    def _finalize_table(table_key: str, value: InferableTabularInput) -> pa.Table:
+        table = tabular_to_scoped_table(
+            value,
+            columns=None,
+            scope=None,
+            require_scope_columns=False,
+        )
+        mode = "tolerant" if table_key in tolerant_keys else None
+        return finalize_ingest_table(
+            table_key,
+            table,
+            target_name=TREE_SITTER_TARGET_NAME,
+            mode=mode,
+        )
+
+    parse_manifest_table = _finalize_table(
+        TS_PARSE_MANIFEST_TABLE_KEY,
+        t__tree_sitter_index__run.parse_manifest_rows,
+    )
+    captures_table = _finalize_table(
+        TS_CAPTURES_TABLE_KEY,
+        t__tree_sitter_index__run.captures_rows,
+    )
+    nodes_table = _finalize_table(TS_NODES_TABLE_KEY, t__tree_sitter_index__run.nodes_rows)
+    edges_table = _finalize_table(TS_EDGES_TABLE_KEY, t__tree_sitter_index__run.edges_rows)
+    parse_errors_table = _finalize_table(
+        TS_PARSE_ERRORS_TABLE_KEY,
+        t__tree_sitter_index__run.parse_errors_rows,
+    )
+    changed_ranges_table = _finalize_table(
+        TS_CHANGED_RANGES_TABLE_KEY,
+        t__tree_sitter_index__run.changed_ranges_rows,
+    )
+    tokens_table = _finalize_table(TS_TOKENS_TABLE_KEY, t__tree_sitter_index__run.tokens_rows)
+    trivia_table = _finalize_table(TS_TRIVIA_TABLE_KEY, t__tree_sitter_index__run.trivia_rows)
+    language_metadata_table = _finalize_table(
+        TS_LANGUAGE_METADATA_TABLE_KEY,
+        t__tree_sitter_index__run.language_metadata_rows,
+    )
+
     payload = {
-        TS_PARSE_MANIFEST_TABLE_KEY: t__tree_sitter_index__run.parse_manifest_rows,
-        TS_CAPTURES_TABLE_KEY: t__tree_sitter_index__run.captures_rows,
-        TS_NODES_TABLE_KEY: t__tree_sitter_index__run.nodes_rows,
-        TS_EDGES_TABLE_KEY: t__tree_sitter_index__run.edges_rows,
-        TS_PARSE_ERRORS_TABLE_KEY: t__tree_sitter_index__run.parse_errors_rows,
-        TS_CHANGED_RANGES_TABLE_KEY: t__tree_sitter_index__run.changed_ranges_rows,
-        TS_TOKENS_TABLE_KEY: t__tree_sitter_index__run.tokens_rows,
-        TS_TRIVIA_TABLE_KEY: t__tree_sitter_index__run.trivia_rows,
-        TS_LANGUAGE_METADATA_TABLE_KEY: t__tree_sitter_index__run.language_metadata_rows,
+        TS_PARSE_MANIFEST_TABLE_KEY: parse_manifest_table,
+        TS_CAPTURES_TABLE_KEY: captures_table,
+        TS_NODES_TABLE_KEY: nodes_table,
+        TS_EDGES_TABLE_KEY: edges_table,
+        TS_PARSE_ERRORS_TABLE_KEY: parse_errors_table,
+        TS_CHANGED_RANGES_TABLE_KEY: changed_ranges_table,
+        TS_TOKENS_TABLE_KEY: tokens_table,
+        TS_TRIVIA_TABLE_KEY: trivia_table,
+        TS_LANGUAGE_METADATA_TABLE_KEY: language_metadata_table,
     }
     table_counts = {
-        TS_PARSE_MANIFEST_TABLE_KEY: t__tree_sitter_index__run.parse_manifest_row_count,
-        TS_CAPTURES_TABLE_KEY: t__tree_sitter_index__run.captures_row_count,
-        TS_NODES_TABLE_KEY: t__tree_sitter_index__run.nodes_row_count,
-        TS_EDGES_TABLE_KEY: t__tree_sitter_index__run.edges_row_count,
-        TS_PARSE_ERRORS_TABLE_KEY: t__tree_sitter_index__run.parse_errors_row_count,
-        TS_CHANGED_RANGES_TABLE_KEY: t__tree_sitter_index__run.changed_ranges_row_count,
-        TS_TOKENS_TABLE_KEY: t__tree_sitter_index__run.tokens_row_count,
-        TS_TRIVIA_TABLE_KEY: t__tree_sitter_index__run.trivia_row_count,
-        TS_LANGUAGE_METADATA_TABLE_KEY: t__tree_sitter_index__run.language_metadata_row_count,
+        TS_PARSE_MANIFEST_TABLE_KEY: parse_manifest_table.num_rows,
+        TS_CAPTURES_TABLE_KEY: captures_table.num_rows,
+        TS_NODES_TABLE_KEY: nodes_table.num_rows,
+        TS_EDGES_TABLE_KEY: edges_table.num_rows,
+        TS_PARSE_ERRORS_TABLE_KEY: parse_errors_table.num_rows,
+        TS_CHANGED_RANGES_TABLE_KEY: changed_ranges_table.num_rows,
+        TS_TOKENS_TABLE_KEY: tokens_table.num_rows,
+        TS_TRIVIA_TABLE_KEY: trivia_table.num_rows,
+        TS_LANGUAGE_METADATA_TABLE_KEY: language_metadata_table.num_rows,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),

@@ -15,6 +15,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_ops import unify_schemas
@@ -55,7 +56,7 @@ except ImportError:  # pragma: no cover - optional dependency
 class DatasetScanOptions:
     """Options for Arrow dataset scanning."""
 
-    batch_size: int
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
     batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
     fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
     filter_expression: ds.Expression | None = None
@@ -67,11 +68,18 @@ class DatasetScanOptions:
     memory_pool: pa.MemoryPool | None = None
     schema: pa.Schema | None = None
     columns: Sequence[str] | Mapping[str, ds.Expression] | None = None
+    provenance_columns: Sequence[str] = ()
     implicit_ordering: bool | None = None
     require_sequenced_output: bool | None = None
     unify_schemas: bool = False
     schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
     metrics_enabled: bool = False
+
+    def projection_columns(
+        self,
+    ) -> Sequence[str] | Mapping[str, ds.Expression] | None:
+        """Return projection columns merged with provenance columns."""
+        return _merge_scan_columns(self.columns, self.provenance_columns)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +92,8 @@ class QueryPlanSpec:
 
 
 _ARROW_THREADING_CONFIGURED = threading.Event()
+_DATASET_IGNORE_PREFIXES: tuple[str, ...] = (".", "_")
+_DATASET_EXCLUDE_INVALID_FILES = True
 
 
 def _resolve_arrow_scan_settings(settings: ArrowScanSettings | None = None) -> ArrowScanSettings:
@@ -293,10 +303,41 @@ def dataset_for_manifest(
             return dataset
     if manifest.files:
         paths = [str(dataset_dir / path) for path in manifest.files]
-        return ds.dataset(paths, format=parquet_format, partitioning=partitioning, schema=schema)
-    return ds.dataset(
-        str(dataset_dir), format=parquet_format, partitioning=partitioning, schema=schema
+        dataset_kwargs = _dataset_kwargs(
+            format=parquet_format,
+            partitioning=partitioning,
+            schema=schema,
+        )
+        return ds.dataset(paths, **dataset_kwargs)
+    dataset_kwargs = _dataset_kwargs(
+        format=parquet_format,
+        partitioning=partitioning,
+        schema=schema,
     )
+    return ds.dataset(str(dataset_dir), **dataset_kwargs)
+
+
+def dataset_for_path(
+    dataset_dir: Path,
+    *,
+    schema: pa.Schema | None = None,
+) -> ds.Dataset:
+    """Return a PyArrow dataset for a parquet directory path.
+
+    Parameters
+    ----------
+    dataset_dir
+        Directory containing dataset files.
+    schema
+        Optional schema override for dataset discovery.
+
+    Returns
+    -------
+    pyarrow.dataset.Dataset
+        Dataset constructed for the directory path.
+    """
+    dataset_kwargs = _dataset_kwargs(format="parquet", schema=schema)
+    return ds.dataset(str(dataset_dir), **dataset_kwargs)
 
 
 def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanner:
@@ -402,8 +443,8 @@ def scan_dataset_reader(
     if not dataset_dir.is_dir():
         return None
     try:
-        dataset = ds.dataset(str(dataset_dir), format="parquet")
-        resolved = options or DatasetScanOptions(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        dataset = ds.dataset(str(dataset_dir), **_dataset_kwargs(format="parquet"))
+        resolved = options or DatasetScanOptions()
         scanner = build_scanner(dataset, options=resolved)
         return scanner.to_reader()
     except (OSError, ValueError, pa.ArrowInvalid):
@@ -453,7 +494,7 @@ def scan_dataset_lazyframe(
                 row_index_name=row_index_name,
                 row_index_offset=row_index_offset,
             )
-        dataset = ds.dataset(str(dataset_dir), format="parquet")
+        dataset = ds.dataset(str(dataset_dir), **_dataset_kwargs(format="parquet"))
         return pl.scan_pyarrow_dataset(dataset, batch_size=resolved_batch_size)
     except (OSError, ValueError, pa.ArrowInvalid):
         return None
@@ -538,6 +579,10 @@ def _resolve_scan_schema(
 def _filter_scan_kwargs(
     target: Callable[..., object], kwargs: dict[str, object]
 ) -> dict[str, object]:
+    return _filter_kwargs(target, kwargs)
+
+
+def _filter_kwargs(target: Callable[..., object], kwargs: dict[str, object]) -> dict[str, object]:
     try:
         params = inspect.signature(target).parameters
     except (TypeError, ValueError):
@@ -568,7 +613,7 @@ def _parquet_fragment_scan_options(
         kwargs["buffer_size"] = options.parquet_buffer_size
     if not kwargs:
         return None
-    filtered = _filter_scan_kwargs(parquet_options, kwargs)
+    filtered = _filter_kwargs(parquet_options, kwargs)
     if not filtered:
         return None
     try:
@@ -596,11 +641,12 @@ def _build_scan_kwargs(
         "fragment_scan_options": fragment_scan_options,
     }
     scan_kwargs.update({key: value for key, value in optional_kwargs.items() if value is not None})
-    if options.columns is not None:
-        if isinstance(options.columns, Mapping):
-            scan_kwargs["columns"] = options.columns
+    columns = options.projection_columns()
+    if columns is not None:
+        if isinstance(columns, Mapping):
+            scan_kwargs["columns"] = columns
         else:
-            scan_kwargs["columns"] = list(options.columns)
+            scan_kwargs["columns"] = list(columns)
     return scan_kwargs
 
 
@@ -676,13 +722,16 @@ def _dataset_from_metadata(
     schema: pa.Schema | None,
     parquet_format: ds.FileFormat | None,
 ) -> ds.Dataset | None:
+    dataset_kwargs = _parquet_dataset_kwargs(
+        partitioning=partitioning,
+        schema=schema,
+        parquet_format=parquet_format,
+        dataset_dir=dataset_dir,
+    )
     try:
         return ds.parquet_dataset(
             str(metadata_path),
-            format=parquet_format,
-            partitioning=partitioning,
-            partition_base_dir=str(dataset_dir),
-            schema=schema,
+            **dataset_kwargs,
         )
     except (OSError, ValueError, pa.ArrowInvalid):
         return None
@@ -715,6 +764,65 @@ def _read_str_list(value: object) -> list[str] | None:
     if isinstance(value, tuple):
         return [str(item) for item in value]
     return None
+
+
+def _merge_scan_columns(
+    columns: Sequence[str] | Mapping[str, ds.Expression] | None,
+    provenance_columns: Sequence[str],
+) -> Sequence[str] | Mapping[str, ds.Expression] | None:
+    if not provenance_columns:
+        return columns
+    provenance = {name: E.field(name) for name in provenance_columns}
+    if columns is None:
+        return provenance
+    if isinstance(columns, Mapping):
+        merged = dict(provenance)
+        merged.update(columns)
+        return merged
+    names = list(provenance_columns)
+    for name in columns:
+        if name not in provenance:
+            names.append(name)
+    return names
+
+
+def _dataset_discovery_kwargs() -> dict[str, object]:
+    return {
+        "exclude_invalid_files": _DATASET_EXCLUDE_INVALID_FILES,
+        "ignore_prefixes": list(_DATASET_IGNORE_PREFIXES),
+    }
+
+
+def _dataset_kwargs(
+    *,
+    format: ds.FileFormat | None = None,
+    partitioning: ds.Partitioning | str | None = None,
+    schema: pa.Schema | None = None,
+) -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "format": format,
+        "partitioning": partitioning,
+        "schema": schema,
+    }
+    kwargs.update(_dataset_discovery_kwargs())
+    return _filter_kwargs(ds.dataset, kwargs)
+
+
+def _parquet_dataset_kwargs(
+    *,
+    dataset_dir: Path,
+    parquet_format: ds.FileFormat | None,
+    partitioning: ds.Partitioning | str | None,
+    schema: pa.Schema | None,
+) -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "format": parquet_format,
+        "partitioning": partitioning,
+        "partition_base_dir": str(dataset_dir),
+        "schema": schema,
+    }
+    kwargs.update(_dataset_discovery_kwargs())
+    return _filter_kwargs(ds.parquet_dataset, kwargs)
 
 
 def _safe_get_fragments(
@@ -807,6 +915,7 @@ __all__ = [
     "build_scanner",
     "configure_arrow_threading",
     "dataset_for_manifest",
+    "dataset_for_path",
     "empty_reader_from_schema",
     "resolve_partitioning",
     "sample_reader",

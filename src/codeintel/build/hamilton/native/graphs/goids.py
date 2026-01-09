@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -14,7 +15,7 @@ from codeintel.build.graphs.compute.goid import (
     GoidDescriptor,
     build_crosswalk_row,
     build_goid_row,
-    compute_goid_result,
+    build_urn,
     determine_kind,
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -33,8 +34,11 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.kernels import hash_struct_goid
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.spans import normalize_line_span
@@ -303,6 +307,48 @@ def _collect_descriptors(
     return descriptors
 
 
+def _hash_goids(
+    descriptors: Sequence[_ResolvedDescriptor],
+) -> list[int]:
+    if not descriptors:
+        return []
+    rows = [
+        {
+            "repo": resolved.descriptor.repo,
+            "commit": resolved.descriptor.commit,
+            "language": resolved.descriptor.language,
+            "rel_path": resolved.descriptor.rel_path,
+            "kind": resolved.descriptor.kind,
+            "qualname": resolved.descriptor.qualname,
+            "start_line": resolved.descriptor.start_line,
+            "end_line": resolved.descriptor.end_line,
+        }
+        for resolved in descriptors
+    ]
+    table = pa.Table.from_pylist(rows)
+    hashed = hash_struct_goid(
+        table,
+        columns=(
+            "repo",
+            "commit",
+            "language",
+            "rel_path",
+            "kind",
+            "qualname",
+            "start_line",
+            "end_line",
+        ),
+    )
+    results: list[int] = []
+    for value in iter_array_values(hashed):
+        normalized = normalize_decimal_id(value)
+        if normalized is None:
+            msg = "Failed to normalize GOID hash value."
+            raise ValueError(msg)
+        results.append(normalized)
+    return results
+
+
 def goids_inputs(
     q__core__modules: InferableTabularInput,
     q__core__ast_nodes: InferableTabularInput,
@@ -369,22 +415,23 @@ def goids_analysis(env: BuildEnv, goids_inputs: _GoidsInputs) -> _GoidsAnalysis:
         return _GoidsAnalysis(goid_rows=(), crosswalk_rows=())
 
     now = datetime.now(UTC)
+    hashed_goids = _hash_goids(descriptors)
     goid_rows: list[GoidRow] = []
     crosswalk_rows: list[GoidCrosswalkRow] = []
-    for resolved in descriptors:
-        result = compute_goid_result(resolved.descriptor)
+    for resolved, goid_hash in zip(descriptors, hashed_goids, strict=True):
+        urn = build_urn(resolved.descriptor)
         goid_rows.append(
             build_goid_row(
                 resolved.descriptor,
-                result.goid_h128,
-                result.urn,
+                goid_hash,
+                urn,
                 now,
             )
         )
         crosswalk_rows.append(
             build_crosswalk_row(
                 resolved.descriptor,
-                result.urn,
+                urn,
                 resolved.module_name,
                 now,
             )

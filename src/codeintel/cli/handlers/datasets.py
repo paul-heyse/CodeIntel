@@ -45,6 +45,7 @@ from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.errors.taxonomy import OperationErrorCode
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
+from codeintel.core.schemas.primitives import TableSchema, resolve_stable_sort_keys
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.gateway.relation import relation_from_table_key
 from codeintel.storage.protocols.duckdb_relation import adapt_duckdb_relation_stream
@@ -58,7 +59,6 @@ if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.core.schemas.primitives import TableSchema
     from codeintel.storage.gateway.protocol import DuckDBRelation
 
 LOG = logging.getLogger(__name__)
@@ -459,6 +459,7 @@ def _migrate_dataset(
         schema_hash=schema_hash_value,
         manifest_extras=_manifest_extras(table_schema),
         schema_metadata=metadata,
+        stable_sort_keys=resolve_stable_sort_keys(table_schema),
     )
     write_dataset(
         dataset_root=context.dataset_root_dir,

@@ -171,7 +171,7 @@ def _blob_column_names(
     schema_mapping: Mapping[str, Mapping[str, str]] | None,
 ) -> frozenset[str]:
     if not schema_mapping:
-        return frozenset({"entrypoints_json", "modules_json"})
+        return frozenset()
     names: set[str] = set()
     for columns in schema_mapping.values():
         for column, column_type in columns.items():

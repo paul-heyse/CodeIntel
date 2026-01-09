@@ -309,7 +309,7 @@ def test_build_function_effects_with_transitive_and_missing(
                   spawns_threads_or_tasks,
                   has_transitive_effects,
                   purity_confidence,
-                  effects_json
+                  struct_extract(extras, 'effects') AS effects_json
                 from analytics.function_effects
                 """
             ).fetchall()

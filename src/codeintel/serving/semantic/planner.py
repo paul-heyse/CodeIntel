@@ -168,12 +168,13 @@ class SemanticQueryPlanner:
         else:
             columns = ctx.allowed_columns
         _validate_filters(filters=request.filters, allowed_columns=ctx.allowed_columns)
-        _validate_order_by(order_by=request.order_by, allowed_columns=ctx.allowed_columns)
-
+        effective_order = request.order_by or ctx.view.defaults.order_by
+        resolved_order = list(effective_order)
+        _validate_order_by(order_by=resolved_order, allowed_columns=ctx.allowed_columns)
         inputs = PlanInputs(
             columns=columns,
             filters=request.filters,
-            order_by=request.order_by,
+            order_by=resolved_order,
             offset=request.offset,
         )
         return inputs, request.limit

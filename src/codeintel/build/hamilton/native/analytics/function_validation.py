@@ -11,13 +11,14 @@ from codeintel.build.analytics.parsing.compute import get_validation_rows
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
 from codeintel.build.hamilton.native.patterns import (
     TableTargetContext,
     attach_table_target_template,
     build_single_table_target_spec,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, FunctionAnalyticsResult)
 
@@ -45,8 +46,7 @@ def function_validation__base(
     rows = get_validation_rows(function_analytics_result.reporter, None).function_rows
     if not rows:
         return empty_table_for_table(FUNCTION_VALIDATION_TABLE_KEY)
-    reader, _ = table_for_rows(FUNCTION_VALIDATION_TABLE_KEY, rows)
-    return reader
+    return finalize_analytics_rows(FUNCTION_VALIDATION_TABLE_KEY, rows)
 
 
 _MODULE = sys.modules[__name__]

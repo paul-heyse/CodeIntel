@@ -14,7 +14,7 @@ import hashlib
 import json
 import logging
 import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from numbers import Integral
@@ -22,9 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
-import pyarrow.compute as pc
 from hamilton.function_modifiers import cache
-from pyarrow import acero
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -56,17 +54,24 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.tabular.arrow_ops import (
-    align_table_to_contract,
-    dedupe_table_for_table,
-    emit_alignment_report,
     iter_rows,
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.finalize_ops import (
+    FinalizeDedupe,
+    FinalizeResult,
+    FinalizeSpec,
+    finalize_join_keys,
+    finalize_table,
+)
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import (
     columnar_row_count,
@@ -1409,6 +1414,17 @@ def _scip_payload_frame(
     return frame
 
 
+def _scip_payload_table(
+    t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
+    table_key: str,
+) -> pa.Table:
+    return tabular_to_arrow_table(_scip_payload_frame(t__scip__ingest, table_key))
+
+
+def _finalize_scip_table(table_key: str, table: pa.Table) -> pa.Table:
+    return finalize_ingest_table(table_key, table, target_name=SCIP_TARGET_NAME)
+
+
 def scip__symbol_rows__base(
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput:
@@ -1419,7 +1435,8 @@ def scip__symbol_rows__base(
     InferableTabularInput
         Tabular input for core.scip_symbols.
     """
-    return _scip_payload_frame(t__scip__ingest, SCIP_SYMBOLS_TABLE_KEY)
+    table = _scip_payload_table(t__scip__ingest, SCIP_SYMBOLS_TABLE_KEY)
+    return _finalize_scip_table(SCIP_SYMBOLS_TABLE_KEY, table)
 
 
 def scip__occurrence_rows__base(
@@ -1432,7 +1449,8 @@ def scip__occurrence_rows__base(
     InferableTabularInput
         Tabular input for core.scip_occurrences.
     """
-    return _scip_payload_frame(t__scip__ingest, SCIP_OCCURRENCES_TABLE_KEY)
+    table = _scip_payload_table(t__scip__ingest, SCIP_OCCURRENCES_TABLE_KEY)
+    return _finalize_scip_table(SCIP_OCCURRENCES_TABLE_KEY, table)
 
 
 def scip__symbol_info_rows__base(
@@ -1445,7 +1463,8 @@ def scip__symbol_info_rows__base(
     InferableTabularInput
         Tabular input for core.scip_symbol_information.
     """
-    return _scip_payload_frame(t__scip__ingest, SCIP_SYMBOL_INFO_TABLE_KEY)
+    table = _scip_payload_table(t__scip__ingest, SCIP_SYMBOL_INFO_TABLE_KEY)
+    return _finalize_scip_table(SCIP_SYMBOL_INFO_TABLE_KEY, table)
 
 
 def scip__relationship_rows__base(
@@ -1458,7 +1477,8 @@ def scip__relationship_rows__base(
     InferableTabularInput
         Tabular input for core.scip_symbol_relationships.
     """
-    return _scip_payload_frame(t__scip__ingest, SCIP_RELATIONSHIPS_TABLE_KEY)
+    table = _scip_payload_table(t__scip__ingest, SCIP_RELATIONSHIPS_TABLE_KEY)
+    return _finalize_scip_table(SCIP_RELATIONSHIPS_TABLE_KEY, table)
 
 
 def scip__diagnostic_rows__base(
@@ -1471,7 +1491,8 @@ def scip__diagnostic_rows__base(
     InferableTabularInput
         Tabular input for core.scip_diagnostics.
     """
-    return _scip_payload_frame(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
+    table = _scip_payload_table(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
+    return _finalize_scip_table(SCIP_DIAGNOSTICS_TABLE_KEY, table)
 
 
 def _derive_external_symbol_rows(
@@ -1514,47 +1535,101 @@ def _derive_external_symbol_rows(
     )
 
 
+def _precheck_join_table(
+    table: pa.Table,
+    *,
+    table_key: str | None,
+    join_keys: Sequence[str],
+) -> pa.Table:
+    if table.num_rows == 0 or not join_keys:
+        return table
+    if table_key is None:
+        result = finalize_join_keys(
+            table,
+            required_non_null=join_keys,
+            key_fields=join_keys,
+        )
+    else:
+        result = finalize_table(
+            table,
+            spec=FinalizeSpec(
+                table_key=table_key,
+                mode="tolerant",
+                required_non_null=join_keys,
+                key_fields=join_keys,
+                dedupe=FinalizeDedupe(enabled=False),
+                target_name=SCIP_TARGET_NAME,
+            ),
+        )
+    _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
+    return result.good
+
+
+def _log_join_precheck_errors(
+    result: FinalizeResult,
+    *,
+    table_key: str | None,
+    join_keys: Sequence[str],
+) -> None:
+    if result.errors.num_rows == 0:
+        return
+    table_label = table_key or "derived"
+    log.warning(
+        "Join key precheck dropped %d rows table=%s keys=%s",
+        result.errors.num_rows,
+        table_label,
+        ",".join(join_keys),
+    )
+
+
 def _distinct_external_symbol_rows(symbols: pa.Table) -> pa.Table:
     if symbols.num_rows == 0:
         return symbols
-    source = acero.Declaration(
-        "table_source",
-        acero.TableSourceNodeOptions(symbols),
+    join_keys = ("repo", "commit", "symbol")
+    checked = _precheck_join_table(
+        symbols,
+        table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+        join_keys=join_keys,
     )
-    distinct = acero.Declaration(
-        "aggregate",
-        acero.AggregateNodeOptions(
-            keys=[pc.field("repo"), pc.field("commit"), pc.field("symbol")],
-            aggregates=[],
-        ),
-        inputs=[source],
+    project = {name: E.field(name) for name in join_keys}
+    plan = (
+        Plan.table(checked)
+        .project(project)
+        .aggregate(keys=[E.field(key) for key in join_keys], aggregates=[])
+        .order_by(sort_keys=[(key, "ascending") for key in join_keys])
     )
-    reader = distinct.to_reader(use_threads=True)
-    return reader_to_table(reader)
+    return materialize_plan(plan, use_threads=True)
 
 
 def _left_anti_external_symbols(left: pa.Table, right: pa.Table) -> pa.Table:
     if left.num_rows == 0:
         return left
-    source_left = acero.Declaration(
-        "table_source",
-        acero.TableSourceNodeOptions(left),
+    join_keys = ("repo", "commit", "symbol")
+    project = {name: E.field(name) for name in join_keys}
+    left_checked = _precheck_join_table(
+        left,
+        table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+        join_keys=join_keys,
     )
-    source_right = acero.Declaration(
-        "table_source",
-        acero.TableSourceNodeOptions(right),
+    right_checked = _precheck_join_table(
+        right,
+        table_key=SCIP_SYMBOL_INFO_TABLE_KEY,
+        join_keys=join_keys,
     )
-    anti = acero.Declaration(
-        "hashjoin",
-        acero.HashJoinNodeOptions(
-            join_type="left anti",
-            left_keys=["repo", "commit", "symbol"],
-            right_keys=["repo", "commit", "symbol"],
+    left_plan = Plan.table(left_checked).project(project)
+    right_plan = Plan.table(right_checked).project(project)
+    joined = left_plan.hash_join(
+        right=right_plan,
+        spec=HashJoinSpec(
+            left_keys=list(join_keys),
+            right_keys=list(join_keys),
+            how="left anti",
+            left_output=list(join_keys),
+            right_output=[],
         ),
-        inputs=[source_left, source_right],
     )
-    reader = anti.to_reader(use_threads=True)
-    return reader_to_table(reader)
+    ordered = joined.order_by(sort_keys=[(key, "ascending") for key in join_keys])
+    return materialize_plan(ordered, use_threads=True)
 
 
 def scip__external_symbol_rows__base(
@@ -1570,27 +1645,16 @@ def scip__external_symbol_rows__base(
     InferableTabularInput
         Tabular input for core.scip_external_symbols.
     """
-    base = _scip_payload_frame(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
-    base_table = tabular_to_arrow_table(base)
+    base_table = _scip_payload_table(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
     derived = _derive_external_symbol_rows(
         tabular_to_arrow_table(scip__occurrence_rows__base),
         tabular_to_arrow_table(scip__relationship_rows__base),
         tabular_to_arrow_table(scip__symbol_info_rows__base),
     )
     if derived.num_rows == 0:
-        return base_table
+        return _finalize_scip_table(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY, base_table)
     combined = concat_tables_unified([base_table, derived])
-    combined = dedupe_table_for_table(
-        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
-        combined,
-        prefer_columns=("package_manager", "package_name", "package_version"),
-    )
-    return align_table_to_contract(
-        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
-        combined,
-        target_name=SCIP_TARGET_NAME,
-        reporter=emit_alignment_report,
-    )
+    return _finalize_scip_table(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY, combined)
 
 
 def scip__index_metadata_rows__base(
@@ -1603,7 +1667,8 @@ def scip__index_metadata_rows__base(
     InferableTabularInput
         Tabular input for core.scip_index_metadata.
     """
-    return _scip_payload_frame(t__scip__ingest, SCIP_INDEX_METADATA_TABLE_KEY)
+    table = _scip_payload_table(t__scip__ingest, SCIP_INDEX_METADATA_TABLE_KEY)
+    return _finalize_scip_table(SCIP_INDEX_METADATA_TABLE_KEY, table)
 
 
 def scip__module_state_rows__base(
@@ -1616,7 +1681,8 @@ def scip__module_state_rows__base(
     InferableTabularInput
         Tabular input for core.scip_module_state.
     """
-    return _scip_payload_frame(t__scip__ingest, SCIP_MODULE_STATE_TABLE_KEY)
+    table = _scip_payload_table(t__scip__ingest, SCIP_MODULE_STATE_TABLE_KEY)
+    return _finalize_scip_table(SCIP_MODULE_STATE_TABLE_KEY, table)
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)

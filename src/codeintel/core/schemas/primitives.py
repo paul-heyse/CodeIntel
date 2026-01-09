@@ -247,6 +247,9 @@ class ColumnTypeRegistry:
 
 
 COLUMN_TYPE_REGISTRY = ColumnTypeRegistry()
+_ALLOWED_COLUMN_PROMOTIONS: Final[dict[str, tuple[str, ...]]] = {
+    "INTEGER": ("BIGINT",),
+}
 
 
 def normalize_column_type(value: str) -> ColumnType:
@@ -287,6 +290,20 @@ def column_type_is_nested(value: ColumnType) -> bool:
     return COLUMN_TYPE_REGISTRY.is_nested(value)
 
 
+def is_allowed_column_promotion(source: ColumnType, target: ColumnType) -> bool:
+    """Return True when a column type promotion is explicitly allowed."""
+    source_norm = normalize_column_type(source)
+    target_norm = normalize_column_type(target)
+    if source_norm == target_norm:
+        return True
+    source_base = column_type_base(source_norm)
+    target_base = column_type_base(target_norm)
+    if source_base in COMPLEX_TYPE_BASES or target_base in COMPLEX_TYPE_BASES:
+        return False
+    allowed = _ALLOWED_COLUMN_PROMOTIONS.get(source_base, ())
+    return target_base in allowed
+
+
 WriteMode = Literal["append", "replace", "upsert"]
 ReplaceScope = Literal["snapshot", "table"]
 
@@ -310,6 +327,8 @@ class TableWritePolicy:
         Optional column used to gate updates (only update when hash differs).
     use_staging
         Whether to use a staging relation for writes.
+    stable_sort_keys
+        Optional stable sort keys for deterministic on-disk ordering.
     """
 
     mode: WriteMode = "replace"
@@ -318,6 +337,7 @@ class TableWritePolicy:
     update_columns: tuple[str, ...] | None = None
     hash_column: str | None = None
     use_staging: bool = False
+    stable_sort_keys: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -477,8 +497,26 @@ class TableSchema:
             "hash_column": self.write_policy.hash_column,
             "use_staging": self.write_policy.use_staging,
         }
+        if self.write_policy.stable_sort_keys is not None:
+            write_policy_payload["stable_sort_keys"] = list(self.write_policy.stable_sort_keys)
         payload["write_policy"] = write_policy_payload
         return payload
+
+
+def resolve_stable_sort_keys(table_schema: TableSchema | None) -> tuple[str, ...] | None:
+    """Resolve stable sort keys from a table schema policy.
+
+    Returns
+    -------
+    tuple[str, ...] | None
+        Stable sort keys, or None when no deterministic ordering is configured.
+    """
+    if table_schema is None:
+        return None
+    policy = table_schema.write_policy
+    if policy is not None and policy.stable_sort_keys is not None:
+        return policy.stable_sort_keys
+    return table_schema.primary_key or None
 
 
 __all__ = [
@@ -495,5 +533,7 @@ __all__ = [
     "WriteMode",
     "column_type_base",
     "column_type_is_nested",
+    "is_allowed_column_promotion",
     "normalize_column_type",
+    "resolve_stable_sort_keys",
 ]

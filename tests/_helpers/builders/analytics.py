@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.core.serialization.payload import encode_payload
 from tests._helpers.builders._common import _iso
 
 if TYPE_CHECKING:
@@ -45,7 +44,7 @@ class FunctionTypesRow:
         "total_params",
         "return_type",
         "type_comment",
-        "param_types",
+        "extras",
         "created_at",
     )
 
@@ -81,7 +80,7 @@ class FunctionTypesRow:
         int,
         str | None,
         str | None,
-        JsonValue | None,
+        dict[str, JsonValue | None],
         str,
     ]:
         """Serialize row to database insert order.
@@ -105,7 +104,7 @@ class FunctionTypesRow:
             self.total_params,
             self.return_type,
             self.type_comment,
-            self.param_types,
+            {"param_types": self.param_types},
             _iso(self.created_at),
         )
 
@@ -127,7 +126,7 @@ class TestCatalogRow:
         "kind",
         "status",
         "duration_ms",
-        "markers",
+        "extras",
         "parametrized",
         "flaky",
         "created_at",
@@ -161,7 +160,7 @@ class TestCatalogRow:
         str,
         str,
         int | None,
-        list[str],
+        dict[str, list[str]],
         bool,
         bool,
         str,
@@ -184,7 +183,7 @@ class TestCatalogRow:
             self.kind,
             self.status,
             self.duration_ms,
-            self.markers,
+            {"markers": list(self.markers)},
             self.parametrized,
             self.flaky,
             _iso(self.created_at),
@@ -292,8 +291,7 @@ class ConfigValueRow:
         "config_path",
         "format",
         "key",
-        "reference_paths",
-        "reference_modules",
+        "extras",
         "reference_count",
     )
 
@@ -306,7 +304,7 @@ class ConfigValueRow:
     reference_modules: list[str]
     reference_count: int
 
-    def to_tuple(self) -> tuple[str, str, str, str, str, bytes | None, bytes | None, int]:
+    def to_tuple(self) -> tuple[str, str, str, str, str, dict[str, list[str]], int]:
         """Serialize row to database insert order.
 
         Returns
@@ -320,8 +318,10 @@ class ConfigValueRow:
             self.config_path,
             self.format,
             self.key,
-            encode_payload(self.reference_paths),
-            encode_payload(self.reference_modules),
+            {
+                "reference_paths": list(self.reference_paths),
+                "reference_modules": list(self.reference_modules),
+            },
             self.reference_count,
         )
 
@@ -536,8 +536,7 @@ class SubsystemRow:
         "name",
         "description",
         "module_count",
-        "modules_json",
-        "entrypoints_json",
+        "extras",
         "internal_edge_count",
         "external_edge_count",
         "fan_in",
@@ -569,17 +568,14 @@ class SubsystemRow:
     risk_level: str
     created_at: datetime
 
-    def to_tuple(
-        self,
-    ) -> tuple[
+    def to_tuple(self) -> tuple[
         str,
         str,
         str,
         str,
         str,
         int,
-        bytes,
-        bytes,
+        dict[str, list[str]],
         int,
         int,
         int,
@@ -598,8 +594,6 @@ class SubsystemRow:
         tuple
             Values in column order for INSERT.
         """
-        modules_payload = cast("bytes", encode_payload(self.modules_json))
-        entrypoints_payload = cast("bytes", encode_payload(self.entrypoints_json))
         return (
             self.repo,
             self.commit,
@@ -607,8 +601,10 @@ class SubsystemRow:
             self.name,
             self.description,
             self.module_count,
-            modules_payload,
-            entrypoints_payload,
+            {
+                "modules": list(self.modules_json),
+                "entrypoints": list(self.entrypoints_json),
+            },
             self.internal_edge_count,
             self.external_edge_count,
             self.fan_in,

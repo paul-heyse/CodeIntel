@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -19,7 +19,6 @@ from codeintel.build.analytics.compute.semantic_roles import (
     classify_modules,
 )
 from codeintel.build.analytics.compute.semantic_roles.classification import decorator_names
-from codeintel.build.analytics.utilities.ast import RowDecoder
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -187,7 +186,7 @@ def _build_function_role_rows(
                 role,
                 framework,
                 confidence,
-                role_sources,
+                {"role_sources": role_sources},
                 now,
             )
         )
@@ -317,22 +316,13 @@ def _contracts_from_frame(
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    decoder = RowDecoder(
-        columns=(
-            "preconditions_json",
-            "raises_json",
-            "param_nullability_json",
-        ),
-    )
     filtered = _filter_table_by_snapshot(
         frame,
         repo=repo,
         commit=commit,
         columns=[
             "function_goid_h128",
-            "preconditions_json",
-            "raises_json",
-            "param_nullability_json",
+            "extras",
         ],
     )
     if filtered.num_rows == 0:
@@ -342,16 +332,19 @@ def _contracts_from_frame(
         filtered,
         [
             "function_goid_h128",
-            "preconditions_json",
-            "raises_json",
-            "param_nullability_json",
+            "extras",
         ],
     ):
-        decoded = decoder.decode(row)
-        goid_raw = decoded.get("function_goid_h128")
-        preconditions = decoded.get("preconditions_json")
-        raises = decoded.get("raises_json")
-        param_nullability = decoded.get("param_nullability_json")
+        goid_raw = row.get("function_goid_h128")
+        extras = row.get("extras")
+        if isinstance(extras, Mapping):
+            preconditions = extras.get("preconditions")
+            raises = extras.get("raises")
+            param_nullability = extras.get("param_nullability")
+        else:
+            preconditions = None
+            raises = None
+            param_nullability = None
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -405,7 +398,6 @@ def _module_meta_from_frame(
 ) -> dict[str, ModuleRecord]:
     if frame is None or frame.num_rows == 0:
         return {}
-    decoder = RowDecoder(columns=("tags",))
     filtered = _filter_table_by_snapshot(
         frame,
         repo=repo,
@@ -416,10 +408,9 @@ def _module_meta_from_frame(
         return {}
     meta: dict[str, ModuleRecord] = {}
     for row in iter_rows(filtered, ["module", "path", "tags"]):
-        decoded = decoder.decode(row)
-        module = decoded.get("module")
-        path = decoded.get("path")
-        tags = decoded.get("tags")
+        module = row.get("module")
+        path = row.get("path")
+        tags = row.get("tags")
         path_value = coerce_optional_str(path, ctx="core.modules.path")
         normalized_path = normalize_path(path_value) if path_value else ""
         normalized_tags = _normalize_tags(tags)

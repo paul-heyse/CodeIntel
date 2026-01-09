@@ -217,8 +217,10 @@ def _build_rows(
                 name,
                 description,
                 len(member_list),
-                member_list,
-                entrypoints if entrypoints else None,
+                {
+                    "modules": member_list,
+                    "entrypoints": entrypoints if entrypoints else None,
+                },
                 edge_stats.internal_edges,
                 edge_stats.external_edges,
                 len(edge_stats.fan_in),

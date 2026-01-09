@@ -355,7 +355,7 @@ def _build_effect_row(goid: int, context: _EffectRowContext) -> dict[str, object
         "spawns_threads_or_tasks": analysis.spawns_threads_or_tasks,
         "has_transitive_effects": bool(transitive_targets),
         "purity_confidence": purity_confidence,
-        "effects_json": _effects_payload(analysis, transitive_targets),
+        "extras": {"effects": _effects_payload(analysis, transitive_targets)},
         "created_at": context.now,
     }
 

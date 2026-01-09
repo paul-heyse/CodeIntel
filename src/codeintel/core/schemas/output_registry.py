@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from codeintel.config.datasets.primitives import (
     CREATED_AT_COL,
     CREATED_AT_COL_NULLABLE,
@@ -11,7 +13,14 @@ from codeintel.config.datasets.primitives import (
     REPO_COMMIT_COLS,
     SUBSYSTEM_ENTITY_COLS,
 )
-from codeintel.core.schemas.primitives import Column, Index, TableSchema, TableWritePolicy
+from codeintel.core.schemas.primitives import (
+    Column,
+    ColumnType,
+    Index,
+    TableSchema,
+    TableWritePolicy,
+    is_allowed_column_promotion,
+)
 from codeintel.core.schemas.tables.ci_plan_entries import CI_PLAN_ENTRIES_TABLE_SCHEMA
 
 SYNTAX_QNAME_STRUCT = "STRUCT(name VARCHAR, source VARCHAR)"
@@ -196,6 +205,78 @@ TS_TOKEN_EXTRAS_STRUCT = (
     "literal_kind VARCHAR"
     ")"
 )
+
+LIST_VARCHAR = "LIST(VARCHAR)"
+LIST_INTEGER = "LIST(INTEGER)"
+LIST_BIGINT = "LIST(BIGINT)"
+
+ENTRYPOINTS_EXTRAS_STRUCT = (
+    "STRUCT("
+    f"status_codes {LIST_INTEGER}, "
+    "arguments_schema JSON, "
+    "extra JSON, "
+    f"tags {LIST_VARCHAR}, "
+    f"owners {LIST_VARCHAR}"
+    ")"
+)
+CONFIG_REFERENCE_EXTRAS_STRUCT = (
+    f"STRUCT(reference_paths {LIST_VARCHAR}, reference_modules {LIST_VARCHAR})"
+)
+CONFIG_DATA_FLOW_EXTRAS_STRUCT = f"STRUCT(evidence JSON, call_chain {LIST_BIGINT})"
+EXTERNAL_DEP_EXTRAS_STRUCT = (
+    f"STRUCT(modules {LIST_VARCHAR}, usage_modes {LIST_VARCHAR}, config_keys {LIST_VARCHAR})"
+)
+EXTERNAL_DEP_CALL_EXTRAS_STRUCT = f"STRUCT(modes {LIST_VARCHAR}, evidence JSON)"
+FUNCTION_TYPES_EXTRAS_STRUCT = "STRUCT(param_types JSON)"
+FUNCTION_EFFECTS_EXTRAS_STRUCT = "STRUCT(effects JSON)"
+FUNCTION_CONTRACTS_EXTRAS_STRUCT = (
+    "STRUCT(preconditions JSON, postconditions JSON, raises JSON, param_nullability JSON)"
+)
+FUNCTION_AST_FEATURES_EXTRAS_STRUCT = (
+    "STRUCT("
+    f"http_client_libs {LIST_VARCHAR}, "
+    f"http_server_libs {LIST_VARCHAR}, "
+    f"db_libs {LIST_VARCHAR}, "
+    f"message_libs {LIST_VARCHAR}, "
+    f"decorators {LIST_VARCHAR}, "
+    f"libraries_used {LIST_VARCHAR}"
+    ")"
+)
+DATA_MODELS_EXTRAS_STRUCT = f"STRUCT(base_classes {LIST_VARCHAR})"
+DATA_MODEL_FIELDS_EXTRAS_STRUCT = "STRUCT(constraints JSON)"
+DATA_MODEL_REL_EXTRAS_STRUCT = "STRUCT(evidence JSON)"
+DATA_MODEL_USAGE_EXTRAS_STRUCT = f"STRUCT(usage_kinds {LIST_VARCHAR}, evidence JSON, context JSON)"
+BEHAVIORAL_COVERAGE_EXTRAS_STRUCT = f"STRUCT(behavior_tags {LIST_VARCHAR})"
+FUNCTION_PROFILE_EXTRAS_STRUCT = (
+    "STRUCT("
+    "param_types JSON, "
+    "param_nullability JSON, "
+    "role_sources JSON, "
+    f"tags {LIST_VARCHAR}, "
+    f"owners {LIST_VARCHAR}, "
+    "doc_params JSON, "
+    "doc_returns JSON"
+    ")"
+)
+GOID_RISK_FACTORS_EXTRAS_STRUCT = f"STRUCT(tags {LIST_VARCHAR}, owners {LIST_VARCHAR})"
+MODULE_PROFILE_EXTRAS_STRUCT = (
+    f"STRUCT(role_sources JSON, tags {LIST_VARCHAR}, owners {LIST_VARCHAR})"
+)
+GRAPH_VALIDATION_EXTRAS_STRUCT = "STRUCT(metadata JSON)"
+SEMANTIC_ROLES_EXTRAS_STRUCT = "STRUCT(role_sources JSON)"
+SUBSYSTEM_EXTRAS_STRUCT = f"STRUCT(modules {LIST_VARCHAR}, entrypoints {LIST_VARCHAR})"
+TEST_CATALOG_EXTRAS_STRUCT = f"STRUCT(markers {LIST_VARCHAR})"
+TEST_PROFILE_EXTRAS_STRUCT = (
+    "STRUCT("
+    f"markers {LIST_VARCHAR}, "
+    f"functions_covered {LIST_VARCHAR}, "
+    f"primary_function_goids {LIST_BIGINT}, "
+    f"subsystems_covered {LIST_VARCHAR}"
+    ")"
+)
+TAGS_INDEX_EXTRAS_STRUCT = "STRUCT(includes JSON, excludes JSON, matches JSON)"
+
+HEAVY_TABLE_WRITE_POLICY = TableWritePolicy(stable_sort_keys=())
 
 AST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
@@ -845,7 +926,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("start_byte", "BIGINT"),
             Column("end_byte", "BIGINT"),
             Column("text_preview", "VARCHAR"),
-            Column("extras_json", SYNTAX_NODE_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_NODE_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "node_id"),
         description="Canonical syntax node inventory for CPG stitching.",
@@ -893,7 +974,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("start_byte", "BIGINT"),
             Column("end_byte", "BIGINT"),
             Column("text_preview", "VARCHAR"),
-            Column("extras_json", SYNTAX_NODE_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_NODE_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "node_id"),
         description="Canonical syntax nodes enriched with tree-sitter weld payloads.",
@@ -978,7 +1059,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_col", "INTEGER", nullable=False),
             Column("start_byte", "BIGINT"),
             Column("end_byte", "BIGINT"),
-            Column("extras_json", SYNTAX_DEF_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_DEF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "def_id"),
         description="Definition/binding facts extracted from syntax trees.",
@@ -1001,7 +1082,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_col", "INTEGER", nullable=False),
             Column("start_byte", "BIGINT"),
             Column("end_byte", "BIGINT"),
-            Column("extras_json", SYNTAX_REF_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_REF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "ref_id"),
         description="Reference/use facts extracted from syntax trees.",
@@ -1028,7 +1109,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_byte", "BIGINT"),
             Column("callee_start_byte", "BIGINT"),
             Column("callee_end_byte", "BIGINT"),
-            Column("extras_json", SYNTAX_CALL_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_CALL_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "call_id"),
         description="Callsite facts extracted from syntax trees.",
@@ -1052,7 +1133,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("arg_end_byte", "BIGINT"),
             Column("arg_span_id", "VARCHAR"),
             Column("arg_expr_node_id", "VARCHAR"),
-            Column("extras_json", SYNTAX_CALL_ARGS_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_CALL_ARGS_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "call_id", "arg_ordinal"),
         description="Call argument facts extracted from syntax trees.",
@@ -1077,7 +1158,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("param_end_byte", "BIGINT"),
             Column("param_span_id", "VARCHAR"),
             Column("param_node_id", "VARCHAR"),
-            Column("extras_json", SYNTAX_PARAM_DEF_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_PARAM_DEF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "func_def_id", "param_ordinal"),
         description="Function parameter facts extracted from syntax trees.",
@@ -1103,7 +1184,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_col", "INTEGER", nullable=False),
             Column("start_byte", "BIGINT"),
             Column("end_byte", "BIGINT"),
-            Column("extras_json", SYNTAX_IMPORT_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_IMPORT_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "import_id"),
         description="Import facts extracted from syntax trees.",
@@ -1143,7 +1224,7 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("syntax_node_id", "VARCHAR"),
             Column("match_kind", "VARCHAR"),
             Column("candidate_count", "INTEGER"),
-            Column("extras_json", SYNTAX_DEF_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_DEF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "def_id"),
         description="Syntax definitions enriched with SCIP resolution metadata.",
@@ -1180,7 +1261,7 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("syntax_node_id", "VARCHAR"),
             Column("match_kind", "VARCHAR"),
             Column("candidate_count", "INTEGER"),
-            Column("extras_json", SYNTAX_REF_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_REF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "ref_id"),
         description="Syntax references enriched with SCIP resolution metadata.",
@@ -1221,7 +1302,7 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("syntax_node_id", "VARCHAR"),
             Column("match_kind", "VARCHAR"),
             Column("candidate_count", "INTEGER"),
-            Column("extras_json", SYNTAX_CALL_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_CALL_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "call_id"),
         description="Syntax callsites enriched with SCIP resolution metadata.",
@@ -1261,7 +1342,7 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("syntax_node_id", "VARCHAR"),
             Column("match_kind", "VARCHAR"),
             Column("candidate_count", "INTEGER"),
-            Column("extras_json", SYNTAX_IMPORT_EXTRAS_STRUCT),
+            Column("extras", SYNTAX_IMPORT_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "import_id"),
         description="Syntax imports enriched with SCIP resolution metadata.",
@@ -1357,7 +1438,7 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("parse_state", "INTEGER"),
             Column("next_parse_state", "INTEGER"),
             Column("text_preview", "VARCHAR"),
-            Column("extras_json", TS_NODE_EXTRAS_STRUCT),
+            Column("extras", TS_NODE_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "language", "node_id"),
         indexes=(
@@ -1410,7 +1491,7 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_row", "INTEGER", nullable=False),
             Column("end_col", "INTEGER", nullable=False),
             Column("text_preview", "VARCHAR"),
-            Column("extras_json", TS_PARSE_ERROR_EXTRAS_STRUCT),
+            Column("extras", TS_PARSE_ERROR_EXTRAS_STRUCT),
         ],
         primary_key=(
             "repo",
@@ -1466,7 +1547,7 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_row", "INTEGER", nullable=False),
             Column("end_col", "INTEGER", nullable=False),
             Column("text_preview", "VARCHAR"),
-            Column("extras_json", TS_TOKEN_EXTRAS_STRUCT),
+            Column("extras", TS_TOKEN_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "language", "token_id"),
         indexes=(
@@ -1492,7 +1573,7 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("end_row", "INTEGER", nullable=False),
             Column("end_col", "INTEGER", nullable=False),
             Column("text_preview", "VARCHAR"),
-            Column("extras_json", TS_TOKEN_EXTRAS_STRUCT),
+            Column("extras", TS_TOKEN_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "language", "trivia_id"),
         indexes=(
@@ -2120,8 +2201,7 @@ CONFIG_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("config_path", "VARCHAR", nullable=False),
             Column("format", "VARCHAR", nullable=False),
             Column("key", "VARCHAR", nullable=False),
-            Column("reference_paths", "BLOB"),
-            Column("reference_modules", "BLOB"),
+            Column("extras", CONFIG_REFERENCE_EXTRAS_STRUCT),
             Column("reference_count", "INTEGER", nullable=False),
         ],
         primary_key=("repo", "commit", "config_path", "key"),
@@ -2162,7 +2242,7 @@ TESTS_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("kind", "VARCHAR"),
             Column("status", "VARCHAR"),
             Column("duration_ms", "DOUBLE"),
-            Column("markers", "BLOB"),
+            Column("extras", TEST_CATALOG_EXTRAS_STRUCT),
             Column("parametrized", "BOOLEAN"),
             Column("flaky", "BOOLEAN"),
             Column("created_at", "TIMESTAMP"),
@@ -2187,13 +2267,10 @@ TESTS_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("kind", "VARCHAR"),
             Column("status", "VARCHAR"),
             Column("duration_ms", "DOUBLE"),
-            Column("markers", "BLOB"),
+            Column("extras", TEST_PROFILE_EXTRAS_STRUCT),
             Column("flaky", "BOOLEAN"),
             Column("last_run_at", "TIMESTAMP"),
-            Column("functions_covered", "BLOB"),
             Column("functions_covered_count", "INTEGER"),
-            Column("primary_function_goids", "BLOB"),
-            Column("subsystems_covered", "BLOB"),
             Column("subsystems_covered_count", "INTEGER"),
             Column("primary_subsystem_id", "VARCHAR"),
             Column("assert_count", "INTEGER"),
@@ -2666,17 +2743,13 @@ ENTRYPOINTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("handler_qualname", "VARCHAR", nullable=False),
             Column("http_method", "VARCHAR"),
             Column("route_path", "VARCHAR"),
-            Column("status_codes", "BLOB"),
             Column("auth_required", "BOOLEAN"),
             Column("command_name", "VARCHAR"),
-            Column("arguments_schema", "BLOB"),
             Column("schedule", "VARCHAR"),
             Column("trigger", "VARCHAR"),
-            Column("extra", "BLOB"),
             Column("subsystem_id", "VARCHAR"),
             Column("subsystem_name", "VARCHAR"),
-            Column("tags", "BLOB"),
-            Column("owners", "BLOB"),
+            Column("extras", ENTRYPOINTS_EXTRAS_STRUCT),
             Column("tests_touching", "INTEGER"),
             Column("failing_tests", "INTEGER"),
             Column("slow_tests", "INTEGER"),
@@ -2722,9 +2795,7 @@ EXTERNAL_DEPS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("risk_score", "DOUBLE"),
             Column("function_count", "INTEGER", nullable=False),
             Column("callsite_count", "INTEGER", nullable=False),
-            Column("modules_json", "BLOB", nullable=False),
-            Column("usage_modes", "BLOB", nullable=False),
-            Column("config_keys", "BLOB"),
+            Column("extras", EXTERNAL_DEP_EXTRAS_STRUCT),
             Column("risk_level", "VARCHAR"),
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
@@ -2751,8 +2822,7 @@ EXTERNAL_DEPS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("module", "VARCHAR", nullable=False),
             Column("qualname", "VARCHAR", nullable=False),
             Column("callsite_count", "INTEGER", nullable=False),
-            Column("modes", "BLOB", nullable=False),
-            Column("evidence_json", "BLOB"),
+            Column("extras", EXTERNAL_DEP_CALL_EXTRAS_STRUCT),
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "dep_id", "function_goid_h128"),
@@ -2768,8 +2838,7 @@ CONFIG_DATA_FLOW_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *REPO_COMMIT_COLS,
             Column("config_path", "VARCHAR", nullable=False),
             Column("key", "VARCHAR", nullable=False),
-            Column("reference_paths", "BLOB"),
-            Column("reference_modules", "BLOB"),
+            Column("extras", CONFIG_REFERENCE_EXTRAS_STRUCT),
             Column("reference_count", "INTEGER", nullable=False),
             *CREATED_AT_COL,
         ],
@@ -2786,9 +2855,8 @@ CONFIG_DATA_FLOW_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("config_path", "VARCHAR", nullable=False),
             Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
             Column("usage_kind", "VARCHAR", nullable=False),
-            Column("evidence_json", "BLOB"),
             Column("call_chain_id", "VARCHAR", nullable=False),
-            Column("call_chain_json", "BLOB"),
+            Column("extras", CONFIG_DATA_FLOW_EXTRAS_STRUCT),
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=(
@@ -3032,7 +3100,7 @@ FUNCTION_ANALYTICS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("total_params", "INTEGER"),
             Column("return_type", "VARCHAR"),
             Column("type_comment", "VARCHAR"),
-            Column("param_types", "BLOB"),
+            Column("extras", FUNCTION_TYPES_EXTRAS_STRUCT),
             *CREATED_AT_COL_NULLABLE,
         ],
         indexes=(Index("idx_analytics_function_types_goid", ("function_goid_h128",)),),
@@ -3073,7 +3141,7 @@ FUNCTION_EFFECTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("spawns_threads_or_tasks", "BOOLEAN", nullable=False),
             Column("has_transitive_effects", "BOOLEAN", nullable=False),
             Column("purity_confidence", "DOUBLE"),
-            Column("effects_json", "BLOB"),
+            Column("extras", FUNCTION_EFFECTS_EXTRAS_STRUCT),
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
@@ -3089,10 +3157,7 @@ FUNCTION_CONTRACTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         columns=[
             *REPO_COMMIT_COLS,
             *FUNCTION_GOID_COL,
-            Column("preconditions_json", "BLOB"),
-            Column("postconditions_json", "BLOB"),
-            Column("raises_json", "BLOB"),
-            Column("param_nullability_json", "BLOB"),
+            Column("extras", FUNCTION_CONTRACTS_EXTRAS_STRUCT),
             Column("return_nullability", "VARCHAR"),
             Column("contract_confidence", "DOUBLE"),
             *CREATED_AT_COL,
@@ -3173,8 +3238,7 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("last_test_status", "VARCHAR"),
             Column("risk_score", "DOUBLE"),
             Column("risk_level", "VARCHAR"),
-            Column("tags", "BLOB"),
-            Column("owners", "BLOB"),
+            Column("extras", GOID_RISK_FACTORS_EXTRAS_STRUCT),
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
@@ -3212,7 +3276,7 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("total_params", "INTEGER"),
             Column("annotated_params", "INTEGER"),
             Column("return_type", "VARCHAR"),
-            Column("param_types", "BLOB"),
+            Column("extras", FUNCTION_PROFILE_EXTRAS_STRUCT),
             Column("fully_typed", "BOOLEAN"),
             Column("partial_typed", "BOOLEAN"),
             Column("untyped", "BOOLEAN"),
@@ -3267,7 +3331,6 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("spawns_threads_or_tasks", "BOOLEAN"),
             Column("has_transitive_effects", "BOOLEAN"),
             Column("purity_confidence", "DOUBLE"),
-            Column("param_nullability_json", "BLOB"),
             Column("return_nullability", "VARCHAR"),
             Column("has_preconditions", "BOOLEAN"),
             Column("has_postconditions", "BOOLEAN"),
@@ -3276,13 +3339,8 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("role", "VARCHAR"),
             Column("framework", "VARCHAR"),
             Column("role_confidence", "DOUBLE"),
-            Column("role_sources_json", "BLOB"),
-            Column("tags", "BLOB"),
-            Column("owners", "BLOB"),
             Column("doc_short", "VARCHAR"),
             Column("doc_long", "VARCHAR"),
-            Column("doc_params", "BLOB"),
-            Column("doc_returns", "BLOB"),
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
@@ -3381,9 +3439,7 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("in_cycle", "BOOLEAN"),
             Column("role", "VARCHAR"),
             Column("role_confidence", "DOUBLE"),
-            Column("role_sources_json", "BLOB"),
-            Column("tags", "BLOB"),
-            Column("owners", "BLOB"),
+            Column("extras", MODULE_PROFILE_EXTRAS_STRUCT),
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "module"),
@@ -3400,7 +3456,7 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("test_goid_h128", "DECIMAL(38,0)"),
             Column("rel_path", "VARCHAR"),
             Column("qualname", "VARCHAR"),
-            Column("behavior_tags", "BLOB"),
+            Column("extras", BEHAVIORAL_COVERAGE_EXTRAS_STRUCT),
             Column("tag_source", "VARCHAR"),
             Column("heuristic_version", "VARCHAR"),
             Column("llm_model", "VARCHAR"),
@@ -3428,7 +3484,7 @@ DATA_MODELS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("module", "VARCHAR", nullable=False),
             Column("rel_path", "VARCHAR", nullable=False),
             Column("model_kind", "VARCHAR", nullable=False),
-            Column("base_classes_json", "BLOB"),
+            Column("extras", DATA_MODELS_EXTRAS_STRUCT),
             Column("doc_short", "VARCHAR"),
             Column("doc_long", "VARCHAR"),
             Column("created_at", "TIMESTAMP", nullable=False),
@@ -3448,7 +3504,7 @@ DATA_MODELS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("required", "BOOLEAN", nullable=False),
             Column("has_default", "BOOLEAN", nullable=False),
             Column("default_expr", "VARCHAR"),
-            Column("constraints_json", "BLOB", nullable=False),
+            Column("extras", DATA_MODEL_FIELDS_EXTRAS_STRUCT),
             Column("source", "VARCHAR", nullable=False),
             Column("rel_path", "VARCHAR", nullable=False),
             Column("lineno", "INTEGER"),
@@ -3471,7 +3527,7 @@ DATA_MODELS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("relationship_kind", "VARCHAR", nullable=False),
             Column("multiplicity", "VARCHAR"),
             Column("via", "VARCHAR"),
-            Column("evidence_json", "BLOB"),
+            Column("extras", DATA_MODEL_REL_EXTRAS_STRUCT),
             Column("rel_path", "VARCHAR", nullable=False),
             Column("lineno", "INTEGER"),
             Column("created_at", "TIMESTAMP", nullable=False),
@@ -3497,9 +3553,7 @@ DATA_MODEL_USAGE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("commit", "VARCHAR", nullable=False),
             Column("model_id", "VARCHAR", nullable=False),
             Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
-            Column("usage_kinds_json", "BLOB", nullable=False),
-            Column("evidence_json", "BLOB"),
-            Column("context_json", "BLOB"),
+            Column("extras", DATA_MODEL_USAGE_EXTRAS_STRUCT),
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "model_id", "function_goid_h128"),
@@ -3525,14 +3579,9 @@ FUNCTION_AST_FEATURES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("uses_concurrency_lib", "BOOLEAN", nullable=False),
             Column("uses_threading", "BOOLEAN", nullable=False),
             Column("uses_asyncio_lib", "BOOLEAN", nullable=False),
-            Column("http_client_libs", "BLOB", nullable=False),
-            Column("http_server_libs", "BLOB", nullable=False),
-            Column("db_libs", "BLOB", nullable=False),
-            Column("message_libs", "BLOB", nullable=False),
             Column("config_read_count", "INTEGER", nullable=False),
             Column("feature_flag_count", "INTEGER", nullable=False),
-            Column("decorators", "BLOB", nullable=False),
-            Column("libraries_used", "BLOB", nullable=False),
+            Column("extras", FUNCTION_AST_FEATURES_EXTRAS_STRUCT),
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
@@ -3683,7 +3732,7 @@ GRAPH_VALIDATION_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("severity", "VARCHAR", nullable=True),
             Column("rel_path", "VARCHAR", nullable=True),
             Column("detail", "VARCHAR", nullable=False),
-            Column("metadata", "BLOB", nullable=True),
+            Column("extras", GRAPH_VALIDATION_EXTRAS_STRUCT),
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "graph_name", "entity_id", "issue"),
@@ -3839,8 +3888,7 @@ SUBSYSTEMS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("name", "VARCHAR", nullable=False),
             Column("description", "VARCHAR"),
             Column("module_count", "INTEGER", nullable=False),
-            Column("modules_json", "BLOB", nullable=False),
-            Column("entrypoints_json", "BLOB"),
+            Column("extras", SUBSYSTEM_EXTRAS_STRUCT),
             Column("internal_edge_count", "INTEGER", nullable=False),
             Column("external_edge_count", "INTEGER", nullable=False),
             Column("fan_in", "INTEGER", nullable=False),
@@ -3884,8 +3932,7 @@ SUBSYSTEM_CACHE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("name", "VARCHAR"),
             Column("description", "VARCHAR"),
             Column("module_count", "INTEGER"),
-            Column("modules_json", "BLOB"),
-            Column("entrypoints_json", "BLOB"),
+            Column("extras", SUBSYSTEM_EXTRAS_STRUCT),
             Column("internal_edge_count", "INTEGER"),
             Column("external_edge_count", "INTEGER"),
             Column("fan_in", "INTEGER"),
@@ -3918,7 +3965,7 @@ SEMANTIC_ROLES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("role", "VARCHAR"),
             Column("framework", "VARCHAR"),
             Column("role_confidence", "DOUBLE"),
-            Column("role_sources_json", "BLOB"),
+            Column("extras", SEMANTIC_ROLES_EXTRAS_STRUCT),
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
@@ -3932,7 +3979,7 @@ SEMANTIC_ROLES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *MODULE_ENTITY_COLS,
             Column("role", "VARCHAR"),
             Column("role_confidence", "DOUBLE"),
-            Column("role_sources_json", "BLOB"),
+            Column("extras", SEMANTIC_ROLES_EXTRAS_STRUCT),
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "module"),
@@ -3940,6 +3987,41 @@ SEMANTIC_ROLES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         description="Semantic role classification per module",
     ),
 )
+
+
+def _disable_stable_sort_key(table: TableSchema) -> TableSchema:
+    policy = table.write_policy
+    if policy is None:
+        policy = HEAVY_TABLE_WRITE_POLICY
+    elif policy.stable_sort_keys == ():
+        return table
+    else:
+        policy = replace(policy, stable_sort_keys=())
+    return replace(table, write_policy=policy)
+
+
+def _disable_stable_sort_keys(tables: tuple[TableSchema, ...]) -> tuple[TableSchema, ...]:
+    return tuple(_disable_stable_sort_key(table) for table in tables)
+
+
+AST_OVERRIDE_TABLES = _disable_stable_sort_keys(AST_OVERRIDE_TABLES)
+CST_OVERRIDE_TABLES = _disable_stable_sort_keys(CST_OVERRIDE_TABLES)
+SYNTAX_OVERRIDE_TABLES = _disable_stable_sort_keys(SYNTAX_OVERRIDE_TABLES)
+SYNTAX_RESOLVED_OVERRIDE_TABLES = _disable_stable_sort_keys(SYNTAX_RESOLVED_OVERRIDE_TABLES)
+TREE_SITTER_OVERRIDE_TABLES = _disable_stable_sort_keys(TREE_SITTER_OVERRIDE_TABLES)
+PY_SYM_OVERRIDE_TABLES = _disable_stable_sort_keys(PY_SYM_OVERRIDE_TABLES)
+PY_BC_OVERRIDE_TABLES = _disable_stable_sort_keys(PY_BC_OVERRIDE_TABLES)
+SCIP_OVERRIDE_TABLES = _disable_stable_sort_keys(SCIP_OVERRIDE_TABLES)
+SCIP_RESOLUTION_OVERRIDE_TABLES = _disable_stable_sort_keys(SCIP_RESOLUTION_OVERRIDE_TABLES)
+CALL_GRAPH_OVERRIDE_TABLES = _disable_stable_sort_keys(CALL_GRAPH_OVERRIDE_TABLES)
+CALL_WIRING_OVERRIDE_TABLES = _disable_stable_sort_keys(CALL_WIRING_OVERRIDE_TABLES)
+CFG_OVERRIDE_TABLES = _disable_stable_sort_keys(CFG_OVERRIDE_TABLES)
+DFG_OVERRIDE_TABLES = _disable_stable_sort_keys(DFG_OVERRIDE_TABLES)
+CDG_OVERRIDE_TABLES = _disable_stable_sort_keys(CDG_OVERRIDE_TABLES)
+PDG_OVERRIDE_TABLES = _disable_stable_sort_keys(PDG_OVERRIDE_TABLES)
+IMPORT_GRAPH_OVERRIDE_TABLES = _disable_stable_sort_keys(IMPORT_GRAPH_OVERRIDE_TABLES)
+SYMBOL_USES_OVERRIDE_TABLES = _disable_stable_sort_keys(SYMBOL_USES_OVERRIDE_TABLES)
+CPG_OVERRIDE_TABLES = _disable_stable_sort_keys(CPG_OVERRIDE_TABLES)
 
 
 def _all_output_tables() -> tuple[TableSchema, ...]:
@@ -4108,6 +4190,11 @@ def _build_output_table_schemas() -> dict[str, TableSchema]:
     return table_map
 
 
+def is_allowed_output_promotion(source: ColumnType, target: ColumnType) -> bool:
+    """Return True when output schema promotions are allowed."""
+    return is_allowed_column_promotion(source, target)
+
+
 OUTPUT_TABLE_SCHEMAS = _build_output_table_schemas()
 
 
@@ -4166,4 +4253,5 @@ __all__ = [
     "TESTS_INGEST_OVERRIDE_TABLES",
     "TREE_SITTER_OVERRIDE_TABLES",
     "TYPING_OVERRIDE_TABLES",
+    "is_allowed_output_promotion",
 ]

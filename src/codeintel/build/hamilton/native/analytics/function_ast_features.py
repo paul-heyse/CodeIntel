@@ -14,6 +14,7 @@ from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
 from codeintel.build.hamilton.native.patterns import (
     TableTargetContext,
     attach_table_target_template,
@@ -24,7 +25,7 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -100,14 +101,16 @@ def _default_feature_row(row: dict[str, object]) -> dict[str, object]:
         "uses_concurrency_lib": False,
         "uses_threading": False,
         "uses_asyncio_lib": False,
-        "http_client_libs": "[]",
-        "http_server_libs": "[]",
-        "db_libs": "[]",
-        "message_libs": "[]",
         "config_read_count": 0,
         "feature_flag_count": 0,
-        "decorators": "[]",
-        "libraries_used": "[]",
+        "extras": {
+            "http_client_libs": [],
+            "http_server_libs": [],
+            "db_libs": [],
+            "message_libs": [],
+            "decorators": [],
+            "libraries_used": [],
+        },
         "created_at": row.get("created_at"),
     }
 
@@ -194,14 +197,16 @@ def _feature_row_from_goid(
         "uses_concurrency_lib": features.uses_concurrency_lib,
         "uses_threading": features.uses_threading,
         "uses_asyncio_lib": features.uses_asyncio_lib,
-        "http_client_libs": sorted(features.http_client_libs),
-        "http_server_libs": sorted(features.http_server_libs),
-        "db_libs": sorted(features.db_libs),
-        "message_libs": sorted(features.message_libs),
         "config_read_count": features.config_read_count,
         "feature_flag_count": features.feature_flag_count,
-        "decorators": list(features.decorators),
-        "libraries_used": sorted(features.libraries_used),
+        "extras": {
+            "http_client_libs": sorted(features.http_client_libs),
+            "http_server_libs": sorted(features.http_server_libs),
+            "db_libs": sorted(features.db_libs),
+            "message_libs": sorted(features.message_libs),
+            "decorators": list(features.decorators),
+            "libraries_used": sorted(features.libraries_used),
+        },
         "created_at": row.get("created_at"),
     }
 
@@ -253,8 +258,7 @@ def function_ast_features__base(
 
     if not rows:
         return empty_table_for_table(FUNCTION_AST_FEATURES_TABLE_KEY)
-    reader, _ = table_for_rows(FUNCTION_AST_FEATURES_TABLE_KEY, rows)
-    return reader
+    return finalize_analytics_rows(FUNCTION_AST_FEATURES_TABLE_KEY, rows)
 
 
 _MODULE = sys.modules[__name__]

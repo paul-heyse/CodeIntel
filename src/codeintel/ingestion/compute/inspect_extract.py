@@ -33,13 +33,14 @@ from codeintel.core.columnar.rows import (
     columnar_batch_collector_for_table_key,
     empty_table_for_table,
 )
-from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.compute.base import BaseExtractStep, persist_arrow_tables
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
+    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 type InspectableCallable = Callable[..., object] | type[object]
 
@@ -1542,6 +1543,7 @@ class InspectExtractStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
+        storage: IngestStoragePort | None = None,
     ) -> InspectExtractResult:
         """Execute inspect extraction for the provided modules.
 
@@ -1591,7 +1593,25 @@ class InspectExtractStep(BaseExtractStep):
             return InspectExtractResult(
                 result=ExecutionResult.failed(str(exc), warnings=tuple(warnings))
             )
-        return _payload_to_result(payload)
+        result = _payload_to_result(payload)
+        scope = f"{resolved_repo}@{resolved_commit}"
+        persist_arrow_tables(
+            storage,
+            {
+                PY_INSPECT_OBJECTS_TABLE_KEY: result.object_rows_reader,
+                PY_INSPECT_MEMBERS_TABLE_KEY: result.member_rows_reader,
+                PY_INSPECT_CLASS_MRO_TABLE_KEY: result.class_mro_rows_reader,
+                PY_INSPECT_CLASS_ATTRS_TABLE_KEY: result.class_attr_rows_reader,
+                PY_INSPECT_UNWRAP_TABLE_KEY: result.unwrap_rows_reader,
+                PY_INSPECT_SIGNATURES_TABLE_KEY: result.signature_rows_reader,
+                PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY: result.signature_param_rows_reader,
+                PY_INSPECT_ANNOTATIONS_TABLE_KEY: result.annotation_rows_reader,
+                PY_INSPECT_SOURCE_TABLE_KEY: result.source_rows_reader,
+                PY_INSPECT_RUNTIME_STATE_TABLE_KEY: result.runtime_state_rows_reader,
+            },
+            scope=scope,
+        )
+        return result
 
 
 __all__ = ["InspectExtractResult", "InspectExtractStep"]

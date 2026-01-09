@@ -17,8 +17,17 @@ except ImportError:  # pragma: no cover - optional dependency
     pl = None
 
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec, finalize_table
 from codeintel.core.columnar.readers import empty_reader_from_schema
-from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
+from codeintel.core.columnar.schema_alignment import (
+    align_reader_to_contract,
+    extras_policy_from_schema,
+)
+from codeintel.core.columnar.type_normalization import (
+    binary_view_cast_type,
+    string_view_cast_type,
+)
+from codeintel.core.query_results import records_from_arrow_table
 from codeintel.core.schemas.arrow_gen import ExtrasPolicy
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.service import get_schema_service
@@ -38,8 +47,12 @@ from codeintel.core.validation.profiles import (
     resolve_validation_depth,
 )
 from codeintel.core.validation.schema_constraints import (
+    ListAlignmentSpec,
     arrow_batch_errors,
     arrow_table_errors,
+    list_alignment_errors_for_batch,
+    list_alignment_errors_for_table,
+    list_alignment_specs_for_table_key,
     nullability_errors_for_batch,
     nullability_errors_for_table,
     observation_errors_for_batch,
@@ -54,11 +67,13 @@ from codeintel.core.validation.schema_constraints import (
 if TYPE_CHECKING:
     from polars import DataFrame as PolarsDataFrame
 
+    from codeintel.core.columnar.finalize_ops import FinalizeResult
     from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 ValidationMode = Literal["strict", "warn", "skip"]
 
 LOG = logging.getLogger(__name__)
+_DEFAULT_PROVENANCE_FIELDS = ("__filename", "__fragment_index", "__batch_index")
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +84,8 @@ class ColumnarValidationContext:
     schema_observation: SchemaObservationRecord | None = None
     validation_profile: ValidationProfile | None = None
     extras_policy: ExtrasPolicy | None = None
+    list_alignments: Sequence[ListAlignmentSpec] = ()
+    finalize: bool = True
 
 
 class TableValidationError(ValueError):
@@ -123,6 +140,159 @@ class _UniqueKeyState:
         return errors
 
 
+@dataclass(frozen=True, slots=True)
+class _BatchValidationContext:
+    table_key: str
+    table_schema: TableSchema
+    observation: SchemaObservationRecord | None
+    pandera_schema: object | None
+    list_alignments: Sequence[ListAlignmentSpec]
+    unique_state: _UniqueKeyState | None
+    mode: ValidationMode
+
+
+def _normalize_alignment_type(data_type: pa.DataType) -> pa.DataType:
+    normalized = string_view_cast_type(data_type)
+    return binary_view_cast_type(normalized)
+
+
+def _coerce_str_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None]
+    if isinstance(value, tuple):
+        return [str(item) for item in value if item is not None]
+    return [str(value)]
+
+
+def _alignment_error_messages(
+    *,
+    missing: Sequence[str],
+    extra: Sequence[str],
+    coerced: Sequence[str],
+) -> list[str]:
+    missing_list = _coerce_str_list(missing)
+    extra_list = _coerce_str_list(extra)
+    coerced_list = _coerce_str_list(coerced)
+    if not missing_list and not extra_list and not coerced_list:
+        return []
+    return [
+        (
+            "Alignment report: "
+            f"missing_columns={missing_list}, "
+            f"extra_columns={extra_list}, "
+            f"coerced_columns={coerced_list}"
+        )
+    ]
+
+
+def _alignment_errors_from_schemas(
+    contract_schema: pa.Schema,
+    incoming_schema: pa.Schema,
+) -> list[str]:
+    contract_fields = {field.name: field.type for field in contract_schema}
+    incoming_fields = {field.name: field.type for field in incoming_schema}
+    missing = [name for name in contract_fields if name not in incoming_fields]
+    extra = [name for name in incoming_fields if name not in contract_fields]
+    coerced: list[str] = []
+    for name, contract_type in contract_fields.items():
+        incoming_type = incoming_fields.get(name)
+        if incoming_type is None:
+            continue
+        normalized_incoming = _normalize_alignment_type(incoming_type)
+        normalized_contract = _normalize_alignment_type(contract_type)
+        if not normalized_incoming.equals(normalized_contract):
+            coerced.append(name)
+    return _alignment_error_messages(missing=missing, extra=extra, coerced=coerced)
+
+
+def _alignment_errors_from_artifacts(alignment: pa.Table) -> list[str]:
+    if alignment.num_rows == 0:
+        return []
+    records = records_from_arrow_table(alignment)
+    if not records:
+        return []
+    row = records[0]
+    missing = _coerce_str_list(row.get("missing_columns"))
+    extra = _coerce_str_list(row.get("extra_columns"))
+    coerced = _coerce_str_list(row.get("coerced_columns"))
+    return _alignment_error_messages(missing=missing, extra=extra, coerced=coerced)
+
+
+def _finalize_artifact_errors(result: FinalizeResult) -> list[str]:
+    errors: list[str] = []
+    if result.stats.num_rows:
+        for row in records_from_arrow_table(result.stats):
+            code = row.get("error_code")
+            count = row.get("count")
+            if isinstance(code, str):
+                errors.append(f"Finalize error {code}: {count} rows")
+            else:
+                errors.append(f"Finalize error: {row}")
+    errors.extend(_alignment_errors_from_artifacts(result.alignment))
+    return errors
+
+
+def _required_non_null_columns(table_schema: TableSchema) -> tuple[str, ...]:
+    return tuple(column.name for column in table_schema.columns if not column.nullable)
+
+
+def _finalize_table_for_validation(
+    table_key: str,
+    table: pa.Table,
+    *,
+    table_schema: TableSchema,
+    mode: ValidationMode,
+    enabled: bool,
+) -> tuple[pa.Table, list[str]]:
+    if mode == "skip" or not enabled:
+        return table, []
+    spec = FinalizeSpec(
+        table_key=table_key,
+        mode="tolerant",
+        required_non_null=_required_non_null_columns(table_schema),
+        dedupe=FinalizeDedupe(enabled=False),
+        key_fields=table_schema.primary_key,
+        context_fields=_DEFAULT_PROVENANCE_FIELDS,
+        emit_artifacts=True,
+    )
+    try:
+        result = finalize_table(table, spec=spec)
+    except ValueError as exc:
+        return table, [str(exc)]
+    return result.good, _finalize_artifact_errors(result)
+
+
+def _align_reader_for_validation(
+    table_key: str,
+    reader: pa.RecordBatchReader,
+    *,
+    extras_policy: ExtrasPolicy | None,
+    enabled: bool,
+) -> tuple[pa.RecordBatchReader, list[str]]:
+    if not enabled:
+        return reader, []
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        return reader, []
+    contract_schema = service.get_arrow_schema(table_key)
+    if contract_schema is None:
+        return reader, []
+    errors = _alignment_errors_from_schemas(contract_schema, reader.schema)
+    try:
+        aligned = align_reader_to_contract(
+            reader,
+            contract_schema,
+            extras_policy=extras_policy,
+        )
+    except ValueError as exc:
+        errors.append(str(exc))
+        return reader, errors
+    return aligned, errors
+
+
 def validate_table(
     table_key: str,
     table: pa.Table,
@@ -152,13 +322,23 @@ def validate_table(
     schema = resolved_context.table_schema or _lookup_table_schema(table_key)
     observation = resolved_context.schema_observation
     validation_profile = resolved_context.validation_profile
+    list_alignments = resolved_context.list_alignments or list_alignment_specs_for_table_key(
+        table_key
+    )
     resolved_mode, depth = _resolve_validation_settings(validation_profile, mode)
     if schema is None or resolved_mode == "skip":
         return table
 
-    assert schema is not None
     table_schema = schema
     errors: list[str] = []
+    table, finalize_errors = _finalize_table_for_validation(
+        table_key,
+        table,
+        table_schema=table_schema,
+        mode=resolved_mode,
+        enabled=resolved_context.finalize,
+    )
+    errors.extend(finalize_errors)
     errors.extend(schema_errors(table_schema, table.schema))
     errors.extend(schema_metadata_errors(table.schema))
     errors.extend(arrow_table_errors(table))
@@ -175,6 +355,13 @@ def validate_table(
         else:
             errors.extend(nullability_errors_for_table(table_schema, table))
             errors.extend(observation_errors_for_table(table_schema, table, observation))
+        if list_alignments:
+            errors.extend(
+                list_alignment_errors_for_table(
+                    table,
+                    alignments=list_alignments,
+                )
+            )
         if depth == "data-strict" and table_schema.primary_key:
             unique_state = _UniqueKeyState(tuple(table_schema.primary_key))
             for batch in table.to_batches():
@@ -214,14 +401,23 @@ def validate_record_batch_reader(
     schema = resolved_context.table_schema or _lookup_table_schema(table_key)
     observation = resolved_context.schema_observation
     validation_profile = resolved_context.validation_profile
+    list_alignments = resolved_context.list_alignments or list_alignment_specs_for_table_key(
+        table_key
+    )
     resolved_mode, depth = _resolve_validation_settings(validation_profile, mode)
     if schema is None or resolved_mode == "skip":
         return reader
 
-    assert schema is not None
     table_schema = schema
+    reader, finalize_errors = _align_reader_for_validation(
+        table_key,
+        reader,
+        extras_policy=resolved_context.extras_policy,
+        enabled=resolved_context.finalize,
+    )
     errors = schema_errors(table_schema, reader.schema)
     errors.extend(schema_metadata_errors(reader.schema))
+    errors.extend(finalize_errors)
     _handle_errors(table_key, errors, resolved_mode)
     if depth == "schema-only":
         return reader
@@ -237,23 +433,19 @@ def validate_record_batch_reader(
     if depth == "data-strict" and table_schema.primary_key:
         unique_state = _UniqueKeyState(tuple(table_schema.primary_key))
 
-    def _iter_batches() -> Iterator[pa.RecordBatch]:
-        for batch_index, batch in enumerate(reader):
-            batch_errors: list[str] = []
-            batch_errors.extend(arrow_batch_errors(batch))
-            if pandera_schema is not None:
-                batch_errors.extend(_pandera_batch_errors(table_key, batch, pandera_schema))
-            else:
-                batch_errors.extend(nullability_errors_for_batch(table_schema, batch))
-                batch_errors.extend(observation_errors_for_batch(table_schema, batch, observation))
-            if unique_state is not None:
-                batch_errors.extend(unique_state.check_batch(batch))
-            if batch_errors:
-                prefixed = [f"batch {batch_index}: {error}" for error in batch_errors]
-                _handle_errors(table_key, prefixed, resolved_mode)
-            yield batch
-
-    validated = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
+    batch_context = _BatchValidationContext(
+        table_key=table_key,
+        table_schema=table_schema,
+        observation=observation,
+        pandera_schema=pandera_schema,
+        list_alignments=list_alignments,
+        unique_state=unique_state,
+        mode=resolved_mode,
+    )
+    validated = record_batch_reader_from_iterable(
+        _iter_validated_batches(reader, context=batch_context),
+        empty_policy="none",
+    )
     if validated is None:
         return empty_reader_from_schema(reader.schema)
     return validated
@@ -326,6 +518,44 @@ def _resolve_validation_settings(
     if is_lenient_profile(normalized):
         return "warn", depth
     return "strict", depth
+
+
+def _iter_validated_batches(
+    reader: pa.RecordBatchReader,
+    *,
+    context: _BatchValidationContext,
+) -> Iterator[pa.RecordBatch]:
+    for batch_index, batch in enumerate(reader):
+        batch_errors = _batch_validation_errors(batch, context=context)
+        if batch_errors:
+            prefixed = [f"batch {batch_index}: {error}" for error in batch_errors]
+            _handle_errors(context.table_key, prefixed, context.mode)
+        yield batch
+
+
+def _batch_validation_errors(
+    batch: pa.RecordBatch,
+    *,
+    context: _BatchValidationContext,
+) -> list[str]:
+    errors = arrow_batch_errors(batch)
+    if context.pandera_schema is not None:
+        errors.extend(_pandera_batch_errors(context.table_key, batch, context.pandera_schema))
+    else:
+        errors.extend(nullability_errors_for_batch(context.table_schema, batch))
+        errors.extend(
+            observation_errors_for_batch(context.table_schema, batch, context.observation)
+        )
+    if context.list_alignments:
+        errors.extend(
+            list_alignment_errors_for_batch(
+                batch,
+                alignments=context.list_alignments,
+            )
+        )
+    if context.unique_state is not None:
+        errors.extend(context.unique_state.check_batch(batch))
+    return errors
 
 
 def _pandera_schema(

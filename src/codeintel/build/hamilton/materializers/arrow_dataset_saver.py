@@ -85,7 +85,7 @@ from codeintel.core.schemas.arrow_polars import (
     table_schema_from_polars_lazyframe,
 )
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
-from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.primitives import TableSchema, resolve_stable_sort_keys
 from codeintel.core.schemas.resolution import resolve_table_schema
 
 if TYPE_CHECKING:
@@ -499,10 +499,8 @@ def _build_materialization_plan(
         )
     )
     options = _build_write_options(
-        partition_columns=inputs.resolved_partitions,
-        schema_hash_value=inputs.schema_hash_value,
+        inputs=inputs,
         extras=extras,
-        write_settings=inputs.write_settings,
         parquet_metadata=parquet_metadata,
     )
     return _MaterializationPlan(
@@ -584,25 +582,28 @@ def _resolve_materialization_inputs(
 
 def _build_write_options(
     *,
-    partition_columns: tuple[str, ...],
-    schema_hash_value: str,
+    inputs: _MaterializationInputs,
     extras: dict[str, object],
-    write_settings: dict[str, object],
     parquet_metadata: Mapping[str, object] | None,
 ) -> ArrowDatasetWriteOptions:
     return ArrowDatasetWriteOptions(
-        partition_columns=partition_columns,
-        schema_hash=schema_hash_value,
+        partition_columns=inputs.resolved_partitions,
+        schema_hash=inputs.schema_hash_value,
         manifest_extras=extras,
         schema_metadata=parquet_metadata,
-        max_rows_per_file=_int_setting(write_settings, "max_rows_per_file"),
-        row_group_size=_int_setting(write_settings, "row_group_size"),
-        data_page_size=_int_setting(write_settings, "data_page_size"),
-        compression=_str_setting(write_settings, "compression"),
-        dictionary_encode=_bool_setting(write_settings, "dictionary_encode") or False,
-        dictionary_max_cardinality=_int_setting(write_settings, "dictionary_max_cardinality"),
-        dictionary_encode_columns=_tuple_setting(write_settings, "dictionary_encode_columns"),
-        unify_dictionaries=_bool_setting(write_settings, "unify_dictionaries") or False,
+        stable_sort_keys=resolve_stable_sort_keys(inputs.table_schema),
+        max_rows_per_file=_int_setting(inputs.write_settings, "max_rows_per_file"),
+        row_group_size=_int_setting(inputs.write_settings, "row_group_size"),
+        data_page_size=_int_setting(inputs.write_settings, "data_page_size"),
+        compression=_str_setting(inputs.write_settings, "compression"),
+        dictionary_encode=_bool_setting(inputs.write_settings, "dictionary_encode") or False,
+        dictionary_max_cardinality=_int_setting(
+            inputs.write_settings, "dictionary_max_cardinality"
+        ),
+        dictionary_encode_columns=_tuple_setting(
+            inputs.write_settings, "dictionary_encode_columns"
+        ),
+        unify_dictionaries=_bool_setting(inputs.write_settings, "unify_dictionaries") or False,
     )
 
 

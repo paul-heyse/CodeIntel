@@ -48,7 +48,7 @@ from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.query_results import coerce_optional_int
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.primitives import TableSchema, resolve_stable_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
@@ -331,6 +331,7 @@ def persist_contract_alignment_summary(
         partition_columns=partition_columns,
         schema_hash=schema_hash_value,
         manifest_extras={"table_schema": table_schema.to_json_obj()},
+        stable_sort_keys=resolve_stable_sort_keys(table_schema),
     )
     write_dataset(
         dataset_root=dataset_root,

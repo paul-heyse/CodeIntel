@@ -19,11 +19,10 @@ from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import safe_filter, safe_filter_expr
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
-from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.rows import empty_table_for_table
 
@@ -121,7 +120,7 @@ def cpg2_nodes__import_modules(
         ),
     )
     joined = joined.filter(E.is_valid("cpg_node_id"))
-    joined_table = reader_to_table(joined.to_reader(use_threads=True))
+    joined_table = materialize_plan(joined, use_threads=True)
     if joined_table.num_rows > 0:
         joined_table = joined_table.take(
             stable_sort_indices(
@@ -412,7 +411,7 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
         ),
     )
     joined = joined.filter(E.is_valid("dst_cpg_node_id"))
-    joined_table = reader_to_table(joined.to_reader(use_threads=True))
+    joined_table = materialize_plan(joined, use_threads=True)
     if joined_table.num_rows > 0:
         sort_keys: list[tuple[str, Literal["ascending", "descending"]]] = [
             ("repo", "ascending"),
@@ -529,7 +528,7 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         ),
     )
     joined = joined.filter(E.is_valid("dst_cpg_node_id"))
-    joined_table = reader_to_table(joined.to_reader(use_threads=True))
+    joined_table = materialize_plan(joined, use_threads=True)
     if joined_table.num_rows > 0:
         sort_keys: list[tuple[str, Literal["ascending", "descending"]]] = [
             ("repo", "ascending"),

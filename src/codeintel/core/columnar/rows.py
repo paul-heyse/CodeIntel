@@ -8,15 +8,18 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar import table_utils
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.finalize_ops import (
+    FinalizeMode,
+    FinalizeResult,
+    FinalizeSpec,
+    finalize_table,
+)
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema_alignment import align_table_to_contract
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.core.schemas.arrow_gen import (
-    ArrowSchemaMetadata,
-    ExtrasPolicy,
-    arrow_contract_for_table_schema,
-)
+from codeintel.core.schemas.arrow_gen import ExtrasPolicy
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.schemas.service import get_schema_service
 
@@ -188,8 +191,7 @@ def empty_table_for_table(table_key: str) -> pa.Table:
     pa.Table
         Empty table configured with the table schema.
     """
-    arrow_schema = _arrow_schema_for_table(table_key, extras_policy=None)
-    return pa.Table.from_batches([], schema=arrow_schema)
+    return table_utils.empty_table_for_table(table_key, extras_policy=None)
 
 
 def columnar_batch_collector_for_table_key(
@@ -304,13 +306,85 @@ def _is_row_sequence(row: object) -> bool:
     return isinstance(row, Sequence) and not isinstance(row, (bytes, str))
 
 
+def _finalize_spec_for_table_key(
+    table_key: str,
+    *,
+    mode: FinalizeMode,
+    emit_artifacts: bool,
+) -> FinalizeSpec:
+    table_schema = get_schema_service().require_table_schema(table_key)
+    required_non_null = tuple(column.name for column in table_schema.columns if not column.nullable)
+    return FinalizeSpec(
+        table_key=table_key,
+        mode=mode,
+        required_non_null=required_non_null,
+        invariants=(),
+        key_fields=table_schema.primary_key,
+        emit_artifacts=emit_artifacts,
+    )
+
+
+def finalize_columnar_rows(
+    table_key: str,
+    rows: Mapping[str, Sequence[object]],
+    *,
+    extras_policy: ExtrasPolicy | None = None,
+    mode: FinalizeMode = "tolerant",
+    emit_artifacts: bool = True,
+) -> tuple[FinalizeResult, int]:
+    """Finalize columnar row data using the table contract.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    rows
+        Columnar mapping of column names to sequences of values.
+    extras_policy
+        Optional extras policy to apply when aligning to the contract schema.
+    mode
+        Finalize mode ("strict" or "tolerant").
+    emit_artifacts
+        Whether to emit alignment and stats artifacts.
+
+    Returns
+    -------
+    tuple[FinalizeResult, int]
+        Finalize result plus the total row count.
+    """
+    table, row_count = table_for_columnar_rows(
+        table_key,
+        rows,
+        extras_policy=extras_policy,
+        finalize=False,
+    )
+    spec = _finalize_spec_for_table_key(
+        table_key,
+        mode=mode,
+        emit_artifacts=emit_artifacts,
+    )
+    return finalize_table(table, spec=spec), row_count
+
+
 def table_for_columnar_rows(
     table_key: str,
     rows: Mapping[str, Sequence[object]],
     *,
     extras_policy: ExtrasPolicy | None = None,
+    finalize: bool = True,
 ) -> tuple[pa.Table, int]:
     """Build a table from columnar row data using the contract schema.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    rows
+        Columnar mapping of column names to sequences of values.
+    extras_policy
+        Optional extras policy to apply when aligning to the contract schema.
+    finalize
+        Whether to run the finalize gate on the aligned table.
 
     Returns
     -------
@@ -337,21 +411,22 @@ def table_for_columnar_rows(
     batch = pa.record_batch(arrays, schema=pa.schema(fields))
     table = pa.Table.from_batches([batch], schema=batch.schema)
     aligned = align_table_to_contract(table, contract_schema, extras_policy=extras_policy)
-    return aligned, row_count
+    if not finalize:
+        return aligned, row_count
+    spec = _finalize_spec_for_table_key(
+        table_key,
+        mode="tolerant",
+        emit_artifacts=False,
+    )
+    result = finalize_table(aligned, spec=spec)
+    return result.good, row_count
 
 
 def _arrow_schema_for_table(
     table_key: str,
     extras_policy: ExtrasPolicy | None,
 ) -> pa.Schema:
-    schema_service = get_schema_service()
-    if extras_policy is None:
-        arrow_schema = schema_service.get_arrow_schema(table_key)
-        if arrow_schema is not None:
-            return arrow_schema
-    table_schema = schema_service.require_table_schema(table_key)
-    metadata = None if extras_policy is None else ArrowSchemaMetadata(extras_policy=extras_policy)
-    return arrow_contract_for_table_schema(table_schema=table_schema, metadata=metadata)
+    return table_utils.arrow_schema_for_table(table_key, extras_policy=extras_policy)
 
 
 def _buffer_from_columns(
@@ -405,6 +480,7 @@ __all__ = [
     "columnar_buffer_for_table_key",
     "columnar_row_count",
     "empty_table_for_table",
+    "finalize_columnar_rows",
     "table_for_columnar_rows",
     "table_for_rows",
 ]

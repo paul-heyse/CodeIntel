@@ -206,7 +206,11 @@ def test_build_function_contracts_with_simple_function(
 
     result = memory_gateway.con.execute(
         """
-        SELECT preconditions_json, postconditions_json, raises_json, param_nullability_json
+        SELECT
+            struct_extract(extras, 'preconditions') AS preconditions_json,
+            struct_extract(extras, 'postconditions') AS postconditions_json,
+            struct_extract(extras, 'raises') AS raises_json,
+            struct_extract(extras, 'param_nullability') AS param_nullability_json
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,

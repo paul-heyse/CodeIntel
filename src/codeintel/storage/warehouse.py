@@ -11,6 +11,7 @@ Implementation intentionally composes existing primitives (`StorageGateway`,
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -30,9 +31,13 @@ from codeintel.core.columnar import (
     align_reader_to_contract,
     coerce_arrow_reader,
     coerce_arrow_table,
+    deep_cast_table_to_contract,
     extras_policy_from_schema,
 )
-from codeintel.core.columnar.conversion import table_to_reader
+from codeintel.core.columnar.compute_helpers import combine_table_chunks
+from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.kernels import SortKey, hash_struct_ordinal, stable_sort_indices
 from codeintel.core.filters import FilterSpecInput
 from codeintel.core.queries.filter_compiler import (
     FilterCompilerError,
@@ -44,7 +49,10 @@ from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.storage import StorageContext
 from codeintel.core.validation.mode import ContractValidationMode
-from codeintel.core.validation.schema_constraints import schema_metadata_errors
+from codeintel.core.validation.schema_constraints import (
+    list_alignment_specs_for_table_key,
+    schema_metadata_errors,
+)
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
 from codeintel.storage.duckdb_explain import normalize_explain_output
 from codeintel.storage.helpers.table_key import split_table_key
@@ -71,6 +79,7 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.core.schemas.contract_primitives import DatasetContract
+    from codeintel.core.schemas.primitives import TableSchema
     from codeintel.storage.duckdb_types import DuckDBConnection
     from codeintel.storage.gateway import StorageGateway
 
@@ -87,6 +96,7 @@ ReplaceScope = Literal["snapshot", "table"]
 type TabularInput = DuckDBRelation | pa.Table | pa.RecordBatchReader | ColumnarStream | object
 
 _PROFILE_DIR_ENV = "CODEINTEL_WAREHOUSE_PROFILING_DIR"
+_HASH_ORDINAL_MODULUS = 2**31 - 1
 
 log = logging.getLogger(__name__)
 _SNAPSHOT_FILTER_COLUMNS = frozenset({"commit", "repo"})
@@ -691,6 +701,97 @@ def _resolve_fallback_upsert(
     )
 
 
+def _resolve_stable_sort_keys(
+    table_schema: TableSchema | None,
+) -> tuple[str, ...] | None:
+    if table_schema is None:
+        return None
+    policy = table_schema.write_policy
+    if policy is not None and policy.stable_sort_keys is not None:
+        return policy.stable_sort_keys
+    return table_schema.primary_key or None
+
+
+def _stable_sort_keys_for_table(
+    table: pa.Table,
+    *,
+    table_schema: TableSchema | None,
+) -> list[SortKey]:
+    stable_sort_keys = _resolve_stable_sort_keys(table_schema)
+    if not stable_sort_keys:
+        return []
+    available = [key for key in stable_sort_keys if key in table.column_names]
+    return [(key, "ascending") for key in available]
+
+
+def _hash_columns_for_table(
+    table: pa.Table,
+    *,
+    table_schema: TableSchema | None,
+) -> list[str]:
+    if table_schema is not None and table_schema.primary_key:
+        return [name for name in table_schema.primary_key if name in table.column_names]
+    return list(table.column_names)
+
+
+def _temp_column_name(table: pa.Table, *, base: str) -> str:
+    existing = set(table.column_names)
+    name = base
+    suffix = 1
+    while name in existing:
+        name = f"{base}_{suffix}"
+        suffix += 1
+    return name
+
+
+def _stable_order_by_hash(table: pa.Table, *, columns: Sequence[str]) -> pa.Table:
+    if table.num_rows <= 1:
+        return table
+    available = [name for name in columns if name in table.column_names]
+    if not available:
+        return table
+    try:
+        ordinal = hash_struct_ordinal(
+            table,
+            columns=available,
+            modulus=_HASH_ORDINAL_MODULUS,
+        )
+    except (RuntimeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError, TypeError):
+        return table
+    temp_name = _temp_column_name(table, base="__stable_ordinal")
+    try:
+        table_with = table.append_column(temp_name, ordinal)
+        indices = stable_sort_indices(table_with, sort_keys=[(temp_name, "ascending")])
+    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
+        return table
+    return table.take(indices)
+
+
+def _apply_table_ordering(
+    table: pa.Table,
+    *,
+    table_schema: TableSchema | None,
+) -> pa.Table:
+    if table.num_rows <= 1:
+        return table
+    sort_keys = _stable_sort_keys_for_table(table, table_schema=table_schema)
+    if sort_keys:
+        try:
+            indices = stable_sort_indices(table, sort_keys=sort_keys)
+        except (
+            pa.ArrowInvalid,
+            pa.ArrowNotImplementedError,
+            pa.ArrowTypeError,
+            TypeError,
+            ValueError,
+        ):
+            indices = None
+        if indices is not None:
+            return table.take(indices)
+    hash_columns = _hash_columns_for_table(table, table_schema=table_schema)
+    return _stable_order_by_hash(table, columns=hash_columns)
+
+
 def _contract_schema_metadata(
     gateway: StorageGateway,
     *,
@@ -924,6 +1025,8 @@ def _write_tabular(
     options: MaterializeOptions,
 ) -> int | None:
     table_row_count = _table_row_count(relation)
+    contract = _dataset_contract(gateway, table_key=table_key)
+    table_schema = contract.schema if contract is not None else None
     contract_schema = _contract_schema_for_table(gateway, table_key=table_key)
     validation_mode = _validation_mode(gateway)
     relation = _materialize_relation_for_validation(
@@ -943,6 +1046,28 @@ def _write_tabular(
         table_key=table_key,
         validation_mode=validation_mode,
     )
+    if contract_schema is not None and not isinstance(relation, DuckDBRelation):
+        if isinstance(relation, pa.RecordBatchReader):
+            table = reader_to_table(relation)
+        else:
+            table = relation
+        table = combine_table_chunks(table)
+        if contract_schema is not None:
+            with contextlib.suppress(
+                TypeError,
+                pa.ArrowInvalid,
+                pa.ArrowNotImplementedError,
+                pa.ArrowTypeError,
+            ):
+                table = deep_cast_table_to_contract(table, contract_schema)
+        finalized = finalize_table(
+            table,
+            spec=FinalizeSpec(
+                table_key=table_key,
+                mode=_finalize_mode(validation_mode),
+            ),
+        )
+        relation = _apply_table_ordering(finalized.good, table_schema=table_schema)
     if isinstance(relation, DuckDBRelation):
         return _write_relation(
             gateway=gateway,
@@ -1021,6 +1146,7 @@ def _validation_context_for_table(
         table_schema=resolution.table_schema,
         schema_observation=resolution.observation,
         validation_profile=validation_profile,
+        list_alignments=list_alignment_specs_for_table_key(table_key),
     )
 
 
@@ -1031,6 +1157,12 @@ def _validation_mode(gateway: StorageGateway) -> ValidationMode:
     if mode == ContractValidationMode.LENIENT:
         return "warn"
     return "strict"
+
+
+def _finalize_mode(validation_mode: ValidationMode) -> Literal["strict", "tolerant"]:
+    if validation_mode == "strict":
+        return "strict"
+    return "tolerant"
 
 
 def _align_tabular_input(

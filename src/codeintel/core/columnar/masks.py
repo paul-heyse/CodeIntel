@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.core.columnar.compute_helpers import call_compute, require_array, safe_filter
+from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.set_ops import index_in, value_set_array
 from codeintel.core.columnar.type_normalization import normalize_string_view_array
 
@@ -19,6 +20,16 @@ else:
     ComputeExpression = object
 
 _EXPR_TYPE = getattr(pc, "Expression", None)
+
+
+def _compute_mask(
+    name: str,
+    args: Sequence[object],
+    *,
+    options: pc.FunctionOptions | None = None,
+) -> pa.Array | pa.ChunkedArray:
+    result = call_compute(name, args, options=options)
+    return require_array(result, name=name)
 
 
 def fill_null_false(mask: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
@@ -34,8 +45,7 @@ def fill_null_false(mask: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedAr
     filled : pyarrow.Array | pyarrow.ChunkedArray
         Mask with nulls replaced by False.
     """
-    result = call_compute("fill_null", [mask, pa.scalar(value=False)])
-    return require_array(result, name="fill_null")
+    return _compute_mask("fill_null", [mask, pa.scalar(value=False)])
 
 
 def invert_mask(mask: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
@@ -51,8 +61,7 @@ def invert_mask(mask: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
     inverted : pyarrow.Array | pyarrow.ChunkedArray
         Inverted boolean mask.
     """
-    result = call_compute("invert", [mask])
-    return require_array(result, name="invert")
+    return _compute_mask("invert", [mask])
 
 
 def and_mask(
@@ -73,8 +82,7 @@ def and_mask(
     combined : pyarrow.Array | pyarrow.ChunkedArray
         Combined boolean mask.
     """
-    result = call_compute("and_kleene", [left, right])
-    return require_array(result, name="and_kleene")
+    return _compute_mask("and_kleene", [left, right])
 
 
 def and_kleene(
@@ -102,8 +110,7 @@ def or_kleene(
     pa.Array | pa.ChunkedArray
         Combined boolean mask.
     """
-    result = call_compute("or_kleene", [left, right])
-    return require_array(result, name="or_kleene")
+    return _compute_mask("or_kleene", [left, right])
 
 
 def bit_wise_and(
@@ -117,8 +124,7 @@ def bit_wise_and(
     pa.Array | pa.ChunkedArray
         Resulting array from bitwise AND.
     """
-    result = call_compute("bit_wise_and", [left, right])
-    return require_array(result, name="bit_wise_and")
+    return _compute_mask("bit_wise_and", [left, right])
 
 
 def is_valid_mask(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
@@ -129,8 +135,7 @@ def is_valid_mask(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedAr
     pyarrow.Array | pyarrow.ChunkedArray
         Boolean validity mask.
     """
-    result = call_compute("is_valid", [values])
-    return require_array(result, name="is_valid")
+    return _compute_mask("is_valid", [values])
 
 
 def is_null_mask(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
@@ -141,8 +146,7 @@ def is_null_mask(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArr
     pa.Array | pa.ChunkedArray
         Boolean mask of null entries.
     """
-    result = call_compute("is_null", [values])
-    return require_array(result, name="is_null")
+    return _compute_mask("is_null", [values])
 
 
 def filter_valid(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
@@ -154,8 +158,7 @@ def filter_valid(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArr
         Filtered values with nulls removed.
     """
     mask = is_valid_mask(values)
-    result = call_compute("filter", [values, mask])
-    return require_array(result, name="filter")
+    return _compute_mask("filter", [values, mask])
 
 
 def _coerce_scalar_like(
@@ -183,8 +186,7 @@ def equal_mask(
         Boolean mask of equality comparisons.
     """
     left_norm = normalize_string_view_array(left)
-    result = call_compute("equal", [left_norm, _coerce_scalar_like(left_norm, right)])
-    return require_array(result, name="equal")
+    return _compute_mask("equal", [left_norm, _coerce_scalar_like(left_norm, right)])
 
 
 def not_equal_mask(
@@ -199,8 +201,7 @@ def not_equal_mask(
         Boolean mask of inequality comparisons.
     """
     left_norm = normalize_string_view_array(left)
-    result = call_compute("not_equal", [left_norm, _coerce_scalar_like(left_norm, right)])
-    return require_array(result, name="not_equal")
+    return _compute_mask("not_equal", [left_norm, _coerce_scalar_like(left_norm, right)])
 
 
 def is_in_mask(
@@ -218,8 +219,7 @@ def is_in_mask(
     normalized = normalize_string_view_array(values)
     resolved = value_set_array(value_set, like=normalized)
     options = pc.SetLookupOptions(value_set=resolved)
-    result = call_compute("is_in", [normalized], options=options)
-    return require_array(result, name="is_in")
+    return _compute_mask("is_in", [normalized], options=options)
 
 
 def index_in_values(
@@ -246,16 +246,14 @@ def non_empty_string_mask(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.C
         Boolean mask for non-empty strings.
     """
     is_valid = is_valid_mask(values)
-    lengths = call_compute("utf8_length", [values])
-    length_array = require_array(lengths, name="utf8_length")
-    non_empty = call_compute("greater", [length_array, pa.scalar(0)])
-    non_empty_array = require_array(non_empty, name="greater")
+    length_array = _compute_mask("utf8_length", [values])
+    non_empty_array = _compute_mask("greater", [length_array, pa.scalar(0)])
     return and_kleene(is_valid, non_empty_array)
 
 
 def _field_expr(field: str | ComputeExpression) -> ComputeExpression:
     if isinstance(field, str):
-        return pc.field(field)
+        return E.field(field)
     return field
 
 
@@ -265,8 +263,8 @@ def _scalar_expr(value: object) -> ComputeExpression:
     if isinstance(value, pa.Scalar):
         as_py = getattr(value, "as_py", None)
         scalar_value = as_py() if callable(as_py) else value
-        return pc.scalar(scalar_value)
-    return pc.scalar(value)
+        return E.scalar(scalar_value)
+    return E.scalar(value)
 
 
 def equal_expr(field: str | ComputeExpression, value: object) -> ComputeExpression:

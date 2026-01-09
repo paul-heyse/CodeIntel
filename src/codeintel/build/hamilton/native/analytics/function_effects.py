@@ -15,6 +15,7 @@ from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_f
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
 from codeintel.build.hamilton.native.patterns import (
     TableTargetContext,
     attach_table_target_template,
@@ -24,7 +25,6 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import table_for_rows
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -100,8 +100,7 @@ def function_effects__base(
         ),
     )
     rows = build_function_effects_rows(env.snapshot, inputs=inputs)
-    reader, _ = table_for_rows(FUNCTION_EFFECTS_TABLE_KEY, rows)
-    return reader
+    return finalize_analytics_rows(FUNCTION_EFFECTS_TABLE_KEY, rows)
 
 
 _MODULE = sys.modules[__name__]

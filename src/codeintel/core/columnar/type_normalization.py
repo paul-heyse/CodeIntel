@@ -9,11 +9,23 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 
+def _is_list_view_type(data_type: pa.DataType) -> bool:
+    list_view = getattr(pa.types, "is_list_view", None)
+    return bool(callable(list_view) and list_view(data_type))
+
+
+def _is_large_list_view_type(data_type: pa.DataType) -> bool:
+    large_list_view = getattr(pa.types, "is_large_list_view", None)
+    return bool(callable(large_list_view) and large_list_view(data_type))
+
+
 def _is_list_type(data_type: pa.DataType) -> bool:
     return (
         pa.types.is_list(data_type)
         or pa.types.is_large_list(data_type)
         or pa.types.is_fixed_size_list(data_type)
+        or _is_list_view_type(data_type)
+        or _is_large_list_view_type(data_type)
     )
 
 
@@ -42,11 +54,11 @@ def _string_view_cast_list(data_type: pa.DataType) -> pa.DataType:
     value_type = string_view_cast_type(data_type.value_type)
     if value_type == data_type.value_type:
         return data_type
-    if pa.types.is_large_list(data_type):
+    if pa.types.is_fixed_size_list(data_type):
+        return pa.list_(value_type, list_size=data_type.list_size)
+    if pa.types.is_large_list(data_type) or _is_large_list_view_type(data_type):
         return pa.large_list(value_type)
-    if pa.types.is_list(data_type):
-        return pa.list_(value_type)
-    return pa.list_(value_type, list_size=data_type.list_size)
+    return pa.list_(value_type)
 
 
 def _string_view_cast_struct(data_type: pa.StructType) -> pa.DataType:
@@ -109,11 +121,11 @@ def _binary_view_cast_list(data_type: pa.DataType) -> pa.DataType:
     value_type = binary_view_cast_type(data_type.value_type)
     if value_type == data_type.value_type:
         return data_type
-    if pa.types.is_large_list(data_type):
+    if pa.types.is_fixed_size_list(data_type):
+        return pa.list_(value_type, list_size=data_type.list_size)
+    if pa.types.is_large_list(data_type) or _is_large_list_view_type(data_type):
         return pa.large_list(value_type)
-    if pa.types.is_list(data_type):
-        return pa.list_(value_type)
-    return pa.list_(value_type, list_size=data_type.list_size)
+    return pa.list_(value_type)
 
 
 def _binary_view_cast_struct(data_type: pa.StructType) -> pa.DataType:

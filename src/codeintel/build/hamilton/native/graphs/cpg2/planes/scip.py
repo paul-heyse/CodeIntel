@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -14,18 +15,29 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     canonicalize_for_table,
     identity_keys,
 )
+from codeintel.build.hamilton.native.graphs.cpg2.edge_helpers import (
+    finalize_cpg_edge_rows,
+)
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
-from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
+from codeintel.build.tabular.finalize_ops import (
+    FinalizeDedupe,
+    FinalizeResult,
+    FinalizeSpec,
+    finalize_join_keys,
+    finalize_table,
+)
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
+
+LOG = logging.getLogger(__name__)
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
@@ -77,6 +89,11 @@ def _scip_symbol_joined_table(
 ) -> pa.Table:
     normalized = canonicalize_for_table(symbols, table_key=table_key)
     normalized = normalize_table_for_join(normalized)
+    normalized = _precheck_join_table(
+        normalized,
+        table_key=table_key,
+        join_keys=_SCIP_JOIN_KEYS,
+    )
     anchors = build_anchor_map(
         normalized,
         table_key=table_key,
@@ -84,6 +101,11 @@ def _scip_symbol_joined_table(
         include_source_pk_json=True,
     )
     anchors = normalize_table_for_join(anchors)
+    anchors = _precheck_join_table(
+        anchors,
+        table_key=None,
+        join_keys=_SCIP_JOIN_KEYS,
+    )
     left_exprs = _join_key_exprs()
     for column in left_output:
         if column in left_exprs:
@@ -94,9 +116,8 @@ def _scip_symbol_joined_table(
         "cpg_node_id": E.field("cpg_node_id"),
         "source_pk_json": E.field("source_pk_json"),
     }
-    key_filter = _join_key_filter()
-    left_plan = Plan.table(normalized).project(left_exprs).filter(key_filter)
-    right_plan = Plan.table(anchors).project(right_exprs).filter(key_filter)
+    left_plan = Plan.table(normalized).project(left_exprs)
+    right_plan = Plan.table(anchors).project(right_exprs)
     joined = left_plan.hash_join(
         right=right_plan,
         spec=HashJoinSpec(
@@ -107,7 +128,7 @@ def _scip_symbol_joined_table(
             right_output=["cpg_node_id", "source_pk_json"],
         ),
     )
-    table = reader_to_table(joined.to_reader(use_threads=True))
+    table = materialize_plan(joined, use_threads=True)
     if table.num_rows == 0:
         return table
     return table.take(
@@ -130,8 +151,50 @@ def _join_key_exprs() -> dict[str, pc.Expression]:
     }
 
 
-def _join_key_filter() -> pc.Expression:
-    return E.is_valid("repo") & E.is_valid("commit") & E.is_valid("symbol")
+def _precheck_join_table(
+    table: pa.Table,
+    *,
+    table_key: str | None,
+    join_keys: Sequence[str],
+) -> pa.Table:
+    if table.num_rows == 0 or not join_keys:
+        return table
+    if table_key is None:
+        result = finalize_join_keys(
+            table,
+            required_non_null=join_keys,
+            key_fields=join_keys,
+        )
+    else:
+        result = finalize_table(
+            table,
+            spec=FinalizeSpec(
+                table_key=table_key,
+                mode="tolerant",
+                required_non_null=join_keys,
+                key_fields=join_keys,
+                dedupe=FinalizeDedupe(enabled=False),
+            ),
+        )
+    _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
+    return result.good
+
+
+def _log_join_precheck_errors(
+    result: FinalizeResult,
+    *,
+    table_key: str | None,
+    join_keys: Sequence[str],
+) -> None:
+    if result.errors.num_rows == 0:
+        return
+    table_label = table_key or "derived"
+    LOG.warning(
+        "Join key precheck dropped %d rows table=%s keys=%s",
+        result.errors.num_rows,
+        table_label,
+        ",".join(join_keys),
+    )
 
 
 def cpg2_nodes__scip_symbols(
@@ -287,7 +350,7 @@ def cpg2_edges__scip_occurrences(
         )
         if row is not None
     ]
-    table, _ = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
+    table = finalize_cpg_edge_rows(rows)
     filtered = _filter_valid_edges(table)
     if diagnostics is not None:
         diagnostics["scip_occurrences"] = ScipOccurrenceDiagnostics(

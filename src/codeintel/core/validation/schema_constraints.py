@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -11,8 +12,8 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from codeintel.core.columnar.compute_helpers import call_compute
-from codeintel.core.columnar.masks import is_valid_mask
+from codeintel.core.columnar.compute_helpers import call_compute, require_array
+from codeintel.core.columnar.masks import fill_null_false, invert_mask, is_valid_mask
 from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.schemas.arrow_gen import (
@@ -68,6 +69,18 @@ def is_list_like(dtype: pa.DataType) -> bool:
     if callable(large_list_view):
         checks.append(large_list_view)
     return any(check(dtype) for check in checks)
+
+
+@dataclass(frozen=True, slots=True)
+class ListAlignmentSpec:
+    """Specification for aligned list columns or struct paths."""
+
+    column: str
+    related: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        """Normalize alignment specs to tuples."""
+        object.__setattr__(self, "related", tuple(self.related))
 
 
 def is_compatible_arrow_type(column: Column, actual_type: pa.DataType) -> bool:
@@ -284,6 +297,160 @@ def nullability_errors_for_batch(
         if not _all_valid(batch.column(index)):
             errors.append(f"Column {column.name} contains nulls but is non-nullable")
     return errors
+
+
+def list_alignment_errors_for_table(
+    table: pa.Table,
+    *,
+    alignments: Sequence[ListAlignmentSpec],
+) -> list[str]:
+    """Validate aligned list column lengths for a table.
+
+    Parameters
+    ----------
+    table
+        Arrow table to inspect.
+    alignments
+        Alignment specs describing list columns that must match lengths.
+
+    Returns
+    -------
+    list[str]
+        Alignment validation errors, if any.
+    """
+    return _list_alignment_errors(
+        schema=table.schema,
+        column_lookup=lambda name: table[name],
+        alignments=alignments,
+    )
+
+
+def list_alignment_errors_for_batch(
+    batch: pa.RecordBatch,
+    *,
+    alignments: Sequence[ListAlignmentSpec],
+) -> list[str]:
+    """Validate aligned list column lengths for a record batch.
+
+    Parameters
+    ----------
+    batch
+        Arrow record batch to inspect.
+    alignments
+        Alignment specs describing list columns that must match lengths.
+
+    Returns
+    -------
+    list[str]
+        Alignment validation errors, if any.
+    """
+    schema = batch.schema
+
+    def _column(name: str) -> pa.Array | pa.ChunkedArray:
+        index = schema.get_field_index(name)
+        return batch.column(index)
+
+    return _list_alignment_errors(schema=schema, column_lookup=_column, alignments=alignments)
+
+
+def _list_alignment_errors(
+    *,
+    schema: pa.Schema,
+    column_lookup: Callable[[str], pa.Array | pa.ChunkedArray],
+    alignments: Sequence[ListAlignmentSpec],
+) -> list[str]:
+    errors: list[str] = []
+    for alignment in alignments:
+        base = _resolve_column_path(schema, column_lookup, alignment.column)
+        if base is None:
+            continue
+        if not is_list_like(base.type):
+            errors.append(
+                f"Column {alignment.column} is not list-like for list alignment validation"
+            )
+            continue
+        for related in alignment.related:
+            other = _resolve_column_path(schema, column_lookup, related)
+            if other is None:
+                continue
+            if not is_list_like(other.type):
+                errors.append(f"Column {related} is not list-like for list alignment validation")
+                continue
+            if _list_alignment_mismatch(base, other):
+                errors.append(f"List columns {alignment.column} and {related} are misaligned")
+    return errors
+
+
+def _resolve_column_path(
+    schema: pa.Schema,
+    column_lookup: Callable[[str], pa.Array | pa.ChunkedArray],
+    column_path: str,
+) -> pa.Array | pa.ChunkedArray | None:
+    parts = column_path.split(".")
+    if not parts:
+        return None
+    root = parts[0]
+    if root not in schema.names:
+        return None
+    values: pa.Array | pa.ChunkedArray = column_lookup(root)
+    for field_name in parts[1:]:
+        try:
+            values = _struct_field(values, field_name)
+        except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, ValueError):
+            return None
+    return values
+
+
+def _list_alignment_mismatch(
+    base: pa.Array | pa.ChunkedArray,
+    other: pa.Array | pa.ChunkedArray,
+) -> bool:
+    try:
+        base_len = _list_value_length(base)
+        other_len = _list_value_length(other)
+        equal = require_array(call_compute("equal", [base_len, other_len]), name="equal")
+        mismatch = invert_mask(fill_null_false(equal))
+    except (
+        TypeError,
+        pa.ArrowInvalid,
+        pa.ArrowNotImplementedError,
+        pa.ArrowTypeError,
+        ValueError,
+    ):
+        return False
+    return _any_true(mismatch)
+
+
+def _list_value_length(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    result = call_compute("list_value_length", [values])
+    return require_array(result, name="list_value_length")
+
+
+def _struct_field(
+    values: pa.Array | pa.ChunkedArray,
+    field_name: str,
+) -> pa.Array | pa.ChunkedArray:
+    if not pa.types.is_struct(values.type):
+        msg = f"Column path expects struct but got {values.type}"
+        raise TypeError(msg)
+    result = call_compute("struct_field", [values, field_name])
+    return require_array(result, name="struct_field")
+
+
+_LIST_ALIGNMENT_SPECS: dict[str, tuple[ListAlignmentSpec, ...]] = {
+    "core.cst_nodes": (ListAlignmentSpec("span.start", ("span.end",)),),
+}
+
+
+def list_alignment_specs_for_table_key(table_key: str) -> tuple[ListAlignmentSpec, ...]:
+    """Return list-alignment specs for known tables.
+
+    Returns
+    -------
+    tuple[ListAlignmentSpec, ...]
+        List alignment specifications for the table key.
+    """
+    return _LIST_ALIGNMENT_SPECS.get(table_key, ())
 
 
 def observation_errors_for_table(
@@ -623,12 +790,16 @@ def _extras_column_name(schema: pa.Schema) -> str:
 
 
 __all__ = [
+    "ListAlignmentSpec",
     "arrow_batch_errors",
     "arrow_table_errors",
     "decimal_scale_zero",
     "is_compatible_arrow_type",
     "is_list_like",
     "iter_reader_batch_errors",
+    "list_alignment_errors_for_batch",
+    "list_alignment_errors_for_table",
+    "list_alignment_specs_for_table_key",
     "nullability_errors_for_batch",
     "nullability_errors_for_table",
     "observation_errors_for_batch",

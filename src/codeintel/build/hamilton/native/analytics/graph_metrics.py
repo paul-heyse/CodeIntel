@@ -47,6 +47,7 @@ from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_op
 from codeintel.build.graphs.rx.algos import GraphInput
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     MultiTableTargetContext,
@@ -60,7 +61,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.query_results import coerce_optional_int
 
@@ -514,11 +515,10 @@ def graph_metrics_functions__base(
     """
     if not graph_metrics_result.function_rows:
         return empty_table_for_table(GRAPH_METRICS_FUNCTIONS_TABLE_KEY)
-    table, _ = table_for_rows(
+    return finalize_analytics_rows(
         GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
         graph_metrics_result.function_rows,
     )
-    return table
 
 
 def graph_metrics_modules__base(
@@ -533,11 +533,10 @@ def graph_metrics_modules__base(
     """
     if not graph_metrics_result.module_rows:
         return empty_table_for_table(GRAPH_METRICS_MODULES_TABLE_KEY)
-    table, _ = table_for_rows(
+    return finalize_analytics_rows(
         GRAPH_METRICS_MODULES_TABLE_KEY,
         graph_metrics_result.module_rows,
     )
-    return table
 
 
 def graph_metrics_functions_ext__base(
@@ -560,8 +559,7 @@ def graph_metrics_functions_ext__base(
     )
     if not rows:
         return empty_table_for_table(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY)
-    table, _ = table_for_rows(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, rows)
-    return table
+    return finalize_analytics_rows(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, rows)
 
 
 def graph_metrics_modules_ext__base(
@@ -584,8 +582,7 @@ def graph_metrics_modules_ext__base(
     )
     if not rows:
         return empty_table_for_table(GRAPH_METRICS_MODULES_EXT_TABLE_KEY)
-    table, _ = table_for_rows(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, rows)
-    return table
+    return finalize_analytics_rows(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, rows)
 
 
 def symbol_graph_metrics_functions__base(
@@ -608,8 +605,7 @@ def symbol_graph_metrics_functions__base(
     )
     if not rows:
         return empty_table_for_table(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY)
-    table, _ = table_for_rows(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY, rows)
-    return table
+    return finalize_analytics_rows(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY, rows)
 
 
 def symbol_graph_metrics_modules__base(
@@ -632,8 +628,7 @@ def symbol_graph_metrics_modules__base(
     )
     if not rows:
         return empty_table_for_table(SYMBOL_GRAPH_MODULES_TABLE_KEY)
-    table, _ = table_for_rows(SYMBOL_GRAPH_MODULES_TABLE_KEY, rows)
-    return table
+    return finalize_analytics_rows(SYMBOL_GRAPH_MODULES_TABLE_KEY, rows)
 
 
 def graph_stats__base(
@@ -652,7 +647,7 @@ def graph_stats__base(
     scope = SnapshotScope.from_snapshot(env.snapshot)
     config_value_rows = collect_scoped_rows(
         q__analytics__config_values,
-        ("repo", "commit", "key", "reference_modules"),
+        ("repo", "commit", "key", "extras"),
         scope=scope,
     )
     module_rows = collect_scoped_rows(
@@ -684,8 +679,7 @@ def graph_stats__base(
     )
     if not rows:
         return empty_table_for_table(GRAPH_STATS_TABLE_KEY)
-    reader, _ = table_for_rows(GRAPH_STATS_TABLE_KEY, rows)
-    return reader
+    return finalize_analytics_rows(GRAPH_STATS_TABLE_KEY, rows)
 
 
 def _graph_metrics_save_spec(table_key: str) -> DatasetSaveSpec:

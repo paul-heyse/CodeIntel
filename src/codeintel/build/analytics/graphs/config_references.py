@@ -16,7 +16,6 @@ from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.paths import normalize_path, safe_relpath
-from codeintel.core.serialization.payload import encode_payload
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -94,8 +93,10 @@ def compute_config_reference_rows(inputs: ConfigReferenceInputs) -> list[dict[st
                 "commit": inputs.snapshot.commit,
                 "config_path": entry.config_path,
                 "key": entry.key,
-                "reference_paths": encode_payload(paths),
-                "reference_modules": encode_payload(modules),
+                "extras": {
+                    "reference_paths": paths,
+                    "reference_modules": modules,
+                },
                 "reference_count": len(paths),
                 "created_at": now,
             }

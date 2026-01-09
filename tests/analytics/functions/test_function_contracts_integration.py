@@ -293,7 +293,10 @@ def test_compute_contracts_with_catalog_goid_iteration(
 
     result = ctx.gateway.con.execute(
         """
-        SELECT function_goid_h128, preconditions_json, postconditions_json
+        SELECT
+            function_goid_h128,
+            struct_extract(extras, 'preconditions') AS preconditions_json,
+            struct_extract(extras, 'postconditions') AS postconditions_json
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ?
         """,
@@ -322,7 +325,9 @@ def test_compute_contracts_with_missing_ast(
 
     result = ctx.gateway.con.execute(
         """
-        SELECT function_goid_h128, preconditions_json
+        SELECT
+            function_goid_h128,
+            struct_extract(extras, 'preconditions') AS preconditions_json
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ?
         """,
@@ -380,7 +385,7 @@ def test_compute_contracts_with_docstring_data(
 
     result = ctx.gateway.con.execute(
         """
-        SELECT param_nullability_json
+        SELECT struct_extract(extras, 'param_nullability') AS param_nullability_json
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
@@ -427,7 +432,9 @@ def test_compute_contracts_with_type_annotations(
 
     result = ctx.gateway.con.execute(
         """
-        SELECT param_nullability_json, return_nullability
+        SELECT
+            struct_extract(extras, 'param_nullability') AS param_nullability_json,
+            return_nullability
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
@@ -472,7 +479,9 @@ def test_compute_contracts_with_guards_and_catalog(
 
     result = ctx.gateway.con.execute(
         """
-        SELECT preconditions_json, raises_json
+        SELECT
+            struct_extract(extras, 'preconditions') AS preconditions_json,
+            struct_extract(extras, 'raises') AS raises_json
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
@@ -520,7 +529,7 @@ def test_compute_contracts_with_bool_return_type(
 
     result = ctx.gateway.con.execute(
         """
-        SELECT postconditions_json
+        SELECT struct_extract(extras, 'postconditions') AS postconditions_json
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
@@ -704,7 +713,9 @@ def test_compute_contracts_with_isinstance_guard(
 
     result = fresh_gateway.con.execute(
         """
-        SELECT preconditions_json, raises_json
+        SELECT
+            struct_extract(extras, 'preconditions') AS preconditions_json,
+            struct_extract(extras, 'raises') AS raises_json
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
@@ -746,7 +757,7 @@ def test_compute_contracts_with_len_check(
 
     result = fresh_gateway.con.execute(
         """
-        SELECT preconditions_json
+        SELECT struct_extract(extras, 'preconditions') AS preconditions_json
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
@@ -782,7 +793,7 @@ def test_compute_contracts_with_predicate_name(
 
     result = fresh_gateway.con.execute(
         """
-        SELECT postconditions_json
+        SELECT struct_extract(extras, 'postconditions') AS postconditions_json
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,

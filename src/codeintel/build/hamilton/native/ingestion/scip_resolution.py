@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
 
 import pyarrow as pa
 import pyarrow.compute as pc
-from google.protobuf.struct_pb2 import NullValue, Struct
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -24,10 +21,9 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
 from codeintel.build.tabular.arrow_ops import (
-    align_table_to_contract,
     dedupe_table_for_table,
-    emit_alignment_report,
     iter_rows,
 )
 from codeintel.build.tabular.compute_columns import constant_array
@@ -44,14 +40,22 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
     not_equal_mask,
 )
-from codeintel.build.tabular.conversion import reader_to_table, tabular_to_scoped_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan
+from codeintel.build.tabular.finalize_ops import (
+    FinalizeDedupe,
+    FinalizeResult,
+    FinalizeSpec,
+    finalize_join_keys,
+    finalize_table,
+)
+from codeintel.build.tabular.kernels import hash_struct_goid
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
@@ -68,6 +72,10 @@ SCIP_RESOLUTION_TARGET_NAME = "scip_resolution"
 SCIP_SYMBOL_GOID_XREF_TABLE_KEY = "core.scip_symbol_goid_xref"
 SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY = "core.scip_occurrence_span_xref"
 SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY = "core.scip_occurrence_syntax_xref"
+SCIP_OCCURRENCES_TABLE_KEY = "core.scip_occurrences"
+SCIP_SYMBOL_INFO_TABLE_KEY = "core.scip_symbol_information"
+GOIDS_TABLE_KEY = "core.goids"
+SYNTAX_DEFS_TABLE_KEY = "core.syntax_defs"
 
 _ROLE_DEFINITION = 0x1
 _ROLE_IMPORT = 0x2
@@ -92,7 +100,38 @@ _JOIN_INT_KEYS = {
     "start_byte",
     "end_byte",
 }
-SortKey = tuple[str, Literal["ascending", "descending"]]
+
+
+@dataclass(frozen=True, slots=True)
+class _JoinSpec:
+    left_keys: Sequence[str]
+    right_keys: Sequence[str]
+    left_table_key: str | None = None
+    right_table_key: str | None = None
+
+
+_OCCURRENCE_ID_COLUMNS = (
+    "rel_path",
+    "scip_symbol",
+    "occ_start_line",
+    "occ_start_col",
+    "occ_end_line",
+    "occ_end_col",
+    "occ_start_byte",
+    "occ_end_byte",
+)
+_OCCURRENCE_ID_SCHEMA = pa.schema(
+    [
+        ("rel_path", pa.string()),
+        ("scip_symbol", pa.string()),
+        ("occ_start_line", pa.int64()),
+        ("occ_start_col", pa.int64()),
+        ("occ_end_line", pa.int64()),
+        ("occ_end_col", pa.int64()),
+        ("occ_start_byte", pa.int64()),
+        ("occ_end_byte", pa.int64()),
+    ]
+)
 
 
 def _join_casts(keys: Sequence[str]) -> dict[str, str]:
@@ -119,38 +158,87 @@ def _project_with_cast(
     return exprs
 
 
-def _join_key_filter(keys: Sequence[str]) -> pc.Expression:
-    return E.and_(*(E.is_valid(key) for key in keys))
+def _precheck_join_table(
+    table: pa.Table,
+    *,
+    table_key: str | None,
+    join_keys: Sequence[str],
+) -> pa.Table:
+    if table.num_rows == 0 or not join_keys:
+        return table
+    if table_key is None:
+        result = finalize_join_keys(
+            table,
+            required_non_null=join_keys,
+            key_fields=join_keys,
+        )
+    else:
+        result = finalize_table(
+            table,
+            spec=FinalizeSpec(
+                table_key=table_key,
+                mode="tolerant",
+                required_non_null=join_keys,
+                key_fields=join_keys,
+                dedupe=FinalizeDedupe(enabled=False),
+                target_name=SCIP_RESOLUTION_TARGET_NAME,
+            ),
+        )
+    _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
+    return result.good
+
+
+def _log_join_precheck_errors(
+    result: FinalizeResult,
+    *,
+    table_key: str | None,
+    join_keys: Sequence[str],
+) -> None:
+    if result.errors.num_rows == 0:
+        return
+    table_label = table_key or "derived"
+    LOG.warning(
+        "Join key precheck dropped %d rows table=%s keys=%s",
+        result.errors.num_rows,
+        table_label,
+        ",".join(join_keys),
+    )
 
 
 def _hash_join_tables(
     left: pa.Table,
     right: pa.Table,
     *,
-    left_keys: Sequence[str],
-    right_keys: Sequence[str],
+    spec: _JoinSpec,
     how: JoinType = "left outer",
 ) -> pa.Table:
-    left_exprs = _project_with_cast(left, casts=_join_casts(left_keys))
-    right_exprs = _project_with_cast(right, casts=_join_casts(right_keys))
-    left_plan = Plan.table(left).project(left_exprs).filter(_join_key_filter(left_keys))
-    right_plan = Plan.table(right).project(right_exprs).filter(_join_key_filter(right_keys))
+    left_checked = _precheck_join_table(
+        left,
+        table_key=spec.left_table_key,
+        join_keys=spec.left_keys,
+    )
+    right_checked = _precheck_join_table(
+        right,
+        table_key=spec.right_table_key,
+        join_keys=spec.right_keys,
+    )
+    left_exprs = _project_with_cast(left, casts=_join_casts(spec.left_keys))
+    right_exprs = _project_with_cast(right, casts=_join_casts(spec.right_keys))
+    left_plan = Plan.table(left_checked).project(left_exprs)
+    right_plan = Plan.table(right_checked).project(right_exprs)
     right_output = [name for name in right_exprs if name not in left_exprs]
     joined = left_plan.hash_join(
         right=right_plan,
         spec=HashJoinSpec(
-            left_keys=list(left_keys),
-            right_keys=list(right_keys),
+            left_keys=list(spec.left_keys),
+            right_keys=list(spec.right_keys),
             how=how,
             left_output=list(left_exprs.keys()),
             right_output=right_output,
         ),
     )
-    table = reader_to_table(joined.to_reader(use_threads=True))
-    if table.num_rows == 0:
-        return table
-    sort_keys: list[SortKey] = [(key, "ascending") for key in left_keys]
-    return table.take(stable_sort_indices(table, sort_keys=sort_keys))
+    joined = joined.order_by(sort_keys=[(key, "ascending") for key in spec.left_keys])
+    return materialize_plan(joined, use_threads=True)
 
 
 @dataclass(frozen=True)
@@ -407,8 +495,12 @@ def _definition_anchors_table(
     joined = _hash_join_tables(
         defs_table,
         goids_table,
-        left_keys=join_keys,
-        right_keys=join_keys,
+        spec=_JoinSpec(
+            left_keys=join_keys,
+            right_keys=join_keys,
+            left_table_key=SYNTAX_DEFS_TABLE_KEY,
+            right_table_key=GOIDS_TABLE_KEY,
+        ),
     )
     if "goid_h128" not in joined.column_names:
         return joined
@@ -507,8 +599,10 @@ def _anchor_goid_matches(
                 joined = _hash_join_tables(
                     left_valid,
                     anchors_valid,
-                    left_keys=list(join_keys),
-                    right_keys=list(join_keys),
+                    spec=_JoinSpec(
+                        left_keys=list(join_keys),
+                        right_keys=list(join_keys),
+                    ),
                 )
                 matched_mask = is_valid_mask(joined["goid_h128"])
                 matched = safe_filter(joined, matched_mask)
@@ -583,8 +677,11 @@ def _strict_goid_matches(
     strict_join = _hash_join_tables(
         left,
         goids,
-        left_keys=join_keys,
-        right_keys=join_keys,
+        spec=_JoinSpec(
+            left_keys=join_keys,
+            right_keys=join_keys,
+            right_table_key=GOIDS_TABLE_KEY,
+        ),
     )
     strict_mask = is_valid_mask(strict_join["goid_h128"])
     strict_matched = safe_filter(strict_join, strict_mask)
@@ -609,8 +706,11 @@ def _fallback_goid_matches(definitions: pa.Table, goids: pa.Table) -> list[pa.Ta
     fallback_join = _hash_join_tables(
         fallback_left,
         goids_by_line,
-        left_keys=fallback_keys,
-        right_keys=fallback_keys,
+        spec=_JoinSpec(
+            left_keys=fallback_keys,
+            right_keys=fallback_keys,
+            right_table_key=GOIDS_TABLE_KEY,
+        ),
     )
     fallback_mask = is_valid_mask(fallback_join["goid_h128"])
     fallback_matched = safe_filter(fallback_join, fallback_mask)
@@ -731,14 +831,21 @@ def _occurrence_span_xref_table(
     base = _hash_join_tables(
         occurrences,
         symbol_info,
-        left_keys=join_keys,
-        right_keys=join_keys,
+        spec=_JoinSpec(
+            left_keys=join_keys,
+            right_keys=join_keys,
+            left_table_key=SCIP_OCCURRENCES_TABLE_KEY,
+            right_table_key=SCIP_SYMBOL_INFO_TABLE_KEY,
+        ),
     )
     base = _hash_join_tables(
         base,
         goid_lookup,
-        left_keys=join_keys,
-        right_keys=join_keys,
+        spec=_JoinSpec(
+            left_keys=join_keys,
+            right_keys=join_keys,
+            right_table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
+        ),
     )
     base = _apply_occurrence_documentation(base)
     base = _apply_enclosing_ranges(base)
@@ -805,25 +912,15 @@ def _occurrence_span_xref_table(
 
 
 def _stable_occurrence_id(row: dict[str, object]) -> str:
-    msg = Struct()
-    fields = (
-        "rel_path",
-        "scip_symbol",
-        "occ_start_line",
-        "occ_start_col",
-        "occ_end_line",
-        "occ_end_col",
-        "occ_start_byte",
-        "occ_end_byte",
-    )
-    for name in fields:
-        value = row.get(name)
-        if value is None:
-            msg.fields[name].null_value = NullValue.NULL_VALUE
-            continue
-        msg.fields[name].string_value = str(value)
-    payload = msg.SerializeToString(deterministic=True)
-    return hashlib.blake2b(payload, digest_size=16).hexdigest()
+    values = {name: row.get(name) for name in _OCCURRENCE_ID_COLUMNS}
+    table = pa.Table.from_pylist([values], schema=_OCCURRENCE_ID_SCHEMA)
+    hashed = hash_struct_goid(table, columns=_OCCURRENCE_ID_COLUMNS)
+    value = next(iter_array_values(hashed), None)
+    normalized = normalize_decimal_id(value)
+    if normalized is None:
+        msg = "Failed to normalize SCIP occurrence hash value."
+        raise ValueError(msg)
+    return str(normalized)
 
 
 def _build_syntax_node_indexes(
@@ -1011,17 +1108,13 @@ def scip_resolution__symbol_goid_xref__base(
     pa.Table
         Arrow reader for core.scip_symbol_goid_xref.
     """
-    table = dedupe_table_for_table(
-        SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
-        scip_resolution__frames.symbol_goid_xref,
-    )
+    table = scip_resolution__frames.symbol_goid_xref
     if table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
-    return align_table_to_contract(
+    return finalize_ingest_table(
         SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
         table,
         target_name=SCIP_RESOLUTION_TARGET_NAME,
-        reporter=emit_alignment_report,
     )
 
 
@@ -1035,17 +1128,13 @@ def scip_resolution__occurrence_span_xref__base(
     pa.Table
         Arrow reader for core.scip_occurrence_span_xref.
     """
-    table = dedupe_table_for_table(
-        SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
-        scip_resolution__frames.occurrence_span_xref,
-    )
+    table = scip_resolution__frames.occurrence_span_xref
     if table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
-    return align_table_to_contract(
+    return finalize_ingest_table(
         SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
         table,
         target_name=SCIP_RESOLUTION_TARGET_NAME,
-        reporter=emit_alignment_report,
     )
 
 
@@ -1071,12 +1160,10 @@ def scip_resolution__occurrence_syntax_xref__base(
     if not rows:
         return _empty_reader_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
     table = pa.Table.from_pylist(rows)
-    table = dedupe_table_for_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY, table)
-    return align_table_to_contract(
+    return finalize_ingest_table(
         SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
         table,
         target_name=SCIP_RESOLUTION_TARGET_NAME,
-        reporter=emit_alignment_report,
     )
 
 

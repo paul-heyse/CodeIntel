@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
@@ -18,7 +17,7 @@ from codeintel.build.graphs.assembly import (
 )
 from codeintel.build.graphs.assembly import (
     empty_reader,
-    reader_to_table,
+    stable_decimal_id,
     tabular_to_table,
 )
 from codeintel.build.graphs.assembly import (
@@ -30,8 +29,9 @@ from codeintel.build.graphs.assembly import (
 from codeintel.build.graphs.assembly import (
     table_rows as _table_rows,
 )
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import (
-    align_table_to_contract,
+    AlignmentReport,
     dedupe_table_for_table,
     emit_alignment_report,
 )
@@ -40,10 +40,16 @@ from codeintel.build.tabular.compute_helpers import cast_array
 from codeintel.build.tabular.compute_masks import equal_mask
 from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.finalize_ops import (
+    FinalizeResult,
+    FinalizeSpec,
+    finalize_reader,
+    finalize_table,
+)
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.intervals.span_resolver import MatchKind, SpanResolver
 from codeintel.core.serialization.payload import PayloadValue, decode_payload, encode_payload
@@ -183,7 +189,7 @@ class _CallTargetRecordContext:
     resolution_kind: str
     confidence: float
     candidate_count: int
-    extras_json: PayloadValue | bytes | bytearray | memoryview | None
+    extras: PayloadValue | bytes | bytearray | memoryview | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,7 +213,7 @@ class _ExplicitCallRow:
     resolution_kind: str
     confidence: float
     candidate_count: int
-    extras_json: PayloadValue | bytes | bytearray | memoryview | None
+    extras: PayloadValue | bytes | bytearray | memoryview | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -434,9 +440,9 @@ def _pick_best_symbol(
 
 
 def _stable_id(*parts: object) -> str:
-    payload = json.dumps(parts, separators=(",", ":"), ensure_ascii=False)
-    digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=16)
-    return digest.hexdigest()
+    payload = {"parts": list(parts)}
+    value = stable_decimal_id(payload, digest_size=16)
+    return f"{value:032x}"
 
 
 def _normalize_decorators(raw: object) -> tuple[str, ...]:
@@ -518,7 +524,7 @@ def _coerce_extras_kv(value: object) -> dict[str, str] | None:
 
 
 def _extract_def_info(row: Mapping[str, object]) -> tuple[_DefInfo, str | None, str | None]:
-    extras = _extras_struct(row, "extras_json") or {}
+    extras = _extras_struct(row, "extras") or {}
     container_def_id = extras.get("container_def_id")
     if not isinstance(container_def_id, str):
         container_def_id = None
@@ -623,14 +629,55 @@ def _build_def_catalog(defs_rows: Sequence[Mapping[str, object]]) -> _DefCatalog
     return builder.finalize()
 
 
-def _table_to_reader(table_key: str, table: pa.Table) -> pa.Table:
-    return align_table_to_contract(
-        table_key,
-        table,
-        target_name=CALL_WIRING_TARGET_NAME,
-        extras_policy=None,
-        reporter=emit_alignment_report,
+def _string_list(value: object) -> tuple[str, ...]:
+    if isinstance(value, (list, tuple)):
+        return tuple(item for item in value if isinstance(item, str))
+    return ()
+
+
+def _emit_alignment_report_from_finalize(result: FinalizeResult) -> None:
+    if result.alignment.num_rows == 0:
+        return
+    row = next(iter_rows(result.alignment), None)
+    if row is None:
+        return
+    table_key_value = row.get("table_key")
+    target_name_value = row.get("target_name")
+    row_count_value = row.get("row_count")
+    report = AlignmentReport(
+        table_key=table_key_value if isinstance(table_key_value, str) else "",
+        target_name=target_name_value if isinstance(target_name_value, str) else None,
+        missing_columns=_string_list(row.get("missing_columns")),
+        extra_columns=_string_list(row.get("extra_columns")),
+        coerced_columns=_string_list(row.get("coerced_columns")),
+        row_count=row_count_value if isinstance(row_count_value, int) else None,
     )
+    emit_alignment_report(report)
+
+
+def _key_fields_for_table(table_key: str) -> tuple[str, ...]:
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except (KeyError, RuntimeError, TypeError):
+        return ()
+    if schema is None or not schema.primary_key:
+        return ()
+    return tuple(schema.primary_key)
+
+
+def _table_to_reader(table_key: str, table: pa.Table) -> pa.Table:
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(
+            table_key=table_key,
+            mode="strict",
+            key_fields=_key_fields_for_table(table_key),
+            emit_artifacts=True,
+            target_name=CALL_WIRING_TARGET_NAME,
+        ),
+    )
+    _emit_alignment_report_from_finalize(result)
+    return result.good
 
 
 def _cast_table_column(
@@ -742,7 +789,7 @@ def _call_target_row(
             "resolution_kind": "scip_none",
             "confidence": 0.0,
             "candidate_count": 0,
-            "extras_json": encode_payload(None),
+            "extras": encode_payload(None),
         }
     candidates, match_kind = resolver.resolve_candidates(
         rel_path,
@@ -753,7 +800,7 @@ def _call_target_row(
     symbol, confidence, candidate_symbols = _pick_best_symbol(candidates, callee_end)
     resolution_kind = _resolution_kind(match_kind)
     candidate_count = len(candidates)
-    extras_json = {"candidate_symbols": candidate_symbols} if candidate_symbols else None
+    extras = {"candidate_symbols": candidate_symbols} if candidate_symbols else None
     return {
         "repo": call_row.get("repo"),
         "commit": call_row.get("commit"),
@@ -765,7 +812,7 @@ def _call_target_row(
         "resolution_kind": resolution_kind,
         "confidence": confidence,
         "candidate_count": candidate_count,
-        "extras_json": encode_payload(extras_json),
+        "extras": encode_payload(extras),
     }
 
 
@@ -918,7 +965,7 @@ def _row_identity(row: Mapping[str, object]) -> tuple[str, str, str, str] | None
 
 
 def _attribute_payload_from_row(row: Mapping[str, object]) -> Mapping[str, object] | None:
-    extras = _extras_struct(row, "extras_json")
+    extras = _extras_struct(row, "extras")
     if extras is None:
         return None
     ast_nodes = _ast_nodes_from_extras(extras)
@@ -1022,7 +1069,7 @@ def _extract_augassigns(
             or not isinstance(node_id, str)
         ):
             continue
-        extras = _extras_struct(row, "extras_json")
+        extras = _extras_struct(row, "extras")
         if extras is None:
             continue
         ast_nodes = _ast_nodes_from_extras(extras)
@@ -1122,7 +1169,7 @@ def _descriptor_assignment_candidate(
     row: Mapping[str, object],
     context: _DescriptorAssignmentContext,
 ) -> tuple[str, str, str] | None:
-    extras = _extras_struct(row, "extras_json")
+    extras = _extras_struct(row, "extras")
     ast_nodes = _ast_nodes_from_extras(extras) if extras is not None else []
     text = _coerce_str(row.get("text_preview"))
     start_line = _coerce_int(row.get("start_line"))
@@ -1347,7 +1394,7 @@ def _hash_join_block_targets(
             right_output=[output_column],
         ),
     )
-    table = reader_to_table(joined.to_reader(use_threads=True))
+    table = materialize_plan(joined, use_threads=True)
     if table.num_rows == 0:
         return table
     sort_base = ("repo", "commit", "rel_path", "call_id", "callee_goid_h128")
@@ -1363,7 +1410,7 @@ def _hash_join_block_targets(
 
 
 def _call_target_record(context: _CallTargetRecordContext) -> dict[str, object]:
-    extras_kv = _extras_kv_from_payload(context.extras_json)
+    extras_kv = _extras_kv_from_payload(context.extras)
     return {
         "repo": context.repo,
         "commit": context.commit,
@@ -1406,7 +1453,7 @@ def _parse_explicit_call_row(row: Mapping[str, object]) -> _ExplicitCallRow | No
     resolution_kind = _coerce_str(row.get("resolution_kind")) or "scip_none"
     confidence = _coerce_float(row.get("confidence")) or 0.0
     candidate_count = _coerce_int(row.get("candidate_count")) or 0
-    extras_json = _coerce_payload_value(row.get("extras_json"))
+    extras = _coerce_payload_value(row.get("extras"))
     return _ExplicitCallRow(
         repo=repo,
         commit=commit,
@@ -1418,7 +1465,7 @@ def _parse_explicit_call_row(row: Mapping[str, object]) -> _ExplicitCallRow | No
         resolution_kind=resolution_kind,
         confidence=confidence,
         candidate_count=candidate_count,
-        extras_json=extras_json,
+        extras=extras,
     )
 
 
@@ -1448,7 +1495,7 @@ def _explicit_rows_for_entry(
                     resolution_kind=entry.resolution_kind,
                     confidence=entry.confidence,
                     candidate_count=entry.candidate_count,
-                    extras_json=entry.extras_json,
+                    extras=entry.extras,
                 )
             )
         ]
@@ -1471,7 +1518,7 @@ def _explicit_rows_for_entry(
                     resolution_kind=entry.resolution_kind,
                     confidence=entry.confidence,
                     candidate_count=entry.candidate_count,
-                    extras_json=entry.extras_json,
+                    extras=entry.extras,
                 )
             )
         ]
@@ -1495,7 +1542,7 @@ def _explicit_rows_for_entry(
                         resolution_kind=entry.resolution_kind,
                         confidence=entry.confidence,
                         candidate_count=entry.candidate_count,
-                        extras_json=entry.extras_json,
+                        extras=entry.extras,
                     )
                 )
             )
@@ -1519,7 +1566,7 @@ def _explicit_rows_for_entry(
                 resolution_kind=entry.resolution_kind,
                 confidence=entry.confidence,
                 candidate_count=entry.candidate_count,
-                extras_json=entry.extras_json,
+                extras=entry.extras,
             )
         )
     ]
@@ -1659,7 +1706,7 @@ def _attribute_load_rows(
                     resolution_kind="implicit",
                     confidence=1.0,
                     candidate_count=0,
-                    extras_json={
+                    extras={
                         "descriptor_obj_is_none": False,
                         "attribute_name": access.attribute,
                         "owner_class": class_name,
@@ -1694,7 +1741,7 @@ def _attribute_load_rows(
                 resolution_kind="implicit",
                 confidence=1.0,
                 candidate_count=0,
-                extras_json={
+                extras={
                     "descriptor_obj_is_none": is_class_access,
                     "attribute_name": access.attribute,
                     "owner_class": class_name,
@@ -1734,7 +1781,7 @@ def _attribute_store_rows(
                     resolution_kind="implicit",
                     confidence=1.0,
                     candidate_count=0,
-                    extras_json={
+                    extras={
                         "descriptor_obj_is_none": False,
                         "attribute_name": access.attribute,
                         "owner_class": class_name,
@@ -1769,7 +1816,7 @@ def _attribute_store_rows(
                 resolution_kind="implicit",
                 confidence=1.0,
                 candidate_count=0,
-                extras_json={
+                extras={
                     "descriptor_obj_is_none": False,
                     "attribute_name": access.attribute,
                     "owner_class": class_name,
@@ -1886,7 +1933,7 @@ def _augassign_rows_for_access(
                     resolution_kind="implicit",
                     confidence=1.0,
                     candidate_count=0,
-                    extras_json={
+                    extras={
                         "descriptor_obj_is_none": False,
                         "attribute_name": resolution.attr_text,
                         "owner_class": resolution.class_name,
@@ -1922,7 +1969,7 @@ def _augassign_rows_for_access(
                     resolution_kind="implicit",
                     confidence=1.0,
                     candidate_count=0,
-                    extras_json={
+                    extras={
                         "descriptor_obj_is_none": False,
                         "attribute_name": resolution.attr_text,
                         "owner_class": resolution.class_name,
@@ -1953,7 +2000,7 @@ def _augassign_rows_for_access(
                 resolution_kind="implicit",
                 confidence=0.5,
                 candidate_count=0,
-                extras_json={
+                extras={
                     "attribute_name": resolution.attr_text,
                     "owner_class": resolution.class_name,
                 },
@@ -2063,7 +2110,7 @@ def cpg_call_targets(
             "end_line",
             "start_byte",
             "end_byte",
-            "extras_json",
+            "extras",
         ],
     )
     catalog = _build_def_catalog(_table_rows(defs_table))
@@ -2083,11 +2130,11 @@ def cpg_call_targets(
             "start_byte",
             "end_byte",
             "text_preview",
-            "extras_json",
+            "extras",
         ],
     )
     syntax_nodes_rows = [
-        row for row in _table_rows(syntax_nodes_table) if row.get("extras_json") is not None
+        row for row in _table_rows(syntax_nodes_table) if row.get("extras") is not None
     ]
     implicit_rows = _implicit_rows_for_call_targets(syntax_nodes_rows, catalog)
 
@@ -2230,6 +2277,7 @@ def cpg_edges_calls(
             src_col="call_id",
             dst_list_col="candidates",
             repeat_cols=("repo", "commit", "call_node_id", "extras"),
+            error_context_cols=("repo", "commit", "rel_path", "call_id"),
         ),
     )
     if exploded.good.num_rows == 0:
@@ -2304,26 +2352,21 @@ def cpg_edges_calls(
             "extras_kv": E.field("extras_kv"),
         }
     )
-    edges = reader_to_table(joined.to_reader(use_threads=True))
-    if edges.num_rows == 0:
-        return empty_reader(CPG_CALL_EDGES_TABLE_KEY)
-    edges = edges.take(
-        stable_sort_indices(
-            edges,
-            sort_keys=[
-                ("repo", "ascending"),
-                ("commit", "ascending"),
-                ("call_id", "ascending"),
-                ("call_node_id", "ascending"),
-                ("callee_entry_block_id", "ascending"),
-            ],
-        )
+    ordered = joined.order_by(
+        sort_keys=[
+            ("repo", "ascending"),
+            ("commit", "ascending"),
+            ("call_id", "ascending"),
+            ("call_node_id", "ascending"),
+            ("callee_entry_block_id", "ascending"),
+        ]
     )
-    result = finalize_table(
-        edges,
+    result = finalize_reader(
+        ordered.to_reader(use_threads=True),
         spec=FinalizeSpec(
             table_key=CPG_CALL_EDGES_TABLE_KEY,
             mode="strict",
+            key_fields=_key_fields_for_table(CPG_CALL_EDGES_TABLE_KEY),
             target_name=CALL_WIRING_TARGET_NAME,
         ),
     )
@@ -2672,6 +2715,35 @@ def _implicit_descriptor_edges(
     return edges
 
 
+def _group_edge_candidates_by_call(
+    edges: Sequence[Mapping[str, object]],
+    *,
+    candidate_fields: Sequence[str],
+    list_col: str,
+) -> list[dict[str, object]]:
+    grouped: dict[tuple[object, object, object], list[dict[str, object]]] = {}
+    for edge in edges:
+        call_id = edge.get("call_id")
+        if call_id is None:
+            continue
+        key = (edge.get("repo"), edge.get("commit"), call_id)
+        candidate = {field: edge.get(field) for field in candidate_fields}
+        grouped.setdefault(key, []).append(candidate)
+    rows: list[dict[str, object]] = []
+    for (repo, commit, call_id), candidates in grouped.items():
+        if not candidates:
+            continue
+        rows.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "call_id": call_id,
+                list_col: candidates,
+            }
+        )
+    return rows
+
+
 def cpg_edges_arg_to_param(
     cpg_call_targets: InferableTabularInput,
     q__core__syntax_call_args: InferableTabularInput,
@@ -2691,19 +2763,88 @@ def cpg_edges_arg_to_param(
     params_rows = _normalize_params_rows(_table_rows(tabular_to_table(q__core__syntax_func_params)))
     params_index = _build_param_index(params_rows)
 
-    explicit_edges = _explicit_arg_edges(args_rows, params_index)
-    implicit_receiver_edges = _implicit_receiver_edges(explicit_targets, params_index)
-    implicit_descriptor_edges = _implicit_descriptor_edges(call_targets_rows, params_index)
     combined_rows = [
-        *explicit_edges,
-        *implicit_descriptor_edges,
-        *implicit_receiver_edges,
+        *_explicit_arg_edges(args_rows, params_index),
+        *_implicit_descriptor_edges(call_targets_rows, params_index),
+        *_implicit_receiver_edges(explicit_targets, params_index),
     ]
     if not combined_rows:
         return empty_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
-    edges_table, _ = table_for_rows(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY, combined_rows)
-    edges_table = dedupe_table_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY, edges_table)
-    return _table_to_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY, edges_table)
+    candidates = _group_edge_candidates_by_call(
+        combined_rows,
+        candidate_fields=(
+            "src_arg_node_id",
+            "dst_param_node_id",
+            "arg_ordinal",
+            "param_ordinal",
+            "arg_name",
+            "param_name",
+            "arg_slot",
+            "arg_role",
+            "arg_is_implicit",
+            "call_kind",
+            "augop",
+            "confidence",
+            "extras",
+            "extras_kv",
+        ),
+        list_col="candidates",
+    )
+    if not candidates:
+        return empty_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
+    candidate_table = pa.Table.from_pylist(candidates)
+    exploded = explode_edges(
+        candidate_table,
+        spec=ExplodeSpec(
+            src_col="call_id",
+            dst_list_col="candidates",
+            repeat_cols=("repo", "commit"),
+            error_context_cols=("repo", "commit", "call_id"),
+        ),
+    )
+    if exploded.good.num_rows == 0:
+        return empty_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
+    plan = Plan.table(exploded.good).project(
+        {
+            "repo": E.field("repo"),
+            "commit": E.field("commit"),
+            "call_id": E.field("call_id"),
+            "src_arg_node_id": E.field(("candidates", "src_arg_node_id")),
+            "dst_param_node_id": E.field(("candidates", "dst_param_node_id")),
+            "edge_kind": E.scalar("ARG_TO_PARAM"),
+            "arg_ordinal": E.field(("candidates", "arg_ordinal")),
+            "param_ordinal": E.field(("candidates", "param_ordinal")),
+            "arg_name": E.field(("candidates", "arg_name")),
+            "param_name": E.field(("candidates", "param_name")),
+            "arg_slot": E.field(("candidates", "arg_slot")),
+            "arg_role": E.field(("candidates", "arg_role")),
+            "arg_is_implicit": E.field(("candidates", "arg_is_implicit")),
+            "call_kind": E.field(("candidates", "call_kind")),
+            "augop": E.field(("candidates", "augop")),
+            "confidence": E.field(("candidates", "confidence")),
+            "extras": E.field(("candidates", "extras")),
+            "extras_kv": E.field(("candidates", "extras_kv")),
+        }
+    )
+    ordered = plan.order_by(
+        sort_keys=[
+            ("repo", "ascending"),
+            ("commit", "ascending"),
+            ("call_id", "ascending"),
+            ("src_arg_node_id", "ascending"),
+            ("dst_param_node_id", "ascending"),
+        ]
+    )
+    result = finalize_reader(
+        ordered.to_reader(use_threads=True),
+        spec=FinalizeSpec(
+            table_key=CPG_ARG_TO_PARAM_EDGES_TABLE_KEY,
+            mode="strict",
+            key_fields=_key_fields_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY),
+            target_name=CALL_WIRING_TARGET_NAME,
+        ),
+    )
+    return result.good
 
 
 def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableTabularInput:
@@ -2739,7 +2880,6 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
                 "target_role": row.get("target_role"),
                 "call_kind": row.get("call_kind"),
                 "origin": row.get("origin"),
-                "edge_kind": "RET_TO_CALL",
                 "confidence": confidence * 0.9,
                 "extras": None,
                 "extras_kv": {"summary_kind": "exit_block"},
@@ -2747,11 +2887,69 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
         )
     if not rows:
         return empty_reader(CPG_RET_TO_CALL_EDGES_TABLE_KEY)
-    edges_table = dedupe_table_for_table(
-        CPG_RET_TO_CALL_EDGES_TABLE_KEY,
-        pa.Table.from_pylist(rows),
+    candidates = _group_edge_candidates_by_call(
+        rows,
+        candidate_fields=(
+            "exit_block_id",
+            "call_node_id",
+            "target_role",
+            "call_kind",
+            "origin",
+            "confidence",
+            "extras",
+            "extras_kv",
+        ),
+        list_col="candidates",
     )
-    return _table_to_reader(CPG_RET_TO_CALL_EDGES_TABLE_KEY, edges_table)
+    if not candidates:
+        return empty_reader(CPG_RET_TO_CALL_EDGES_TABLE_KEY)
+    candidate_table = pa.Table.from_pylist(candidates)
+    exploded = explode_edges(
+        candidate_table,
+        spec=ExplodeSpec(
+            src_col="call_id",
+            dst_list_col="candidates",
+            repeat_cols=("repo", "commit"),
+            error_context_cols=("repo", "commit", "call_id"),
+        ),
+    )
+    if exploded.good.num_rows == 0:
+        return empty_reader(CPG_RET_TO_CALL_EDGES_TABLE_KEY)
+    plan = Plan.table(exploded.good).project(
+        {
+            "repo": E.field("repo"),
+            "commit": E.field("commit"),
+            "call_id": E.field("call_id"),
+            "exit_block_id": E.field(("candidates", "exit_block_id")),
+            "call_node_id": E.field(("candidates", "call_node_id")),
+            "target_role": E.field(("candidates", "target_role")),
+            "call_kind": E.field(("candidates", "call_kind")),
+            "origin": E.field(("candidates", "origin")),
+            "edge_kind": E.scalar("RET_TO_CALL"),
+            "confidence": E.field(("candidates", "confidence")),
+            "extras": E.field(("candidates", "extras")),
+            "extras_kv": E.field(("candidates", "extras_kv")),
+        }
+    )
+    ordered = plan.order_by(
+        sort_keys=[
+            ("repo", "ascending"),
+            ("commit", "ascending"),
+            ("call_id", "ascending"),
+            ("exit_block_id", "ascending"),
+            ("call_node_id", "ascending"),
+        ]
+    )
+    result = finalize_reader(
+        ordered.to_reader(use_threads=True),
+        spec=FinalizeSpec(
+            table_key=CPG_RET_TO_CALL_EDGES_TABLE_KEY,
+            mode="strict",
+            key_fields=_key_fields_for_table(CPG_RET_TO_CALL_EDGES_TABLE_KEY),
+            target_name=CALL_WIRING_TARGET_NAME,
+        ),
+    )
+    return result.good
 
 
 __all__ = [

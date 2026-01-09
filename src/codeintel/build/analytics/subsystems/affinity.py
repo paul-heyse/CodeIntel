@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.build.analytics.utilities.ast import RowDecoder
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 from codeintel.build.graphs.rx.store import RxGraphStore
@@ -73,17 +72,15 @@ def load_modules_from_frame(
     if modules_frame is None or modules_frame.num_rows == 0:
         return set(), {}
     filtered = _rows_for_snapshot(modules_frame, repo=repo, commit=commit)
-    decoder = RowDecoder(columns=("tags",))
     modules: set[str] = set()
     tags_by_module: dict[str, list[str]] = {}
     for row in filtered:
-        decoded = decoder.decode(row)
-        module = decoded.get("module")
+        module = row.get("module")
         if module is None:
             continue
         module_name = str(module)
         modules.add(module_name)
-        parsed_tags = parse_tags(decoded.get("tags"))
+        parsed_tags = parse_tags(row.get("tags"))
         if parsed_tags:
             tags_by_module[module_name] = parsed_tags
     return modules, tags_by_module
@@ -182,10 +179,13 @@ def _add_config_edges(
         repo=ctx.repo,
         commit=ctx.commit,
     )
-    decoder = RowDecoder(columns=("reference_modules",))
     for row in config_filtered:
-        decoded = decoder.decode(row)
-        modules_list = parse_tags(decoded.get("reference_modules"))
+        extras = row.get("extras")
+        if isinstance(extras, dict):
+            reference_modules = extras.get("reference_modules")
+        else:
+            reference_modules = row.get("reference_modules")
+        modules_list = parse_tags(reference_modules)
         filtered = [module for module in modules_list if module in ctx.modules]
         if len(filtered) < MIN_SHARED_MODULES:
             continue

@@ -8,25 +8,31 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.columnar.compute import (
+    count_distinct,
+    count_non_positive,
+    count_true,
+    orphan_ref_count,
+)
 from codeintel.core.columnar.compute_config import (
     DEFAULT_SCALAR_AGG,
     DEFAULT_SCALAR_AGG_ALLOW_NULL,
 )
 from codeintel.core.columnar.compute_helpers import call_compute
+from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.masks import (
-    and_mask,
     filter_valid,
-    invert_mask,
     is_valid_mask,
 )
-from codeintel.core.columnar.set_ops import is_in_mask
+from codeintel.core.columnar.plan_ops import build_scan_plan
+from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.datasets.arrow_store import dataset_stats, scan_dataset
 from codeintel.core.datasets.paths import dataset_snapshot_dir
+from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.datasets.scanning import ParquetScanOptions, scan_parquet_table
 from codeintel.core.query_results import ScalarCoercionError
 from codeintel.core.table_key import is_valid_table_key
@@ -131,7 +137,14 @@ def safe_count_with_scope(
     int | None
         Row count or None when the dataset is missing.
     """
-    options = ParquetScanOptions(repo=snapshot.repo, commit=snapshot.commit)
+    options = ParquetScanOptions(
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        implicit_ordering=True,
+        require_sequenced_output=True,
+        metrics_enabled=True,
+        finalize_mode="tolerant",
+    )
     table = scan_parquet_table(
         dataset_root=dataset_root,
         table_key=table_key,
@@ -446,10 +459,25 @@ def _read_table(
     filter_expr: ds.Expression | None = None,
 ) -> pa.Table | None:
     try:
-        scanner = dataset.scanner(
+        plan = build_scan_plan(
+            dataset,
             columns=list(columns) if columns is not None else None,
-            filter=filter_expr,
+            filter_expr=filter_expr,
+            implicit_ordering=True,
+            require_sequenced_output=True,
         )
+        return plan.to_table(use_threads=True)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        pass
+    try:
+        options = DatasetScanOptions(
+            columns=list(columns) if columns is not None else None,
+            filter_expression=filter_expr,
+            implicit_ordering=True,
+            require_sequenced_output=True,
+            unify_schemas=True,
+        )
+        scanner = build_scanner(dataset, options=options)
         return scanner.to_table()
     except (pa.ArrowInvalid, pa.ArrowTypeError, OSError, ValueError):
         return None
@@ -469,7 +497,12 @@ def _table_for_column(
     )
     if dataset is None or column not in dataset.schema.names:
         return None
-    options = ParquetScanOptions(columns=[column])
+    options = ParquetScanOptions(
+        columns=[column],
+        implicit_ordering=True,
+        require_sequenced_output=True,
+        metrics_enabled=True,
+    )
     return scan_parquet_table(
         dataset_root=dataset_root,
         table_key=table_key,
@@ -495,16 +528,6 @@ def _coerce_optional_float(value: object | None, *, ctx: str) -> float | None:
     try:
         return coerce_optional_float(value, ctx=ctx)
     except ScalarCoercionError:
-        return None
-
-
-def _count_options_only_valid() -> pc.FunctionOptions | None:
-    options_type = getattr(pc, "CountOptions", None)
-    if options_type is None:
-        return None
-    try:
-        return options_type(mode="only_valid")
-    except TypeError:
         return None
 
 
@@ -550,40 +573,60 @@ def _is_numeric_type(data_type: pa.DataType) -> bool:
     )
 
 
-def _numeric_zero(data_type: pa.DataType) -> pa.Scalar | None:
+def _is_list_type(data_type: pa.DataType) -> bool:
+    return bool(
+        pa.types.is_list(data_type)
+        or pa.types.is_large_list(data_type)
+        or pa.types.is_fixed_size_list(data_type)
+    )
+
+
+def _flatten_list_values(values: pa.ChunkedArray) -> pa.ChunkedArray:
+    if not _is_list_type(values.type):
+        return values
+    if len(values) == 0:
+        return values
+    row_ids = pa.arange(0, len(values))
+    table = pa.table(
+        {
+            "__row_id": row_ids,
+            "__values": values,
+        }
+    )
+    spec = ExplodeSpec(
+        src_col="__row_id",
+        dst_list_col="__values",
+        null_list_policy="empty",
+        null_child_policy="drop",
+        enforce_parent_valid=False,
+    )
     try:
-        return pa.scalar(0, type=data_type)
-    except (TypeError, pa.ArrowInvalid):
-        return None
+        exploded = explode_edges(table, spec=spec)
+    except (RuntimeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError, TypeError):
+        return values
+    return cast("pa.ChunkedArray", exploded.good.column("__values"))
 
 
 def _count_non_positive(values: pa.ChunkedArray) -> int | None:
+    values = _flatten_list_values(values)
     data_type = values.type
     if not _is_numeric_type(data_type) or pa.types.is_dictionary(data_type):
         return None
-    scalar = _numeric_zero(data_type)
-    if scalar is None:
+    try:
+        return count_non_positive(values)
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
         return None
-    mask = call_compute("less_equal", [values, scalar])
-    if not isinstance(mask, (pa.Array, pa.ChunkedArray)):
-        return None
-    return _sum_mask(mask)
 
 
 def _count_duplicates(values: pa.ChunkedArray) -> int | None:
-    options = _count_options_only_valid()
-    total_value = call_compute("count", [values], options=options)
-    if not isinstance(total_value, pa.Scalar) and options is not None:
-        total_value = call_compute("count", [values])
-    if not isinstance(total_value, pa.Scalar):
+    try:
+        values = _flatten_list_values(values)
+        valid_mask = is_valid_mask(values)
+        total_count = count_true(valid_mask)
+        filtered = filter_valid(values)
+        distinct_count = count_distinct(filtered)
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
         return None
-    distinct_value = call_compute("count_distinct", [values], options=options)
-    if not isinstance(distinct_value, pa.Scalar) and options is not None:
-        distinct_value = call_compute("count_distinct", [values])
-    if not isinstance(distinct_value, pa.Scalar):
-        return None
-    total_count = _as_int(total_value)
-    distinct_count = _as_int(distinct_value)
     if distinct_count > total_count:
         return None
     return total_count - distinct_count
@@ -595,30 +638,15 @@ def _count_orphan_refs(
     target_values: pa.ChunkedArray,
     allow_null: bool,
 ) -> int | None:
-    filtered_target = _filter_valid_values(target_values)
-    if filtered_target is None:
-        return None
     try:
-        in_mask = is_in_mask(source_values, target=filtered_target)
-        not_in_mask = invert_mask(in_mask)
-        valid_mask = is_valid_mask(source_values)
-        orphan_mask = and_mask(valid_mask, not_in_mask)
-    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
-        return None
-    orphan_count = _sum_mask(orphan_mask)
-    if allow_null:
-        null_mask = call_compute("is_null", [source_values])
-        if not isinstance(null_mask, (pa.Array, pa.ChunkedArray)):
-            return None
-        orphan_count += _sum_mask(null_mask)
-    return orphan_count
-
-
-def _filter_valid_values(
-    values: pa.ChunkedArray,
-) -> pa.Array | pa.ChunkedArray | None:
-    try:
-        return filter_valid(values)
+        source_values = _flatten_list_values(source_values)
+        target_values = _flatten_list_values(target_values)
+        filtered_target = filter_valid(target_values)
+        return orphan_ref_count(
+            source_values,
+            filtered_target,
+            allow_null=allow_null,
+        )
     except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, ValueError):
         return None
 
@@ -632,15 +660,34 @@ def _count_non_positive_filtered(dataset: ds.Dataset, *, column: str) -> int | N
         return None
     if not _is_numeric_type(field.type) or pa.types.is_dictionary(field.type):
         return None
+    filter_expr = ds.field(column) <= 0
+    result: int | None = None
     try:
-        filter_expr = ds.field(column) <= 0
-        scanner = dataset.scanner(columns=[column], filter=filter_expr)
-        counter = getattr(scanner, "count_rows", None)
-        if callable(counter):
-            return _as_int(counter())
-        return scanner.to_table().num_rows
-    except (pa.ArrowInvalid, pa.ArrowTypeError, OSError, ValueError, TypeError):
-        return None
+        plan = build_scan_plan(
+            dataset,
+            columns=[column],
+            filter_expr=filter_expr,
+            implicit_ordering=True,
+            require_sequenced_output=True,
+        )
+        result = plan.to_table(use_threads=True).num_rows
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        result = None
+    if result is None:
+        try:
+            options = DatasetScanOptions(
+                columns=[column],
+                filter_expression=filter_expr,
+                implicit_ordering=True,
+                require_sequenced_output=True,
+                unify_schemas=True,
+            )
+            scanner = build_scanner(dataset, options=options)
+            counter = getattr(scanner, "count_rows", None)
+            result = _as_int(counter()) if callable(counter) else scanner.to_table().num_rows
+        except (pa.ArrowInvalid, pa.ArrowTypeError, OSError, ValueError, TypeError):
+            result = None
+    return result
 
 
 __all__ = [

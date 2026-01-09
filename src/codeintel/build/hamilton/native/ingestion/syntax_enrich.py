@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from collections.abc import Mapping, Sequence
-from typing import Literal
+from dataclasses import dataclass
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -19,12 +20,8 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.arrow_ops import (
-    align_table_to_contract,
-    dedupe_table_for_table,
-    emit_alignment_report,
-)
 from codeintel.build.tabular.compute_columns import constant_array
 from codeintel.build.tabular.compute_helpers import cast_array, safe_filter
 from codeintel.build.tabular.compute_masks import (
@@ -33,10 +30,16 @@ from codeintel.build.tabular.compute_masks import (
     is_null_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.conversion import reader_to_table, tabular_to_scoped_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan
+from codeintel.build.tabular.finalize_ops import (
+    FinalizeDedupe,
+    FinalizeResult,
+    FinalizeSpec,
+    finalize_join_keys,
+    finalize_table,
+)
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan, materialize_plan
 from codeintel.build.tabular.table_ops import ensure_table_columns
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -44,11 +47,15 @@ from codeintel.core.columnar.schema_ops import concat_tables_unified
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
+LOG = logging.getLogger(__name__)
+
 SYNTAX_ENRICH_TARGET_NAME = "syntax_enrich"
 SYNTAX_DEFS_RESOLVED_TABLE_KEY = "core.syntax_defs_resolved"
 SYNTAX_REFS_RESOLVED_TABLE_KEY = "core.syntax_refs_resolved"
 SYNTAX_CALLS_RESOLVED_TABLE_KEY = "core.syntax_calls_resolved"
 SYNTAX_IMPORTS_RESOLVED_TABLE_KEY = "core.syntax_imports_resolved"
+SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY = "core.scip_occurrence_span_xref"
+SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY = "core.scip_occurrence_syntax_xref"
 _OCCURRENCE_INT_COLUMNS = (
     "occ_start_line",
     "occ_start_col",
@@ -120,7 +127,14 @@ _JOIN_INT_KEYS = {
     "occ_start_byte",
     "occ_end_byte",
 }
-SortKey = tuple[str, Literal["ascending", "descending"]]
+
+
+@dataclass(frozen=True, slots=True)
+class _JoinSpec:
+    left_keys: Sequence[str]
+    right_keys: Sequence[str]
+    left_table_key: str | None = None
+    right_table_key: str | None = None
 
 
 def _join_casts(keys: Sequence[str]) -> dict[str, str]:
@@ -147,42 +161,87 @@ def _project_with_cast(
     return exprs
 
 
-def _join_key_filter(keys: Sequence[str]) -> pc.Expression:
-    return E.and_(*(E.is_valid(key) for key in keys))
+def _precheck_join_table(
+    table: pa.Table,
+    *,
+    table_key: str | None,
+    join_keys: Sequence[str],
+) -> pa.Table:
+    if table.num_rows == 0 or not join_keys:
+        return table
+    if table_key is None:
+        result = finalize_join_keys(
+            table,
+            required_non_null=join_keys,
+            key_fields=join_keys,
+        )
+    else:
+        result = finalize_table(
+            table,
+            spec=FinalizeSpec(
+                table_key=table_key,
+                mode="tolerant",
+                required_non_null=join_keys,
+                key_fields=join_keys,
+                dedupe=FinalizeDedupe(enabled=False),
+                target_name=SYNTAX_ENRICH_TARGET_NAME,
+            ),
+        )
+    _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
+    return result.good
+
+
+def _log_join_precheck_errors(
+    result: FinalizeResult,
+    *,
+    table_key: str | None,
+    join_keys: Sequence[str],
+) -> None:
+    if result.errors.num_rows == 0:
+        return
+    table_label = table_key or "derived"
+    LOG.warning(
+        "Join key precheck dropped %d rows table=%s keys=%s",
+        result.errors.num_rows,
+        table_label,
+        ",".join(join_keys),
+    )
 
 
 def _hash_join_tables(
     left: pa.Table,
     right: pa.Table,
     *,
-    left_keys: Sequence[str],
-    right_keys: Sequence[str],
+    spec: _JoinSpec,
     how: JoinType = "left outer",
 ) -> pa.Table:
-    left_exprs = _project_with_cast(left, casts=_join_casts(left_keys))
-    right_exprs = _project_with_cast(right, casts=_join_casts(right_keys))
-    left_plan = Plan.table(left).project(left_exprs).filter(_join_key_filter(left_keys))
-    right_plan = Plan.table(right).project(right_exprs).filter(_join_key_filter(right_keys))
+    left_checked = _precheck_join_table(
+        left,
+        table_key=spec.left_table_key,
+        join_keys=spec.left_keys,
+    )
+    right_checked = _precheck_join_table(
+        right,
+        table_key=spec.right_table_key,
+        join_keys=spec.right_keys,
+    )
+    left_exprs = _project_with_cast(left, casts=_join_casts(spec.left_keys))
+    right_exprs = _project_with_cast(right, casts=_join_casts(spec.right_keys))
+    left_plan = Plan.table(left_checked).project(left_exprs)
+    right_plan = Plan.table(right_checked).project(right_exprs)
     right_output = [name for name in right_exprs if name not in left_exprs]
     joined = left_plan.hash_join(
         right=right_plan,
         spec=HashJoinSpec(
-            left_keys=list(left_keys),
-            right_keys=list(right_keys),
+            left_keys=list(spec.left_keys),
+            right_keys=list(spec.right_keys),
             how=how,
             left_output=list(left_exprs.keys()),
             right_output=right_output,
         ),
     )
-    table = reader_to_table(joined.to_reader(use_threads=True))
-    if table.num_rows == 0:
-        return table
-    sort_keys: list[SortKey] = [(key, "ascending") for key in left_keys]
-    return table.take(stable_sort_indices(table, sort_keys=sort_keys))
-
-
-def _dedupe_for_table(table: pa.Table, *, table_key: str) -> pa.Table:
-    return dedupe_table_for_table(table_key, table)
+    joined = joined.order_by(sort_keys=[(key, "ascending") for key in spec.left_keys])
+    return materialize_plan(joined, use_threads=True)
 
 
 def _rename_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
@@ -292,8 +351,12 @@ def _occurrence_resolution_table(
     return _hash_join_tables(
         syntax,
         span,
-        left_keys=join_keys,
-        right_keys=join_keys,
+        spec=_JoinSpec(
+            left_keys=join_keys,
+            right_keys=join_keys,
+            left_table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
+            right_table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
+        ),
     )
 
 
@@ -326,12 +389,10 @@ def _resolve_facts(
     combined = concat_tables_unified(tables)
     if resolved_columns:
         combined = combined.select(resolved_columns)
-    combined = _dedupe_for_table(combined, table_key=table_key)
-    return align_table_to_contract(
+    return finalize_ingest_table(
         table_key,
         combined,
         target_name=SYNTAX_ENRICH_TARGET_NAME,
-        reporter=emit_alignment_report,
     )
 
 
@@ -343,8 +404,8 @@ def _resolve_occurrence_joins(
     bytes_mask = _null_mask(facts, "start_byte", "end_byte")
     facts_with_bytes = _filter_table(facts, bytes_mask)
     facts_without_bytes = _filter_table(facts, invert_mask(bytes_mask))
-    facts_with_bytes, extras_bytes = _detach_column(facts_with_bytes, "extras_json")
-    facts_without_bytes, extras_no_bytes = _detach_column(facts_without_bytes, "extras_json")
+    facts_with_bytes, extras_bytes = _detach_column(facts_with_bytes, "extras")
+    facts_without_bytes, extras_no_bytes = _detach_column(facts_without_bytes, "extras")
 
     occ_bytes_mask = _null_mask(occurrences, "occ_start_byte", "occ_end_byte")
     occ_bytes = _filter_table(occurrences, occ_bytes_mask)
@@ -352,14 +413,13 @@ def _resolve_occurrence_joins(
     bytes_join = _hash_join_tables(
         facts_with_bytes,
         occ_bytes,
-        left_keys=byte_left,
-        right_keys=byte_right,
+        spec=_JoinSpec(left_keys=byte_left, right_keys=byte_right),
     )
-    bytes_join = _attach_column(bytes_join, "extras_json", extras_bytes)
+    bytes_join = _attach_column(bytes_join, "extras", extras_bytes)
     fallback = _filter_table(bytes_join, is_null_mask(bytes_join["scip_symbol"]))
     fallback = fallback.select(fact_columns)
     line_join = _line_join_occurrences(facts_without_bytes, occurrences)
-    line_join = _attach_column(line_join, "extras_json", extras_no_bytes)
+    line_join = _attach_column(line_join, "extras", extras_no_bytes)
     fallback_join = _line_join_occurrences(fallback, occurrences)
     matched_bytes = _filter_table(bytes_join, is_valid_mask(bytes_join["scip_symbol"]))
     return matched_bytes, fallback_join, line_join
@@ -378,15 +438,14 @@ def _filter_table(table: pa.Table, mask: pa.Array | pa.ChunkedArray) -> pa.Table
 
 
 def _line_join_occurrences(left: pa.Table, occurrences: pa.Table) -> pa.Table:
-    stripped_left, extras_json = _detach_column(left, "extras_json")
+    stripped_left, extras = _detach_column(left, "extras")
     line_left, line_right = _occurrence_line_join_keys()
     joined = _hash_join_tables(
         stripped_left,
         occurrences,
-        left_keys=line_left,
-        right_keys=line_right,
+        spec=_JoinSpec(left_keys=line_left, right_keys=line_right),
     )
-    return _attach_column(joined, "extras_json", extras_json)
+    return _attach_column(joined, "extras", extras)
 
 
 def _detach_column(

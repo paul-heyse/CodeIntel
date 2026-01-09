@@ -10,6 +10,9 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 from sqlglot import exp
 
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.plan_ops import build_scan_plan
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
@@ -17,6 +20,7 @@ from codeintel.core.columnar.schema_alignment import (
 )
 from codeintel.core.filters import FilterOpError, validate_filter_value
 from codeintel.core.schemas.primitives import column_type_base
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.schemas.type_mappings import complex_type_mapping
 from codeintel.core.serialization.json import normalize_duckdb_json_value
 from codeintel.serving.semantic.duckdb_scan_adapter import scan_arrow, scan_parquet
@@ -70,11 +74,12 @@ class RelationScanOptions:
     parquet_use_buffered_stream: bool | None = None
     parquet_buffer_size: int | None = None
     memory_pool: pa.MemoryPool | None = None
-    implicit_ordering: bool | None = None
-    require_sequenced_output: bool | None = None
+    implicit_ordering: bool | None = True
+    require_sequenced_output: bool | None = True
     unify_schemas: bool = False
     schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
-    metrics_enabled: bool = False
+    metrics_enabled: bool = True
+    finalize_on_read: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +90,14 @@ class RelationBuildContext:
     scan_options: RelationScanOptions
     column_types: Mapping[str, ColumnType] | None = None
     contract_schema: pa.Schema | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _AlignedScanContext:
+    schema: pa.Schema
+    promote_options: SchemaPromoteOptions
+    table_key: str
+    finalize_on_read: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,11 +164,18 @@ def build_relation_plan(
             filter_expression=filter_expression,
             projection_columns=projection_columns,
         )
+    default_order_by: tuple[str, ...] = ()
+    if not spec.order_by and not _ast_has_joins(ast):
+        default_order_by = _default_order_by_columns(
+            table_key=spec.table_key,
+            allowed_columns=spec.allowed_columns,
+        )
     return apply_query_ast(
         relation,
         ast=ast,
         allowed_columns=spec.allowed_columns,
         column_types=context.column_types,
+        default_order_by=default_order_by or None,
     )
 
 
@@ -165,6 +185,7 @@ def apply_query_ast(
     ast: exp.Expression,
     allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None = None,
+    default_order_by: Sequence[str] | None = None,
 ) -> DuckDBRelation:
     """Apply a SQLGlot AST to a DuckDB relation.
 
@@ -188,6 +209,9 @@ def apply_query_ast(
         relation = relation.filter(components.predicate)
     if components.order_by:
         relation = relation.order(_order_by_from_components(components.order_by))
+    elif default_order_by:
+        default_components = [(column, False) for column in default_order_by]
+        relation = relation.order(_order_by_from_components(default_components))
     relation = relation.select(*components.select_exprs)
     if components.limit is not None or components.offset:
         if components.limit is None:
@@ -256,6 +280,17 @@ def _projection_columns_from_ast(ast: exp.Expression) -> tuple[str, ...] | None:
     if not columns:
         return None
     return tuple(sorted(columns))
+
+
+def _default_order_by_columns(
+    *,
+    table_key: str,
+    allowed_columns: frozenset[str],
+) -> tuple[str, ...]:
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is None or not schema.primary_key:
+        return ()
+    return tuple(column for column in schema.primary_key if column in allowed_columns)
 
 
 def _relation_from_ast(
@@ -636,6 +671,110 @@ def _table_key_from_table(table: exp.Table) -> str:
     return name
 
 
+def _try_scan_parquet_relation(
+    *,
+    con: DuckDBConnection,
+    scan_paths: Sequence[str],
+    hive_partitioning: bool,
+    projection_columns: Sequence[str] | None,
+) -> DuckDBRelation | None:
+    try:
+        return scan_parquet(
+            con,
+            scan_paths=scan_paths,
+            hive_partitioning=hive_partitioning,
+            union_by_name=True,
+            columns=projection_columns,
+        )
+    except (duckdb.Error, TypeError, ValueError):
+        return None
+
+
+def _try_scan_arrow_relation(
+    *,
+    con: DuckDBConnection,
+    source: object,
+) -> DuckDBRelation | None:
+    try:
+        return scan_arrow(con, source=source)
+    except (duckdb.Error, TypeError, ValueError):
+        return None
+
+
+def _finalize_reader_table(
+    reader: pa.RecordBatchReader,
+    *,
+    table_key: str,
+) -> pa.Table | None:
+    try:
+        table = reader_to_table(reader)
+    except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
+        return None
+    finalized = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=table_key, mode="tolerant"),
+    )
+    return finalized.good
+
+
+def _scan_aligned_sources(
+    *,
+    con: DuckDBConnection,
+    plan_reader: pa.RecordBatchReader | None,
+    scanner: ds.Scanner,
+    context: _AlignedScanContext,
+) -> DuckDBRelation | None:
+    extras_policy = extras_policy_from_schema(context.schema)
+    sources: list[object] = []
+    readers: list[pa.RecordBatchReader] = []
+    if plan_reader is not None:
+        readers.append(
+            align_reader_to_contract(
+                plan_reader,
+                context.schema,
+                extras_policy=extras_policy,
+                schema_promote_options=context.promote_options,
+            )
+        )
+    readers.append(
+        align_reader_to_contract(
+            scanner.to_reader(),
+            context.schema,
+            extras_policy=extras_policy,
+            schema_promote_options=context.promote_options,
+        )
+    )
+    for reader in readers:
+        if context.finalize_on_read:
+            finalized = _finalize_reader_table(reader, table_key=context.table_key)
+            sources.append(finalized if finalized is not None else reader)
+        else:
+            sources.append(reader)
+    for source in sources:
+        relation = _try_scan_arrow_relation(con=con, source=source)
+        if relation is not None:
+            return relation
+    return None
+
+
+def _scan_unaligned_sources(
+    *,
+    con: DuckDBConnection,
+    plan_reader: pa.RecordBatchReader | None,
+    scanner: ds.Scanner,
+) -> DuckDBRelation | None:
+    sources: list[object] = []
+    if plan_reader is not None:
+        sources.append(plan_reader)
+    sources.append(scanner)
+    sources.append(scanner.to_reader())
+    for source in sources:
+        relation = _try_scan_arrow_relation(con=con, source=source)
+        if relation is not None:
+            return relation
+    return None
+
+
 def _scan_dataset(
     *,
     con: DuckDBConnection,
@@ -647,17 +786,21 @@ def _scan_dataset(
     schema = dataset_schema_for_entry(entry) or context.contract_schema
     scan_paths = _parquet_scan_paths(entry)
     hive_partitioning = bool(entry.manifest.partition_columns)
-    try:
-        return scan_parquet(
-            con,
-            scan_paths=scan_paths,
-            hive_partitioning=hive_partitioning,
-            union_by_name=True,
-            columns=projection_columns,
-        )
-    except (duckdb.Error, TypeError, ValueError):
-        pass
+    relation = _try_scan_parquet_relation(
+        con=con,
+        scan_paths=scan_paths,
+        hive_partitioning=hive_partitioning,
+        projection_columns=projection_columns,
+    )
+    if relation is not None:
+        return relation
     dataset = dataset_for_entry(entry)
+    plan_reader = _plan_scan_reader(
+        dataset,
+        filter_expression=filter_expression,
+        projection_columns=projection_columns,
+        context=context,
+    )
     options = DatasetScannerOptions(
         batch_size=context.scan_options.batch_size,
         batch_readahead=context.scan_options.batch_readahead,
@@ -682,25 +825,50 @@ def _scan_dataset(
         options=options,
     )
     if schema is not None:
-        reader = scanner.to_reader()
-        aligned = align_reader_to_contract(
-            reader,
-            schema,
-            extras_policy=extras_policy_from_schema(schema),
-            schema_promote_options=context.scan_options.schema_promote_options,
+        relation = _scan_aligned_sources(
+            con=con,
+            plan_reader=plan_reader,
+            scanner=scanner,
+            context=_AlignedScanContext(
+                schema=schema,
+                promote_options=context.scan_options.schema_promote_options,
+                table_key=entry.manifest.table_key,
+                finalize_on_read=context.scan_options.finalize_on_read,
+            ),
         )
-        try:
-            return scan_arrow(con, source=aligned)
-        except (duckdb.Error, TypeError, ValueError):
-            return scan_arrow(con, source=scanner)
-    try:
+        if relation is not None:
+            return relation
         return scan_arrow(con, source=scanner)
-    except (duckdb.Error, TypeError, ValueError):
-        reader = scanner.to_reader()
-        try:
-            return scan_arrow(con, source=reader)
-        except (duckdb.Error, TypeError, ValueError):
-            return scan_arrow(con, source=dataset)
+    relation = _scan_unaligned_sources(
+        con=con,
+        plan_reader=plan_reader,
+        scanner=scanner,
+    )
+    if relation is not None:
+        return relation
+    return scan_arrow(con, source=dataset)
+
+
+def _plan_scan_reader(
+    dataset: ds.Dataset,
+    *,
+    filter_expression: ds.Expression | None,
+    projection_columns: Sequence[str] | None,
+    context: RelationBuildContext,
+) -> pa.RecordBatchReader | None:
+    use_threads = context.scan_options.use_threads
+    resolved_use_threads = use_threads if use_threads is not None else True
+    try:
+        plan = build_scan_plan(
+            dataset,
+            columns=projection_columns,
+            filter_expr=filter_expression,
+            implicit_ordering=context.scan_options.implicit_ordering,
+            require_sequenced_output=context.scan_options.require_sequenced_output,
+        )
+        return plan.to_reader(use_threads=resolved_use_threads)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return None
 
 
 def _parquet_scan_paths(entry: DatasetManifestEntry) -> list[str]:

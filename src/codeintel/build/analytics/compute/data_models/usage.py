@@ -12,6 +12,7 @@ import ast
 import json
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -19,7 +20,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
-from codeintel.build.analytics.utilities.ast import RowDecoder, call_name, snippet_from_lines
+from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
@@ -176,14 +177,16 @@ def _param_types_from_frame(
 ) -> dict[int, dict[str, str]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    decoder = RowDecoder(columns=("param_types",))
     param_types: dict[int, dict[str, str]] = {}
     for row in _rows_for_snapshot(frame, repo=repo, commit=commit):
-        decoded = decoder.decode(row)
-        goid_int = normalize_decimal_id(decoded.get("function_goid_h128"))
+        goid_int = normalize_decimal_id(row.get("function_goid_h128"))
         if goid_int is None:
             continue
-        raw_param_types = decoded.get("param_types")
+        extras = row.get("extras")
+        if isinstance(extras, Mapping):
+            raw_param_types = extras.get("param_types")
+        else:
+            raw_param_types = row.get("param_types")
         parsed_input = raw_param_types if isinstance(raw_param_types, (str, dict)) else None
         param_types[goid_int] = _parse_param_types(parsed_input)
     return param_types
@@ -543,7 +546,7 @@ def build_data_model_usage_rows(
     Returns
     -------
     list[dict[str, object]]
-        Row mappings with usage_kinds_json, evidence_json, context_json, created_at.
+        Row mappings with extras (usage_kinds, evidence, context) and created_at.
 
     Notes
     -----
@@ -655,9 +658,11 @@ def _build_usage_rows(
                     "commit": commit,
                     "model_id": model_id,
                     "function_goid_h128": goid,
-                    "usage_kinds_json": sorted(kinds),
-                    "evidence_json": dict(evidence_map),
-                    "context_json": dict(context) if context else None,
+                    "extras": {
+                        "usage_kinds": sorted(kinds),
+                        "evidence": dict(evidence_map),
+                        "context": dict(context) if context else None,
+                    },
                     "created_at": now,
                 }
             )

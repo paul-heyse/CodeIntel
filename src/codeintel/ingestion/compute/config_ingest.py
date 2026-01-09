@@ -22,7 +22,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
     table_for_columnar_rows,
 )
-from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.compute.base import BaseExtractStep, persist_arrow_tables
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 
 if TYPE_CHECKING:
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
+    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
@@ -286,6 +287,7 @@ class ConfigIngestStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
+        storage: IngestStoragePort | None = None,
     ) -> ConfigIngestResult:
         """Execute configuration file ingestion.
 
@@ -299,6 +301,8 @@ class ConfigIngestStep(BaseExtractStep):
             Commit identifier.
         context
             Optional ingestion context supplying repo/commit defaults.
+        storage
+            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -336,8 +340,10 @@ class ConfigIngestStep(BaseExtractStep):
                         "config_path": record.rel_path,
                         "format": config_format,
                         "key": key,
-                        "reference_paths": "[]",
-                        "reference_modules": "[]",
+                        "extras": {
+                            "reference_paths": [],
+                            "reference_modules": [],
+                        },
                         "reference_count": 0,
                     }
                 )
@@ -364,6 +370,12 @@ class ConfigIngestStep(BaseExtractStep):
             CONFIG_VALUES_TABLE_KEY,
             buffer.data,
             extras_policy="retain",
+        )
+        scope = f"{resolved_repo}@{resolved_commit}"
+        persist_arrow_tables(
+            storage,
+            {CONFIG_VALUES_TABLE_KEY: rows_reader},
+            scope=scope,
         )
         return ConfigIngestResult(
             result=ExecutionResult.ok(warnings=warnings),

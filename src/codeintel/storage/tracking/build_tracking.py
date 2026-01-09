@@ -20,7 +20,9 @@ from sqlglot import exp
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
 from codeintel.core.columnar.conversion import table_to_reader
+from codeintel.core.columnar.dedupe_ops import dedupe_table_for_table
 from codeintel.core.columnar.iter import iter_array_values
+from codeintel.core.columnar.kernels import stable_sort_indices
 from codeintel.core.columnar.masks import and_mask, fill_null_false, invert_mask
 from codeintel.core.columnar.normalization import normalize_array
 from codeintel.core.columnar.rows import table_for_rows
@@ -33,6 +35,7 @@ from codeintel.core.datasets.arrow_store import (
 from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.gateway import ScipRunRecordProtocol
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
+from codeintel.core.schemas.primitives import resolve_stable_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.serialization.json import (
     decode_json_dict,
@@ -367,11 +370,17 @@ class BuildTracking:
         table = dataset.to_table()
         if table.num_rows == 0:
             return None
-        if table.schema == arrow_schema:
-            return table
-        reader = table_to_reader(table, batch_size=None)
-        aligned = align_reader_to_contract(reader, arrow_schema)
-        return aligned.read_all()
+        if table.schema != arrow_schema:
+            reader = table_to_reader(table, batch_size=None)
+            aligned = align_reader_to_contract(reader, arrow_schema)
+            table = aligned.read_all()
+        return dedupe_table_for_table(
+            _MANIFEST_TABLE_KEY,
+            table,
+            prefer_columns=("computed_at",),
+            determinism="stable",
+            tie_breaker_columns=("input_hash", "output_hash", "options_hash"),
+        )
 
     @staticmethod
     def _manifest_match_mask(
@@ -519,12 +528,19 @@ class BuildTracking:
                 filtered = existing_table.filter(self._invert_mask(match_mask))
                 if filtered.num_rows > 0:
                     new_table = pa.concat_tables([filtered, new_table], promote=True)
+            try:
+                table_schema = get_schema_service().get_table_schema(table_key)
+            except RuntimeError:
+                table_schema = None
             manifest_entry = write_dataset(
                 dataset_root=dataset_root_dir,
                 table_key=table_key,
                 snapshot_id=snapshot_id,
                 data=new_table,
-                options=ArrowDatasetWriteOptions(existing_data_behavior="delete_matching"),
+                options=ArrowDatasetWriteOptions(
+                    existing_data_behavior="delete_matching",
+                    stable_sort_keys=resolve_stable_sort_keys(table_schema),
+                ),
             )
             manifests = dict(self._gateway.datasets.dataset_manifests)
             manifests[table_key] = manifest_entry
@@ -564,10 +580,15 @@ class BuildTracking:
         if matched.num_rows == 0:
             return None
         if matched.num_rows > 1 and "computed_at" in matched.column_names:
-            matched = matched.sort_by([("computed_at", "ascending")]).slice(
-                matched.num_rows - 1,
-                1,
-            )
+            try:
+                indices = stable_sort_indices(
+                    matched,
+                    sort_keys=[("computed_at", "ascending")],
+                )
+                matched = matched.take(indices)
+            except (TypeError, pa.ArrowInvalid, pa.ArrowTypeError, ValueError):
+                matched = matched.sort_by([("computed_at", "ascending")])
+            matched = matched.slice(matched.num_rows - 1, 1)
         impl_column = self._manifest_impl_column(table_key)
         manifests = self._manifest_rows_from_table(matched, impl_column=impl_column)
         return manifests[-1] if manifests else None
@@ -594,7 +615,14 @@ class BuildTracking:
         if filtered.num_rows == 0:
             return ()
         if "target" in filtered.column_names:
-            filtered = filtered.sort_by([("target", "ascending")])
+            try:
+                indices = stable_sort_indices(
+                    filtered,
+                    sort_keys=[("target", "ascending")],
+                )
+                filtered = filtered.take(indices)
+            except (TypeError, pa.ArrowInvalid, pa.ArrowTypeError, ValueError):
+                filtered = filtered.sort_by([("target", "ascending")])
         impl_column = self._manifest_impl_column(table_key)
         return self._manifest_rows_from_table(filtered, impl_column=impl_column)
 

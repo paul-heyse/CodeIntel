@@ -11,9 +11,12 @@ from typing import TypedDict, cast
 import pyarrow as pa
 
 from codeintel.build.graphs.assembly import table_rows
+from codeintel.build.hamilton.native.graphs.cpg2.edge_helpers import (
+    finalize_cpg_edge_rows,
+)
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 AST_NODES_TABLE_KEY = "core.ast_nodes"
@@ -143,12 +146,12 @@ def cpg2_edges__py_bc_instruction_ast(
         CPG edges linking bytecode instructions to AST nodes.
     """
     edges = _py_bc_instruction_ast_edges_to_rows(instructions, ast_nodes)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_bytecode_instruction_ast",
         expected_edges=instructions.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -167,12 +170,12 @@ def cpg2_edges__py_bc_callsite(
         CPG edges linking bytecode callsites to syntax call nodes.
     """
     edges = _py_bc_callsite_edges_to_rows(instructions, syntax_calls)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_bytecode_callsite",
         expected_edges=instructions.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -192,12 +195,12 @@ def cpg2_edges__py_bc_callsite_symbol(
         CPG edges linking bytecode callsites to resolved symbols.
     """
     edges = _py_bc_callsite_symbol_edges_to_rows(instructions, syntax_calls, scip_symbols)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_bytecode_callsite_symbol",
         expected_edges=instructions.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -215,12 +218,12 @@ def cpg2_edges__py_bc_cfg(
         CPG edges for bytecode CFG.
     """
     edges = _py_bc_cfg_edges_to_rows(cfg_edges)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_bytecode_cfg",
         expected_edges=cfg_edges.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -244,12 +247,12 @@ def cpg2_edges__py_bc_defuse_binding(
         inputs.bindings,
         inputs.resolution_edges,
     )
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_bytecode_defuse_binding",
         expected_edges=inputs.defuse_events.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -269,12 +272,12 @@ def cpg2_edges__py_bc_memory(
         CPG edges linking memory operations to AST anchors.
     """
     edges = _py_bc_memory_edges_to_rows(defuse_events, instructions, ast_nodes)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_bytecode_memory",
         expected_edges=defuse_events.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -293,12 +296,12 @@ def cpg2_edges__py_bc_stack(
         CPG edges that capture stack flow.
     """
     edges = _py_bc_stack_edges_to_rows(instructions, blocks)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_bytecode_stack",
         expected_edges=instructions.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -316,12 +319,12 @@ def cpg2_edges__py_bc_reaches(
         CPG edges for reaching-defs analysis.
     """
     edges = _py_bc_reaches_edges_to_rows(inputs)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_bytecode_reaches",
         expected_edges=inputs.defuse_events.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 

@@ -29,7 +29,11 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
 )
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.compute.base import (
+    BaseExtractStep,
+    finalize_arrow_tables,
+    persist_arrow_tables,
+)
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstCollectContext,
@@ -53,6 +57,7 @@ if TYPE_CHECKING:
 
     from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
+    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 
@@ -387,7 +392,7 @@ class SyntaxGraphVisitor(cst.CSTVisitor):
                         "start_byte": span.start_byte,
                         "end_byte": span.end_byte,
                         "text_preview": preview[: self.snippet_limit],
-                        "extras_json": None,
+                        "extras": None,
                     }
                 )
 
@@ -711,7 +716,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                     "param_end_byte": span.end_byte,
                     "param_span_id": span_id,
                     "param_node_id": node_id,
-                    "extras_json": extras,
+                    "extras": extras,
                 }
             )
 
@@ -772,7 +777,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_col": span.end_col,
                 "start_byte": span.start_byte,
                 "end_byte": span.end_byte,
-                "extras_json": extras,
+                "extras": extras,
             }
         )
         return def_id
@@ -821,7 +826,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_col": span.end_col,
                 "start_byte": span.start_byte,
                 "end_byte": span.end_byte,
-                "extras_json": extras,
+                "extras": extras,
             }
         )
 
@@ -887,7 +892,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_byte": span.end_byte,
                 "callee_start_byte": callee_start_byte,
                 "callee_end_byte": callee_end_byte,
-                "extras_json": extras,
+                "extras": extras,
             }
         )
         self._record_call_args(call_id, node)
@@ -929,7 +934,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                     "arg_end_byte": span.end_byte,
                     "arg_span_id": span_id,
                     "arg_expr_node_id": node_id,
-                    "extras_json": None,
+                    "extras": None,
                 }
             )
 
@@ -1010,7 +1015,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_col": span.end_col,
                 "start_byte": span.start_byte,
                 "end_byte": span.end_byte,
-                "extras_json": extras,
+                "extras": extras,
             }
         )
 
@@ -1069,7 +1074,7 @@ class SyntaxFactsVisitor(cst.CSTVisitor):
                 "end_col": span.end_col,
                 "start_byte": span.start_byte,
                 "end_byte": span.end_byte,
-                "extras_json": extras,
+                "extras": extras,
             }
         )
 
@@ -1638,10 +1643,10 @@ def _merge_ast_into_syntax_nodes(
         payloads = by_node.get(node_id)
         if not payloads:
             continue
-        extras = row.get("extras_json")
+        extras = row.get("extras")
         merged = dict(extras) if isinstance(extras, dict) else {}
         merged["ast_nodes"] = payloads
-        row["extras_json"] = merged
+        row["extras"] = merged
 
 
 def _ast_nodes_by_span(
@@ -1691,12 +1696,12 @@ def _merge_ast_into_syntax_facts(
         if not candidates:
             continue
         candidate = _pick_ast_candidate(candidates, preferred_kinds=config.preferred_kinds)
-        extras = row.get("extras_json")
+        extras = row.get("extras")
         merged = dict(extras) if isinstance(extras, dict) else {}
         merged["ast_node_id"] = candidate.node_id
         merged["ast_kind"] = candidate.kind
         merged["ast_match_kind"] = config.match_kind
-        row["extras_json"] = merged
+        row["extras"] = merged
 
 
 def _parse_manifest_row(
@@ -2143,6 +2148,7 @@ class CstExtractStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
+        storage: IngestStoragePort | None = None,
     ) -> CstExtractResult:
         """Execute CST extraction on the provided modules.
 
@@ -2156,6 +2162,8 @@ class CstExtractStep(BaseExtractStep):
             Commit identifier.
         context
             Optional ingestion context supplying repo/commit defaults.
+        storage
+            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -2201,14 +2209,63 @@ class CstExtractStep(BaseExtractStep):
             )
             _flush_cst_collectors(collectors)
 
+        readers = _build_cst_readers(collectors)
+        finalized_tables, finalize_warnings = finalize_arrow_tables(
+            {
+                CST_NODES_TABLE_KEY: readers.cst,
+                PARSE_MANIFEST_TABLE_KEY: readers.parse_manifest,
+                SYNTAX_SPANS_TABLE_KEY: readers.spans,
+                SYNTAX_NODES_TABLE_KEY: readers.syntax_nodes,
+                SYNTAX_EDGES_TABLE_KEY: readers.syntax_edges,
+                SYNTAX_SCOPES_TABLE_KEY: readers.scopes,
+                SYNTAX_DEFS_TABLE_KEY: readers.defs,
+                SYNTAX_REFS_TABLE_KEY: readers.refs,
+                SYNTAX_CALLS_TABLE_KEY: readers.calls,
+                SYNTAX_CALL_ARGS_TABLE_KEY: readers.call_args,
+                SYNTAX_FUNC_PARAMS_TABLE_KEY: readers.func_params,
+                SYNTAX_IMPORTS_TABLE_KEY: readers.imports,
+            }
+        )
+        warnings.extend(finalize_warnings)
+        readers = _CstReaderBundle(
+            cst=finalized_tables[CST_NODES_TABLE_KEY],
+            parse_manifest=finalized_tables[PARSE_MANIFEST_TABLE_KEY],
+            spans=finalized_tables[SYNTAX_SPANS_TABLE_KEY],
+            syntax_nodes=finalized_tables[SYNTAX_NODES_TABLE_KEY],
+            syntax_edges=finalized_tables[SYNTAX_EDGES_TABLE_KEY],
+            scopes=finalized_tables[SYNTAX_SCOPES_TABLE_KEY],
+            defs=finalized_tables[SYNTAX_DEFS_TABLE_KEY],
+            refs=finalized_tables[SYNTAX_REFS_TABLE_KEY],
+            calls=finalized_tables[SYNTAX_CALLS_TABLE_KEY],
+            call_args=finalized_tables[SYNTAX_CALL_ARGS_TABLE_KEY],
+            func_params=finalized_tables[SYNTAX_FUNC_PARAMS_TABLE_KEY],
+            imports=finalized_tables[SYNTAX_IMPORTS_TABLE_KEY],
+        )
         log.info(
             "CST extraction: repo=%s commit=%s rows=%d",
             resolved_repo,
             resolved_commit,
-            collectors.cst.row_count,
+            readers.cst.num_rows,
         )
-
-        readers = _build_cst_readers(collectors)
+        scope = f"{resolved_repo}@{resolved_commit}"
+        persist_arrow_tables(
+            storage,
+            {
+                CST_NODES_TABLE_KEY: readers.cst,
+                PARSE_MANIFEST_TABLE_KEY: readers.parse_manifest,
+                SYNTAX_SPANS_TABLE_KEY: readers.spans,
+                SYNTAX_NODES_TABLE_KEY: readers.syntax_nodes,
+                SYNTAX_EDGES_TABLE_KEY: readers.syntax_edges,
+                SYNTAX_SCOPES_TABLE_KEY: readers.scopes,
+                SYNTAX_DEFS_TABLE_KEY: readers.defs,
+                SYNTAX_REFS_TABLE_KEY: readers.refs,
+                SYNTAX_CALLS_TABLE_KEY: readers.calls,
+                SYNTAX_CALL_ARGS_TABLE_KEY: readers.call_args,
+                SYNTAX_FUNC_PARAMS_TABLE_KEY: readers.func_params,
+                SYNTAX_IMPORTS_TABLE_KEY: readers.imports,
+            },
+            scope=scope,
+        )
         return CstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
             rows={},
@@ -2235,18 +2292,18 @@ class CstExtractStep(BaseExtractStep):
             syntax_call_args_rows_reader=readers.call_args,
             syntax_func_params_rows_reader=readers.func_params,
             syntax_imports_rows_reader=readers.imports,
-            row_count=collectors.cst.row_count,
-            parse_manifest_row_count=collectors.parse_manifest.row_count,
-            syntax_spans_row_count=collectors.spans.row_count,
-            syntax_nodes_row_count=collectors.syntax_nodes.row_count,
-            syntax_edges_row_count=collectors.syntax_edges.row_count,
-            syntax_scopes_row_count=collectors.scopes.row_count,
-            syntax_defs_row_count=collectors.defs.row_count,
-            syntax_refs_row_count=collectors.refs.row_count,
-            syntax_calls_row_count=collectors.calls.row_count,
-            syntax_call_args_row_count=collectors.call_args.row_count,
-            syntax_func_params_row_count=collectors.func_params.row_count,
-            syntax_imports_row_count=collectors.imports.row_count,
+            row_count=readers.cst.num_rows,
+            parse_manifest_row_count=readers.parse_manifest.num_rows,
+            syntax_spans_row_count=readers.spans.num_rows,
+            syntax_nodes_row_count=readers.syntax_nodes.num_rows,
+            syntax_edges_row_count=readers.syntax_edges.num_rows,
+            syntax_scopes_row_count=readers.scopes.num_rows,
+            syntax_defs_row_count=readers.defs.num_rows,
+            syntax_refs_row_count=readers.refs.num_rows,
+            syntax_calls_row_count=readers.calls.num_rows,
+            syntax_call_args_row_count=readers.call_args.num_rows,
+            syntax_func_params_row_count=readers.func_params.num_rows,
+            syntax_imports_row_count=readers.imports.num_rows,
         )
 
     def _iter_python_source_bytes(

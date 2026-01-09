@@ -45,7 +45,7 @@ def cpg2_nodes__ts_tokens(tokens: pa.Table) -> pa.Table:
             "node_type": row.get("node_type"),
             "text_preview": row.get("text_preview"),
         }
-        extras_kv = extras_kv_from_payload(row.get("extras_json"))
+        extras_kv = extras_kv_from_payload(row.get("extras"))
         value_kv = extras_kv_from_mapping(extras_values)
         if extras_kv is None:
             extras_kv = value_kv
@@ -100,7 +100,7 @@ def cpg2_nodes__ts_trivia(trivia: pa.Table) -> pa.Table:
             "node_type": row.get("node_type"),
             "text_preview": row.get("text_preview"),
         }
-        extras_kv = extras_kv_from_payload(row.get("extras_json"))
+        extras_kv = extras_kv_from_payload(row.get("extras"))
         value_kv = extras_kv_from_mapping(extras_values)
         if extras_kv is None:
             extras_kv = value_kv

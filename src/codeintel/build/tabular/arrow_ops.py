@@ -62,6 +62,7 @@ from codeintel.core.columnar.normalization import (
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract as _align_reader
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.columnar.schema_ops import concat_tables_unified as _concat_tables_unified
+from codeintel.core.columnar.streaming import configure_arrow_threading
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
     DEFAULT_ARROW_BATCH_SIZE,
@@ -644,6 +645,7 @@ def normalize_table_for_join(table: pa.Table) -> pa.Table:
     pyarrow.Table
         Table with view types normalized, dictionaries unified, and chunks combined.
     """
+    configure_arrow_threading()
     normalized = _normalize_table_binary_views(_normalize_table_string_views(table))
     return _normalize_table_for_compute(normalized)
 
@@ -755,7 +757,7 @@ def arrow_table_from_tabular(value: InferableTabularInput) -> pa.Table:
         Materialized Arrow table.
     """
     reader = tabular_to_arrow_reader(value)
-    return reader_to_table(reader)
+    return normalize_table_for_compute(reader_to_table(reader))
 
 
 def arrow_table_from_lazyframe(frame: pl.LazyFrame) -> pa.Table:
@@ -766,7 +768,7 @@ def arrow_table_from_lazyframe(frame: pl.LazyFrame) -> pa.Table:
     pa.Table
         Materialized Arrow table.
     """
-    return reader_to_table(lazyframe_to_reader(frame))
+    return normalize_table_for_compute(reader_to_table(lazyframe_to_reader(frame)))
 
 
 def _arrow_table_from_frame(frame: pl.DataFrame | pl.LazyFrame) -> pa.Table:

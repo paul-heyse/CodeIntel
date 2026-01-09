@@ -16,7 +16,11 @@ from codeintel.core.columnar.rows import (
 )
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.spans import normalize_byte_span
-from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.compute.base import (
+    BaseExtractStep,
+    finalize_arrow_tables,
+    persist_arrow_tables,
+)
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 from codeintel.ingestion.tree_sitter.registry import language_for_path, language_metadata
@@ -30,6 +34,7 @@ if TYPE_CHECKING:
     from tree_sitter_language_pack import SupportedLanguage
 
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
+    from codeintel.ingestion.ports.storage import IngestStoragePort
     from codeintel.ingestion.tree_sitter.runner import (
         TreeSitterCapture,
         TreeSitterChangedRange,
@@ -275,6 +280,22 @@ def _build_buffers() -> _TreeSitterBuffers:
     )
 
 
+def _materialize_tree_sitter_tables(
+    buffers: _TreeSitterBuffers,
+) -> dict[str, pa.Table]:
+    return {
+        TS_PARSE_MANIFEST_TABLE_KEY: buffers.parse_manifest.to_table(),
+        TS_CAPTURES_TABLE_KEY: buffers.captures.to_table(),
+        TS_NODES_TABLE_KEY: buffers.nodes.to_table(),
+        TS_EDGES_TABLE_KEY: buffers.edges.to_table(),
+        TS_PARSE_ERRORS_TABLE_KEY: buffers.parse_errors.to_table(),
+        TS_CHANGED_RANGES_TABLE_KEY: buffers.changed_ranges.to_table(),
+        TS_TOKENS_TABLE_KEY: buffers.tokens.to_table(),
+        TS_TRIVIA_TABLE_KEY: buffers.trivia.to_table(),
+        TS_LANGUAGE_METADATA_TABLE_KEY: buffers.language_metadata.to_table(),
+    }
+
+
 def _capture_rows(
     context: _RowContext,
     captures: Sequence[TreeSitterCapture],
@@ -340,7 +361,7 @@ def _node_rows(
                 "parse_state": node.parse_state,
                 "next_parse_state": node.next_parse_state,
                 "text_preview": node.text_preview,
-                "extras_json": node.extras_json,
+                "extras": node.extras,
             }
         )
     return rows
@@ -396,7 +417,7 @@ def _parse_error_rows(
                 "end_row": error.end_row,
                 "end_col": error.end_col,
                 "text_preview": error.text_preview,
-                "extras_json": extras,
+                "extras": extras,
             }
         )
     return rows
@@ -455,7 +476,7 @@ def _token_rows(
                 "end_row": token.end_row,
                 "end_col": token.end_col,
                 "text_preview": token.text_preview,
-                "extras_json": token.extras_json,
+                "extras": token.extras,
             }
         )
     return rows
@@ -487,7 +508,7 @@ def _trivia_rows(
                 "end_row": item.end_row,
                 "end_col": item.end_col,
                 "text_preview": item.text_preview,
-                "extras_json": item.extras_json,
+                "extras": item.extras,
             }
         )
     return rows
@@ -617,11 +638,17 @@ def _process_module(context: _ProcessModuleContext) -> list[str]:
 class TreeSitterIndexStep(BaseExtractStep):
     """Tree-sitter extraction step with port injection."""
 
-    def __init__(self, discovery: ModuleDiscoveryPort) -> None:
+    def __init__(
+        self,
+        discovery: ModuleDiscoveryPort,
+        *,
+        storage: IngestStoragePort | None = None,
+    ) -> None:
         """Initialize the step with discovery ports and incremental caches."""
         super().__init__(discovery)
         self._tree_cache: dict[str, Tree] = {}
         self._source_cache: dict[str, bytes] = {}
+        self._storage = storage
 
     def execute(
         self,
@@ -683,26 +710,31 @@ class TreeSitterIndexStep(BaseExtractStep):
                 )
             )
 
+        tables = _materialize_tree_sitter_tables(buffers)
+        tables, finalize_warnings = finalize_arrow_tables(tables)
+        warnings.extend(finalize_warnings)
+        scope = f"{resolved_repo}@{resolved_commit}"
+        persist_arrow_tables(self._storage, tables, scope=scope)
         return TreeSitterIndexResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
-            parse_manifest_rows=buffers.parse_manifest.to_table(),
-            captures_rows=buffers.captures.to_table(),
-            nodes_rows=buffers.nodes.to_table(),
-            edges_rows=buffers.edges.to_table(),
-            parse_errors_rows=buffers.parse_errors.to_table(),
-            changed_ranges_rows=buffers.changed_ranges.to_table(),
-            tokens_rows=buffers.tokens.to_table(),
-            trivia_rows=buffers.trivia.to_table(),
-            language_metadata_rows=buffers.language_metadata.to_table(),
-            parse_manifest_row_count=buffers.parse_manifest.row_count,
-            captures_row_count=buffers.captures.row_count,
-            nodes_row_count=buffers.nodes.row_count,
-            edges_row_count=buffers.edges.row_count,
-            parse_errors_row_count=buffers.parse_errors.row_count,
-            changed_ranges_row_count=buffers.changed_ranges.row_count,
-            tokens_row_count=buffers.tokens.row_count,
-            trivia_row_count=buffers.trivia.row_count,
-            language_metadata_row_count=buffers.language_metadata.row_count,
+            parse_manifest_rows=tables[TS_PARSE_MANIFEST_TABLE_KEY],
+            captures_rows=tables[TS_CAPTURES_TABLE_KEY],
+            nodes_rows=tables[TS_NODES_TABLE_KEY],
+            edges_rows=tables[TS_EDGES_TABLE_KEY],
+            parse_errors_rows=tables[TS_PARSE_ERRORS_TABLE_KEY],
+            changed_ranges_rows=tables[TS_CHANGED_RANGES_TABLE_KEY],
+            tokens_rows=tables[TS_TOKENS_TABLE_KEY],
+            trivia_rows=tables[TS_TRIVIA_TABLE_KEY],
+            language_metadata_rows=tables[TS_LANGUAGE_METADATA_TABLE_KEY],
+            parse_manifest_row_count=tables[TS_PARSE_MANIFEST_TABLE_KEY].num_rows,
+            captures_row_count=tables[TS_CAPTURES_TABLE_KEY].num_rows,
+            nodes_row_count=tables[TS_NODES_TABLE_KEY].num_rows,
+            edges_row_count=tables[TS_EDGES_TABLE_KEY].num_rows,
+            parse_errors_row_count=tables[TS_PARSE_ERRORS_TABLE_KEY].num_rows,
+            changed_ranges_row_count=tables[TS_CHANGED_RANGES_TABLE_KEY].num_rows,
+            tokens_row_count=tables[TS_TOKENS_TABLE_KEY].num_rows,
+            trivia_row_count=tables[TS_TRIVIA_TABLE_KEY].num_rows,
+            language_metadata_row_count=tables[TS_LANGUAGE_METADATA_TABLE_KEY].num_rows,
         )
 
 

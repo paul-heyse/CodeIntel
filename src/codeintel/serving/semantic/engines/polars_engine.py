@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
+from codeintel.core.columnar.compute_helpers import combine_table_chunks
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.columnar.readers import empty_reader_from_schema
@@ -152,6 +153,7 @@ def _record_batches_from_frames(
 ) -> Iterator[pa.RecordBatch]:
     for frame in frames:
         table = frame.to_arrow()
+        table = combine_table_chunks(table)
         if unify_dictionaries:
             table = normalize_table_for_compute(table)
         yield from table.to_batches()

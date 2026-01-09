@@ -18,6 +18,7 @@ from codeintel.core.columnar.rows import (
     empty_table_for_table,
     table_for_columnar_rows,
 )
+from codeintel.ingestion.compute.base import persist_arrow_tables
 from codeintel.ingestion.context import (
     IngestionContext,
     resolve_repo_commit,
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.ports.change_detection import ChangeDetectionPort, ChangeSet
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
+    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 MODULES_TABLE_KEY = "core.modules"
@@ -96,6 +98,7 @@ class RepoScanStep:
         discovery: ModuleDiscoveryPort,
         change_detection: ChangeDetectionPort,
         module_filter: Callable[[Sequence[ModuleRecord]], Sequence[ModuleRecord]] | None = None,
+        storage: IngestStoragePort | None = None,
     ) -> None:
         """Initialize the step.
 
@@ -107,10 +110,13 @@ class RepoScanStep:
             Change detection port for computing changes.
         module_filter
             Optional filter applied to discovered modules before persistence.
+        storage
+            Optional storage port for persisting Arrow outputs.
         """
         self._discovery = discovery
         self._change_detection = change_detection
         self._module_filter = module_filter
+        self._storage = storage
 
     def execute(
         self,
@@ -209,6 +215,16 @@ class RepoScanStep:
             REPO_MAP_TABLE_KEY,
             repo_map_rows,
             extras_policy="retain",
+        )
+        scope = f"{resolved_repo}@{resolved_commit}"
+        persist_arrow_tables(
+            self._storage,
+            {
+                MODULES_TABLE_KEY: module_rows_reader,
+                FILE_STATE_TABLE_KEY: file_state_rows_reader,
+                REPO_MAP_TABLE_KEY: repo_map_rows_reader,
+            },
+            scope=scope,
         )
 
         log.info(

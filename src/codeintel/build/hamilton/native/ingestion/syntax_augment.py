@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from numbers import Integral
-from typing import Literal
+from typing import cast
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -24,12 +26,11 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.array_ops import ensure_array
 from codeintel.build.tabular.arrow_ops import (
-    align_table_to_contract,
-    dedupe_table_for_table,
-    emit_alignment_report,
     group_list_or_polars,
     iter_array_values,
     normalize_table_for_compute,
@@ -50,19 +51,30 @@ from codeintel.build.tabular.compute_masks import (
     is_null_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.conversion import reader_to_table, tabular_to_scoped_table
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan
+from codeintel.build.tabular.finalize_ops import (
+    FinalizeDedupe,
+    FinalizeResult,
+    FinalizeSpec,
+    finalize_join_keys,
+    finalize_table,
+)
+from codeintel.build.tabular.nested_ops import deep_cast_table_to_contract, make_extras_struct
+from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.intervals.span_resolver import SpanResolver
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.spans import normalize_byte_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, InferableTabularInput)
 
+LOG = logging.getLogger(__name__)
+
 SYNTAX_AUGMENT_TARGET_NAME = "syntax_augment"
+SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
 SYNTAX_NODES_AUGMENTED_TABLE_KEY = "core.syntax_nodes_augmented"
 SYNTAX_EDGES_AUGMENTED_TABLE_KEY = "core.syntax_edges_augmented"
 PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
@@ -86,6 +98,75 @@ _FuzzyRowScalars = tuple[
     pa.Scalar,
     pa.Scalar,
 ]
+
+
+@lru_cache
+def _syntax_nodes_augmented_contract() -> pa.Schema:
+    table_schema = get_schema_service().require_table_schema(SYNTAX_NODES_AUGMENTED_TABLE_KEY)
+    return arrow_contract_for_table_schema(table_schema=table_schema)
+
+
+def _require_field(container: pa.Schema | pa.StructType, name: str, *, context: str) -> pa.Field:
+    try:
+        return container.field(name)
+    except KeyError as exc:
+        msg = f"{context} missing field {name}"
+        raise ValueError(msg) from exc
+
+
+def _require_struct_type(field: pa.Field, *, context: str) -> pa.StructType:
+    if not pa.types.is_struct(field.type):
+        msg = f"{context} must be a struct, found {field.type}"
+        raise TypeError(msg)
+    return cast("pa.StructType", field.type)
+
+
+def _require_list_struct_type(field: pa.Field, *, context: str) -> pa.StructType:
+    data_type = field.type
+    if (
+        pa.types.is_list(data_type)
+        or pa.types.is_large_list(data_type)
+        or pa.types.is_fixed_size_list(data_type)
+    ):
+        value_type = data_type.value_type
+    else:
+        msg = f"{context} must be a list of structs, found {data_type}"
+        raise TypeError(msg)
+    if not pa.types.is_struct(value_type):
+        msg = f"{context} must be a list of structs, found {value_type}"
+        raise TypeError(msg)
+    return cast("pa.StructType", value_type)
+
+
+@lru_cache
+def _syntax_nodes_extras_fields() -> dict[str, pa.DataType]:
+    contract = _syntax_nodes_augmented_contract()
+    extras_field = _require_field(contract, "extras", context="syntax_nodes_augmented contract")
+    extras_type = _require_struct_type(extras_field, context="syntax_nodes_augmented.extras")
+    return {field.name: field.type for field in extras_type}
+
+
+@lru_cache
+def _syntax_nodes_ts_payload_fields() -> dict[str, pa.DataType]:
+    contract = _syntax_nodes_augmented_contract()
+    extras_field = _require_field(contract, "extras", context="syntax_nodes_augmented contract")
+    extras_type = _require_struct_type(extras_field, context="syntax_nodes_augmented.extras")
+    ts_field = _require_field(
+        extras_type,
+        "ts_nodes",
+        context="syntax_nodes_augmented.extras",
+    )
+    ts_struct = _require_list_struct_type(
+        ts_field,
+        context="syntax_nodes_augmented.extras.ts_nodes",
+    )
+    return {field.name: field.type for field in ts_struct}
+
+
+def _deep_cast_syntax_nodes_augmented(table: pa.Table) -> pa.Table:
+    if table.num_rows == 0:
+        return table
+    return deep_cast_table_to_contract(table, _syntax_nodes_augmented_contract())
 
 
 @dataclass(slots=True)
@@ -337,7 +418,14 @@ _JOIN_STRING_KEYS = {
     "syntax_node_id",
 }
 _JOIN_INT_KEYS = {"start_byte", "end_byte"}
-SortKey = tuple[str, Literal["ascending", "descending"]]
+
+
+@dataclass(frozen=True, slots=True)
+class _JoinSpec:
+    left_keys: Sequence[str]
+    right_keys: Sequence[str]
+    left_table_key: str | None = None
+    right_table_key: str | None = None
 
 
 def _join_casts(keys: Sequence[str]) -> dict[str, str]:
@@ -364,38 +452,87 @@ def _project_with_cast(
     return exprs
 
 
-def _join_key_filter(keys: Sequence[str]) -> pc.Expression:
-    return E.and_(*(E.is_valid(key) for key in keys))
+def _precheck_join_table(
+    table: pa.Table,
+    *,
+    table_key: str | None,
+    join_keys: Sequence[str],
+) -> pa.Table:
+    if table.num_rows == 0 or not join_keys:
+        return table
+    if table_key is None:
+        result = finalize_join_keys(
+            table,
+            required_non_null=join_keys,
+            key_fields=join_keys,
+        )
+    else:
+        result = finalize_table(
+            table,
+            spec=FinalizeSpec(
+                table_key=table_key,
+                mode="tolerant",
+                required_non_null=join_keys,
+                key_fields=join_keys,
+                dedupe=FinalizeDedupe(enabled=False),
+                target_name=SYNTAX_AUGMENT_TARGET_NAME,
+            ),
+        )
+    _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
+    return result.good
+
+
+def _log_join_precheck_errors(
+    result: FinalizeResult,
+    *,
+    table_key: str | None,
+    join_keys: Sequence[str],
+) -> None:
+    if result.errors.num_rows == 0:
+        return
+    table_label = table_key or "derived"
+    LOG.warning(
+        "Join key precheck dropped %d rows table=%s keys=%s",
+        result.errors.num_rows,
+        table_label,
+        ",".join(join_keys),
+    )
 
 
 def _hash_join_tables(
     left: pa.Table,
     right: pa.Table,
     *,
-    left_keys: Sequence[str],
-    right_keys: Sequence[str],
+    spec: _JoinSpec,
     how: JoinType = "left outer",
 ) -> pa.Table:
-    left_exprs = _project_with_cast(left, casts=_join_casts(left_keys))
-    right_exprs = _project_with_cast(right, casts=_join_casts(right_keys))
-    left_plan = Plan.table(left).project(left_exprs).filter(_join_key_filter(left_keys))
-    right_plan = Plan.table(right).project(right_exprs).filter(_join_key_filter(right_keys))
+    left_checked = _precheck_join_table(
+        left,
+        table_key=spec.left_table_key,
+        join_keys=spec.left_keys,
+    )
+    right_checked = _precheck_join_table(
+        right,
+        table_key=spec.right_table_key,
+        join_keys=spec.right_keys,
+    )
+    left_exprs = _project_with_cast(left, casts=_join_casts(spec.left_keys))
+    right_exprs = _project_with_cast(right, casts=_join_casts(spec.right_keys))
+    left_plan = Plan.table(left_checked).project(left_exprs)
+    right_plan = Plan.table(right_checked).project(right_exprs)
     right_output = [name for name in right_exprs if name not in left_exprs]
     joined = left_plan.hash_join(
         right=right_plan,
         spec=HashJoinSpec(
-            left_keys=list(left_keys),
-            right_keys=list(right_keys),
+            left_keys=list(spec.left_keys),
+            right_keys=list(spec.right_keys),
             how=how,
             left_output=list(left_exprs.keys()),
             right_output=right_output,
         ),
     )
-    table = reader_to_table(joined.to_reader(use_threads=True))
-    if table.num_rows == 0:
-        return table
-    sort_keys: list[SortKey] = [(key, "ascending") for key in left_keys]
-    return table.take(stable_sort_indices(table, sort_keys=sort_keys))
+    joined = joined.order_by(sort_keys=[(key, "ascending") for key in spec.left_keys])
+    return materialize_plan(joined, use_threads=True)
 
 
 def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
@@ -429,8 +566,12 @@ def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
     joined = _hash_join_tables(
         ts_selected,
         syntax_selected,
-        left_keys=join_keys,
-        right_keys=join_keys,
+        spec=_JoinSpec(
+            left_keys=join_keys,
+            right_keys=join_keys,
+            left_table_key=TS_NODES_TABLE_KEY,
+            right_table_key=SYNTAX_NODES_TABLE_KEY,
+        ),
     )
     syntax_null = is_null_mask(joined["syntax_node_id"])
     match_kind = _if_else(syntax_null, pa.scalar("NONE"), pa.scalar("EXACT"))
@@ -476,8 +617,12 @@ def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
     joined = _hash_join_tables(
         ts_selected,
         xref_selected,
-        left_keys=["ts_node_id"],
-        right_keys=["ts_node_id"],
+        spec=_JoinSpec(
+            left_keys=["ts_node_id"],
+            right_keys=["ts_node_id"],
+            left_table_key=TS_NODES_TABLE_KEY,
+            right_table_key=TS_XREF_TABLE_KEY,
+        ),
     )
     mask = is_null_mask(joined["syntax_node_id"])
     return safe_filter(joined, mask)
@@ -649,8 +794,7 @@ def _xref_fuzzy(
     joined = _hash_join_tables(
         unmatched_ts_nodes,
         producer_table,
-        left_keys=["rel_path"],
-        right_keys=["rel_path"],
+        spec=_JoinSpec(left_keys=["rel_path"], right_keys=["rel_path"]),
     )
     rows: list[dict[str, object]] = []
     columns = (
@@ -692,8 +836,7 @@ def _xref_union(exact: pa.Table, fuzzy: pa.Table) -> pa.Table:
         return fuzzy
     if fuzzy.num_rows == 0:
         return exact
-    combined = concat_tables_unified([exact, fuzzy])
-    return dedupe_table_for_table(TS_XREF_TABLE_KEY, combined)
+    return concat_tables_unified([exact, fuzzy])
 
 
 def _column_or_null(table: pa.Table, name: str) -> pa.Array | pa.ChunkedArray:
@@ -771,10 +914,10 @@ def _index_lookup_indices(node_ids: pa.Array, payload_ids: pa.Array) -> pa.Array
 
 
 def _ast_nodes_from_extras(syntax_nodes: pa.Table) -> pa.Array:
-    if "extras_json" not in syntax_nodes.column_names:
+    if "extras" not in syntax_nodes.column_names:
         return pa.nulls(syntax_nodes.num_rows)
     try:
-        ast_nodes = _struct_field(syntax_nodes["extras_json"], "ast_nodes")
+        ast_nodes = _struct_field(syntax_nodes["extras"], "ast_nodes")
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, TypeError, ValueError):
         return pa.nulls(syntax_nodes.num_rows)
     return ensure_array(ast_nodes)
@@ -817,49 +960,15 @@ def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
     joined = _hash_join_tables(
         filtered,
         ts_selected,
-        left_keys=["ts_node_id"],
-        right_keys=["ts_node_id"],
+        spec=_JoinSpec(
+            left_keys=["ts_node_id"],
+            right_keys=["ts_node_id"],
+            left_table_key=TS_XREF_TABLE_KEY,
+            right_table_key=TS_NODES_TABLE_KEY,
+        ),
     )
-    payload = pa.StructArray.from_arrays(
-        [
-            _column_or_null(joined, "ts_node_id"),
-            _column_or_null(joined, "node_type"),
-            _column_or_null(joined, "start_byte"),
-            _column_or_null(joined, "end_byte"),
-            _column_or_null(joined, "start_row"),
-            _column_or_null(joined, "start_col"),
-            _column_or_null(joined, "end_row"),
-            _column_or_null(joined, "end_col"),
-            _column_or_null(joined, "grammar_id"),
-            _column_or_null(joined, "kind_id"),
-            _column_or_null(joined, "parse_state"),
-            _column_or_null(joined, "next_parse_state"),
-            _column_or_null(joined, "is_named"),
-            _column_or_null(joined, "is_missing"),
-            _column_or_null(joined, "is_error"),
-            _column_or_null(joined, "has_error"),
-            _column_or_null(joined, "match_kind"),
-        ],
-        names=[
-            "ts_node_id",
-            "ts_node_type",
-            "start_byte",
-            "end_byte",
-            "start_row",
-            "start_col",
-            "end_row",
-            "end_col",
-            "grammar_id",
-            "kind_id",
-            "parse_state",
-            "next_parse_state",
-            "is_named",
-            "is_missing",
-            "is_error",
-            "has_error",
-            "match_kind",
-        ],
-    )
+    payload_source = _rename_columns(joined, {"node_type": "ts_node_type"})
+    payload = make_extras_struct(payload_source, fields=_syntax_nodes_ts_payload_fields())
     payload_table = pa.Table.from_arrays(
         [ensure_array(joined["syntax_node_id"]), payload],
         names=["syntax_node_id", "ts_payload"],
@@ -879,14 +988,17 @@ def _augment_syntax_nodes(syntax_nodes: pa.Table, ts_payloads: pa.Table) -> pa.T
     indices = _index_lookup_indices(node_ids, payload_ids)
     ts_nodes = take_array(ensure_array(ts_payloads["ts_nodes"]), indices)
     ast_nodes = _ast_nodes_from_extras(syntax_nodes)
-    extras = pa.StructArray.from_arrays(
-        [ensure_array(ast_nodes), ensure_array(ts_nodes)],
-        names=["ast_nodes", "ts_nodes"],
+    extras_source = pa.table(
+        {
+            "ast_nodes": ensure_array(ast_nodes),
+            "ts_nodes": ensure_array(ts_nodes),
+        }
     )
-    if "extras_json" in syntax_nodes.column_names:
-        index = syntax_nodes.schema.get_field_index("extras_json")
-        return syntax_nodes.set_column(index, "extras_json", extras)
-    return syntax_nodes.append_column("extras_json", extras)
+    extras = make_extras_struct(extras_source, fields=_syntax_nodes_extras_fields())
+    if "extras" in syntax_nodes.column_names:
+        index = syntax_nodes.schema.get_field_index("extras")
+        return syntax_nodes.set_column(index, "extras", extras)
+    return syntax_nodes.append_column("extras", extras)
 
 
 def _weld_coverage_table(
@@ -924,8 +1036,7 @@ def _weld_coverage_table(
     joined = _hash_join_tables(
         ts_counts,
         mapped_counts,
-        left_keys=key_cols,
-        right_keys=key_cols,
+        spec=_JoinSpec(left_keys=key_cols, right_keys=key_cols),
     )
     mapped = pc.fill_null(_column_or_null(joined, "mapped_count"), pa.scalar(0))
     total = _column_or_null(joined, "ts_node_count")
@@ -953,7 +1064,7 @@ def _reader_from_rows(table_key: str, rows: list[dict[str, object]]) -> pa.Table
         if not rows:
             return pa.Table.from_batches(pa.schema([]), [])
         table = pa.Table.from_pylist(rows)
-    return dedupe_table_for_table(table_key, table)
+    return table
 
 
 def _empty_reader(table_key: str) -> pa.Table:
@@ -966,16 +1077,11 @@ def _empty_reader(table_key: str) -> pa.Table:
 def _reader_from_table(table_key: str, table: pa.Table) -> pa.Table:
     if table.num_rows == 0:
         return _empty_reader(table_key)
-    try:
-        aligned = align_table_to_contract(
-            table_key,
-            table,
-            target_name=SYNTAX_AUGMENT_TARGET_NAME,
-            reporter=emit_alignment_report,
-        )
-    except (KeyError, RuntimeError):
-        aligned = table
-    return dedupe_table_for_table(table_key, aligned)
+    return finalize_ingest_table(
+        table_key,
+        table,
+        target_name=SYNTAX_AUGMENT_TARGET_NAME,
+    )
 
 
 def _rename_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
@@ -1017,7 +1123,7 @@ def _ts_nodes_to_syntax_nodes(ts_nodes: pa.Table) -> pa.Table:
     )
     renamed = renamed.append_column("raw_kind", renamed.column("node_kind"))
     renamed = renamed.append_column("producer", constant_array(TS_PRODUCER, renamed.num_rows))
-    renamed = renamed.append_column("extras_json", constant_array(None, renamed.num_rows))
+    renamed = renamed.append_column("extras", constant_array(None, renamed.num_rows))
     ordered = [
         "repo",
         "commit",
@@ -1034,7 +1140,7 @@ def _ts_nodes_to_syntax_nodes(ts_nodes: pa.Table) -> pa.Table:
         "start_byte",
         "end_byte",
         "text_preview",
-        "extras_json",
+        "extras",
     ]
     return renamed.select([name for name in ordered if name in renamed.column_names])
 
@@ -1136,7 +1242,10 @@ def _build_xref_table(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
 def _frame_or_empty(table_key: str, table: pa.Table) -> pa.Table:
     if table.num_rows == 0 or not table.column_names:
         return _empty_reader(table_key)
-    return _reader_from_table(table_key, table)
+    resolved = table
+    if table_key == SYNTAX_NODES_AUGMENTED_TABLE_KEY:
+        resolved = _deep_cast_syntax_nodes_augmented(table)
+    return _reader_from_table(table_key, resolved)
 
 
 def _frame_if_enabled(table_key: str, table: pa.Table, *, emit: bool) -> pa.Table:

@@ -11,9 +11,11 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     canonicalize_for_table,
     lookup_keys,
 )
+from codeintel.build.hamilton.native.graphs.cpg2.edge_helpers import (
+    finalize_cpg_edge_rows,
+)
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
-from codeintel.core.columnar.rows import table_for_rows
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
@@ -100,8 +102,8 @@ def cpg2_edges__call_wiring_calls(
                 "extras_kv": extras_kv,
             }
         )
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
-    _record_diagnostics(diagnostics, "call_wiring_calls", call_edges, row_count)
+    table = finalize_cpg_edge_rows(rows)
+    _record_diagnostics(diagnostics, "call_wiring_calls", call_edges, table.num_rows)
     return table
 
 
@@ -185,8 +187,8 @@ def cpg2_edges__call_wiring_arg_to_param(
                 "extras_kv": extras_kv,
             }
         )
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
-    _record_diagnostics(diagnostics, "call_wiring_args", arg_edges, row_count)
+    table = finalize_cpg_edge_rows(rows)
+    _record_diagnostics(diagnostics, "call_wiring_args", arg_edges, table.num_rows)
     return table
 
 
@@ -261,8 +263,8 @@ def cpg2_edges__call_wiring_ret_to_call(
                 "extras_kv": extras_kv,
             }
         )
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
-    _record_diagnostics(diagnostics, "call_wiring_return", ret_edges, row_count)
+    table = finalize_cpg_edge_rows(rows)
+    _record_diagnostics(diagnostics, "call_wiring_return", ret_edges, table.num_rows)
     return table
 
 

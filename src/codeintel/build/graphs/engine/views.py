@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 import pyarrow as pa
 
 from codeintel.build.graphs.builders import add_weighted_edge
-from codeintel.build.graphs.engine.datasets import GraphViewFactory
+from codeintel.build.graphs.engine.datasets import GraphViewFactory, GraphViewScanOptions
 from codeintel.build.graphs.engine.protocol import GraphKind
 from codeintel.build.graphs.rx.policies import weight_policy_for_kind
 from codeintel.build.graphs.rx.store import RxGraphStore
@@ -315,6 +315,8 @@ def parse_reference_modules(ref_modules: object, allowed_modules: set[str]) -> l
         Allowed module names parsed from input.
     """
     modules: list[str] = []
+    if isinstance(ref_modules, Mapping):
+        ref_modules = ref_modules.get("reference_modules")
     if isinstance(ref_modules, list):
         modules = [str(mod) for mod in ref_modules]
     elif isinstance(ref_modules, str):
@@ -365,13 +367,14 @@ def _populate_config_graph(
     stats = ConfigGraphStats()
     names = list(config_reader.schema.names)
     key_idx = _column_index(names, "key")
-    ref_idx = _column_index(names, "reference_modules")
-    if key_idx is None or ref_idx is None:
+    extras_idx = _column_index(names, "extras")
+    ref_idx = _column_index(names, "reference_modules") if extras_idx is None else None
+    if key_idx is None or (extras_idx is None and ref_idx is None):
         return stats
     for row in _iter_scoped_rows(factory, config_reader):
         stats.total_rows += 1
         key = row[key_idx]
-        ref_modules = row[ref_idx]
+        ref_modules = row[extras_idx] if extras_idx is not None else row[ref_idx]
         if key is None or ref_modules is None:
             stats.empty_refs += 1
             continue
@@ -433,7 +436,7 @@ def load_config_module_bipartite(
     modules_reader = factory.load_reader(
         table_key="core.modules",
         columns=("module", "repo", "commit"),
-        apply_filter=False,
+        scan_options=GraphViewScanOptions(apply_filter=False),
     )
     if modules_reader is None:
         return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
@@ -441,8 +444,8 @@ def load_config_module_bipartite(
 
     config_reader = factory.load_reader(
         table_key="analytics.config_values",
-        columns=("key", "reference_modules", "repo", "commit"),
-        apply_filter=False,
+        columns=("key", "extras", "repo", "commit"),
+        scan_options=GraphViewScanOptions(apply_filter=False),
     )
     if config_reader is None:
         return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
@@ -513,7 +516,7 @@ def load_symbol_module_graph(
     module_reader = factory.load_reader(
         table_key="core.modules",
         columns=("path", "module", "repo", "commit"),
-        apply_filter=False,
+        scan_options=GraphViewScanOptions(apply_filter=False),
     )
     if module_reader is None:
         return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)

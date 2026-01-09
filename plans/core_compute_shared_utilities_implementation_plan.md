@@ -13,9 +13,9 @@
 
 ## Phase sequencing
 - Phase 0 (completed): Core helper modules (expr vocab, kernels, plan ops, explode ops, finalize, nested).
-- Phase 1 (not started): Core scan/telemetry standardization + threading/chunking policy.
-- Phase 2 (not started): Adoption in ingestion + validation (extras_json migration, finalize gates).
-- Phase 3 (partial): Adoption in storage + serving (scan pushdown, deterministic ordering, exports).
+- Phase 1 (completed): Core scan/telemetry standardization + threading/chunking policy.
+- Phase 2 (completed): Adoption in ingestion + validation (extras_json migration, finalize gates).
+- Phase 3 (completed): Adoption in storage + serving (scan pushdown, deterministic ordering, exports).
 - Phase 4 (not started): Optional escape hatches (Substrait / DataFusion) when Acero is insufficient.
 
 ---
@@ -24,15 +24,13 @@
 
 ### 1) Core expression vocabulary + kernel vocabulary
 
-Status: Partial (expr vocab + kernels implemented; masks alignment pending).
+Status: Completed.
 
 Completed files
 - `src/codeintel/core/columnar/expr_vocab.py` (new)
 - `src/codeintel/core/columnar/kernels.py` (new)
+- `src/codeintel/core/columnar/masks.py` (aligned to kernel helpers)
 - `src/codeintel/core/columnar/__init__.py` (reexports)
-
-Remaining files
-- `src/codeintel/core/columnar/masks.py` (align to new kernel helpers)
 
 Representative pattern
 ```python
@@ -155,16 +153,14 @@ Distinctive pattern to standardize
 
 ### 4) Core scan ops + telemetry standardization
 
-Status: Partial (scan options preserved in manifest planning; core scan helpers pending).
+Status: Completed.
 
 Completed files
 - `src/codeintel/storage/datasets/manifest_index.py` (preserve scan options for planning)
-
-Remaining files
-- `src/codeintel/core/datasets/scanning.py` (centralized telemetry helpers)
+- `src/codeintel/core/datasets/scanning.py` (telemetry helpers + scan wrappers)
 - `src/codeintel/core/datasets/scanner_ops.py` (ScannerParams extensions)
 - `src/codeintel/core/columnar/streaming.py` (DatasetScanOptions defaults)
-- `src/codeintel/core/datasets/arrow_store.py` (enforce scan pushdown)
+- `src/codeintel/core/datasets/arrow_store.py` (scan pushdown + telemetry logging)
 
 Representative pattern
 ```python
@@ -199,14 +195,12 @@ Distinctive pattern to standardize
 
 ### 5) Core explode ops (list explode + alignment)
 
-Status: Partial (explode ops implemented; validation alignment checks pending).
+Status: Completed.
 
 Completed files
 - `src/codeintel/core/columnar/explode_ops.py` (new)
 - `src/codeintel/core/columnar/kernels.py` (list helper kernels)
-
-Remaining files
-- `src/codeintel/core/validation/schema_constraints.py` (optional list alignment checks)
+- `src/codeintel/core/validation/schema_constraints.py` (list alignment checks)
 
 Representative pattern
 ```python
@@ -238,16 +232,14 @@ Distinctive pattern to standardize
 
 ### 6) Core finalize gate (strict/tolerant + artifacts)
 
-Status: Partial (finalize ops implemented; serving kernel uses finalize; validation/export pending).
+Status: Completed.
 
 Completed files
 - `src/codeintel/core/columnar/finalize_ops.py` (new)
 - `src/codeintel/serving/semantic/kernel.py` (finalize boundary in serving)
-
-Remaining files
-- `src/codeintel/core/validation/engine.py` (use finalize before validation)
-- `src/codeintel/storage/validation/columnar.py` (integrate finalize results)
-- `src/codeintel/serving/export/ndjson.py` (finalize boundary for export)
+- `src/codeintel/core/validation/engine.py` (finalize before validation)
+- `src/codeintel/storage/validation/columnar.py` (finalize before validation)
+- `src/codeintel/serving/http/export_dispatch.py` (NDJSON finalize spec + artifacts)
 
 Representative pattern
 ```python
@@ -278,13 +270,11 @@ Distinctive pattern to standardize
 
 ### 7) Core nested ops (extras struct + extras_kv + deep cast)
 
-Status: Partial (nested ops implemented; extras_json removal pending).
+Status: Completed.
 
 Completed files
 - `src/codeintel/core/columnar/nested_ops.py` (new)
-
-Remaining files
-- `src/codeintel/core/columnar/type_normalization.py` (reuse view-cast helpers)
+- `src/codeintel/core/columnar/type_normalization.py` (view-cast helpers reused)
 - `src/codeintel/core/schemas/output_registry.py` (extras_json removal)
 
 Representative pattern
@@ -321,14 +311,20 @@ Distinctive pattern to standardize
 
 ### 8) Deterministic ordering + ID hashing
 
-Status: Partial (kernels implemented; ordering adoption pending).
+Status: Completed.
 
 Completed files
 - `src/codeintel/core/columnar/kernels.py` (stable_sort_indices, hash_struct_ordinal)
-
-Remaining files
-- `src/codeintel/serving/semantic/kernel.py` (deterministic export ordering)
-- `src/codeintel/storage/datasets/arrow_store.py` (optional stable sort before write)
+- `src/codeintel/serving/semantic/kernel.py` (fallback ordering + hash ordering at row boundary)
+- `src/codeintel/core/datasets/arrow_store.py` (optional stable sort before write)
+- `src/codeintel/core/schemas/primitives.py` (stable_sort_keys policy on TableWritePolicy)
+- `src/codeintel/core/schemas/serde.py` (serialize/deserialize stable_sort_keys)
+- `src/codeintel/core/schemas/output_registry.py` (stable_sort_keys defaults, disabled for heavy tables)
+- `src/codeintel/serving/semantic_compile.py` (default order_by inference for no-PK views)
+- `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`
+  (stable_sort_keys in ArrowDatasetWriteOptions)
+- Direct `write_dataset(...)` call sites with TableSchema access
+  (reuse stable_sort_keys when available; otherwise leave None)
 
 Representative pattern
 ```python
@@ -345,19 +341,50 @@ sorted_table = table.take(
 )
 ```
 
+Policy resolution (best-in-class)
+```python
+policy = table_schema.write_policy
+stable_sort_keys = None if policy is None else policy.stable_sort_keys
+if stable_sort_keys is None:
+    stable_sort_keys = table_schema.primary_key
+if stable_sort_keys == ():
+    stable_sort_keys = None
+
+options = ArrowDatasetWriteOptions(
+    stable_sort_keys=stable_sort_keys,
+    # ... other write options ...
+)
+```
+
+Deterministic streaming exports with no primary key (serving)
+```python
+# At registry compile time:
+order_by = resolve_default_order_by(
+    schema=schema,
+    columns=columns,
+    primary_key=primary_key,
+    explicit_order=explicit_order,
+)
+# If the view already declares a PK, keep defaults.order_by empty so the serving
+# boundary can fall back to the PK. If no PK exists, use a safe, scalar order_by
+# or require clients to pass order_by explicitly.
+```
+
 Distinctive pattern to standardize
 - Hash-based ordinals live in a single helper.
 - Deterministic ordering is explicit and applied near output boundaries.
+- Stable on-disk ordering is driven by schema policy (stable_sort_keys), not ad-hoc call sites.
+- Streaming determinism is enforced via view defaults or explicit order_by, not finalize.
 
 ---
 
 ### 9) Threading + chunking policy integration
 
-Status: Not started.
+Status: Completed.
 
-Target files (pending)
-- `src/codeintel/core/columnar/streaming.py` (configure_arrow_threading)
+Completed files
 - `src/codeintel/core/columnar/compute_helpers.py` (combine_chunks helpers)
+- `src/codeintel/core/columnar/streaming.py` (configure_arrow_threading)
 - `src/codeintel/core/datasets/arrow_store.py` (pre-write chunk consolidation)
 
 Representative pattern
@@ -378,12 +405,13 @@ Distinctive pattern to standardize
 
 ### 10) Ingestion adoption: extras_json migration + finalize gates
 
-Status: Not started.
+Status: Completed.
 
-Target files (pending)
-- `src/codeintel/ingestion/compute/tree_sitter_index.py`
-- `src/codeintel/ingestion/compute/cst_extract.py`
-- `src/codeintel/ingestion/compute/ast_extract.py`
+Completed files
+- `src/codeintel/ingestion/compute/base.py` (finalize helper + warnings)
+- `src/codeintel/ingestion/compute/ast_extract.py` (finalize gates)
+- `src/codeintel/ingestion/compute/tree_sitter_index.py` (finalize gates)
+- `src/codeintel/ingestion/compute/cst_extract.py` (finalize gates)
 - `src/codeintel/ingestion/tree_sitter/runner.py`
 - `src/codeintel/core/schemas/output_registry.py`
 
@@ -411,14 +439,12 @@ Distinctive pattern to standardize
 
 ### 11) Serving + storage adoption: scan pushdown + finalize boundary
 
-Status: Partial (scan options + finalize boundary added; streaming + maintenance pending).
+Status: Completed.
 
 Completed files
 - `src/codeintel/serving/semantic/duckdb_relation_builder.py`
 - `src/codeintel/serving/semantic/kernel.py`
 - `src/codeintel/storage/datasets/manifest_index.py`
-
-Remaining files
 - `src/codeintel/serving/http/streaming.py`
 - `src/codeintel/storage/datasets/maintenance.py`
 

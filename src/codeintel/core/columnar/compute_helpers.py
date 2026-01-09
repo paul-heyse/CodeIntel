@@ -194,6 +194,51 @@ def safe_filter_batch(
         return batch
 
 
+def combine_chunked_array(
+    values: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    """Return an array with chunks combined when possible.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Combined array when possible, otherwise the input values.
+    """
+    if isinstance(values, pa.Array):
+        return values
+    if values.num_chunks == 0:
+        return pa.array([], type=values.type)
+    try:
+        return values.combine_chunks()
+    except (pa.ArrowInvalid, pa.ArrowTypeError, ValueError):
+        chunks = list(values.iterchunks())
+        if not chunks:
+            return pa.array([], type=values.type)
+        try:
+            return pa.concat_arrays(chunks)
+        except (pa.ArrowInvalid, pa.ArrowTypeError, ValueError):
+            return values
+
+
+def combine_table_chunks(table: pa.Table) -> pa.Table:
+    """Return a table with chunks combined when possible.
+
+    Returns
+    -------
+    pyarrow.Table
+        Table with combined chunks when possible.
+    """
+    if all(column.num_chunks <= 1 for column in table.columns):
+        return table
+    combine = getattr(table, "combine_chunks", None)
+    if not callable(combine):
+        return table
+    try:
+        return combine()
+    except (pa.ArrowInvalid, pa.ArrowTypeError, ValueError):
+        return table
+
+
 def cast_options(
     target_type: pa.DataType,
     *,
@@ -296,6 +341,8 @@ __all__ = [
     "call_compute",
     "cast_array",
     "cast_options",
+    "combine_chunked_array",
+    "combine_table_chunks",
     "require_array",
     "require_scalar",
     "safe_filter",

@@ -37,12 +37,16 @@ from codeintel.build.hamilton.native.graphs.cpg.constants import (
 )
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
-from codeintel.core.datasets.scanning import ParquetScanOptions, scan_parquet_dataset
+from codeintel.core.datasets.scanning import (
+    ParquetScanOptions,
+    scan_parquet_dataset_with_telemetry,
+)
 from codeintel.core.execution.ids import RUN_PREFIX_ANALYTICS, new_run_id
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.primitives import TableSchema, resolve_stable_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.validation.reporters import (
     GRAPH_VALIDATION_TABLE_KEY,
@@ -226,7 +230,12 @@ def _scan_snapshot_table(
     )
     if reader is None:
         return None
-    return reader_to_table(reader)
+    table = reader_to_table(reader)
+    finalized = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=table_key, mode="tolerant"),
+    )
+    return finalized.good
 
 
 def _scan_snapshot_reader(
@@ -244,7 +253,7 @@ def _scan_snapshot_reader(
         log.warning("Post-run scan skipped; snapshot_id missing.")
         return None
 
-    reader = scan_parquet_dataset(
+    reader, telemetry = scan_parquet_dataset_with_telemetry(
         dataset_root=dataset_root,
         table_key=table_key,
         snapshot_id=snapshot_id,
@@ -252,8 +261,13 @@ def _scan_snapshot_reader(
             columns=tuple(columns) if columns is not None else None,
             repo=env.repo,
             commit=env.commit,
+            implicit_ordering=True,
+            require_sequenced_output=True,
+            metrics_enabled=True,
         ),
     )
+    if telemetry is not None:
+        log.debug("Post-run scan telemetry: %s", telemetry.to_mapping())
     if reader is None:
         return None
     missing = [name for name in ("repo", "commit") if name not in reader.schema.names]
@@ -285,6 +299,7 @@ def _write_dataset_table(
         partition_columns=_partition_columns_for_schema(table_schema),
         schema_hash=schema_hash(table_schema),
         manifest_extras={"table_schema": table_schema.to_json_obj()},
+        stable_sort_keys=resolve_stable_sort_keys(table_schema),
     )
     write_dataset(
         dataset_root=dataset_root,

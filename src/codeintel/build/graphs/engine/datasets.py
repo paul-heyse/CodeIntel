@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,6 +14,7 @@ import pyarrow.dataset as ds
 from codeintel.build.graphs.assembly import iter_normalized_tuples
 from codeintel.build.scopes.snapshot import SnapshotScanContext
 from codeintel.build.tabular.conversion import reader_to_table
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
@@ -33,7 +34,7 @@ class SnapshotScanRequest:
     dataset_root: Path
     table_key: str
     snapshot_id: str
-    columns: tuple[str, ...] | None = None
+    columns: tuple[str, ...] | Mapping[str, ds.Expression] | None = None
     repo: str | None = None
     commit: str | None = None
     batch_size: int | None = None
@@ -47,6 +48,19 @@ class SnapshotScanRequest:
     unify_schemas: bool = True
     scan_context: SnapshotScanContext | None = None
     apply_filter: bool = True
+    implicit_ordering: bool | None = True
+    require_sequenced_output: bool | None = True
+    metrics_enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class GraphViewScanOptions:
+    """Overrides for snapshot scan behavior in graph views."""
+
+    apply_filter: bool = True
+    implicit_ordering: bool | None = True
+    require_sequenced_output: bool | None = True
+    metrics_enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,8 +106,8 @@ class GraphViewFactory:
         self,
         *,
         table_key: str,
-        columns: Sequence[str] | None = None,
-        apply_filter: bool = True,
+        columns: Sequence[str] | Mapping[str, ds.Expression] | None = None,
+        scan_options: GraphViewScanOptions | None = None,
     ) -> pa.RecordBatchReader | None:
         """Return a record batch reader for a snapshot table.
 
@@ -103,15 +117,22 @@ class GraphViewFactory:
             Dataset table key.
         columns
             Optional column selection for the scan.
-        apply_filter
-            Whether to apply the snapshot filter expression.
+        scan_options
+            Optional scan overrides (filter, ordering, metrics).
 
         Returns
         -------
         pyarrow.RecordBatchReader | None
             Reader for the dataset snapshot or None when missing.
         """
-        resolved_columns = tuple(columns) if columns is not None else None
+        resolved_scan_options = scan_options or GraphViewScanOptions()
+        resolved_columns: tuple[str, ...] | Mapping[str, ds.Expression] | None
+        if isinstance(columns, Mapping):
+            resolved_columns = columns
+        elif columns is None:
+            resolved_columns = None
+        else:
+            resolved_columns = tuple(columns)
         request = SnapshotScanRequest(
             dataset_root=self.dataset_root,
             table_key=table_key,
@@ -120,7 +141,10 @@ class GraphViewFactory:
             repo=self.scan_context.repo,
             commit=self.scan_context.commit,
             scan_context=self.scan_context,
-            apply_filter=apply_filter,
+            apply_filter=resolved_scan_options.apply_filter,
+            implicit_ordering=resolved_scan_options.implicit_ordering,
+            require_sequenced_output=resolved_scan_options.require_sequenced_output,
+            metrics_enabled=resolved_scan_options.metrics_enabled,
         )
         return scan_snapshot_reader(request)
 
@@ -165,10 +189,7 @@ def resolve_dataset_root(
     pathlib.Path | None
         Resolved dataset root directory or None when not found.
     """
-    _ = _snapshot
-    if dataset_root_dir is not None:
-        return dataset_root_dir
-    return None
+    return dataset_root_dir
 
 
 def dataset_snapshot_exists(
@@ -282,7 +303,17 @@ def scan_snapshot_reader(
         columns=resolved_columns,
         schema=metadata_schema if metadata_schema is not None else options.schema,
         unify_schemas=request.unify_schemas,
+        implicit_ordering=request.implicit_ordering,
+        require_sequenced_output=request.require_sequenced_output,
+        metrics_enabled=request.metrics_enabled,
     )
+    if request.metrics_enabled:
+        _log_scan_telemetry(
+            dataset,
+            table_key=request.table_key,
+            snapshot_id=request.snapshot_id,
+            filter_expression=filter_expression,
+        )
     scanner = build_scanner(dataset, options=options)
     return scanner.to_reader()
 
@@ -290,7 +321,7 @@ def scan_snapshot_reader(
 def scan_snapshot_reader_with_columns(
     request: SnapshotScanRequest,
     *,
-    columns: tuple[str, ...] | None,
+    columns: tuple[str, ...] | Mapping[str, ds.Expression] | None,
 ) -> pa.RecordBatchReader | None:
     """Return a RecordBatchReader for a dataset snapshot with selected columns.
 
@@ -316,7 +347,12 @@ def scan_snapshot_table(
     reader = scan_snapshot_reader(request)
     if reader is None:
         return None
-    return reader_to_table(reader)
+    table = reader_to_table(reader)
+    finalized = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=request.table_key, mode="tolerant"),
+    )
+    return finalized.good
 
 
 def _scan_dataset(dataset_root: Path, table_key: str, snapshot_id: str) -> ds.Dataset | None:
@@ -336,10 +372,12 @@ def _scan_dataset(dataset_root: Path, table_key: str, snapshot_id: str) -> ds.Da
 
 def _resolve_columns(
     dataset: ds.Dataset,
-    columns: tuple[str, ...] | None,
-) -> tuple[str, ...] | None:
+    columns: tuple[str, ...] | Mapping[str, ds.Expression] | None,
+) -> tuple[str, ...] | Mapping[str, ds.Expression] | None:
     if columns is None:
         return None
+    if isinstance(columns, Mapping):
+        return columns
     available = set(dataset.schema.names)
     missing = [name for name in columns if name not in available]
     if missing:
@@ -350,6 +388,78 @@ def _resolve_columns(
         )
         return None
     return columns
+
+
+def _log_scan_telemetry(
+    dataset: ds.Dataset,
+    *,
+    table_key: str,
+    snapshot_id: str,
+    filter_expression: ds.Expression | None,
+) -> None:
+    fragments = _count_fragments(dataset, filter_expression)
+    rows = _count_rows(dataset, filter_expression)
+    LOG.debug(
+        "Dataset scan telemetry table=%s snapshot=%s fragments=%s rows=%s filter=%s",
+        table_key,
+        snapshot_id,
+        fragments,
+        rows,
+        filter_expression,
+    )
+
+
+def _count_fragments(
+    dataset: ds.Dataset,
+    filter_expression: ds.Expression | None,
+) -> int | None:
+    get_fragments = getattr(dataset, "get_fragments", None)
+    if not callable(get_fragments):
+        return None
+    try:
+        fragments = (
+            get_fragments(filter=filter_expression)
+            if filter_expression is not None
+            else get_fragments()
+        )
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return None
+    if not isinstance(fragments, Iterable):
+        return None
+    try:
+        return len(tuple(fragments))
+    except TypeError:
+        return None
+
+
+def _count_rows(
+    dataset: ds.Dataset,
+    filter_expression: ds.Expression | None,
+) -> int | None:
+    counter = getattr(dataset, "count_rows", None)
+    if callable(counter):
+        try:
+            count = counter() if filter_expression is None else counter(filter=filter_expression)
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            count = None
+        if isinstance(count, int):
+            return count
+    try:
+        scanner = (
+            dataset.scanner(filter=filter_expression)
+            if filter_expression is not None
+            else dataset.scanner()
+        )
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return None
+    count_rows = getattr(scanner, "count_rows", None)
+    if callable(count_rows):
+        try:
+            count = count_rows()
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            return None
+        return count if isinstance(count, int) else None
+    return None
 
 
 __all__ = [

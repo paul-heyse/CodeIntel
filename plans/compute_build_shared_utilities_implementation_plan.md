@@ -19,7 +19,7 @@
 - Do not include list payload columns in hashjoin inputs; explode or drop them first.
 - Apply deterministic ordering after hashjoin (stable sort indices preferred).
 
-## Implementation Status (Action Sets 1-5 Complete)
+## Implementation Status (Action Sets 1-11 Complete; Backlog Open)
 - Completed utilities: `src/codeintel/build/tabular/plan_ops.py` (Plan + HashJoinSpec),
   `src/codeintel/build/tabular/expr_vocab.py`, `src/codeintel/build/tabular/kernels.py`,
   `src/codeintel/build/tabular/explode_ops.py` (ExplodeSpec + error artifacts),
@@ -29,8 +29,9 @@
 - Scan/streaming upgrades: `src/codeintel/core/columnar/streaming.py` (projection expressions
   + ordering flags), `src/codeintel/core/datasets/scanner_ops.py` (mapping columns + ordering),
   `src/codeintel/core/datasets/scanning.py` (ParquetScanTelemetry +
-  scan_parquet_dataset_with_telemetry), `src/codeintel/storage/datasets/scanning.py`
-  (re-exports).
+  scan_parquet_dataset_with_telemetry + normalize_table_for_compute),
+  `src/codeintel/build/graphs/engine/datasets.py` (GraphViewScanOptions + telemetry),
+  `src/codeintel/storage/datasets/scanning.py` (re-exports).
 - Schema + row buffers: `src/codeintel/core/schemas/output_registry.py`
   (graph extras/extras_kv + graph.cpg_call_candidates), `config/schema_breaks.yaml` approvals,
   `src/codeintel/core/columnar/rows.py` (fill missing nullable columns).
@@ -38,18 +39,40 @@
   via explode + hash_join + finalize; call_wiring targets and registry inventory updated; cpg2
   call_wiring plane reads extras_kv.
 - Graph outputs finalize adoption: cfg_dfg/cdg/call_graph/import_graph/symbol_use/pdg now use
-  finalize_table and no longer emit extras_json; cpg2 assembly finalized with strict gates.
+  finalize_table and no longer emit extras_json; cpg2 assembly finalized with strict gates; and
+  analytics/validation outputs now finalize (native analytics modules + validation findings).
 - CPG2 plane migration: link/symbol/flow planes moved to Plan + HashJoinSpec with deterministic
-  ordering; ordinals now use hash_struct_ordinal; assembly ID hashing moved to Arrow kernels.
+  ordering; ordinals now use hash_struct_ordinal; cpg_edge_ordinal uses Arrow hash kernels; and
+  GOID hashing uses hash_struct_goid.
+- Edge builder conversions: CPG2 call_wiring + overlay/SCIP/bytecode/inspect/symtable edges now
+  finalize via finalize_cpg_edge_rows (explode + finalize).
+- Threading/chunking integration: configure_arrow_threading now runs in
+  normalize_table_for_compute (and normalize_table_for_join); materialize_plan normalizes plan
+  outputs; scan_parquet_table normalizes tables for compute kernels.
 - Action Set 5 completed: extras/extras_kv migrations for remaining CPG2/legacy planes
   (ast/bytecode/inspect/overlays/py_sym/treesitter/scip/edges), hashjoin adoption in ingestion
   (syntax_enrich/syntax_augment/extraction_targets/scip_resolution) + analytics/subsystems/cache,
   Plan/HashJoin reexports in acero_ops/arrow_ops, and streaming boundaries in join pipelines
-  (to_reader + reader_to_table).
-- Pending migrations: scan ops pushdown adoption across dataset readers, finalize gate adoption
-  for analytics/validation outputs, remaining join-heavy pipelines outside CPG2/ingestion,
-  deterministic IDs outside CPG2/assembly, edge builders beyond call_wiring, thread/chunking
-  integration, optional escape hatches, and schema snapshot refresh (deferred).
+  (materialize_plan + normalize_table_for_compute).
+- Action Set 6 completed: scan pushdown + telemetry defaults wired through build/storage/serving
+  readers (ParquetScanOptions metrics_enabled + ordering defaults, GraphViewScanOptions defaults,
+  export/quality/causal scan usage, storage query scans, and serving DuckDB relation scans).
+- Action Set 7 completed: deterministic IDs beyond graph/CPG2 now use Arrow hash kernels for
+  compute_goid and SCIP occurrence IDs.
+- Action Set 8 completed: finalize-on-read gates added for graph snapshot tables, post-run
+  analytics readers, and Parquet scan helpers; serving DuckDB relation scans finalize aligned
+  inputs when enabled.
+- Action Set 9 completed: call wiring IDs now use Arrow hash kernels (stable_decimal_id), and
+  core short hash helpers route non-security hashes through Arrow kernels; join-heavy pipeline
+  sweep outside CPG2/ingestion found no additional conversions required.
+- Action Set 10 completed: guardrail cleanup + validation/serving finalize consistency
+  (streaming-safe iteration + finalize boundaries), plus removal of remaining to_pylist usage
+  in export logging.
+- Action Set 11 completed: plan materialization normalized across join-heavy pipelines and
+  edge builder audit found no remaining non-CPG2 list payloads requiring explode conversion.
+- Pending migrations: schema snapshot refresh (deferred) + guardrails blocked by missing
+  analytics.config_references schema, optional escape hatches, and any new pipelines that
+  bypass shared scan/plan helpers.
 
 ## Phase sequencing
 - Phase 0: Schema and contract updates (extras_json removal, extras/extras_kv additions).
@@ -87,14 +110,133 @@ Deliverables
 - Any payload encoding helpers are removed or replaced with nested_ops helpers.
 - Finalize gates remain the sole output boundary for graph tables.
 
+## Action Set 6 (Completed)
+
+Scope
+- Adopt scan pushdown defaults (projection expressions + ordering flags) and telemetry logging
+  across build/storage/serving dataset readers.
+
+Status
+- Completed.
+
+Targets
+- src/codeintel/core/datasets/scanning.py
+- src/codeintel/build/exports/common.py
+- src/codeintel/build/hamilton/post_run_quality_outputs.py
+- src/codeintel/build/causal_analysis/scan_utils.py
+- src/codeintel/build/graphs/engine/datasets.py
+- src/codeintel/storage/queries/parquet.py
+- src/codeintel/storage/serving/snapshot_service.py
+- src/codeintel/serving/semantic/duckdb_relation_builder.py
+
+Deliverables
+- metrics_enabled/implicit_ordering/require_sequenced_output defaults applied in readers.
+- Telemetry emitted for Parquet scans when enabled (debug logging in scan helper).
+- Scan paths now use consistent ordering flags for deterministic processing.
+
+## Action Set 7 (Completed)
+
+Scope
+- Extend deterministic ID policy beyond graph/CPG2 to remaining build identifiers.
+
+Status
+- Completed.
+
+Targets
+- src/codeintel/build/graphs/compute/goid.py
+- src/codeintel/build/hamilton/native/ingestion/scip_resolution.py
+
+Deliverables
+- compute_goid now uses Arrow hash kernels with DECIMAL(38,0) normalization.
+- SCIP occurrence IDs use Arrow hash kernels and normalized string IDs.
+
+## Action Set 8 (Completed)
+
+Scope
+- Enforce finalize-on-read gates for dataset readers (graph snapshot tables, post-run analytics,
+  and serving/storage scans) to ensure contracts are respected at consumption boundaries.
+
+Status
+- Completed.
+
+Targets
+- src/codeintel/core/datasets/scanning.py
+- src/codeintel/build/graphs/engine/datasets.py
+- src/codeintel/build/hamilton/post_run_quality_outputs.py
+- src/codeintel/storage/queries/parquet.py
+- src/codeintel/serving/semantic/duckdb_relation_builder.py
+
+Deliverables
+- ParquetScanOptions supports finalize_mode for full-table reads.
+- Graph snapshot table scans and post-run analytics reads finalize with tolerant gates.
+- Serving DuckDB relation scans finalize aligned inputs when enabled.
+
+## Action Set 9 (Completed)
+
+Scope
+- Migrate remaining deterministic IDs to Arrow hash kernels and confirm join-heavy pipeline
+  coverage outside CPG2/ingestion.
+
+Status
+- Completed.
+
+Targets
+- src/codeintel/build/hamilton/native/graphs/call_wiring.py
+- src/codeintel/core/hashing/short.py
+
+Deliverables
+- call_id stable IDs use Arrow hash kernels via stable_decimal_id.
+- short_hash/sha1_short/sha256_short use Arrow kernels for non-security hashes.
+- Join-heavy pipeline sweep found no additional conversions required.
+
+## Action Set 10 (Completed)
+
+Scope
+- Guardrail cleanup + validation/serving finalize consistency: remove remaining to_pylist and
+  streaming violations in validation/export paths and ensure finalize boundaries are respected
+  where validation consumes tables.
+
+Status
+- Completed (guardrails still blocked by missing analytics.config_references schema).
+
+Targets
+- src/codeintel/core/validation/engine.py
+- src/codeintel/storage/validation/columnar.py
+- src/codeintel/serving/http/export_dispatch.py
+
+Deliverables
+- Validation/export paths use streaming-safe iteration helpers.
+- Finalize boundaries stay consistent for validation consumption points.
+- Guardrail to_pylist checks pass; remaining guardrail failures are schema-related.
+
+## Action Set 11 (Completed)
+
+Scope
+- Remaining edge builders + threading/chunking policy rollout: normalize plan materialization
+  and ensure chunk consolidation/threading across join-heavy pipelines; audit for non-CPG2 list
+  payload edge builders that require explode conversions.
+
+Status
+- Completed (audit found no additional non-CPG2 edge builders requiring explode migration).
+
+Targets
+- src/codeintel/build/tabular/plan_ops.py (materialize_plan)
+- src/codeintel/core/columnar/normalization.py
+- join-heavy plan materializations (call_wiring, CPG2 planes, ingestion joins, analytics cache)
+
+Deliverables
+- Plan materialization uses shared normalization (no streaming_to_table guardrail hits).
+- Chunk consolidation + Arrow threading configured at compute boundaries.
+- Edge builder audit completed; no remaining non-CPG2 list payload migrations required.
+
 ## Scope items
 
 ### 1) Plan Ops (Acero DSL)
 
 Status
 - Implemented in `src/codeintel/build/tabular/plan_ops.py`; reexports added in acero_ops and
-  arrow_ops; adopted in CPG2 join planes and ingestion join pipelines; remaining pipeline
-  adoption pending.
+  arrow_ops; adopted in CPG2 join planes, ingestion joins, analytics cache, and call_wiring
+  joins with materialize_plan for guardrail-safe materialization.
 
 Target files
 - src/codeintel/build/tabular/plan_ops.py (new)
@@ -106,7 +248,7 @@ Representative pattern
 import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
-from codeintel.build.tabular.plan_ops import Plan
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 
 scan = Plan.scan(
     dataset,
@@ -135,7 +277,7 @@ plan = (
     )
 )
 
-table = plan.to_table(use_threads=True)
+table = materialize_plan(plan, use_threads=True)
 ```
 
 Distinctive pattern to standardize
@@ -149,7 +291,7 @@ Distinctive pattern to standardize
 Status
 - HashJoinSpec is implemented; adopted in call_wiring, CPG2 link/symbol/flow, ingestion join
   pipelines (syntax_enrich/syntax_augment/extraction_targets/scip_resolution), and
-  analytics/subsystems/cache; remaining join-heavy pipelines pending.
+  analytics/subsystems/cache; audit found no additional join-heavy pipelines pending.
 
 Target files
 - src/codeintel/build/tabular/plan_ops.py (new)
@@ -160,7 +302,7 @@ Representative pattern
 ```python
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 
 left = (
     Plan.table(left_table)
@@ -185,7 +327,7 @@ join_spec = HashJoinSpec(
 
 joined = left.hash_join(right=right, spec=join_spec)
 
-result = joined.to_table(use_threads=True)
+result = materialize_plan(joined, use_threads=True)
 result = result.take(stable_sort_indices(result, sort_keys=[("key", "ascending")]))
 ```
 
@@ -200,13 +342,16 @@ Distinctive pattern to standardize
 ### 3) Scan Ops (pushdown + telemetry)
 
 Status
-- Implemented scan options (projection mapping + ordering flags) and telemetry helper; adoption
-  pending across analytics/validation and dataset readers.
+- Implemented scan options (projection mapping + ordering flags) and telemetry helper; adopted
+  across build/storage/serving readers (graph views, exports, causal scans, storage queries,
+  serving scans). New readers should use shared scan helpers.
 
 Target files
 - src/codeintel/core/datasets/scanner_ops.py (extend parameters)
 - src/codeintel/core/datasets/scanning.py (surface pushdown and metrics)
 - src/codeintel/build/tabular/arrow_ops.py (read helpers for build pipelines)
+- src/codeintel/build/graphs/engine/datasets.py (GraphViewScanOptions + scan wiring)
+- src/codeintel/build/graphs/engine/views.py (scan option usage)
 
 Representative pattern
 ```python
@@ -248,8 +393,8 @@ Distinctive pattern to standardize
 ### 4) Streaming boundaries (to_reader vs to_table)
 
 Status
-- Implemented in `Plan.to_reader`/`Plan.to_table`; adopted in join pipelines
-  (CPG2/ingestion/analytics); remaining pipeline adoption pending.
+- Implemented `Plan.to_reader` + materialize_plan; join pipelines now materialize via shared
+  normalization to satisfy streaming guardrails; `Plan.to_table` reserved for non-build paths.
 
 Target files
 - src/codeintel/build/tabular/plan_ops.py (new)
@@ -263,19 +408,23 @@ reader = plan.to_reader(use_threads=True)
 for batch in reader:
     process_batch(batch)
 
-# Materialization boundary
-table = plan.to_table(use_threads=True)
+# Materialization boundary (guardrail-safe)
+from codeintel.build.tabular.plan_ops import materialize_plan
+
+table = materialize_plan(plan, use_threads=True)
 ```
 
 Distinctive pattern to standardize
-- Use to_reader for streaming pipelines and to_table at finalize boundaries.
+- Use to_reader for streaming pipelines and materialize_plan at finalize boundaries.
+- Reserve Plan.to_table for non-build contexts that are not guardrailed.
 
 
 ### 5) Explode Ops (list explode + alignment)
 
 Status
-- Implemented in `src/codeintel/build/tabular/explode_ops.py`; adopted in call_wiring pilot;
-  remaining edge builders pending.
+- Implemented in `src/codeintel/build/tabular/explode_ops.py`; adopted in call_wiring and CPG2
+  edge builders via finalize_cpg_edge_rows; audit found no remaining non-CPG2 list payload
+  edge builders requiring explode conversion.
 
 Target files
 - src/codeintel/build/tabular/explode_ops.py (new)
@@ -314,11 +463,13 @@ Distinctive pattern to standardize
 
 Status
 - Implemented in `src/codeintel/build/tabular/finalize_ops.py`; adopted for graph outputs and
-  CPG2 assembly; analytics/validation outputs pending.
+  CPG2 assembly; analytics/validation outputs now finalize via helpers and findings.
 
 Target files
 - src/codeintel/build/tabular/finalize_ops.py (new)
 - src/codeintel/build/tabular/arrow_ops.py (optional reexports)
+- src/codeintel/build/hamilton/native/analytics/finalize_helpers.py
+- src/codeintel/build/graphs/validation/findings.py
 
 Representative pattern
 ```python
@@ -444,13 +595,14 @@ Distinctive pattern to standardize
 ### 9) Deterministic IDs (Arrow hash kernels)
 
 Status
-- Hash kernel wrapper implemented; assembly IDs + CPG2 ordinals migrated; remaining pipelines
-  pending.
+- Completed: hash kernel wrapper implemented; assembly IDs + CPG2 ordinals migrated; GOID hashing,
+  call wiring IDs, and short hashes now use Arrow kernels.
 
 Target files
 - src/codeintel/build/tabular/kernels.py (new)
 - src/codeintel/build/graphs/assembly/ids.py (migrate to vectorized hash)
 - src/codeintel/build/hamilton/native/graphs/cpg2/ids.py (migrate to vectorized hash)
+- src/codeintel/build/hamilton/native/graphs/goids.py
 
 Representative pattern
 ```python
@@ -472,19 +624,21 @@ Distinctive pattern to standardize
 ### 10) Threading + chunking
 
 Status
-- Not started (policy defined only).
+- Completed: normalize_table_for_compute configures Arrow threading (via shared settings) and
+  materialize_plan consolidates chunks across plan materialization; scan_parquet_table
+  normalizes tables for compute kernels.
 
 Target files
+- src/codeintel/core/columnar/normalization.py
+- src/codeintel/build/tabular/plan_ops.py
 - src/codeintel/build/tabular/arrow_ops.py
 - src/codeintel/core/datasets/scanning.py
 
 Representative pattern
 ```python
-import pyarrow as pa
+from codeintel.core.columnar.normalization import normalize_table_for_compute
 
-table = table.combine_chunks()
-pa.set_cpu_count(32)
-pa.set_io_thread_count(32)
+table = normalize_table_for_compute(table)
 ```
 
 Distinctive pattern to standardize
@@ -495,11 +649,17 @@ Distinctive pattern to standardize
 ### 11) Edge builders -> list-of-struct + explode + finalize
 
 Status
-- Pilot completed for graph.cpg_edges_calls; remaining edge builders pending.
+- Completed for graph.cpg_edges_calls and CPG2 edge builders (call_wiring, overlays, scip);
+  audit found no remaining non-CPG2 list payload edge builders requiring explode migration.
 
 Target files
 - src/codeintel/build/hamilton/native/graphs/call_wiring.py
 - src/codeintel/build/hamilton/native/graphs/cpg2/planes/call_wiring.py
+- src/codeintel/build/hamilton/native/graphs/cpg2/edge_helpers.py
+- src/codeintel/build/hamilton/native/graphs/cpg2/planes/overlays_bytecode.py
+- src/codeintel/build/hamilton/native/graphs/cpg2/planes/overlays_inspect.py
+- src/codeintel/build/hamilton/native/graphs/cpg2/planes/overlays_symtable.py
+- src/codeintel/build/hamilton/native/graphs/cpg2/planes/scip.py
 - src/codeintel/build/hamilton/native/graphs/cpg/edges.py
 - src/codeintel/core/schemas/output_registry.py (new graph.cpg_call_candidates table)
 - config/registry/dag_output_inventory.yaml
@@ -556,7 +716,7 @@ Distinctive pattern to standardize
 
 Status
 - Completed for CPG2 link/symbol/flow and ingestion join pipelines; analytics/subsystems/cache
-  migrated; remaining join-heavy pipelines pending.
+  migrated; audit found no remaining join-heavy pipelines pending.
 
 Target files
 - src/codeintel/build/hamilton/native/graphs/cpg2/planes/link.py
@@ -567,7 +727,7 @@ Representative pattern
 ```python
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 
 plan = (
     Plan.table(left)
@@ -585,7 +745,7 @@ plan = (
     .project({"src_cpg_node_id": E.field("cpg_node_id")})
 )
 
-joined = plan.to_table(use_threads=True)
+joined = materialize_plan(plan, use_threads=True)
 joined = joined.take(stable_sort_indices(joined, sort_keys=[("src_cpg_node_id", "ascending")]))
 ```
 
@@ -598,8 +758,7 @@ Distinctive pattern to standardize
 ### 13) Graph analysis outputs -> finalize gate + kernel masks
 
 Status
-- Completed for cfg_dfg/cdg/call_graph/import_graph/symbol_use/pdg + CPG2 assemble; analytics
-  outputs pending.
+- Completed for cfg_dfg/cdg/call_graph/import_graph/symbol_use/pdg + CPG2 assemble.
 
 Target files
 - src/codeintel/build/hamilton/native/graphs/cfg_dfg.py
@@ -634,8 +793,8 @@ Distinctive pattern to standardize
 ### 14) Analytics and validation -> scan ops + finalize
 
 Status
-- Partial: hashjoin/plan conversion in analytics/subsystems/cache; scan ops + finalize adoption
-  pending for analytics/validation pipelines.
+- Completed: hashjoin/plan conversion in analytics/subsystems/cache; finalize adoption completed;
+  scan ops pushdown/telemetry wired through shared dataset readers for analytics/validation.
 
 Target files
 - src/codeintel/build/analytics/**
@@ -708,8 +867,7 @@ Representative pattern
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
-from codeintel.build.graphs.assembly import reader_to_table
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 
 candidates = table_for_rows("graph.cpg_call_candidates", rows)[0]
 
@@ -762,7 +920,7 @@ plan = (
     )
 )
 
-edges = reader_to_table(plan.to_reader(use_threads=True))
+edges = materialize_plan(plan, use_threads=True)
 edges = edges.take(
     stable_sort_indices(
         edges,

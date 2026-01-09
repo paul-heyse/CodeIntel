@@ -16,6 +16,7 @@ from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.columnar.schema_ops import unify_schemas
+from codeintel.core.columnar.type_normalization import binary_view_cast_type, string_view_cast_type
 from codeintel.core.schemas.arrow_gen import (
     DEFAULT_EXTRAS_COLUMN,
     DEFAULT_EXTRAS_POLICY,
@@ -200,7 +201,7 @@ def _normalize_string_view_schema(schema: pa.Schema) -> pa.Schema:
     fields: list[pa.Field] = []
     changed = False
     for field in schema:
-        normalized_type = _string_view_cast_type(field.type)
+        normalized_type = binary_view_cast_type(string_view_cast_type(field.type))
         if normalized_type != field.type:
             updated_field = field.with_type(normalized_type)
             changed = True
@@ -210,84 +211,6 @@ def _normalize_string_view_schema(schema: pa.Schema) -> pa.Schema:
     if not changed:
         return schema
     return pa.schema(fields, metadata=schema.metadata)
-
-
-def _string_view_cast_type(data_type: pa.DataType) -> pa.DataType:
-    result = data_type
-    if pa.types.is_string_view(data_type):
-        result = pa.string()
-    elif _is_binary_view_type(data_type):
-        result = pa.binary()
-    elif pa.types.is_dictionary(data_type):
-        result = _string_view_cast_dictionary(cast("pa.DictionaryType", data_type))
-    elif _is_list_type(data_type):
-        result = _string_view_cast_list(data_type)
-    elif pa.types.is_struct(data_type):
-        result = _string_view_cast_struct(cast("pa.StructType", data_type))
-    elif pa.types.is_map(data_type):
-        result = _string_view_cast_map(cast("pa.MapType", data_type))
-    return result
-
-
-def _is_list_type(data_type: pa.DataType) -> bool:
-    list_view = getattr(pa.types, "is_list_view", None)
-    list_view_check = list_view if callable(list_view) else None
-    large_list_view = getattr(pa.types, "is_large_list_view", None)
-    large_list_view_check = large_list_view if callable(large_list_view) else None
-    return (
-        pa.types.is_list(data_type)
-        or pa.types.is_large_list(data_type)
-        or pa.types.is_fixed_size_list(data_type)
-        or (list_view_check is not None and bool(list_view_check(data_type)))
-        or (large_list_view_check is not None and bool(large_list_view_check(data_type)))
-    )
-
-
-def _is_binary_view_type(data_type: pa.DataType) -> bool:
-    is_binary_view = getattr(pa.types, "is_binary_view", None)
-    if is_binary_view is None:
-        return False
-    return bool(is_binary_view(data_type))
-
-
-def _string_view_cast_dictionary(data_type: pa.DictionaryType) -> pa.DataType:
-    value_type = _string_view_cast_type(data_type.value_type)
-    if value_type == data_type.value_type:
-        return data_type
-    return pa.dictionary(data_type.index_type, value_type, ordered=data_type.ordered)
-
-
-def _string_view_cast_list(data_type: pa.DataType) -> pa.DataType:
-    list_type = cast("pa.ListType", data_type)
-    value_type = _string_view_cast_type(list_type.value_type)
-    if value_type == list_type.value_type:
-        return data_type
-    if pa.types.is_large_list(data_type):
-        return pa.large_list(value_type)
-    if pa.types.is_list(data_type):
-        return pa.list_(value_type)
-    return pa.list_(value_type, list_size=data_type.list_size)
-
-
-def _string_view_cast_struct(data_type: pa.StructType) -> pa.DataType:
-    fields: list[pa.Field] = []
-    changed = False
-    for field in data_type:
-        next_type = _string_view_cast_type(field.type)
-        if next_type != field.type:
-            changed = True
-        fields.append(field.with_type(next_type))
-    if not changed:
-        return data_type
-    return pa.struct(fields)
-
-
-def _string_view_cast_map(data_type: pa.MapType) -> pa.DataType:
-    key_type = _string_view_cast_type(data_type.key_type)
-    item_type = _string_view_cast_type(data_type.item_type)
-    if key_type == data_type.key_type and item_type == data_type.item_type:
-        return data_type
-    return pa.map_(key_type, item_type, keys_sorted=data_type.keys_sorted)
 
 
 def _resolved_field(field: pa.Field, unified: pa.Schema) -> pa.Field:

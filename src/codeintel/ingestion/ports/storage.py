@@ -100,6 +100,56 @@ class IngestStoragePort(Protocol):
         """
         ...
 
+    def write_table(
+        self,
+        table_key: str,
+        table: pa.Table,
+        *,
+        scope: str | None = None,
+    ) -> BatchResult:
+        """Write a table payload to storage.
+
+        Parameters
+        ----------
+        table_key
+            Registry table key (e.g., "core.ast_nodes").
+        table
+            Arrow table payload aligned to the table contract.
+        scope
+            Optional scope identifier for logging (e.g., "repo@commit").
+
+        Returns
+        -------
+        BatchResult
+            Metadata about the write operation.
+        """
+        ...
+
+    def write_reader(
+        self,
+        table_key: str,
+        reader: pa.RecordBatchReader,
+        *,
+        scope: str | None = None,
+    ) -> BatchResult:
+        """Write a RecordBatchReader stream to storage.
+
+        Parameters
+        ----------
+        table_key
+            Registry table key (e.g., "core.ast_nodes").
+        reader
+            Arrow reader payload aligned to the table contract.
+        scope
+            Optional scope identifier for logging (e.g., "repo@commit").
+
+        Returns
+        -------
+        BatchResult
+            Metadata about the write operation.
+        """
+        ...
+
     def delete_by_params(
         self,
         table_key: str,

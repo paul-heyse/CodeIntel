@@ -23,8 +23,12 @@ from codeintel.core.validation.profiles import (
     resolve_validation_depth,
 )
 from codeintel.core.validation.schema_constraints import (
+    ListAlignmentSpec,
     arrow_batch_errors,
     arrow_table_errors,
+    list_alignment_errors_for_batch,
+    list_alignment_errors_for_table,
+    list_alignment_specs_for_table_key,
     nullability_errors_for_batch,
     nullability_errors_for_table,
     observation_errors_for_batch,
@@ -51,6 +55,7 @@ class ColumnarValidationContext:
     table_schema: TableSchema | None = None
     schema_observation: SchemaObservationRecord | None = None
     validation_profile: ValidationProfile | None = None
+    list_alignments: Sequence[ListAlignmentSpec] = ()
 
 
 class TableValidationError(ValueError):
@@ -123,6 +128,9 @@ def validate_table(
     schema = resolved_context.table_schema or _lookup_table_schema(table_key)
     observation = resolved_context.schema_observation
     validation_profile = resolved_context.validation_profile
+    list_alignments = resolved_context.list_alignments or list_alignment_specs_for_table_key(
+        table_key
+    )
     resolved_mode, depth = _resolve_validation_settings(validation_profile, mode)
     if schema is None or resolved_mode == "skip":
         return table
@@ -134,6 +142,13 @@ def validate_table(
     if depth != "schema-only":
         errors.extend(nullability_errors_for_table(schema, table))
         errors.extend(observation_errors_for_table(schema, table, observation))
+        if list_alignments:
+            errors.extend(
+                list_alignment_errors_for_table(
+                    table,
+                    alignments=list_alignments,
+                )
+            )
         if depth == "data-strict" and schema.primary_key:
             unique_state = _UniqueKeyState(tuple(schema.primary_key))
             for batch in table.to_batches():
@@ -162,6 +177,9 @@ def validate_record_batch_reader(
     schema = resolved_context.table_schema or _lookup_table_schema(table_key)
     observation = resolved_context.schema_observation
     validation_profile = resolved_context.validation_profile
+    list_alignments = resolved_context.list_alignments or list_alignment_specs_for_table_key(
+        table_key
+    )
     resolved_mode, depth = _resolve_validation_settings(validation_profile, mode)
     if schema is None or resolved_mode == "skip":
         return reader
@@ -183,6 +201,13 @@ def validate_record_batch_reader(
             batch_errors.extend(arrow_batch_errors(batch))
             batch_errors.extend(nullability_errors_for_batch(table_schema, batch))
             batch_errors.extend(observation_errors_for_batch(table_schema, batch, observation))
+            if list_alignments:
+                batch_errors.extend(
+                    list_alignment_errors_for_batch(
+                        batch,
+                        alignments=list_alignments,
+                    )
+                )
             if unique_state is not None:
                 batch_errors.extend(unique_state.check_batch(batch))
             if batch_errors:

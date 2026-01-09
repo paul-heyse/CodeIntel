@@ -16,14 +16,14 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import msgspec
-import pyarrow as pa
 
 from codeintel.build.graphs.runtime import GraphRuntime
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
-from codeintel.core.schemas.primitives import TableSchema
-from codeintel.core.schemas.row_models import columns_for_table_key
+from codeintel.core.schemas.primitives import TableSchema, resolve_stable_sort_keys
 from codeintel.core.validation import (
     BaseValidationOptions,
     GraphValidationReporter,
@@ -175,7 +175,12 @@ def _persist_findings_parquet(
         log.warning("Graph validation persistence skipped; snapshot_id missing.")
         return False
     normalized_rows = _normalize_rows(rows)
-    table = _rows_to_arrow_table(GRAPH_VALIDATION_TABLE_KEY, normalized_rows)
+    table, _ = table_for_rows(GRAPH_VALIDATION_TABLE_KEY, normalized_rows)
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=GRAPH_VALIDATION_TABLE_KEY, mode="tolerant"),
+    )
+    table = result.good
     table_schema = table_schema_from_arrow_schema(
         arrow_schema=table.schema,
         table_key=GRAPH_VALIDATION_TABLE_KEY,
@@ -200,6 +205,7 @@ def _persist_findings_parquet(
         schema_hash=schema_hash_value,
         manifest_extras={"table_schema": table_schema.to_json_obj()},
         schema_metadata=schema_metadata,
+        stable_sort_keys=resolve_stable_sort_keys(table_schema),
     )
     write_dataset(
         dataset_root=dataset_root,
@@ -243,17 +249,6 @@ def _normalize_metadata(value: object) -> object:
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
     except TypeError:
         return str(value)
-
-
-def _rows_to_arrow_table(table_key: str, rows: Sequence[Mapping[str, object]]) -> pa.Table:
-    columns = columns_for_table_key(table_key)
-    if columns is None:
-        return pa.Table.from_pylist(list(rows))
-    ordered_rows: list[dict[str, object]] = []
-    for row in rows:
-        ordered = {name: row.get(name) for name in columns}
-        ordered_rows.append(ordered)
-    return pa.Table.from_pylist(ordered_rows)
 
 
 def _partition_columns_for_schema(table_schema: TableSchema) -> tuple[str, ...]:

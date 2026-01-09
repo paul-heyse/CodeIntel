@@ -22,11 +22,10 @@ from codeintel.build.tabular.compute_helpers import (
     safe_filter_expr,
 )
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
-from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.rows import empty_table_for_table
 
@@ -332,7 +331,7 @@ def _symbol_goid_joined_table(
         ),
     )
     joined = joined.filter(E.is_valid("dst_cpg_node_id"))
-    joined_table = reader_to_table(joined.to_reader(use_threads=True))
+    joined_table = materialize_plan(joined, use_threads=True)
     if joined_table.num_rows > 0:
         joined_table = joined_table.take(
             stable_sort_indices(
@@ -516,7 +515,7 @@ def _join_symbol_relationship_anchor(
             right_output=[id_field],
         ),
     )
-    return reader_to_table(joined.to_reader(use_threads=True))
+    return materialize_plan(joined, use_threads=True)
 
 
 def _upsert_column(

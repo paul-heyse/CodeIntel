@@ -12,7 +12,10 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.finalize_ops import FinalizeMode, FinalizeSpec, finalize_table
 from codeintel.core.columnar.masks import equal_expr
+from codeintel.core.columnar.normalization import normalize_table_for_compute
+from codeintel.core.columnar.plan_ops import build_scan_plan
 from codeintel.core.columnar.streaming import DatasetScanOptions
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
@@ -35,6 +38,7 @@ class ParquetScanOptions:
     """Options for snapshot-scoped parquet scans."""
 
     columns: Sequence[str] | Mapping[str, ds.Expression] | None = None
+    provenance_columns: Sequence[str] = ()
     repo: str | None = None
     commit: str | None = None
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE
@@ -47,6 +51,8 @@ class ParquetScanOptions:
     parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
     implicit_ordering: bool | None = None
     require_sequenced_output: bool | None = None
+    metrics_enabled: bool = False
+    finalize_mode: FinalizeMode | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +64,26 @@ class ParquetScanTelemetry:
     fragment_count: int | None
     row_count: int | None
     filter_expression: ds.Expression | None
+
+    def to_mapping(self) -> dict[str, object]:
+        """Return a mapping representation for telemetry logging.
+
+        Returns
+        -------
+        dict[str, object]
+            Mapping payload suitable for logs or metrics sinks.
+        """
+        payload: dict[str, object] = {
+            "table_key": self.table_key,
+            "snapshot_id": self.snapshot_id,
+        }
+        if self.fragment_count is not None:
+            payload["fragment_count"] = self.fragment_count
+        if self.row_count is not None:
+            payload["row_count"] = self.row_count
+        if self.filter_expression is not None:
+            payload["filter_expression"] = str(self.filter_expression)
+        return payload
 
 
 def scan_parquet_dataset(
@@ -74,15 +100,29 @@ def scan_parquet_dataset(
     pa.RecordBatchReader | None
         RecordBatchReader when a dataset snapshot is available, otherwise None.
     """
+    resolved = options or ParquetScanOptions()
+    if resolved.metrics_enabled:
+        reader, telemetry = scan_parquet_dataset_with_telemetry(
+            dataset_root=dataset_root,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+            options=resolved,
+        )
+        if telemetry is not None:
+            LOG.debug("Parquet scan telemetry: %s", telemetry.to_mapping())
+        return reader
     prepared = _prepare_parquet_dataset(
         dataset_root=dataset_root,
         table_key=table_key,
         snapshot_id=snapshot_id,
-        options=options,
+        options=resolved,
     )
     if prepared is None:
         return None
     dataset, scan_options = prepared
+    plan_reader = _plan_scan_reader(dataset, scan_options)
+    if plan_reader is not None:
+        return plan_reader
     scanner = build_scanner(dataset, options=scan_options)
     return scanner.to_reader()
 
@@ -110,12 +150,15 @@ def scan_parquet_dataset_with_telemetry(
     if prepared is None:
         return None, None
     dataset, scan_options = prepared
-    telemetry = _collect_parquet_scan_telemetry(
+    telemetry = collect_parquet_scan_telemetry(
         dataset=dataset,
         table_key=table_key,
         snapshot_id=snapshot_id,
         filter_expression=scan_options.filter_expression,
     )
+    plan_reader = _plan_scan_reader(dataset, scan_options)
+    if plan_reader is not None:
+        return plan_reader, telemetry
     scanner = build_scanner(dataset, options=scan_options)
     return scanner.to_reader(), telemetry
 
@@ -163,11 +206,38 @@ def _prepare_parquet_dataset(
         parquet_use_buffered_stream=resolved.parquet_use_buffered_stream,
         parquet_buffer_size=resolved.parquet_buffer_size,
         columns=resolved.columns,
+        provenance_columns=resolved.provenance_columns,
         implicit_ordering=resolved.implicit_ordering,
         require_sequenced_output=resolved.require_sequenced_output,
+        metrics_enabled=resolved.metrics_enabled,
         unify_schemas=True,
     )
     return dataset, scan_options
+
+
+def _plan_scan_reader(
+    dataset: ds.Dataset,
+    scan_options: DatasetScanOptions,
+) -> pa.RecordBatchReader | None:
+    use_threads = scan_options.use_threads
+    resolved_use_threads = use_threads if use_threads is not None else True
+    try:
+        plan = build_scan_plan(
+            dataset,
+            columns=scan_options.projection_columns(),
+            filter_expr=scan_options.filter_expression,
+            implicit_ordering=scan_options.implicit_ordering,
+            require_sequenced_output=scan_options.require_sequenced_output,
+        )
+        return plan.to_reader(use_threads=resolved_use_threads)
+    except (
+        pa.ArrowInvalid,
+        pa.ArrowNotImplementedError,
+        pa.ArrowTypeError,
+        TypeError,
+        ValueError,
+    ):
+        return None
 
 
 def scan_parquet_table(
@@ -192,7 +262,37 @@ def scan_parquet_table(
     )
     if reader is None:
         return None
-    return reader_to_table(reader)
+    resolved = options or ParquetScanOptions()
+    table = normalize_table_for_compute(reader_to_table(reader))
+    if resolved.finalize_mode is None or resolved.columns is not None:
+        return table
+    finalized = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=table_key, mode=resolved.finalize_mode),
+    )
+    return finalized.good
+
+
+def collect_parquet_scan_telemetry(
+    *,
+    dataset: ds.Dataset,
+    table_key: str,
+    snapshot_id: str,
+    filter_expression: ds.Expression | None,
+) -> ParquetScanTelemetry:
+    """Collect scan telemetry for a dataset scan plan.
+
+    Returns
+    -------
+    ParquetScanTelemetry
+        Telemetry summary for the dataset scan.
+    """
+    return _collect_parquet_scan_telemetry(
+        dataset=dataset,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+        filter_expression=filter_expression,
+    )
 
 
 def _collect_parquet_scan_telemetry(
@@ -277,6 +377,7 @@ def _coerce_int(value: object) -> int | None:
 __all__ = [
     "ParquetScanOptions",
     "ParquetScanTelemetry",
+    "collect_parquet_scan_telemetry",
     "scan_parquet_dataset",
     "scan_parquet_dataset_with_telemetry",
     "scan_parquet_table",

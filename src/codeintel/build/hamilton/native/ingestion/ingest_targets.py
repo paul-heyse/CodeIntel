@@ -67,11 +67,14 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_helper, tag_tool
-from codeintel.build.hamilton.transforms.ingestion_normalize import normalize_ingest_frame
+from codeintel.build.hamilton.transforms.ingestion_normalize import (
+    finalize_ingest_table,
+    normalize_ingest_frame,
+)
 from codeintel.build.hamilton.transforms.registry_inject import inject_from_registry
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
-from codeintel.build.tabular.arrow_ops import dedupe_table_for_table, emit_alignment_report
+from codeintel.build.tabular.arrow_ops import emit_alignment_report
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import (
@@ -548,30 +551,42 @@ def t__modules__ingest(
         scope=None,
         require_scope_columns=False,
     )
-    module_table = dedupe_table_for_table(MODULES_TABLE_KEY, module_table)
-    module_rows = module_table
+    module_table = finalize_ingest_table(
+        MODULES_TABLE_KEY,
+        module_table,
+        target_name=MODULES_TARGET_NAME,
+    )
     file_state_table = tabular_to_scoped_table(
         t__modules__run.file_state_rows,
         columns=None,
         scope=None,
         require_scope_columns=False,
     )
-    file_state_table = dedupe_table_for_table(
+    file_state_table = finalize_ingest_table(
         FILE_STATE_TABLE_KEY,
         file_state_table,
-        prefer_columns=("mtime_ns", "content_hash"),
+        target_name=MODULES_TARGET_NAME,
     )
-    file_state_rows = file_state_table
-    repo_map_rows = t__modules__run.repo_map_rows
+    repo_map_table = tabular_to_scoped_table(
+        t__modules__run.repo_map_rows,
+        columns=None,
+        scope=None,
+        require_scope_columns=False,
+    )
+    repo_map_table = finalize_ingest_table(
+        REPO_MAP_TABLE_KEY,
+        repo_map_table,
+        target_name=MODULES_TARGET_NAME,
+    )
     payload = {
-        MODULES_TABLE_KEY: module_rows,
-        FILE_STATE_TABLE_KEY: file_state_rows,
-        REPO_MAP_TABLE_KEY: repo_map_rows,
+        MODULES_TABLE_KEY: module_table,
+        FILE_STATE_TABLE_KEY: file_state_table,
+        REPO_MAP_TABLE_KEY: repo_map_table,
     }
     table_counts = {
-        MODULES_TABLE_KEY: t__modules__run.module_row_count,
-        FILE_STATE_TABLE_KEY: t__modules__run.file_state_row_count,
-        REPO_MAP_TABLE_KEY: t__modules__run.repo_map_row_count,
+        MODULES_TABLE_KEY: module_table.num_rows,
+        FILE_STATE_TABLE_KEY: file_state_table.num_rows,
+        REPO_MAP_TABLE_KEY: repo_map_table.num_rows,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),

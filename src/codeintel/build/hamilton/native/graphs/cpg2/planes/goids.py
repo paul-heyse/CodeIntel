@@ -16,10 +16,9 @@ from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import safe_filter
 from codeintel.build.tabular.compute_masks import is_valid_expr, is_valid_mask
-from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -94,7 +93,7 @@ def cpg2_nodes__goids(
             right_output=["cpg_node_id", "source_pk_json"],
         ),
     )
-    joined = reader_to_table(joined_plan.to_reader(use_threads=True))
+    joined = materialize_plan(joined_plan, use_threads=True)
     if joined.num_rows != 0:
         joined = joined.take(
             stable_sort_indices(

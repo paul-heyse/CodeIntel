@@ -33,7 +33,9 @@ def unify_schemas_with_contract_first(
     pyarrow.Schema
         Unified schema.
     """
-    return pa.unify_schemas([contract_schema, *schemas], promote_options=promote)
+    unified = pa.unify_schemas([contract_schema, *schemas], promote_options=promote)
+    _validate_contract_promotions(contract_schema, unified)
+    return unified
 
 
 def deep_cast_table_to_contract(table: pa.Table, contract_schema: pa.Schema) -> pa.Table:
@@ -86,12 +88,13 @@ def deep_cast_array(
     """
     if values.type.equals(target_type):
         return values
+    source_type = values.type
+    _ensure_allowed_promotion(source_type, target_type)
     if isinstance(values, pa.ChunkedArray):
         return pa.chunked_array(
             [deep_cast_array(chunk, target_type) for chunk in values.chunks],
             type=target_type,
         )
-    source_type = values.type
     if _is_list_view_type(source_type) or _is_list_view_type(target_type):
         return pc.cast(values, target_type, safe=True)
     if pa.types.is_struct(target_type):
@@ -103,6 +106,61 @@ def deep_cast_array(
     else:
         casted = pc.cast(values, target_type, safe=True)
     return casted
+
+
+def is_allowed_promotion(source_type: pa.DataType, target_type: pa.DataType) -> bool:
+    """Return True when a promotion from source to target is allowed."""
+    source_type = _unwrap_dictionary(source_type)
+    target_type = _unwrap_dictionary(target_type)
+    if source_type.equals(target_type):
+        return True
+    if pa.types.is_null(source_type):
+        return True
+    source_list = _list_kind(source_type)
+    target_list = _list_kind(target_type)
+    if source_list or target_list:
+        if source_list != target_list:
+            return False
+        if source_list == "fixed_size_list" and source_type.list_size != target_type.list_size:
+            return False
+        return is_allowed_promotion(source_type.value_type, target_type.value_type)
+    if pa.types.is_struct(source_type) or pa.types.is_struct(target_type):
+        if not (pa.types.is_struct(source_type) and pa.types.is_struct(target_type)):
+            return False
+        return _struct_promotion_allowed(source_type, target_type)
+    if pa.types.is_map(source_type) or pa.types.is_map(target_type):
+        if not (pa.types.is_map(source_type) and pa.types.is_map(target_type)):
+            return False
+        return _map_promotion_allowed(source_type, target_type)
+    if _is_int_promotion(source_type, target_type):
+        return True
+    if _is_uint_promotion(source_type, target_type):
+        return True
+    if _is_float_promotion(source_type, target_type):
+        return True
+    if _is_string_promotion(source_type, target_type):
+        return True
+    if _is_timestamp_promotion(source_type, target_type):
+        return True
+    return False
+
+
+def _ensure_allowed_promotion(source_type: pa.DataType, target_type: pa.DataType) -> None:
+    if is_allowed_promotion(source_type, target_type):
+        return
+    msg = f"Disallowed promotion from {source_type} to {target_type}"
+    raise ValueError(msg)
+
+
+def _validate_contract_promotions(contract_schema: pa.Schema, unified_schema: pa.Schema) -> None:
+    for field in contract_schema:
+        if field.name not in unified_schema.names:
+            continue
+        unified_field = unified_schema.field(field.name)
+        if is_allowed_promotion(unified_field.type, field.type):
+            continue
+        msg = f"Disallowed promotion for {field.name}: {unified_field.type} -> {field.type}"
+        raise ValueError(msg)
 
 
 def make_extras_struct(
@@ -233,6 +291,22 @@ def _is_list_type(data_type: pa.DataType) -> bool:
     )
 
 
+def _list_kind(data_type: pa.DataType) -> str | None:
+    if pa.types.is_list(data_type):
+        return "list"
+    if pa.types.is_large_list(data_type):
+        return "large_list"
+    if pa.types.is_fixed_size_list(data_type):
+        return "fixed_size_list"
+    is_list_view = getattr(pa.types, "is_list_view", None)
+    if callable(is_list_view) and is_list_view(data_type):
+        return "list_view"
+    is_large_list_view = getattr(pa.types, "is_large_list_view", None)
+    if callable(is_large_list_view) and is_large_list_view(data_type):
+        return "large_list_view"
+    return None
+
+
 def _is_list_view_type(data_type: pa.DataType) -> bool:
     is_list_view = getattr(pa.types, "is_list_view", None)
     is_large_list_view = getattr(pa.types, "is_large_list_view", None)
@@ -242,9 +316,93 @@ def _is_list_view_type(data_type: pa.DataType) -> bool:
     )
 
 
+def _unwrap_dictionary(data_type: pa.DataType) -> pa.DataType:
+    if pa.types.is_dictionary(data_type):
+        return data_type.value_type
+    return data_type
+
+
+def _int_bit_width(data_type: pa.DataType) -> int | None:
+    bit_width = getattr(data_type, "bit_width", None)
+    if isinstance(bit_width, int):
+        return bit_width
+    return None
+
+
+def _is_int_promotion(source_type: pa.DataType, target_type: pa.DataType) -> bool:
+    if not (pa.types.is_signed_integer(source_type) and pa.types.is_signed_integer(target_type)):
+        return False
+    source_width = _int_bit_width(source_type)
+    target_width = _int_bit_width(target_type)
+    if source_width is None or target_width is None:
+        return False
+    return source_width <= target_width
+
+
+def _is_uint_promotion(source_type: pa.DataType, target_type: pa.DataType) -> bool:
+    if not (
+        pa.types.is_unsigned_integer(source_type)
+        and pa.types.is_unsigned_integer(target_type)
+    ):
+        return False
+    source_width = _int_bit_width(source_type)
+    target_width = _int_bit_width(target_type)
+    if source_width is None or target_width is None:
+        return False
+    return source_width <= target_width
+
+
+def _is_float_promotion(source_type: pa.DataType, target_type: pa.DataType) -> bool:
+    if not (pa.types.is_floating(source_type) and pa.types.is_floating(target_type)):
+        return False
+    source_width = _int_bit_width(source_type)
+    target_width = _int_bit_width(target_type)
+    if source_width is None or target_width is None:
+        return False
+    return source_width <= target_width
+
+
+def _is_string_promotion(source_type: pa.DataType, target_type: pa.DataType) -> bool:
+    if pa.types.is_string(source_type) and pa.types.is_large_string(target_type):
+        return True
+    if pa.types.is_string(source_type) and pa.types.is_string(target_type):
+        return True
+    if pa.types.is_large_string(source_type) and pa.types.is_large_string(target_type):
+        return True
+    return False
+
+
+def _is_timestamp_promotion(source_type: pa.DataType, target_type: pa.DataType) -> bool:
+    if not (pa.types.is_timestamp(source_type) and pa.types.is_timestamp(target_type)):
+        return False
+    return source_type.unit == target_type.unit and source_type.tz == target_type.tz
+
+
+def _struct_promotion_allowed(source_type: pa.StructType, target_type: pa.StructType) -> bool:
+    source_fields = {field.name: field for field in source_type}
+    for target_field in target_type:
+        source_field = source_fields.get(target_field.name)
+        if source_field is None:
+            if target_field.nullable:
+                continue
+            return False
+        if not is_allowed_promotion(source_field.type, target_field.type):
+            return False
+    return True
+
+
+def _map_promotion_allowed(source_type: pa.MapType, target_type: pa.MapType) -> bool:
+    source_key = _unwrap_dictionary(source_type.key_type)
+    target_key = _unwrap_dictionary(target_type.key_type)
+    if not source_key.equals(target_key):
+        return False
+    return is_allowed_promotion(source_type.item_type, target_type.item_type)
+
+
 __all__ = [
     "deep_cast_array",
     "deep_cast_table_to_contract",
+    "is_allowed_promotion",
     "make_extras_kv_map",
     "make_extras_struct",
     "unify_schemas_with_contract_first",

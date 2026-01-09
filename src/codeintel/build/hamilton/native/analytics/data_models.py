@@ -21,6 +21,7 @@ from codeintel.build.analytics.utilities.catalogs import catalog_provider_from_f
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     TableTargetContext,
@@ -34,7 +35,7 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -227,11 +228,10 @@ def data_models__base(data_models_result: DataModelsResult) -> pa.Table:
     """
     if not data_models_result.model_rows:
         return empty_table_for_table(DATA_MODELS_TABLE_KEY)
-    reader, _ = table_for_rows(
+    return finalize_analytics_rows(
         DATA_MODELS_TABLE_KEY,
         data_models_result.model_rows,
     )
-    return reader
 
 
 def data_model_fields__base(data_models_result: DataModelsResult) -> pa.Table:
@@ -244,11 +244,10 @@ def data_model_fields__base(data_models_result: DataModelsResult) -> pa.Table:
     """
     if not data_models_result.field_rows:
         return empty_table_for_table(DATA_MODEL_FIELDS_TABLE_KEY)
-    reader, _ = table_for_rows(
+    return finalize_analytics_rows(
         DATA_MODEL_FIELDS_TABLE_KEY,
         data_models_result.field_rows,
     )
-    return reader
 
 
 def data_model_relationships__base(
@@ -263,11 +262,10 @@ def data_model_relationships__base(
     """
     if not data_models_result.relationship_rows:
         return empty_table_for_table(DATA_MODEL_RELATIONSHIPS_TABLE_KEY)
-    reader, _ = table_for_rows(
+    return finalize_analytics_rows(
         DATA_MODEL_RELATIONSHIPS_TABLE_KEY,
         data_models_result.relationship_rows,
     )
-    return reader
 
 
 _MODULE = sys.modules[__name__]
@@ -346,8 +344,7 @@ def data_model_usage__base(
     )
     if not rows:
         return empty_table_for_table(DATA_MODEL_USAGE_TABLE_KEY)
-    reader, _ = table_for_rows(DATA_MODEL_USAGE_TABLE_KEY, rows)
-    return reader
+    return finalize_analytics_rows(DATA_MODEL_USAGE_TABLE_KEY, rows)
 
 
 _DATA_MODEL_USAGE_TABLE_TARGET_SPEC = build_single_table_target_spec(

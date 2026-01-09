@@ -165,6 +165,48 @@ def hash_struct_ordinal(
     return pc.cast(modded, pa.int64())
 
 
+def hash_struct_goid(
+    table: pa.Table,
+    *,
+    columns: Sequence[str],
+) -> pa.Array | pa.ChunkedArray:
+    """Hash columns into a deterministic GOID using Arrow kernels.
+
+    Parameters
+    ----------
+    table
+        Source table containing the columns to hash.
+    columns
+        Column names to hash together.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Decimal128 values derived from the hash kernel.
+
+    Raises
+    ------
+    RuntimeError
+        If the hash kernel is unavailable.
+    ValueError
+        If no columns are provided.
+    """
+    if not columns:
+        msg = "hash_struct_goid requires at least one column"
+        raise ValueError(msg)
+    try:
+        pc.get_function("hash")
+    except (AttributeError, KeyError):
+        msg = "Arrow hash kernel is unavailable; upgrade pyarrow to enable it."
+        raise RuntimeError(msg) from None
+    struct_values = _make_struct(
+        [table[column] for column in columns],
+        field_names=list(columns),
+    )
+    hashed = require_array(call_compute("hash", [struct_values]), name="hash")
+    return pc.cast(hashed, pa.decimal128(38, 0))
+
+
 def _make_struct(
     values: Sequence[pa.Array | pa.ChunkedArray],
     *,
@@ -179,6 +221,7 @@ def _make_struct(
 __all__ = [
     "case_when",
     "coalesce",
+    "hash_struct_goid",
     "hash_struct_ordinal",
     "stable_sort_indices",
 ]

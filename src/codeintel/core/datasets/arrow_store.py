@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import logging
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -17,11 +17,19 @@ import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
+from codeintel.core.columnar.compute_helpers import combine_table_chunks
 from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.kernels import stable_sort_indices
 from codeintel.core.columnar.normalization import normalize_table_for_compute
+from codeintel.core.columnar.plan_ops import build_scan_plan
 from codeintel.core.columnar.readers import record_batch_reader_from_batches
 from codeintel.core.columnar.schema_metadata import decode_metadata, merge_metadata
-from codeintel.core.columnar.streaming import DatasetScanOptions, dataset_for_manifest
+from codeintel.core.columnar.streaming import (
+    DatasetScanOptions,
+    configure_arrow_threading,
+    dataset_for_manifest,
+    dataset_for_path,
+)
 from codeintel.core.datasets.manifests import (
     dataset_manifest_path,
     read_dataset_manifest,
@@ -31,13 +39,14 @@ from codeintel.core.datasets.paths import dataset_snapshot_dir
 from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.core.schemas.arrow_metadata import arrow_schema_hash
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.validation.schema_constraints import schema_metadata_errors
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from pyarrow import RecordBatchReader, Table
     from pyarrow.dataset import FileWriteOptions
+
+    from codeintel.core.schemas.primitives import TableSchema
 
     type ArrowDatasetInput = Table | RecordBatchReader
 else:
@@ -120,6 +129,7 @@ class ArrowDatasetWriteOptions:
     schema_hash: str | None = None
     manifest_extras: Mapping[str, object] | None = None
     schema_metadata: Mapping[str, object] | None = None
+    stable_sort_keys: tuple[str, ...] | None = None
     max_rows_per_file: int | None = None
     row_group_size: int | None = None
     data_page_size: int | None = None
@@ -131,6 +141,14 @@ class ArrowDatasetWriteOptions:
 
 
 ArrowDatasetScanOptions = DatasetScanOptions
+
+
+@dataclass(frozen=True, slots=True)
+class ScanPushdown:
+    """Projection and filter overrides for dataset scans."""
+
+    columns: Sequence[str] | Mapping[str, ds.Expression] | None = None
+    filter_expression: ds.Expression | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,8 +193,14 @@ def write_dataset(
     """
     start = perf_counter()
     resolved = options or ArrowDatasetWriteOptions()
+    stable_sort_keys = _resolve_stable_sort_keys(table_key, options=resolved)
+    if stable_sort_keys is not resolved.stable_sort_keys:
+        resolved = replace(resolved, stable_sort_keys=stable_sort_keys)
+    configure_arrow_threading()
     prepared = _apply_dictionary_options(data, resolved)
     prepared = _apply_schema_metadata(prepared, resolved.schema_metadata)
+    prepared = _apply_stable_sort(prepared, sort_keys=resolved.stable_sort_keys)
+    prepared = _apply_chunk_consolidation(prepared)
     _validate_schema_metadata(prepared.schema, table_key=table_key)
     snapshot_dir = dataset_snapshot_dir(
         dataset_root,
@@ -196,7 +220,7 @@ def write_dataset(
         max_rows_per_file=resolved.max_rows_per_file,
         max_rows_per_group=resolved.row_group_size,
     )
-    dataset = ds.dataset(str(snapshot_dir), format="parquet", exclude_invalid_files=True)
+    dataset = dataset_for_path(snapshot_dir, schema=prepared.schema)
     request = ArrowDatasetManifestRequest(
         table_key=table_key,
         snapshot_id=snapshot_id,
@@ -346,7 +370,7 @@ def scan_dataset(
             return dataset_for_manifest(manifest=manifest, manifest_path=manifest_path)
         except (OSError, ValueError, pa.ArrowInvalid):
             LOG.debug("Falling back to raw dataset scan for %s", manifest_path)
-    return ds.dataset(str(snapshot_dir), format="parquet", exclude_invalid_files=True)
+    return dataset_for_path(snapshot_dir)
 
 
 def scan_dataset_scanner(
@@ -354,7 +378,8 @@ def scan_dataset_scanner(
     dataset_root: Path,
     table_key: str,
     snapshot_id: str,
-    options: ArrowDatasetScanOptions,
+    options: ArrowDatasetScanOptions | None = None,
+    pushdown: ScanPushdown | None = None,
 ) -> ds.Scanner:
     """Return a dataset scanner for streaming reads.
 
@@ -367,19 +392,30 @@ def scan_dataset_scanner(
     snapshot_id
         Snapshot identifier used to scope the dataset.
     options
-        Batch size and filter options for the scanner.
+        Batch size and scan options for the scanner.
+    pushdown
+        Optional projection/filter overrides for scan pushdown.
 
     Returns
     -------
     pyarrow.dataset.Scanner
         Scanner configured for streaming reads.
     """
+    resolved_options = _merge_scan_pushdown_options(
+        options or DatasetScanOptions(),
+        pushdown=pushdown,
+    )
+    _log_missing_scan_pushdown(
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+        options=resolved_options,
+    )
     dataset = scan_dataset(
         dataset_root=dataset_root,
         table_key=table_key,
         snapshot_id=snapshot_id,
     )
-    return build_scanner(dataset, options=options)
+    return build_scanner(dataset, options=resolved_options)
 
 
 def scan_dataset_reader(
@@ -387,7 +423,8 @@ def scan_dataset_reader(
     dataset_root: Path,
     table_key: str,
     snapshot_id: str,
-    options: ArrowDatasetScanOptions,
+    options: ArrowDatasetScanOptions | None = None,
+    pushdown: ScanPushdown | None = None,
 ) -> pa.RecordBatchReader:
     """Return a RecordBatchReader for a dataset snapshot.
 
@@ -396,13 +433,75 @@ def scan_dataset_reader(
     pyarrow.RecordBatchReader
         Reader streaming record batches from the dataset.
     """
-    scanner = scan_dataset_scanner(
+    resolved_options = _merge_scan_pushdown_options(
+        options or DatasetScanOptions(),
+        pushdown=pushdown,
+    )
+    _log_missing_scan_pushdown(
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+        options=resolved_options,
+    )
+    dataset = scan_dataset(
         dataset_root=dataset_root,
         table_key=table_key,
         snapshot_id=snapshot_id,
-        options=options,
     )
+    plan_reader = _plan_scan_reader(dataset, resolved_options)
+    if plan_reader is not None:
+        return plan_reader
+    scanner = build_scanner(dataset, options=resolved_options)
     return scanner.to_reader()
+
+
+def _plan_scan_reader(
+    dataset: ds.Dataset,
+    options: ArrowDatasetScanOptions,
+) -> pa.RecordBatchReader | None:
+    use_threads = options.use_threads
+    resolved_use_threads = use_threads if use_threads is not None else True
+    try:
+        plan = build_scan_plan(
+            dataset,
+            columns=options.projection_columns(),
+            filter_expr=options.filter_expression,
+            implicit_ordering=options.implicit_ordering,
+            require_sequenced_output=options.require_sequenced_output,
+        )
+        return plan.to_reader(use_threads=resolved_use_threads)
+    except (
+        pa.ArrowInvalid,
+        pa.ArrowNotImplementedError,
+        pa.ArrowTypeError,
+        TypeError,
+        ValueError,
+    ):
+        return None
+
+
+def _merge_scan_pushdown_options(
+    options: ArrowDatasetScanOptions,
+    *,
+    pushdown: ScanPushdown | None,
+) -> ArrowDatasetScanOptions:
+    if pushdown is None:
+        return options
+    resolved = options
+    if pushdown.columns is not None:
+        resolved = replace(resolved, columns=pushdown.columns)
+    if pushdown.filter_expression is not None:
+        resolved = replace(resolved, filter_expression=pushdown.filter_expression)
+    return resolved
+
+
+def _log_missing_scan_pushdown(
+    *,
+    table_key: str,
+    snapshot_id: str,
+    options: ArrowDatasetScanOptions,
+) -> None:
+    if options.columns is None and options.filter_expression is None:
+        LOG.debug("Dataset scan without pushdown for %s@%s", table_key, snapshot_id)
 
 
 def dataset_stats(dataset: ds.Dataset) -> ArrowDatasetStats:
@@ -608,6 +707,81 @@ def _apply_schema_metadata(
         schema = data.schema.with_metadata(merged)
         return record_batch_reader_from_batches(schema, data)
     return data
+
+
+def _apply_stable_sort(
+    data: ArrowDatasetInput,
+    *,
+    sort_keys: Sequence[str] | None,
+) -> ArrowDatasetInput:
+    if not sort_keys:
+        return data
+    if isinstance(data, pa.Table):
+        return _stable_sort_table(data, sort_keys=sort_keys)
+    if isinstance(data, pa.RecordBatchReader):
+        try:
+            table = reader_to_table(data)
+        except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
+            LOG.debug("Stable sort skipped for stream input")
+            return data
+        return _stable_sort_table(table, sort_keys=sort_keys)
+    return data
+
+
+def _stable_sort_table(
+    table: pa.Table,
+    *,
+    sort_keys: Sequence[str],
+) -> pa.Table:
+    if table.num_rows <= 1:
+        return table
+    available = [key for key in sort_keys if key in table.column_names]
+    if not available:
+        return table
+    resolved_keys: list[tuple[str, Literal["ascending", "descending"]]] = [
+        (key, "ascending") for key in available
+    ]
+    try:
+        indices = stable_sort_indices(table, sort_keys=resolved_keys)
+    except (
+        pa.ArrowInvalid,
+        pa.ArrowNotImplementedError,
+        pa.ArrowTypeError,
+        TypeError,
+        ValueError,
+    ):
+        return table
+    return table.take(indices)
+
+
+def _apply_chunk_consolidation(data: ArrowDatasetInput) -> ArrowDatasetInput:
+    if isinstance(data, pa.Table):
+        return combine_table_chunks(data)
+    return data
+
+
+def _resolve_stable_sort_keys(
+    table_key: str,
+    *,
+    options: ArrowDatasetWriteOptions,
+) -> tuple[str, ...] | None:
+    if options.stable_sort_keys is not None:
+        return options.stable_sort_keys
+    schema = _lookup_table_schema(table_key)
+    if schema is None:
+        return None
+    policy = schema.write_policy
+    if policy is not None and policy.stable_sort_keys is not None:
+        return policy.stable_sort_keys
+    return schema.primary_key or None
+
+
+def _lookup_table_schema(table_key: str) -> TableSchema | None:
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        return None
+    return service.get_table_schema(table_key)
 
 
 def _validate_schema_metadata(schema: pa.Schema, *, table_key: str) -> None:
@@ -989,6 +1163,7 @@ __all__ = [
     "ArrowDatasetStats",
     "ArrowDatasetWriteOptions",
     "ExistingDataBehavior",
+    "ScanPushdown",
     "build_dataset_manifest",
     "dataset_stats",
     "scan_dataset",

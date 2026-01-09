@@ -27,7 +27,6 @@ from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
-from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.validation.reporters import FunctionValidationReporter
 
 if TYPE_CHECKING:
@@ -122,7 +121,6 @@ def _type_row_from_node(
 
     param_stats = compute_param_stats(node)
 
-    param_types = encode_payload(param_stats.param_types) if param_stats.param_types else None
     return {
         "function_goid_h128": meta.goid,
         "urn": meta.urn,
@@ -137,7 +135,7 @@ def _type_row_from_node(
         "total_params": param_stats.total_params,
         "return_type": param_stats.return_type,
         "type_comment": None,
-        "param_types": param_types,
+        "extras": {"param_types": param_stats.param_types or None},
         "created_at": ctx.now,
     }
 

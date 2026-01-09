@@ -102,7 +102,11 @@ def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> 
 
     subsystems = subsystem_ctx.query(
         """
-        SELECT subsystem_id, modules_json, risk_level, high_risk_function_count
+        SELECT
+            subsystem_id,
+            struct_extract(extras, 'modules') AS modules_json,
+            risk_level,
+            high_risk_function_count
         FROM analytics.subsystems
         """
     )

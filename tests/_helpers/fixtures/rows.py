@@ -16,7 +16,6 @@ from codeintel.core.catalog import FunctionSpan
 from codeintel.core.columnar.rows import ColumnarRowBuffer, ColumnarRows
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
-from codeintel.core.serialization.payload import encode_payload
 from tests._helpers.builders import (
     AstMetricsRow,
     CallGraphEdgeRow,
@@ -171,7 +170,7 @@ _PAYLOAD_DICT_COLUMNS: set[str] = {
     "effects_json",
     "evidence_json",
     "extra",
-    "extras_json",
+    "extras",
     "meta",
     "metadata",
     "modules",
@@ -587,8 +586,7 @@ class DependencyCallRow:
     module: str
     qualname: str
     callsite_count: int
-    modes: list[str]
-    evidence_json: list[dict[str, object]]
+    extras: dict[str, object]
     created_at: datetime
 
 
@@ -608,9 +606,7 @@ class DependencyAggregateRow:
     risk_score: float | None
     function_count: int
     callsite_count: int
-    modules_json: list[str]
-    usage_modes: list[str]
-    config_keys: list[str]
+    extras: dict[str, object]
     risk_level: str
     created_at: datetime
 
@@ -641,10 +637,9 @@ class DependencyCallPayload(TypedDict):
     rel_path: str
     module: str
     callsite_count: int
-    modes: list[str]
     function_goid_h128: Decimal
     function_urn: str
-    evidence_json: list[dict[str, object]]
+    extras: dict[str, object]
     created_at: datetime
 
 
@@ -666,10 +661,12 @@ def dependency_call_payload(seed: DependencyCallPayloadSeed) -> DependencyCallPa
         "rel_path": seed.rel_path,
         "module": seed.module,
         "callsite_count": seed.callsite_count,
-        "modes": list(seed.modes),
         "function_goid_h128": Decimal(seed.function_goid),
         "function_urn": f"urn:{seed.qualname}",
-        "evidence_json": seed.evidence_json or [{"type": "call", "line": 1}],
+        "extras": {
+            "modes": list(seed.modes),
+            "evidence": seed.evidence_json or [{"type": "call", "line": 1}],
+        },
         "created_at": created_at,
     }
 
@@ -742,9 +739,7 @@ class DependencyAggregatePayload(TypedDict):
     risk_score: float | None
     function_count: int
     callsite_count: int
-    modules_json: list[str]
-    usage_modes: list[str]
-    config_keys: list[str]
+    extras: dict[str, object]
     risk_level: str
     created_at: datetime
 
@@ -772,9 +767,11 @@ def dependency_aggregate_payload(
         "risk_score": seed.risk_score,
         "function_count": seed.function_count,
         "callsite_count": seed.callsite_count,
-        "modules_json": seed.modules_json or ["module.default"],
-        "usage_modes": seed.usage_modes or ["read"],
-        "config_keys": seed.config_keys or [],
+        "extras": {
+            "modules": seed.modules_json or ["module.default"],
+            "usage_modes": seed.usage_modes or ["read"],
+            "config_keys": seed.config_keys or [],
+        },
         "risk_level": seed.risk_level,
         "created_at": created_at,
     }
@@ -805,8 +802,7 @@ def dependency_call_row_from_payload(seed: DependencyCallPayloadSeed) -> Depende
         module=str(payload["module"]),
         qualname=str(payload["qualname"]),
         callsite_count=payload["callsite_count"],
-        modes=payload["modes"],
-        evidence_json=payload["evidence_json"],
+        extras=payload["extras"],
         created_at=payload["created_at"],
     )
 
@@ -839,9 +835,7 @@ def dependency_aggregate_row_from_payload(
         risk_score=payload["risk_score"],
         function_count=payload["function_count"],
         callsite_count=payload["callsite_count"],
-        modules_json=payload["modules_json"],
-        usage_modes=payload["usage_modes"],
-        config_keys=payload["config_keys"],
+        extras=payload["extras"],
         risk_level=str(payload["risk_level"]),
         created_at=payload["created_at"],
     )
@@ -1090,8 +1084,10 @@ def subsystem_payload(seed: SubsystemPayloadSeed) -> dict[str, object]:
         "name": seed.name,
         "description": seed.description,
         "module_count": seed.module_count,
-        "modules_json": list(seed.modules_json),
-        "entrypoints_json": list(seed.entrypoints_json),
+        "extras": {
+            "modules": list(seed.modules_json),
+            "entrypoints": list(seed.entrypoints_json),
+        },
         "internal_edge_count": seed.internal_edge_count,
         "external_edge_count": seed.external_edge_count,
         "fan_in": seed.fan_in,
@@ -1162,8 +1158,7 @@ def subsystem_row(
     str,
     str | None,
     int,
-    list[str],
-    list[str],
+    dict[str, list[str]],
     int,
     int,
     int,
@@ -1189,8 +1184,10 @@ def subsystem_row(
         seed.name,
         seed.description,
         seed.module_count,
-        list(seed.modules_json),
-        list(seed.entrypoints_json),
+        {
+            "modules": list(seed.modules_json),
+            "entrypoints": list(seed.entrypoints_json),
+        },
         seed.internal_edge_count,
         seed.external_edge_count,
         seed.fan_in,
@@ -1250,11 +1247,13 @@ def data_model_usage_payload(seed: DataModelUsagePayloadSeed) -> dict[str, objec
         "commit": seed.commit,
         "model_id": seed.model_id,
         "function_goid_h128": Decimal(seed.goid),
-        "usage_kinds_json": list(seed.usage_kinds),
-        "evidence_json": seed.evidence_json
-        or [{"type": "attribute_access", "attr": "field", "line": 1}],
-        "context_json": seed.context_json
-        or {"file_path": "src/services/service.py", "function_name": "fn"},
+        "extras": {
+            "usage_kinds": list(seed.usage_kinds),
+            "evidence": seed.evidence_json
+            or [{"type": "attribute_access", "attr": "field", "line": 1}],
+            "context": seed.context_json
+            or {"file_path": "src/services/service.py", "function_name": "fn"},
+        },
         "created_at": created_at,
     }
 
@@ -1281,7 +1280,8 @@ def data_model_usage_row(seed: DataModelUsageSeed) -> tuple[object, ...]:
         seed.commit,
         seed.model_id,
         seed.goid,
-        encode_payload(list(seed.usage_kinds)),
+        {"usage_kinds": list(seed.usage_kinds), "evidence": [], "context": {}},
+        datetime.now(tz=UTC),
     )
 
 
@@ -1318,7 +1318,7 @@ def data_model_row(seed: DataModelSeed) -> tuple[object, ...]:
         seed.module,
         seed.rel_path,
         seed.model_kind,
-        encode_payload(seed.base_classes_json or []),
+        {"base_classes": seed.base_classes_json or []},
         seed.doc_short,
         seed.doc_long,
         seed.created_at or datetime.now(tz=UTC),
@@ -1359,7 +1359,7 @@ def data_model_field_row(seed: DataModelFieldSeed) -> tuple[object, ...]:
         seed.required,
         seed.has_default,
         seed.default_expr,
-        encode_payload(seed.constraints_json or {}),
+        {"constraints": seed.constraints_json or {}},
         seed.source,
         seed.rel_path,
         seed.lineno,
@@ -1404,7 +1404,7 @@ def data_model_relationship_row(seed: DataModelRelationshipSeed) -> tuple[object
         seed.relationship_kind,
         seed.multiplicity,
         seed.via,
-        encode_payload(seed.evidence_json or {}),
+        {"evidence": seed.evidence_json or {}},
         seed.rel_path,
         seed.lineno,
         seed.created_at or datetime.now(tz=UTC),

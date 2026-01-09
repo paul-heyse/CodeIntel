@@ -11,10 +11,13 @@ from typing import cast
 import pyarrow as pa
 
 from codeintel.build.graphs.assembly import ensure_table_columns, table_rows
+from codeintel.build.hamilton.native.graphs.cpg2.edge_helpers import (
+    finalize_cpg_edge_rows,
+)
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
 from codeintel.build.tabular.arrow_ops import concat_tables_unified
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.serialization.payload import decode_payload
 
@@ -126,12 +129,12 @@ def cpg2_edges__py_inspect_signature(
         CPG edges for inspect signatures.
     """
     edges = _py_inspect_signature_edges_to_rows(signatures, params)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_inspect_signature",
         expected_edges=signatures.num_rows + params.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -155,12 +158,12 @@ def cpg2_edges__inspect_arg_to_param(
         inputs.inspect_signatures,
         inputs.inspect_signature_params,
     )
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_inspect_arg_to_param",
         expected_edges=inputs.syntax_call_args.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -178,12 +181,12 @@ def cpg2_edges__py_inspect_unwrap(
         CPG edges for unwrap hops.
     """
     edges = _py_inspect_unwrap_edges_to_rows(unwrap_hops)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_inspect_unwrap",
         expected_edges=unwrap_hops.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -201,12 +204,12 @@ def cpg2_edges__py_inspect_class_mro(
         CPG edges for class inheritance.
     """
     edges = _py_inspect_class_mro_edges_to_rows(class_mro)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_inspect_class_mro",
         expected_edges=class_mro.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -224,12 +227,12 @@ def cpg2_edges__py_inspect_class_attr(
         CPG edges for class attributes.
     """
     edges = _py_inspect_class_attr_edges_to_rows(class_attrs)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_inspect_class_attr",
         expected_edges=class_attrs.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -273,12 +276,12 @@ def cpg2_edges__inspect_to_ast(
         CPG edges linking inspect objects to AST nodes.
     """
     edges = _inspect_to_ast_edges_to_rows(inspect_objects, inspect_source, ast_nodes)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_inspect_to_ast",
         expected_edges=inspect_objects.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -297,12 +300,12 @@ def cpg2_edges__inspect_to_scip(
         CPG edges linking inspect objects to SCIP symbols.
     """
     edges = _inspect_to_scip_edges_to_rows(inspect_objects, scip_symbols)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_inspect_to_scip",
         expected_edges=inspect_objects.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -776,7 +779,7 @@ def _inspect_arg_to_param_edges_to_rows(
 ) -> list[dict[str, object]]:
     call_rows = _collect_rows(
         syntax_calls,
-        columns=("repo", "commit", "rel_path", "producer", "call_id", "callee_text", "extras_json"),
+        columns=("repo", "commit", "rel_path", "producer", "call_id", "callee_text", "extras"),
     )
     arg_rows = _collect_rows(
         syntax_call_args,
@@ -913,7 +916,7 @@ def _signature_by_call(
         commit_value = cast("str", commit)
         call_id_value = cast("str", call_id)
         candidates = _call_callee_candidates(
-            row.get("extras_json"),
+            row.get("extras"),
             _coerce_str(row.get("callee_text")),
         )
         for candidate in candidates:
@@ -1608,8 +1611,7 @@ def _runtime_state_has_state_edges(runtime_state: pa.Table) -> pa.Table:
                 "extras_kv": extras_kv,
             }
         )
-    table, _ = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
-    return table
+    return finalize_cpg_edge_rows(edges)
 
 
 def _runtime_state_frame_name(row: Mapping[str, object]) -> str | None:
@@ -1662,8 +1664,7 @@ def _runtime_state_instr_edges(
     edges: list[dict[str, object]] = []
     for row in table_rows(runtime_state):
         edges.extend(_runtime_state_instr_edge_rows(row, units_by_key, instr_by_key))
-    table, _ = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
-    return table
+    return finalize_cpg_edge_rows(edges)
 
 
 def _runtime_units_index(

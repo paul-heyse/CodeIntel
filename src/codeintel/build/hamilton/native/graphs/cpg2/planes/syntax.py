@@ -22,11 +22,10 @@ from codeintel.build.tabular.compute_helpers import (
     scalar_from_compute,
 )
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
-from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_payload
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
@@ -99,12 +98,12 @@ def cpg2_nodes__syntax_nodes(
             "node_id",
             "start_byte",
             "end_byte",
-            "extras_json",
+            "extras",
         ),
     )
     normalized = normalize_table_for_join(base)
     if "extras_kv" not in normalized.column_names:
-        extras_kv = _extras_kv_column(normalized, column_name="extras_json")
+        extras_kv = _extras_kv_column(normalized, column_name="extras")
         normalized = normalized.append_column("extras_kv", extras_kv)
     anchor_map = normalize_table_for_join(
         _syntax_anchor_map(normalized, include_source_pk_json=True)
@@ -159,7 +158,7 @@ def cpg2_nodes__syntax_nodes(
             right_output=["cpg_node_id", "source_pk_json"],
         ),
     )
-    joined = reader_to_table(joined.to_reader(use_threads=True))
+    joined = materialize_plan(joined, use_threads=True)
     if joined.num_rows != 0:
         joined = joined.take(
             stable_sort_indices(
@@ -229,7 +228,7 @@ def cpg2_edges__syntax_edges(
         )
         .filter(_syntax_key_filter())
     )
-    parent_join = (
+    parent_join = materialize_plan(
         Plan.table(normalized_edges)
         .project(
             {
@@ -259,13 +258,12 @@ def cpg2_edges__syntax_edges(
                 ],
                 right_output=["cpg_node_id"],
             ),
-        )
-        .to_reader(use_threads=True)
+        ),
+        use_threads=True,
     )
-    parent_join = reader_to_table(parent_join)
     if parent_join.num_rows == 0:
         return _empty_edge_table()
-    child_join = (
+    child_join = materialize_plan(
         Plan.table(parent_join)
         .project(
             {
@@ -295,10 +293,9 @@ def cpg2_edges__syntax_edges(
                 right_output=["cpg_node_id"],
                 output_suffix_for_right="_child",
             ),
-        )
-        .to_reader(use_threads=True)
+        ),
+        use_threads=True,
     )
-    child_join = reader_to_table(child_join)
     if child_join.num_rows == 0:
         return _empty_edge_table()
     child_join = child_join.take(

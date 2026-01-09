@@ -29,11 +29,14 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.core.queries.context import QueryContext
 from codeintel.core.repository import PagedResult
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.storage import StorageContext
 from codeintel.core.validation.profiles import ValidationProfile
+from codeintel.core.validation.schema_constraints import list_alignment_specs_for_table_key
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
@@ -43,6 +46,7 @@ from codeintel.storage.duckdb_types import (
 from codeintel.storage.query_results import (
     iter_records_from_arrow_reader,
     records_from_arrow_reader,
+    records_from_arrow_table,
 )
 from codeintel.storage.snapshot_scoping import maybe_scope_by_snapshot
 from codeintel.storage.validation.columnar import (
@@ -142,7 +146,17 @@ class BaseRepository:
         table_key: str | None = None,
     ) -> list[RowDict]:
         reader = self._relation_to_reader(relation, table_key=table_key)
-        return records_from_arrow_reader(reader)
+        if table_key is None:
+            return records_from_arrow_reader(reader)
+        table = reader_to_table(reader)
+        finalized = finalize_table(
+            table,
+            spec=FinalizeSpec(
+                table_key=table_key,
+                mode="tolerant",
+            ),
+        )
+        return records_from_arrow_table(finalized.good)
 
     def _relation_to_iter(
         self,
@@ -243,6 +257,7 @@ class BaseRepository:
             table_schema=resolution.table_schema,
             schema_observation=resolution.observation,
             validation_profile=self._validation_profile_for_table(table_key),
+            list_alignments=list_alignment_specs_for_table_key(table_key),
         )
         return validate_record_batch_reader(table_key, reader, context=context)
 

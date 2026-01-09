@@ -2388,3 +2388,906 @@ If you want the next deep dive after joins, the natural one is: **“determinist
 [4]: https://arrow.apache.org/docs/cpp/api/acero.html "Streaming Execution (Acero) — Apache Arrow v22.0.0"
 [5]: https://arrow.apache.org/docs/python/generated/pyarrow.compute.sort_indices.html?utm_source=chatgpt.com "pyarrow.compute.sort_indices — Apache Arrow v22.0.0"
 [6]: https://arrow.apache.org/blog/2025/07/18/recent-improvements-to-hash-join/ "Recent Improvements to Hash Join in Arrow C++ | Apache Arrow"
+
+Below is the “make it a policy, not ad hoc code” deep dive for **aggregation + dedupe + determinism** in a PyArrow/Acero-first pipeline—grounded in your `compute_revamp.md` canonical pattern (`group_by(...).aggregate(first/hash_first)`, plus “sort once, then aggregate”) and the Arrow docs/issue history.
+
+---
+
+## 1) Grouped aggregation in PyArrow: what you’re really invoking
+
+### 1.1 `Table.group_by(...).aggregate(...)` is “hash_* grouped aggregations”
+
+PyArrow grouped aggregation is driven by **hash aggregation compute functions**. The Python docs show that passing `"sum"` in `aggregate` uses the **`hash_sum`** compute function, and you can supply multiple aggregations and options like `CountOptions`. ([Apache Arrow][1])
+
+Under the hood (C++ docs), grouped aggregation functions are explicitly named **`hash_*`** and include things like `hash_sum`, `hash_min`, `hash_max`, `hash_list`, `hash_distinct`, `hash_first`, `hash_last`, `hash_one`, etc. ([Apache Arrow][2])
+
+**Key implication:** when you pick an aggregation function, you are also picking its **determinism properties**. Some functions are order-independent (min/max/sum over integers), while others are explicitly **order-dependent** (`hash_first`, `hash_last`, `hash_list`) or even **arbitrary** (`hash_one`). ([Apache Arrow][2])
+
+---
+
+## 2) The canonical dedupe pattern you called out (and what it assumes)
+
+Your revamp doc’s canonical dedupe is:
+
+* choose a **key set**
+* aggregate **every non-key column** with `"first"` (i.e., `hash_first`)
+* optionally disable threads for determinism
+  and/or do **“sort once by [keys…, tie_breaker…] then group_by(keys, use_threads=True).aggregate(first…)”** for speed + determinism. 
+
+That is a great “center of gravity” because it forces every dataset to answer: *what defines uniqueness?* and *what’s the canonical representative row?*
+
+But you need to be explicit about one crucial detail:
+
+> **`hash_first` / “first” is order-dependent** — Arrow’s grouped aggregation docs explicitly note `hash_first`/`hash_last` results are “based on ordering of the input data.” ([Apache Arrow][2])
+
+So “keep first” is only deterministic if you’ve defined what “first” means.
+
+---
+
+## 3) A dedupe policy should have three parts
+
+### Part A — Keys: what defines “same fact”
+
+You should pick keys based on *semantic identity*, not convenience:
+
+* **Node tables**: `symbol_id` (or `(repo_id, symbol)` if you don’t have stable IDs yet)
+* **Edge tables**:
+
+  * simplest: `(src_id, dst_id, kind)`
+  * for call edges, often better: `(src_id, dst_id, callsite_span)` if multiple calls to same callee should remain distinct
+  * for “reference edges”: `(src_id, dst_id, ref_span, ref_kind)`
+
+Rule: if collapsing duplicates would lose meaning, your key is too coarse.
+
+### Part B — Tie-breakers: how to pick the canonical row *within a key*
+
+This is where determinism is won.
+
+Good tie-breakers are:
+
+* **semantic and stable**: e.g., `confidence DESC, span_start ASC, span_end ASC`
+* **derived from source**: file path + byte offset (stable across runs)
+* **monotonic**: timestamps for “latest-wins” if that’s your intent (but beware clocks)
+
+Bad tie-breakers:
+
+* “whatever row happened to arrive first from parallel scan”
+* Python hash or nondeterministic IDs
+
+### Part C — Representative selection: how you choose “the winner”
+
+You have 3 main families:
+
+1. **Order-dependent selection** (“first/last”): fastest & simplest, but you *must* define order.
+2. **Order-independent selection** (“min/max/best metric”): deterministic even under parallelism.
+3. **Collapse instead of select** (“list/distinct/count”): preserve multiplicity explicitly.
+
+---
+
+## 4) Three concrete dedupe recipes (you should standardize all three)
+
+### Recipe 1 — “Keep first” (simple, but order-dependent)
+
+This is your `compute_revamp.md` pattern:
+
+```python
+def dedupe_keep_first(t, keys):
+    non_keys = [c for c in t.column_names if c not in keys]
+    aggs = [(c, "first") for c in non_keys]
+    return t.group_by(keys, use_threads=False).aggregate(aggs)
+```
+
+Your doc calls out the same approach and explicitly recommends `use_threads=False` when determinism matters. 
+
+Why `use_threads=False` helps: Arrow’s Table docs say that when `use_threads=True` (the default), **“no stable ordering of the output is guaranteed.”** ([Apache Arrow][3])
+
+**When to use:** small/medium tables where correctness & reproducibility outweigh throughput, and you’ve established a deterministic row order (e.g., you sorted first, or you have deterministic scan order).
+
+---
+
+### Recipe 2 — “Keep best by tie-breakers” (deterministic, parallel-friendly)
+
+If you want determinism while keeping parallelism, avoid order-dependent “first” as the *decision mechanism*.
+
+A robust approach is:
+
+1. compute a **winner score** per row (e.g., tuple-like score encoded into sortable components)
+2. compute **min/max score per key** using `hash_min`/`hash_max` (order-independent)
+3. join back to pick rows with that winning score
+
+This stays deterministic even if aggregation runs in parallel, because min/max doesn’t depend on arrival order (unlike `hash_first`). The grouped aggregation list explicitly includes `hash_min`/`hash_max` and also notes `hash_one` is arbitrary (so avoid that when determinism matters). ([Apache Arrow][2])
+
+**Practical encoding trick:** if your tie-breakers are multiple columns, build a single comparable “score” (e.g., a struct or a string key). If `hash_min` doesn’t accept your type, convert to something it does.
+
+---
+
+### Recipe 3 — “Collapse duplicates explicitly” (don’t pretend they don’t exist)
+
+Sometimes dedupe is the wrong abstraction; you actually want “unique key → list of all payloads”.
+
+Arrow has grouped aggregations:
+
+* `hash_list` gathers grouped values into a list array
+* `hash_distinct` gathers distinct values into a list
+  ([Apache Arrow][2])
+
+This is very powerful for graph pipelines:
+
+* build adjacency lists deterministically (if you also impose ordering before list aggregation)
+* preserve multiple callsites/spans per `(src_id, dst_id)`
+
+But note: like `hash_first`, list aggregation’s internal order follows input ordering. So if you need stable list ordering, you should define it (sort first, or sort after by exploding and re-sorting).
+
+---
+
+## 5) Determinism: where nondeterminism *actually* comes from
+
+### 5.1 Threading changes output order (documented)
+
+`Table.group_by(..., use_threads=True)` explicitly: **no stable ordering of output**. ([Apache Arrow][3])
+
+This aligns with your revamp doc’s warning and recommendation to turn threads off for deterministic outputs. 
+
+### 5.2 Some aggregations depend on input ordering (documented)
+
+Arrow’s grouped aggregation docs note for `hash_first`/`hash_last` (and related) that the **result is based on ordering of the input data**. ([Apache Arrow][2])
+
+So if your input ordering is not stable, your selected representative row is not stable.
+
+### 5.3 Acero nodes can destroy ordering (documented)
+
+In Acero’s execution model, ordering can be marked non-deterministic; a **hash join has no predictable output order**, and the docs note that **hash-join or aggregation may destroy ordering** (even if they might establish a new ordering). ([Apache Arrow][4])
+
+So even if you “think” you have stable scan order, a downstream join/aggregate can scramble it unless you explicitly re-order.
+
+### 5.4 Issue history: ordering drift has been real
+
+There’s a Python Arrow issue requesting guaranteed stable ordering for `group_by`, noting ordering changes observed in dev builds (13.0.0.dev) and that the behavior wasn’t officially documented at the time. ([GitHub][5])
+
+As of current docs, the rule is explicit: **don’t assume stable ordering when threaded**. ([Apache Arrow][3])
+
+---
+
+## 6) “Sort once, then aggregate” — the correct way to think about it
+
+Your revamp doc proposes:
+
+1. sort once by `[keys..., tie_breaker...]`
+2. group_by(keys, use_threads=True).aggregate(first…)
+
+
+The core idea is right: **make “first” meaningful** by imposing order.
+
+### How to implement “sort once” in Arrow-native way
+
+Use `pc.sort_indices` (stable sort) then `pc.take` to reorder the table. Arrow’s compute docs explicitly say `sort_indices` returns indices defining a **stable sort**. ([Apache Arrow][2])
+
+Conceptually:
+
+```python
+idx = pc.sort_indices(t, sort_keys=[("k1","ascending"), ("tie","descending")])
+t_sorted = pc.take(t, idx)   # then group_by(keys).aggregate(first...)
+```
+
+### The subtlety
+
+Sorting makes the *global* row order deterministic, but a parallel hash aggregation can still process data in parallel. For **order-dependent** aggregations (`first/last/list`), the safest “no surprises” rule is:
+
+* If you need strict determinism with `first/last/list`, either:
+
+  * run that stage with ordering-preserving settings (often implies `use_threads=False`), **or**
+  * use an order-independent winner-selection strategy (Recipe 2)
+
+So: keep your “sort once” guidance, but treat it as:
+
+* “best effort fast determinism” in many pipelines
+* not the strongest possible guarantee unless you also control execution ordering
+
+---
+
+## 7) The “determinism budget” (what you lock down vs let float)
+
+You want a *policy knob*, not a debate every time.
+
+### Tier 0 — Canonical deterministic (CI snapshots, caching, persisted contracts)
+
+Lock down:
+
+* **which row wins** during dedupe
+* **final output ordering**
+* (optionally) stable IDs derived from content
+
+Mechanics:
+
+* order-independent winner selection (Recipe 2) *or* `use_threads=False` + explicit stable sort
+* explicit final sort on contract keys + tie-breakers
+
+### Tier 1 — Stable set, unstable order (production throughput)
+
+Lock down:
+
+* the **set** of rows (semantic correctness)
+  Allow:
+* row order drift (sort only when needed for downstream expectations)
+
+Mechanics:
+
+* prefer order-independent aggregations (`min/max/count/sum`)
+* avoid `first/last/list` unless you don’t care
+
+### Tier 2 — Best-effort (exploration / interactive)
+
+Allow:
+
+* representative row may differ under duplicates
+
+Mechanics:
+
+* `hash_one` is explicitly “one arbitrary value” per group (biased toward non-null). ([Apache Arrow][2])
+
+This is a *feature* for speed, but must never leak into contract outputs.
+
+---
+
+## 8) How this becomes a single finalize-gate “dedupe spec”
+
+Your doc already places “dedupe policy” inside finalize gate. 
+
+Make it explicit with a small spec:
+
+* `keys: list[str]`
+* `tie_breakers: list[(col, asc/desc)]`
+* `mode: KEEP_FIRST | KEEP_BEST | COLLAPSE_LIST | NO_DEDUPE`
+* `determinism: CANONICAL | STABLE_SET | BEST_EFFORT`
+* `threads_ok: bool` (derived from determinism)
+
+Then every dataset contract states its dedupe spec once, and every pipeline step calls:
+
+> `finalize(table, contract, dedupe_spec=..., determinism=...)`
+
+---
+
+## 9) Minimal tests you should add (so this stays real)
+
+1. **Duplicate fixture**: 2–3 duplicate rows per key with different payload; assert winner row is correct under Tier 0.
+2. **Threaded vs unthreaded**: run group_by with `use_threads=True` and `False`; assert only Tier 0 enforces order/winner.
+3. **Order-dependent aggregation safety**: fixture that proves `first` changes if ordering changes (unless you lock it down).
+4. **Output-order snapshot**: always sort contract outputs under Tier 0 so golden snapshots don’t fail due to harmless drift.
+
+
+
+[1]: https://arrow.apache.org/docs/python/compute.html "Compute Functions — Apache Arrow v22.0.0"
+[2]: https://arrow.apache.org/docs/cpp/compute.html "Compute Functions — Apache Arrow v22.0.0"
+[3]: https://arrow.apache.org/docs/python/generated/pyarrow.Table.html "pyarrow.Table — Apache Arrow v22.0.0"
+[4]: https://arrow.apache.org/docs/cpp/api/acero.html "Streaming Execution (Acero) — Apache Arrow v22.0.0"
+[5]: https://github.com/apache/arrow/issues/36709 "[Python] Guarantee that `group_by` has stable ordering. · Issue #36709 · apache/arrow · GitHub"
+
+## 8) Chunking + throughput mechanics (avoid per-kernel overhead)
+
+### First: what “chunking” actually is in PyArrow
+
+In a `pa.Table`, **each column is a `ChunkedArray`**. Chunks usually come from:
+
+* scanning datasets in batches (each `RecordBatch` becomes a chunk when materialized to a `Table`),
+* concatenating tables,
+* or incremental “append” style assembly.
+
+This matters because many compute operations effectively become “**do the same kernel per chunk**,” so “lots of tiny chunks” turns into “lots of kernel dispatch + Python/C++ boundary overhead.”
+
+Your `compute_revamp.md` calls this out explicitly as a throughput lever: “many small chunks = more overhead per kernel call” and suggests combining chunks when memory isn’t a concern.
+
+---
+
+# A) Chunk normalization: when and where to `combine_chunks()`
+
+## What `combine_chunks()` *guarantees* (and what it doesn’t)
+
+`Table.combine_chunks()` “combines the chunks this table has” and states: underlying chunks in each column are concatenated into **zero or one chunk**, *except* “to avoid buffer overflow, binary columns may be combined into multiple chunks” (max-length chunks). ([Apache Arrow][1])
+
+For a single column, `ChunkedArray.combine_chunks()` “flatten[s] this ChunkedArray into a single non-chunked array.” ([Apache Arrow][2])
+
+## Why `combine_chunks()` is a speed lever (even if memory isn’t a concern)
+
+* Fewer chunks → fewer kernel invocations / less overhead
+* Better cache locality (longer contiguous buffers)
+* Less overhead in downstream “mask → filter → take → join → aggregate” sequences
+
+But: combining chunks is **work**. It can be *surprisingly slow* if you do it repeatedly or when you already have one chunk; Arrow users have called out the cost in practice. ([GitHub][3])
+
+## The rule that avoids calc sprawl
+
+**Do not sprinkle `combine_chunks()` everywhere.** Standardize it as a **policy at a small number of boundaries**, typically:
+
+### 1) Right after an expensive scan / join / concat *if* you’ll run lots of kernels next
+
+Example: `scan.to_table()` returns a table whose columns are chunked by batch boundaries; if you then run a pile of compute kernels outside Acero, combining once can pay off.
+
+### 2) Inside the finalize gate (recommended default)
+
+Your revamp doc explicitly frames chunk normalization as a “throughput knob” and implies it should be standardized, not ad hoc.
+
+I’d implement:
+
+* `finalize(..., combine_chunks=True)` (default True for “throughput mode”)
+* `finalize(..., combine_chunks=False)` for cases where you truly want streaming or want to preserve chunk boundaries for diagnostics.
+
+### 3) Before large group_by / sort work done *outside* Acero
+
+If you’re not using Acero’s aggregate/order nodes and instead use `pc.sort_indices`, `Table.group_by`, etc., combining first often reduces overhead.
+
+## When you should *not* combine
+
+* **You’re still streaming** and haven’t committed to materialization
+* You only apply **one or two kernels** and then drop the table
+* Your table has **huge binary/string columns**, where `combine_chunks()` may still leave multiple chunks and can be bandwidth-heavy ([Apache Arrow][1])
+* You’re about to hand the data back into an engine that already works batch-wise (Acero / Dataset scanning)
+
+## A practical “chunk policy” heuristic (what I’d standardize)
+
+Since you’re optimizing for throughput, you can gate combining on observed chunkiness:
+
+* combine if `max(num_chunks_per_column) > 8` **or**
+* `avg_rows_per_chunk < 50_000` (or some threshold tied to scanner batch_size)
+
+This avoids paying the cost when you already have coarse chunks.
+
+---
+
+# B) Batch sizing strategy for scanners/readers (throughput vs latency)
+
+## The Scanner knobs that matter (and defaults)
+
+`pyarrow.dataset.Scanner` documents:
+
+* `batch_size` default **131,072** rows (max rows per scanned `RecordBatch`) ([Apache Arrow][4])
+* `batch_readahead` default **16** (read ahead within a file) ([Apache Arrow][4])
+* `fragment_readahead` default **4** (read ahead across files) ([Apache Arrow][4])
+* `use_threads=True` for max parallelism ([Apache Arrow][4])
+
+And it reiterates the pushdown semantics: filter pushdown when possible; otherwise it filters loaded batches before yielding. ([Apache Arrow][4])
+
+## Throughput-first tuning guidance (CodeIntel-shaped)
+
+### 1) Start with default batch_size and move in “powers of two”
+
+* Narrow numeric tables: often benefit from *larger* batches (fewer batches/chunks → less overhead)
+* Wide / nested / lots of strings: may prefer moderate batches to avoid giant transient allocations
+
+**Heuristic:** treat `batch_size` as “how many rows you want per chunk when materialized.” If you intend to call `combine_chunks()` later anyway, you can still keep `batch_size` reasonably large to reduce the number of chunks you’re combining.
+
+### 2) Readahead is a throughput knob, but it inflates “in-flight” memory
+
+Arrow docs are explicit: increasing `batch_readahead` and `fragment_readahead` increases RAM usage but may improve IO utilization. ([Apache Arrow][4])
+
+Given your stance (“memory isn’t a concern”), you can be more aggressive here, *but*:
+
+* Too much readahead can worsen cache locality by flooding memory with soon-to-be-processed batches.
+* If downstream is CPU-bound, excess IO readahead doesn’t help.
+
+A good policy is:
+
+* increase `fragment_readahead` first if you have many files,
+* increase `batch_readahead` if individual files are large and latency is high.
+
+### 3) If you care about “interactive latency,” shrink batches; if you care about “pipeline throughput,” grow batches
+
+* Smaller batches → earlier first results, easier progress reporting, lower peak
+* Larger batches → fewer dispatches, less Python overhead, faster end-to-end
+
+In CodeIntel build pipelines, you almost always want **throughput**.
+
+---
+
+# C) Table vs RecordBatchReader lifecycles (streaming vs materialization)
+
+## Key fact: `Table.to_batches()` and `Table.to_reader()` are **zero-copy views**
+
+PyArrow explicitly notes:
+
+* `Table.to_batches()` is zero-copy; it “merely exposes the same data under a different API.” ([Apache Arrow][1])
+* `Table.to_reader()` is also zero-copy. ([Apache Arrow][1])
+
+So “streaming” doesn’t have to mean “recompute”; you can *materialize once* and then stream a reader view if that helps structure downstream processing.
+
+## Why keep a `RecordBatchReader` as long as possible (even if memory is fine)
+
+`RecordBatchReader` is explicitly an iterator/stream of record batches. ([Apache Arrow][5])
+
+Even when you *can* afford full materialization, streaming buys you:
+
+* better CPU scheduling (pipeline overlap),
+* fewer giant contiguous allocations (less allocator churn),
+* and more consistent cache behavior (process one batch, drop it, move on).
+
+It also reduces *accidental* chunk explosion: if you materialize early, then repeatedly concatenate and slice, you tend to manufacture many small chunks that you later have to “fix” with `combine_chunks()`.
+
+## A clean, CodeIntel-friendly lifecycle policy
+
+### Prefer streaming (Reader/Batches) when:
+
+* your next stage can operate batch-wise (e.g., building intermediate arrays, emitting edge rows in batches, writing parquet in batches),
+* you’re doing “map-style” transforms that don’t require global state.
+
+### Prefer materializing to Table when:
+
+* you need global operations (sort, certain joins outside Acero, some global dedupe patterns),
+* you’re at a **contract boundary** (finalize gate, caching, snapshotting),
+* you need to pass a single object across interfaces.
+
+And remember: `RecordBatchReader.read_all()` exists as a clean “commit to table now” boundary (shown in the `Table.to_reader()` example). ([Apache Arrow][1])
+
+---
+
+# D) Putting it together: the “one boundary” pattern that prevents overhead creep
+
+Your revamp doc’s intent is: **fused plan → minimal materialization → finalize gate**. Chunking policy is a key part of that standardization.
+
+Here’s the operational pattern I’d standardize:
+
+1. **Scan with a batch_size chosen for throughput** (often keep default initially) ([Apache Arrow][4])
+2. Stay in **RecordBatchReader/batches** as long as possible
+3. Materialize to `Table` only at:
+
+   * “needs global state” points, or
+   * the finalize gate
+4. In finalize gate:
+
+   * optionally `combine_chunks()` once (policy-driven) ([Apache Arrow][1])
+   * then run invariants/dedupe/sorts
+
+That gives you:
+
+* far fewer kernel calls,
+* fewer accidental chunk explosions,
+* and one place to tune chunk behavior without editing 30 nodes.
+
+---
+
+If you want the next sequential deep dive after this, the most practical is **“thread pools + use_threads interactions with chunking”**: how scanner threading, Acero threading, and `Table.group_by(use_threads=...)` combine to affect both throughput and determinism (and how to set a single global policy per run mode).
+
+[1]: https://arrow.apache.org/docs/python/generated/pyarrow.Table.html "pyarrow.Table — Apache Arrow v22.0.0"
+[2]: https://arrow.apache.org/docs/python/generated/pyarrow.ChunkedArray.html?utm_source=chatgpt.com "pyarrow.ChunkedArray — Apache Arrow v22.0.0"
+[3]: https://github.com/apache/arrow/issues/37318?utm_source=chatgpt.com "[C++][Python] pyarrow.ChunkedArray.combine_chunks is ..."
+[4]: https://arrow.apache.org/docs/python/generated/pyarrow.dataset.Scanner.html "pyarrow.dataset.Scanner — Apache Arrow v22.0.0"
+[5]: https://arrow.apache.org/docs/python/generated/pyarrow.RecordBatchReader.html?utm_source=chatgpt.com "pyarrow.RecordBatchReader — Apache Arrow v22.0.0"
+
+## 9) Thread pools + parallelism knobs in PyArrow/Acero
+
+Your `compute_revamp.md` calls this out as one of the two “force fast, predictable kernels” levers: **explicitly set Arrow’s global CPU + I/O thread pools**, then rely on per-op/per-plan `use_threads` where you need determinism or to avoid oversubscription.
+
+There are **three layers** to understand:
+
+1. **Global CPU thread pool** (Arrow “parallel operations”)
+2. **Global I/O thread pool** (dataset scanning + other I/O tasks)
+3. **Per-execution `use_threads=`** (Scanner and Acero plan execution)
+
+---
+
+# A) Global thread pools
+
+## A1) CPU pool: `pa.set_cpu_count(n)` / `pa.cpu_count()`
+
+* `pa.set_cpu_count(count)` **sets the number of threads to use in parallel operations** (compute kernels and other CPU-parallel work). ([Apache Arrow][1])
+* `pa.cpu_count()` returns the configured size, and Arrow determines the **startup default** by inspecting `OMP_NUM_THREADS` and `OMP_THREAD_LIMIT`; if unset, it defaults to the number of hardware threads. You can change it at runtime via `set_cpu_count()`. ([Apache Arrow][2])
+
+This matches the revamp doc’s suggestion to “own Arrow’s CPU thread pool explicitly” and also notes the same OpenMP env vars for defaults.
+
+### Practical meaning
+
+If you set `pa.set_cpu_count(32)`, you’re effectively telling Arrow: “for CPU-parallel operations, assume you can use up to 32 threads” (and a lot of APIs will treat that as the max). ([Apache Arrow][1])
+
+---
+
+## A2) I/O pool: `pa.set_io_thread_count(n)` / `pa.io_thread_count()`
+
+* `pa.set_io_thread_count(count)` **sets the number of threads to use for I/O operations**, and Arrow explicitly says **many operations, such as scanning a dataset, implicitly use this pool**. Count must be positive. ([Apache Arrow][3])
+* `pa.io_thread_count()` returns the configured size, and Arrow notes it’s set at startup but can be modified at runtime with `set_io_thread_count()`. ([Apache Arrow][4])
+
+So: **dataset scans use both knobs**:
+
+* CPU knob for decode/compute parallelism (when enabled),
+* I/O knob for async read / prefetch style tasks (when present in the stack). ([Apache Arrow][3])
+
+---
+
+# B) Per-execution threading
+
+## B1) Dataset scanning: `Scanner(..., use_threads=...)`
+
+`Scanner.from_dataset(..., use_threads=True)` documents:
+
+> If enabled, then **maximum parallelism will be used determined by the number of available CPU cores**. ([Apache Arrow][5])
+
+Interpretation for your runtime-control model:
+
+* `use_threads=True` lets the scan stage exploit CPU parallelism (bounded by “available CPU cores,” which in practice you should treat as governed by your global CPU pool setting). ([Apache Arrow][5])
+* `use_threads=False` is your “make scanning single-thread CPU” option (useful for deterministic debugging, or avoiding oversubscription when you’re already parallel elsewhere).
+
+Also note: `Scanner.to_table()` is explicitly a **serial materialization** step (“serially materialize the Scan result in memory before creating the Table”). For throughput, prefer `to_reader()`/`to_batches()` and only materialize at a boundary (e.g., finalize gate). ([Apache Arrow][5])
+
+---
+
+## B2) Acero plan execution: `Declaration.to_table(use_threads=...)` / `to_reader(use_threads=...)`
+
+This one is extremely crisp in the docs:
+
+* `Declaration.to_table(use_threads=True)` runs the plan and collects to a table.
+* If `use_threads=False`, **all CPU work is done on the calling thread**.
+* **I/O tasks still happen on the I/O executor** and may be multi-threaded (but should not use significant CPU). ([Apache Arrow][6])
+
+This is the cleanest “determinism / no-oversubscription” knob you have for Acero without changing the plan.
+
+Your revamp plan snippet explicitly uses `scan.to_table(use_threads=True)` and calls out that `Declaration.to_table(use_threads=...)` controls CPU threading for the plan.
+
+---
+
+# C) Interactions and “gotchas” (the stuff you want as policy)
+
+## C1) Oversubscription: the #1 real-world failure mode
+
+If you run Hamilton with parallel execution *and* you let Arrow use “max threads everywhere,” you can end up with:
+
+* many Hamilton workers
+* each running Arrow ops with large CPU pools
+
+That can tank throughput (context switching, cache thrash) even though each component is “parallel.”
+
+**Policy fix:** pick *one* layer to own parallelism per run mode.
+
+* Either: Hamilton parallelizes across nodes, while Arrow runs with smaller CPU pool.
+* Or: Hamilton mostly serializes nodes, while Arrow uses a large CPU pool per node.
+
+Your architecture is trending toward “few big fused Arrow plans,” which usually means **let Arrow be the parallel engine** and keep orchestration concurrency lower.
+
+## C2) Determinism vs speed is a first-class runtime mode
+
+Given `Declaration.to_table(use_threads=False)` runs CPU on the calling thread, you can use that as the “deterministic debug mode” without changing code shape. ([Apache Arrow][6])
+
+Similarly, you can run dataset scanning with `use_threads=False` when you’re chasing nondeterministic behavior or contention. ([Apache Arrow][5])
+
+---
+
+# D) A repo-ready “own the runtime” pattern
+
+Put this at your CLI entrypoint / service startup (once per process), and log it into your run metadata:
+
+```python
+import os
+import pyarrow as pa
+
+def configure_arrow_threads(*, cpu: int | None, io: int | None) -> None:
+    # Log what Arrow thinks right now
+    before_cpu = pa.cpu_count()
+    before_io = pa.io_thread_count()
+
+    if cpu is not None:
+        pa.set_cpu_count(cpu)
+    if io is not None:
+        pa.set_io_thread_count(io)
+
+    after_cpu = pa.cpu_count()
+    after_io = pa.io_thread_count()
+
+    # emit to logs / ops tables
+    print(f"Arrow threads: cpu {before_cpu}->{after_cpu}, io {before_io}->{after_io}")
+```
+
+This is exactly the revamp doc’s “own CPU & I/O pools explicitly” recommendation (it even gives the same example values).
+
+---
+
+# E) Operational sizing policy (local dev vs CI vs single-host production)
+
+These are **heuristics** (because the right answer depends on whether you’re CPU-bound, IO-bound, and whether *other* layers are parallelizing), but they’re the policies I’d standardize:
+
+## (a) Local dev (interactive, don’t melt the laptop)
+
+Goal: responsiveness + enough throughput to feel fast.
+
+* **CPU pool**: ~50–75% of hardware threads (leave headroom for the OS + IDE + tests)
+* **I/O pool**: moderate (often 8–32) since scans can benefit from concurrent reads/prefetch, but it’s rarely worth saturating the machine
+
+Rationale: Arrow’s default CPU pool may be “all hardware threads,” but your dev machine is also running everything else. ([Apache Arrow][2])
+
+## (b) CI (predictable, avoid flake from contention)
+
+Goal: stable runtimes and fewer “randomly slow” runs.
+
+* **CPU pool**: small fixed number (e.g., 2–8), or match the CI runner’s allocated cores
+* **I/O pool**: small/moderate (4–16)
+
+Also: consider setting `OMP_NUM_THREADS` / `OMP_THREAD_LIMIT` in CI so the default is sane even if some process forgets to call `set_cpu_count`. ([Apache Arrow][2])
+
+## (c) Production single-host services (throughput + tail latency)
+
+Goal: high sustained throughput without starving the server runtime (FastAPI/ASGI threads, background tasks, etc.).
+
+* **CPU pool**: near available cores **minus headroom** (common: `N-1` or `N-2`)
+* **I/O pool**:
+
+  * local NVMe: often `~N` is plenty
+  * remote/object storage or high latency FS: can be higher (concurrency helps), but validate via perf tests
+
+Remember: `set_io_thread_count` is specifically for I/O operations and is used implicitly by dataset scans. ([Apache Arrow][3])
+
+---
+
+# F) Where these knobs show up in your “plan → execute → finalize” architecture
+
+* **Scan**: `Scanner(... use_threads=...)` and the global IO pool matter most. ([Apache Arrow][5])
+* **Acero plan execution**: `Declaration.to_table/use_threads` controls CPU threading for the plan, while I/O still goes through the I/O executor. ([Apache Arrow][6])
+* **Finalize gate**: if you need deterministic debugging, you can run the plan with `use_threads=False` and keep the rest identical.
+
+This keeps your runtime behavior governed by **a small set of explicit knobs** (exactly what your revamp doc is aiming for).
+
+---
+
+
+[1]: https://arrow.apache.org/docs/python/generated/pyarrow.set_cpu_count.html "pyarrow.set_cpu_count — Apache Arrow v22.0.0"
+[2]: https://arrow.apache.org/docs/python/generated/pyarrow.cpu_count.html "pyarrow.cpu_count — Apache Arrow v22.0.0"
+[3]: https://arrow.apache.org/docs/python/generated/pyarrow.set_io_thread_count.html "pyarrow.set_io_thread_count — Apache Arrow v22.0.0"
+[4]: https://arrow.apache.org/docs/python/generated/pyarrow.io_thread_count.html "pyarrow.io_thread_count — Apache Arrow v22.0.0"
+[5]: https://arrow.apache.org/docs/python/generated/pyarrow.dataset.Scanner.html "pyarrow.dataset.Scanner — Apache Arrow v22.0.0"
+[6]: https://arrow.apache.org/docs/python/generated/pyarrow.acero.Declaration.html "pyarrow.acero.Declaration — Apache Arrow v22.0.0"
+
+Here’s a technical design for the **internal “Arrow DSL” / helper architecture** that stops calc sprawl—exactly matching the end-state your `compute_revamp.md` describes: a tiny wrapper that returns either an **Acero `Declaration` (preferred)** or a **`pa.Table` fallback**, Hamilton nodes that are mostly **declare plan → execute → finalize(strict/tolerant)**, and a single module where **all compute idioms live** so the surface area stops expanding.
+
+---
+
+## 1) What “calc sprawl” looks like (and what the DSL must prevent)
+
+Calc sprawl usually emerges when:
+
+* every Hamilton node hand-writes bespoke `pc.*` sequences,
+* “same operation” exists in 6 variants (slightly different null/type semantics),
+* performance knobs (`combine_chunks`, `use_threads`) are sprinkled ad hoc,
+* data quality checks are scattered and inconsistent.
+
+Your doc’s cure is architectural: keep nodes tiny and move the “real work” into a shared Arrow layer: **Acero plans when possible**, **table fallbacks when not**, and **one finalize gate** for correctness + diagnostics.
+
+---
+
+## 2) The core contract: three-phase node shape
+
+Every Hamilton target becomes:
+
+1. **declare plan (pure)**: build a “plan object” (no IO, no execution)
+2. **execute plan**: materialize to `Table` (or `RecordBatchReader` if you explicitly choose)
+3. **finalize(strict/tolerant)**: schema align/cast + vectorized invariants + dedupe + artifacts (good/errors/alignment/stats)
+
+That exact shape is spelled out in the revamp doc as the new default.
+
+This alone kills most sprawl because it forces all variability into:
+
+* plan authoring helpers
+* post-plan kernels (explode/dedupe/etc.)
+* finalize policies
+
+---
+
+## 3) The “tiny Arrow DSL”: what it should be (and what it must **not** be)
+
+### What it is
+
+A *small* typed layer that represents:
+
+* a **backend**: Acero `Declaration` *or* eager `pa.Table` path
+* a **plan graph**: scan/filter/project/join/aggregate/order (Acero primitives)
+* an **execution context**: threads/memory_pool/chunk policy/determinism mode
+* a **contract**: schema + invariants + dedupe spec + error schema
+
+And returns a single standard result: `FinalizeResult(good, errors, alignment, stats)`.
+
+### What it must not be
+
+* a general optimizer
+* a second SQL engine
+* a place where node-specific business logic re-accumulates
+
+The DSL should deliberately cover the 80% path and make “escape hatches” explicit (your doc suggests this pattern and even calls out a DataFusion escape hatch if you hit relational ceilings).
+
+---
+
+## 4) Recommended module layout (to stop sprawl by construction)
+
+Put all Arrow compute “power tools” behind one import boundary.
+
+### `src/codeintel/build/tabular/arrowdsl/`
+
+**`expr.py`**
+
+* tiny wrappers for plan-time expressions (field/scalar/in_/and_/or_/cast)
+* purpose: avoid mixing eager Scalars vs Expression literals, and keep pushdown-safe subset
+
+**`plan.py`**
+
+* `Plan` abstraction (wraps `acero.Declaration` or eager `pa.Table` thunk)
+* plan constructors: `scan_dataset`, `table_source`, `project`, `filter`, `hash_join`, `aggregate`, `order_by`
+* “compile” method: returns `Declaration | TableThunk`
+
+**`kernels.py`**
+
+* all *row-count-changing* or hard-to-express operations live here:
+
+  * `explode_edges(...)` (list_flatten + list_parent_indices + take)
+  * `stable_sort(...)` (`sort_indices` + `take`)
+  * `dedupe_keep_first(...)` + “sort once then first”
+  * `safe_divide`, `coalesce_many`, `safe_cast`
+  * struct helpers (`make_extras_struct`, `flatten_for_export`)
+* this is the “compute idioms module” your doc explicitly says to centralize.
+
+**`contracts.py`**
+
+* `DatasetContract`: schema + required fields + nested alignment rules + dedupe spec + determinism tier
+* `ErrorContract`: error table schema + canonical error_code enums
+
+**`finalize.py`**
+
+* `finalize(table, contract, mode, ctx) -> FinalizeResult`
+* single place for schema align/cast, invariant masks, dedupe, artifacts (as your doc prescribes).
+
+**`runtime.py`**
+
+* `ExecutionContext`: `cpu_threads`, `io_threads`, `use_threads`, `combine_chunks`, `determinism_mode`
+* centralizes the knobs (and logs them once)
+
+This layout makes it *hard* to write bespoke calcs in random nodes because the obvious primitives are all in one place.
+
+---
+
+## 5) Key abstractions (typed) that keep the surface small
+
+### 5.1 `ExecutionContext`
+
+A frozen dataclass carried everywhere:
+
+```python
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class ExecutionContext:
+    use_threads: bool                 # per-plan execution CPU threading
+    combine_chunks: bool              # normalize chunking at finalize boundary
+    determinism: str                  # "canonical" | "stable_set" | "best_effort"
+```
+
+(You can extend with memory_pool, IO/cpu pool sizes, etc., but keep it minimal.)
+
+### 5.2 `Plan` as a sum type (Declaration-first, Table fallback)
+
+Your doc’s explicit requirement: return either an Acero `Declaration` (preferred) or `pa.Table` fallback when Acero can’t express something.
+
+So model it explicitly:
+
+```python
+from dataclasses import dataclass
+from typing import Callable, Union
+import pyarrow as pa
+import pyarrow.acero as acero
+
+TableThunk = Callable[[], pa.Table]
+
+@dataclass(frozen=True)
+class Plan:
+    inner: Union[acero.Declaration, TableThunk]
+
+    def execute(self, *, ctx: ExecutionContext) -> pa.Table:
+        if isinstance(self.inner, acero.Declaration):
+            return self.inner.to_table(use_threads=ctx.use_threads)
+        return self.inner()
+```
+
+Key property: execution is **one place**. Nodes don’t decide “how to run” anymore.
+
+### 5.3 `DatasetContract` drives finalize (and dedupe)
+
+Contracts make “policy not ad hoc” real:
+
+* schema + required cols
+* nested alignment rules (list-aligned cols)
+* dedupe spec (keys + tie-breakers + strategy)
+* determinism tier
+
+Then `finalize()` is just “apply contract.”
+
+---
+
+## 6) The *one* compositional pattern you standardize: “Plan → Kernels → Finalize”
+
+Your doc calls out the “list explode + Acero plan + finalize gate” pattern as the actionable refactor that reveals most of the helper surface.
+
+So bake it into a first-class helper:
+
+```python
+def run_pipeline(
+    *,
+    plan: Plan,
+    post: list[Callable[[pa.Table], pa.Table]],  # explode, join lookups, etc.
+    contract: DatasetContract,
+    mode: str,  # "strict" | "tolerant"
+    ctx: ExecutionContext,
+) -> FinalizeResult:
+    t = plan.execute(ctx=ctx)
+    for fn in post:
+        t = fn(t)
+    return finalize(t, contract=contract, mode=mode, ctx=ctx)
+```
+
+Now every Hamilton node is basically:
+
+```python
+def call_edges__table(ctx: ExecutionContext, ...deps...) -> pa.Table:
+    plan = plans.call_edges_scan(...)
+    post = [kernels.explode_edges(...), kernels.dedupe(...)]
+    return run_pipeline(plan=plan, post=post, contract=contracts.call_edges, mode="tolerant", ctx=ctx).good
+```
+
+Which matches “declare plan → execute → finalize” exactly.
+
+---
+
+## 7) Where the sprawl *actually* goes to die: the “idioms module”
+
+The doc explicitly lists the compute idioms that should be centralized: explode list, dedupe, safe divide/coalesce, struct extras, invariant validators.
+
+Treat those as **blessed primitives**:
+
+### 7.1 Explode edges
+
+Single canonical helper (with aligned-list validation and error routing).
+
+### 7.2 Dedupe
+
+Two canonical variants only:
+
+* deterministic: sort once by `[keys..., tie_breakers...]` then `group_by(keys).aggregate(first...)` (your doc’s “best of both worlds”)
+* fast: `group_by(keys, use_threads=...)` “first” with documented determinism mode
+
+### 7.3 Safe arithmetic and null semantics
+
+`safe_divide`, `coalesce_many`, `safe_cast` must be single-source-of-truth (otherwise every node reinvents error policies).
+
+### 7.4 Struct extras
+
+One helper to build the `extras` struct (avoid JSON blobs) and one helper to flatten only at export boundaries.
+
+### 7.5 Invariants
+
+Define invariants as composable mask builders (return `BooleanArray` + `error_code`), and let finalize assemble them into `(good, errors)`.
+
+---
+
+## 8) Enforcing the architecture (so it doesn’t drift back)
+
+Two practical enforcement moves:
+
+1. **“No raw pc.* in nodes” rule**
+
+   * allow `pc.*` only inside `arrowdsl/expr.py` and `arrowdsl/kernels.py`
+   * everything else imports from there
+
+2. **Golden tests for helpers**
+
+   * every helper gets a micro-fixture test: input table → (good/errors/stats)
+   * dedupe tests prove determinism mode behaviors
+   * explode tests prove alignment error routing
+
+This is how you make “calc sprawl stops expanding” an invariant of the repo, not a hope.
+
+---
+
+## 9) Decision rubric: when do you fall back to `pa.Table`?
+
+Keep Acero as the default because it covers scan/project/filter/hash_join/aggregate/order primitives (your doc explicitly calls this out).
+
+Fallback to eager `pa.Table` only when:
+
+* the operation changes row counts in ways Acero can’t express cleanly (explode/unnest)
+* nested payload limitations force it
+* you need a niche compute pattern that’s not available as an ExecNode
+
+But the *key* is: fallback is still “inside the DSL,” not ad hoc in nodes.
+
+---
+
+

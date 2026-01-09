@@ -8,16 +8,20 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import suppress
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 from sqlglot.errors import SqlglotError
 
 from codeintel.core.columnar import align_reader_to_contract, extras_policy_from_schema
+from codeintel.core.columnar.compute_helpers import combine_table_chunks
 from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.kernels import hash_struct_ordinal, stable_sort_indices
+from codeintel.core.columnar.nested_ops import deep_cast_table_to_contract
 from codeintel.core.exports import (
     apply_ipc_metadata,
     build_ipc_write_options,
@@ -32,7 +36,11 @@ from codeintel.core.sqlglot_tools import (
     render_sql_duckdb,
     semantic_diff_sql_duckdb,
 )
-from codeintel.serving.errors import LineageMetadataMissingError, SearchIndexMissingError
+from codeintel.serving.errors import (
+    LineageMetadataMissingError,
+    SearchIndexMissingError,
+    SemanticInvalidFilterError,
+)
 from codeintel.serving.meta.models import ServingKernelMetaResponse
 from codeintel.serving.meta.service import build_kernel_meta_payload
 from codeintel.serving.search.engine import (
@@ -82,7 +90,7 @@ from codeintel.storage.query_results import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Generator
     from pathlib import Path
 
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
@@ -112,6 +120,101 @@ class UnknownViewIdError(KeyError):
 MIN_COLUMN_LINEAGE_PARTS = 2
 
 LOG = logging.getLogger(__name__)
+SortKey = tuple[str, Literal["ascending", "descending"]]
+_HASH_ORDINAL_MODULUS = 2**31 - 1
+
+
+def _finalize_mode(schema_enforcement: str) -> Literal["strict", "tolerant"]:
+    if schema_enforcement == "strict":
+        return "strict"
+    return "tolerant"
+
+
+def _sort_keys_from_primary_key(primary_key: Sequence[str]) -> list[SortKey]:
+    return [(name, "ascending") for name in primary_key]
+
+
+def _unique_order_columns(columns: Sequence[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for column in columns:
+        if not column or column in seen:
+            continue
+        seen.add(column)
+        ordered.append(column)
+    return ordered
+
+
+def _apply_fallback_order_by(
+    inputs: PlanInputs,
+    *,
+    primary_key: Sequence[str],
+    allowed_columns: Sequence[str],
+) -> PlanInputs:
+    if inputs.order_by:
+        return inputs
+    allowed = set(allowed_columns)
+    fallback = [column for column in primary_key if column in allowed]
+    resolved = _unique_order_columns(fallback)
+    if not resolved:
+        return inputs
+    return replace(inputs, order_by=resolved)
+
+
+def _apply_export_ordering_policy(
+    inputs: PlanInputs,
+    *,
+    resolved: ResolvedViewContext,
+) -> PlanInputs:
+    ordered = _apply_fallback_order_by(
+        inputs,
+        primary_key=resolved.view.primary_key,
+        allowed_columns=resolved.allowed_columns,
+    )
+    if ordered.order_by:
+        return ordered
+    msg = (
+        "Export requires order_by for deterministic output when primary_key is missing: "
+        f"{resolved.view.id}"
+    )
+    raise SemanticInvalidFilterError(reason=msg)
+
+
+def _temp_column_name(table: pa.Table, *, base: str) -> str:
+    existing = set(table.column_names)
+    name = base
+    suffix = 1
+    while name in existing:
+        name = f"{base}_{suffix}"
+        suffix += 1
+    return name
+
+
+def _stable_order_by_hash(
+    table: pa.Table,
+    *,
+    columns: Sequence[str],
+) -> pa.Table:
+    if table.num_rows <= 1:
+        return table
+    available = [name for name in columns if name in table.column_names]
+    if not available:
+        return table
+    try:
+        ordinal = hash_struct_ordinal(
+            table,
+            columns=available,
+            modulus=_HASH_ORDINAL_MODULUS,
+        )
+    except (RuntimeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError, TypeError):
+        return table
+    temp_name = _temp_column_name(table, base="__stable_ordinal")
+    try:
+        table_with = table.append_column(temp_name, ordinal)
+        indices = stable_sort_indices(table_with, sort_keys=[(temp_name, "ascending")])
+    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError):
+        return table
+    return table.take(indices)
 
 
 def _column_lineage_refs(entries: Iterable[str]) -> list[ColumnLineageRef]:
@@ -143,6 +246,17 @@ def _coerce_optional_int(value: object | None) -> int | None:
         if stripped.isdigit() or (stripped.startswith("-") and stripped[1:].isdigit()):
             return int(stripped)
     return None
+
+
+@dataclass(frozen=True, slots=True)
+class _ReaderOutputOptions:
+    table_key: str
+    columns: Sequence[str] | None
+    cancel_check: CancelCheck | None
+    mode: Literal["strict", "tolerant"]
+    sort_keys: Sequence[SortKey] | None
+    contract_schema: pa.Schema | None
+    apply_hash_fallback: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -488,22 +602,41 @@ class SemanticQueryKernel:
     def _rows_from_reader(
         reader: pa.RecordBatchReader,
         *,
-        table_key: str,
-        columns: Sequence[str] | None,
-        cancel_check: CancelCheck | None,
+        options: _ReaderOutputOptions,
     ) -> list[dict[str, object]]:
         batches: list[pa.RecordBatch] = []
         for batch in reader:
-            _raise_if_cancelled(cancel_check)
+            _raise_if_cancelled(options.cancel_check)
             batches.append(batch)
         if not batches:
             return []
         table = pa.Table.from_batches(batches, schema=reader.schema)
+        table = combine_table_chunks(table)
+        if options.contract_schema is not None:
+            with suppress(
+                TypeError,
+                pa.ArrowInvalid,
+                pa.ArrowNotImplementedError,
+                pa.ArrowTypeError,
+            ):
+                table = deep_cast_table_to_contract(table, options.contract_schema)
         finalized = finalize_table(
             table,
-            spec=FinalizeSpec(table_key=table_key, mode="tolerant"),
+            spec=FinalizeSpec(table_key=options.table_key, mode=options.mode),
         )
-        return records_from_arrow_table(finalized.good, columns=columns)
+        result = finalized.good
+        if options.sort_keys:
+            present = set(result.column_names)
+            usable_keys: list[SortKey] = [key for key in options.sort_keys if key[0] in present]
+            if usable_keys:
+                indices = stable_sort_indices(result, sort_keys=usable_keys)
+                result = result.take(indices)
+        elif options.apply_hash_fallback:
+            hash_columns = (
+                list(options.columns) if options.columns is not None else list(result.column_names)
+            )
+            result = _stable_order_by_hash(result, columns=hash_columns)
+        return records_from_arrow_table(result, columns=options.columns)
 
     @staticmethod
     def _log_ast_diff(
@@ -537,9 +670,8 @@ class SemanticQueryKernel:
         self,
         *,
         query: ServingQuery,
-        columns: Sequence[str],
         ctx: EngineContext,
-        cancel_check: CancelCheck | None,
+        reader_options: _ReaderOutputOptions,
     ) -> tuple[list[dict[str, object]], QueryExplain, str]:
         engine = self._engine_registry.select(
             preference=self.settings.query_engine,
@@ -549,13 +681,11 @@ class SemanticQueryKernel:
         engine_name = engine.name.lower()
         plan = engine.compile(query, ctx=ctx)
         try:
-            _raise_if_cancelled(cancel_check)
+            _raise_if_cancelled(reader_options.cancel_check)
             reader = plan.to_reader(batch_size=self.settings.export_batch_size)
             rows = self._rows_from_reader(
                 reader,
-                table_key=query.spec.table_key,
-                columns=columns,
-                cancel_check=cancel_check,
+                options=reader_options,
             )
             explain = plan.explain()
             self._log_ast_diff(
@@ -578,11 +708,19 @@ class SemanticQueryKernel:
             inputs, effective_limit = self._planner.plan_inputs_for_query(
                 ctx=resolved, request=request
             )
+            inputs = _apply_fallback_order_by(
+                inputs,
+                primary_key=resolved.view.primary_key,
+                allowed_columns=resolved.allowed_columns,
+            )
             serving_query = self._planner.build_query(
                 ctx=resolved,
                 inputs=inputs,
                 limit=effective_limit + 1,
             )
+            sort_keys: Sequence[SortKey] | None = None
+            if not inputs.order_by and resolved.view.primary_key:
+                sort_keys = _sort_keys_from_primary_key(resolved.view.primary_key)
             ast_fingerprint = self._ast_fingerprint_for_query(serving_query)
             engine_ctx = self._engine_context(
                 pointer=pointer,
@@ -593,12 +731,25 @@ class SemanticQueryKernel:
                 table_key=serving_query.spec.table_key,
                 dataset_manifests=engine_ctx.dataset_manifests,
             )
+            contract_schema = _contract_schema_for_table(
+                warehouse=warehouse,
+                pointer=pointer,
+                table_key=serving_query.spec.table_key,
+            )
+            reader_options = _ReaderOutputOptions(
+                table_key=serving_query.spec.table_key,
+                columns=inputs.columns,
+                cancel_check=cancel_check,
+                mode=_finalize_mode(self.settings.schema_enforcement),
+                sort_keys=sort_keys,
+                contract_schema=contract_schema,
+                apply_hash_fallback=not inputs.order_by,
+            )
             batch_size = self.settings.export_batch_size
             rows, explain, engine_name = self._execute_engine_plan(
                 query=serving_query,
-                columns=inputs.columns,
                 ctx=engine_ctx,
-                cancel_check=cancel_check,
+                reader_options=reader_options,
             )
         return _QueryExecutionPlan(
             resolved=resolved,
@@ -782,6 +933,11 @@ class SemanticQueryKernel:
         snapshot_context = self._planner.snapshot_context(pointer)
         resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
         inputs, effective_limit = self._planner.plan_inputs_for_query(ctx=resolved, request=request)
+        inputs = _apply_fallback_order_by(
+            inputs,
+            primary_key=resolved.view.primary_key,
+            allowed_columns=resolved.allowed_columns,
+        )
         serving_query = self._planner.build_query(
             ctx=resolved,
             inputs=inputs,
@@ -833,8 +989,8 @@ class SemanticQueryKernel:
     ) -> _ExportPlanContext:
         snapshot_context = self._planner.snapshot_context(pointer)
         resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
-        inputs, effective_limit = self._planner.plan_inputs_for_export(
-            ctx=resolved,
+        inputs, effective_limit = self._resolve_export_inputs(
+            resolved=resolved,
             request=request,
         )
         serving_query = self._planner.build_query(
@@ -883,6 +1039,19 @@ class SemanticQueryKernel:
             sql_fingerprint=sql_fingerprint,
             contract_schema=contract_schema,
         )
+
+    def _resolve_export_inputs(
+        self,
+        *,
+        resolved: ResolvedViewContext,
+        request: SemanticExportRequest,
+    ) -> tuple[PlanInputs, int]:
+        inputs, effective_limit = self._planner.plan_inputs_for_export(
+            ctx=resolved,
+            request=request,
+        )
+        inputs = _apply_export_ordering_policy(inputs, resolved=resolved)
+        return inputs, effective_limit
 
     def query_ipc_stream(
         self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
@@ -1048,6 +1217,11 @@ class SemanticQueryKernel:
             inputs, effective_limit = self._planner.plan_inputs_for_query(
                 ctx=resolved, request=request
             )
+            inputs = _apply_fallback_order_by(
+                inputs,
+                primary_key=resolved.view.primary_key,
+                allowed_columns=resolved.allowed_columns,
+            )
             serving_query = self._planner.build_query(
                 ctx=resolved,
                 inputs=inputs,
@@ -1116,6 +1290,11 @@ class SemanticQueryKernel:
             inputs, effective_limit = self._planner.plan_inputs_for_query(
                 ctx=resolved, request=request
             )
+            inputs = _apply_fallback_order_by(
+                inputs,
+                primary_key=resolved.view.primary_key,
+                allowed_columns=resolved.allowed_columns,
+            )
             serving_query = self._planner.build_query(
                 ctx=resolved,
                 inputs=inputs,
@@ -1178,11 +1357,18 @@ class SemanticQueryKernel:
                 fts_available=is_fts_available(warehouse.gateway.con),
             )
             reader = relation.fetch_record_batch(self.settings.export_batch_size)
-            rows = self._rows_from_reader(
-                reader,
+            reader_options = _ReaderOutputOptions(
                 table_key=f"{SEARCH_TABLE_SCHEMA}.{SEARCH_TABLE_NAME}",
                 columns=None,
                 cancel_check=None,
+                mode=_finalize_mode(self.settings.schema_enforcement),
+                sort_keys=None,
+                contract_schema=None,
+                apply_hash_fallback=False,
+            )
+            rows = self._rows_from_reader(
+                reader,
+                options=reader_options,
             )
 
         truncated = len(rows) > request.limit
@@ -1223,8 +1409,9 @@ class SemanticQueryKernel:
         """
         pointer = self.db.current_pointer()
         resolved = self._resolve_view_context_for_export(pointer=pointer, view_id=request.view_id)
-        inputs, effective_limit = self._planner.plan_inputs_for_export(
-            ctx=resolved, request=request
+        inputs, effective_limit = self._resolve_export_inputs(
+            resolved=resolved,
+            request=request,
         )
         fingerprint_spec = self._planner.build_spec(
             ctx=resolved, inputs=inputs, limit=effective_limit
@@ -1267,8 +1454,9 @@ class SemanticQueryKernel:
         with self.db.connect_export() as (warehouse, pointer):
             snapshot_context = self._planner.snapshot_context(pointer)
             resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
-            inputs, effective_limit = self._planner.plan_inputs_for_export(
-                ctx=resolved, request=request
+            inputs, effective_limit = self._resolve_export_inputs(
+                resolved=resolved,
+                request=request,
             )
             serving_query = self._planner.build_query(
                 ctx=resolved,
@@ -1347,8 +1535,9 @@ class SemanticQueryKernel:
         with self.db.connect_export() as (warehouse, pointer):
             snapshot_context = self._planner.snapshot_context(pointer)
             resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
-            inputs, effective_limit = self._planner.plan_inputs_for_export(
-                ctx=resolved, request=request
+            inputs, effective_limit = self._resolve_export_inputs(
+                resolved=resolved,
+                request=request,
             )
             serving_query = self._planner.build_query(
                 ctx=resolved,
@@ -1397,8 +1586,9 @@ class SemanticQueryKernel:
         with self.db.connect_export() as (warehouse, pointer):
             snapshot_context = self._planner.snapshot_context(pointer)
             resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
-            inputs, effective_limit = self._planner.plan_inputs_for_export(
-                ctx=resolved, request=request
+            inputs, effective_limit = self._resolve_export_inputs(
+                resolved=resolved,
+                request=request,
             )
             serving_query = self._planner.build_query(
                 ctx=resolved,

@@ -6,10 +6,14 @@ without any database or file I/O.
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
+
+from codeintel.build.tabular.kernels import hash_struct_goid
+from codeintel.core.columnar.iter import iter_array_values
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
 
 if TYPE_CHECKING:
@@ -71,11 +75,38 @@ class GoidResult:
     descriptor: GoidDescriptor
 
 
+_GOID_HASH_COLUMNS = (
+    "repo",
+    "commit",
+    "language",
+    "rel_path",
+    "kind",
+    "qualname",
+    "start_line",
+    "end_line",
+)
+
+
+def _goid_hash_table(descriptor: GoidDescriptor) -> pa.Table:
+    return pa.table(
+        {
+            "repo": pa.array([descriptor.repo], type=pa.string()),
+            "commit": pa.array([descriptor.commit], type=pa.string()),
+            "language": pa.array([descriptor.language], type=pa.string()),
+            "rel_path": pa.array([descriptor.rel_path], type=pa.string()),
+            "kind": pa.array([descriptor.kind], type=pa.string()),
+            "qualname": pa.array([descriptor.qualname], type=pa.string()),
+            "start_line": pa.array([descriptor.start_line], type=pa.int64()),
+            "end_line": pa.array([descriptor.end_line], type=pa.int64()),
+        }
+    )
+
+
 def compute_goid(descriptor: GoidDescriptor) -> int:
     """Compute a stable 128-bit GOID integer from an entity descriptor.
 
-    The GOID is derived from a BLAKE2b hash of the descriptor's key fields,
-    ensuring consistent identification across runs.
+    The GOID is derived from Arrow's hash kernel over the descriptor fields,
+    yielding a stable DECIMAL(38,0)-safe identifier.
 
     Parameters
     ----------
@@ -86,6 +117,11 @@ def compute_goid(descriptor: GoidDescriptor) -> int:
     -------
     int
         Stable 128-bit integer representation of the GOID.
+
+    Raises
+    ------
+    ValueError
+        If the hash value cannot be normalized to a DECIMAL(38,0) integer.
 
     Examples
     --------
@@ -103,13 +139,14 @@ def compute_goid(descriptor: GoidDescriptor) -> int:
     >>> isinstance(goid, int)
     True
     """
-    payload = (
-        f"{descriptor.repo}:{descriptor.commit}:{descriptor.language}:"
-        f"{descriptor.rel_path}:{descriptor.kind}:{descriptor.qualname}:"
-        f"{descriptor.start_line}:{descriptor.end_line}"
-    )
-    digest = hashlib.blake2b(payload.encode("utf-8"), digest_size=16).digest()
-    return int.from_bytes(digest, "big") % DECIMAL_38_MAX
+    table = _goid_hash_table(descriptor)
+    hashed = hash_struct_goid(table, columns=_GOID_HASH_COLUMNS)
+    value = next(iter_array_values(hashed), None)
+    normalized = normalize_decimal_id(value)
+    if normalized is None:
+        msg = "Failed to normalize GOID hash value."
+        raise ValueError(msg)
+    return normalized
 
 
 def build_urn(descriptor: GoidDescriptor) -> str:

@@ -235,7 +235,7 @@ select = [
     "PLE",
     "DOC",
 ]
-ignore = ["Q", "E203", "D203", "D213", "D205", "TC001", "TC002", "TC003", "N802"]
+ignore = ["Q", "E203", "D203", "D213", "D205", "TC001", "TC002", "TC003", "N802", "RUF067"]
 preview = true
 extend-select = ["RUF100", "D401", "D417"]
 

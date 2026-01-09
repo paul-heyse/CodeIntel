@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from tests._helpers.columnar_streams import contract_schema_for_table_key, table_for_rows
 from tests._helpers.records import CallRecorder, StorageOpCall
@@ -101,6 +102,51 @@ class FakeIngestStorage:
             )
         )
         return BatchResult.ok(table_key, len(rows), duration_s=0.0)
+
+    def write_table(
+        self,
+        table_key: str,
+        table: pa.Table,
+        *,
+        scope: str | None = None,
+    ) -> BatchResult:
+        """Write an Arrow table to the in-memory store.
+
+        Returns
+        -------
+        BatchResult
+            Result including rows written.
+        """
+        if table_key not in self.data:
+            self.data[table_key] = _empty_table(table_key)
+        if table.num_rows:
+            existing = self.data[table_key]
+            self.data[table_key] = pa.concat_tables([existing, table])
+        self.operations.record(
+            StorageOpCall(
+                op="write_table",
+                target=table_key,
+                details={"rows": table.num_rows, "scope": scope},
+            )
+        )
+        return BatchResult.ok(table_key, table.num_rows, duration_s=0.0)
+
+    def write_reader(
+        self,
+        table_key: str,
+        reader: pa.RecordBatchReader,
+        *,
+        scope: str | None = None,
+    ) -> BatchResult:
+        """Write a RecordBatchReader stream to the in-memory store.
+
+        Returns
+        -------
+        BatchResult
+            Result including rows written.
+        """
+        table = reader_to_table(reader)
+        return self.write_table(table_key, table, scope=scope)
 
     def delete_by_params(
         self: FakeIngestStorage,

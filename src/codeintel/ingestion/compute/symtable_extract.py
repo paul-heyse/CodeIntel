@@ -20,7 +20,7 @@ from codeintel.core.columnar.rows import (
     columnar_batch_collector_for_table_key,
     empty_table_for_table,
 )
-from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.compute.base import BaseExtractStep, persist_arrow_tables
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstSpan,
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
     from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
+    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 LOG = logging.getLogger(__name__)
 _INT32_MIN = -(2**31)
@@ -1048,6 +1049,7 @@ class SymtableExtractStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
+        storage: IngestStoragePort | None = None,
     ) -> SymtableExtractResult:
         """Execute symtable extraction for the provided modules.
 
@@ -1091,6 +1093,20 @@ class SymtableExtractStep(BaseExtractStep):
         function_partition_rows_table = collectors.function_partitions.to_table()
         binding_rows_table = collectors.bindings.to_table()
         resolution_edge_rows_table = collectors.resolution_edges.to_table()
+        scope = f"{resolved_repo}@{resolved_commit}"
+        persist_arrow_tables(
+            storage,
+            {
+                PY_SYM_SCOPES_TABLE_KEY: scope_rows_table,
+                PY_SYM_SYMBOLS_TABLE_KEY: symbol_rows_table,
+                PY_SYM_SCOPE_EDGES_TABLE_KEY: scope_edge_rows_table,
+                PY_SYM_NAMESPACE_EDGES_TABLE_KEY: namespace_edge_rows_table,
+                PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: function_partition_rows_table,
+                PY_SYM_BINDINGS_TABLE_KEY: binding_rows_table,
+                PY_SYM_RESOLUTION_EDGES_TABLE_KEY: resolution_edge_rows_table,
+            },
+            scope=scope,
+        )
         return SymtableExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
             scope_rows={},

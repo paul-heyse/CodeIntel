@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from contextlib import suppress
 
 import pyarrow as pa
 
@@ -11,6 +10,7 @@ from codeintel.build.analytics.subsystems.cache import build_subsystem_profile_c
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_table
 from codeintel.build.hamilton.native.patterns import (
     TableTargetContext,
     attach_table_target_template,
@@ -18,7 +18,6 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.scopes.snapshot import SnapshotScope
-from codeintel.build.tabular.arrow_ops import align_tabular_to_contract, emit_alignment_report
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 
@@ -65,14 +64,7 @@ def subsystem_profile_cache__base(
         subsystems_frame=subsystems_frame,
         subsystem_graph_metrics_frame=metrics_frame,
     )
-    with suppress(KeyError, RuntimeError, ValueError):
-        table = align_tabular_to_contract(
-            SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
-            table,
-            target_name=SUBSYSTEM_CACHES_TARGET_NAME,
-            reporter=emit_alignment_report,
-        )
-    return table
+    return finalize_analytics_table(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY, table)
 
 
 _MODULE = sys.modules[__name__]

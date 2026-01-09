@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 
 import pyarrow as pa
 
-from codeintel.build.graphs.assembly.ids import payload_bytes, stable_decimal_id, stable_int_hash
+from codeintel.build.graphs.assembly.ids import payload_bytes, stable_decimal_id
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.kernels import hash_struct_ordinal
 
@@ -44,9 +44,24 @@ def cpg_edge_ordinal(table_key: str, payload: Mapping[str, object]) -> int:
     -------
     int
         Deterministic ordinal for edge ordering.
+
+    Raises
+    ------
+    ValueError
+        If the payload includes reserved keys or the hash is null.
     """
-    wrapped = {"table_key": table_key, "payload": dict(payload)}
-    return stable_int_hash(wrapped, digest_size=8, modulus=ORDINAL_MOD)
+    if _ORDINAL_TABLE_KEY in payload:
+        msg = f"Reserved key {_ORDINAL_TABLE_KEY} in ordinal payload"
+        raise ValueError(msg)
+    row: dict[str, object] = {_ORDINAL_TABLE_KEY: table_key, **dict(payload)}
+    table = pa.Table.from_pylist([row])
+    hash_columns = [_ORDINAL_TABLE_KEY, *sorted(payload)]
+    ordinals = hash_struct_ordinal(table, columns=hash_columns, modulus=ORDINAL_MOD)
+    value = ordinals[0].as_py()
+    if value is None:
+        msg = "Arrow hash produced a null ordinal"
+        raise ValueError(msg)
+    return int(value)
 
 
 def cpg_edge_ordinals(

@@ -6,12 +6,13 @@ HTTP route handlers stay thin and consistent.
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import anyio
 from anyio import to_thread
@@ -19,6 +20,9 @@ from fastapi.responses import JSONResponse
 from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 
+from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec
+from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.serving.export.engine import (
     ExportDelivery,
     ExportPlan,
@@ -38,6 +42,7 @@ if TYPE_CHECKING:
 
     from starlette.responses import Response
 
+    from codeintel.core.columnar.finalize_ops import FinalizeResult
     from codeintel.serving.operations.cancellation import CancelCheck
 
 
@@ -47,6 +52,10 @@ class ExportDispatchResult:
 
     response: Response
     metrics_row_count: int | None
+
+
+LOG = logging.getLogger(__name__)
+_DEFAULT_PROVENANCE_FIELDS = ("__filename", "__fragment_index", "__batch_index")
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +115,53 @@ class ExportDispatchOptions:
     timeout_s: float | None = None
 
 
+def _finalize_mode(schema_enforcement: str) -> Literal["strict", "tolerant"]:
+    return "strict" if schema_enforcement == "strict" else "tolerant"
+
+
+def _required_non_null_columns(table_key: str) -> tuple[str, ...]:
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        return ()
+    if schema is None:
+        return ()
+    return tuple(column.name for column in schema.columns if not column.nullable)
+
+
+def _finalize_log_hook(table_key: str) -> Callable[[FinalizeResult], None]:
+    logged_alignment = False
+    logged_errors = False
+
+    def _hook(result: FinalizeResult) -> None:
+        nonlocal logged_alignment, logged_errors
+        if result.stats.num_rows and not logged_errors:
+            LOG.warning(
+                "NDJSON finalize errors for %s: %s",
+                table_key,
+                list(iter_rows(result.stats)),
+            )
+            logged_errors = True
+        if result.alignment.num_rows and not logged_alignment:
+            row = next(iter_rows(result.alignment), None)
+            if row is None:
+                return
+            missing = row.get("missing_columns") or []
+            extra = row.get("extra_columns") or []
+            coerced = row.get("coerced_columns") or []
+            if missing or extra or coerced:
+                LOG.info(
+                    "NDJSON finalize alignment for %s: missing=%s extra=%s coerced=%s",
+                    table_key,
+                    missing,
+                    extra,
+                    coerced,
+                )
+                logged_alignment = True
+
+    return _hook
+
+
 def export_hash_headers(
     *,
     query_hash: str,
@@ -147,6 +203,16 @@ async def dispatch_semantic_export(
     plan = build_export_plan(payload)
     if plan.delivery is ExportDelivery.ndjson_stream:
         tracker = _ExportStreamMetrics(metrics=metrics)
+        view_desc = ops.describe(payload.view_id)
+        finalize_spec = FinalizeSpec(
+            table_key=view_desc.table_key,
+            mode=_finalize_mode(ops.settings.schema_enforcement),
+            required_non_null=_required_non_null_columns(view_desc.table_key),
+            dedupe=FinalizeDedupe(enabled=False),
+            key_fields=tuple(view_desc.primary_key),
+            context_fields=_DEFAULT_PROVENANCE_FIELDS,
+            emit_artifacts=True,
+        )
         response = ndjson_response_from_batches(
             ops.export_record_batches(payload, cancel_check=options.cancel_check),
             options=NdjsonBatchResponseOptions(
@@ -155,6 +221,8 @@ async def dispatch_semantic_export(
                 background=BackgroundTask(tracker.finalize),
                 cancel_check=options.cancel_check,
                 batch_hook=lambda batch: tracker.record_rows(batch.num_rows),
+                finalize_spec=finalize_spec,
+                finalize_hook=_finalize_log_hook(view_desc.table_key),
             ),
         )
         return ExportDispatchResult(response=response, metrics_row_count=None)

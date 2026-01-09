@@ -20,7 +20,11 @@ from codeintel.config.datasets.primitives import (
     Index,
     TableSchema,
 )
-from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
+from codeintel.core.schemas.output_registry import (
+    OUTPUT_TABLE_SCHEMAS,
+    SUBSYSTEM_EXTRAS_STRUCT,
+    TAGS_INDEX_EXTRAS_STRUCT,
+)
 from codeintel.core.schemas.view_registry import build_view_schema_overrides
 
 if TYPE_CHECKING:
@@ -60,9 +64,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         columns=[
             Column("tag", "VARCHAR", nullable=False),
             Column("description", "VARCHAR"),
-            Column("includes", "BLOB"),
-            Column("excludes", "BLOB"),
-            Column("matches", "BLOB"),
+            Column("extras", TAGS_INDEX_EXTRAS_STRUCT),
         ],
         primary_key=("tag",),
         description="Path classification rules",
@@ -75,8 +77,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("name", "VARCHAR"),
             Column("description", "VARCHAR"),
             Column("module_count", "INTEGER"),
-            Column("modules_json", "BLOB"),
-            Column("entrypoints_json", "BLOB"),
+            Column("extras", SUBSYSTEM_EXTRAS_STRUCT),
             Column("internal_edge_count", "INTEGER"),
             Column("external_edge_count", "INTEGER"),
             Column("fan_in", "INTEGER"),

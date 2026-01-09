@@ -23,7 +23,6 @@ from codeintel.build.analytics.compute.dependencies.detection import (
 )
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
-from codeintel.build.analytics.utilities.ast import RowDecoder
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_masks import FilterExprContext
 from codeintel.core.hashing import sha1_short
@@ -208,8 +207,10 @@ def _function_call_rows_pure(
                 "module": module,
                 "qualname": func_ast.qualname,
                 "callsite_count": len(calls),
-                "modes": modes,
-                "evidence_json": evidence,
+                "extras": {
+                    "modes": modes,
+                    "evidence": evidence,
+                },
                 "created_at": context.now,
             }
         )
@@ -226,20 +227,27 @@ def _dependency_call_rows_from_frame(
     if frame is None or frame.num_rows == 0:
         return ()
     filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
-    return [
-        (
-            row.get("dep_id"),
-            row.get("library"),
-            row.get("function_goid_h128"),
-            row.get("module"),
-            row.get("callsite_count"),
-            row.get("modes"),
-            row.get("severity"),
-            row.get("criticality"),
-            row.get("risk_score"),
+    rows: list[tuple[object, ...]] = []
+    for row in filtered:
+        extras = row.get("extras")
+        if isinstance(extras, Mapping):
+            modes = extras.get("modes")
+        else:
+            modes = row.get("modes")
+        rows.append(
+            (
+                row.get("dep_id"),
+                row.get("library"),
+                row.get("function_goid_h128"),
+                row.get("module"),
+                row.get("callsite_count"),
+                modes,
+                row.get("severity"),
+                row.get("criticality"),
+                row.get("risk_score"),
+            )
         )
-        for row in filtered
-    ]
+    return rows
 
 
 def _aggregate_dependency_calls(
@@ -333,9 +341,11 @@ def _serialize_dependency_rows(
                 "risk_score": aggregate.risk_score,
                 "function_count": len(aggregate.functions),
                 "callsite_count": aggregate.callsite_count,
-                "modules_json": sorted(aggregate.modules),
-                "usage_modes": sorted(aggregate.modes),
-                "config_keys": sorted(config_keys) if config_keys else None,
+                "extras": {
+                    "modules": sorted(aggregate.modules),
+                    "usage_modes": sorted(aggregate.modes),
+                    "config_keys": sorted(config_keys) if config_keys else None,
+                },
                 "risk_level": resolved_risk_level,
                 "created_at": now,
             }
@@ -399,11 +409,13 @@ def _config_keys_from_frame(
     if frame is None or frame.num_rows == 0:
         return mapping
     filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
-    decoder = RowDecoder(columns=("reference_modules",))
     for row in filtered:
-        decoded = decoder.decode(row)
-        ref_modules = decoded.get("reference_modules")
-        key = decoded.get("key")
+        extras = row.get("extras")
+        if isinstance(extras, Mapping):
+            ref_modules = extras.get("reference_modules")
+        else:
+            ref_modules = row.get("reference_modules")
+        key = row.get("key")
         if key is None or ref_modules is None:
             continue
         modules = _ensure_str_list(ref_modules)

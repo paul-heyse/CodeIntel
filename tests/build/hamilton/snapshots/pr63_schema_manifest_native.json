@@ -9276,7 +9276,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(reserved BOOLEAN)"
         }
@@ -9413,7 +9413,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(kw_arg_count INTEGER, star_arg_count INTEGER, starstar_arg_count INTEGER, caller_def_id VARCHAR, callee_qnames LIST(STRUCT(name VARCHAR, source VARCHAR)))"
         }
@@ -9633,7 +9633,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(kw_arg_count INTEGER, star_arg_count INTEGER, starstar_arg_count INTEGER, caller_def_id VARCHAR, callee_qnames LIST(STRUCT(name VARCHAR, source VARCHAR)))"
         }
@@ -9745,7 +9745,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(container_def_id VARCHAR, is_async BOOLEAN, decorators LIST(VARCHAR), bases LIST(VARCHAR), params LIST(STRUCT(name VARCHAR, kind VARCHAR, has_annotation BOOLEAN, has_default BOOLEAN, annotation_code VARCHAR, default_code VARCHAR)), returns_code VARCHAR, docstring VARCHAR, qnames LIST(STRUCT(name VARCHAR, source VARCHAR)))"
         }
@@ -9941,7 +9941,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(container_def_id VARCHAR, is_async BOOLEAN, decorators LIST(VARCHAR), bases LIST(VARCHAR), params LIST(STRUCT(name VARCHAR, kind VARCHAR, has_annotation BOOLEAN, has_default BOOLEAN, annotation_code VARCHAR, default_code VARCHAR)), returns_code VARCHAR, docstring VARCHAR, qnames LIST(STRUCT(name VARCHAR, source VARCHAR)))"
         }
@@ -10211,7 +10211,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(param_kind VARCHAR, has_annotation BOOLEAN, has_default BOOLEAN, annotation_code VARCHAR, default_code VARCHAR)"
         }
@@ -10342,7 +10342,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(stmt_kind VARCHAR, is_star BOOLEAN, imported VARCHAR, asname VARCHAR, module VARCHAR, relative_level INTEGER)"
         }
@@ -10556,7 +10556,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(stmt_kind VARCHAR, is_star BOOLEAN, imported VARCHAR, asname VARCHAR, module VARCHAR, relative_level INTEGER)"
         }
@@ -10668,7 +10668,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(ast_nodes LIST(STRUCT(ast_node_id VARCHAR, ast_kind VARCHAR, ast_start_line INTEGER, ast_start_col_utf8 INTEGER, ast_end_line INTEGER, ast_end_col_utf8 INTEGER, ast_start_byte BIGINT, ast_end_byte BIGINT, match_kind VARCHAR, ctx VARCHAR, type_comment VARCHAR, type_ignores LIST(STRUCT(line INTEGER, tag VARCHAR)), identifier VARCHAR, attribute VARCHAR, name VARCHAR, imported VARCHAR, asname VARCHAR, module VARCHAR, level INTEGER, constant_kind VARCHAR)), ts_nodes LIST(STRUCT(ts_node_id VARCHAR, ts_node_type VARCHAR, start_byte BIGINT, end_byte BIGINT, start_row INTEGER, start_col INTEGER, end_row INTEGER, end_col INTEGER, grammar_id INTEGER, kind_id INTEGER, parse_state INTEGER, next_parse_state INTEGER, is_named BOOLEAN, is_missing BOOLEAN, is_error BOOLEAN, has_error BOOLEAN, match_kind VARCHAR)))"
         }
@@ -10780,7 +10780,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(ast_nodes LIST(STRUCT(ast_node_id VARCHAR, ast_kind VARCHAR, ast_start_line INTEGER, ast_start_col_utf8 INTEGER, ast_end_line INTEGER, ast_end_col_utf8 INTEGER, ast_start_byte BIGINT, ast_end_byte BIGINT, match_kind VARCHAR, ctx VARCHAR, type_comment VARCHAR, type_ignores LIST(STRUCT(line INTEGER, tag VARCHAR)), identifier VARCHAR, attribute VARCHAR, name VARCHAR, imported VARCHAR, asname VARCHAR, module VARCHAR, level INTEGER, constant_kind VARCHAR)), ts_nodes LIST(STRUCT(ts_node_id VARCHAR, ts_node_type VARCHAR, start_byte BIGINT, end_byte BIGINT, start_row INTEGER, start_col INTEGER, end_row INTEGER, end_col INTEGER, grammar_id INTEGER, kind_id INTEGER, parse_state INTEGER, next_parse_state INTEGER, is_named BOOLEAN, is_missing BOOLEAN, is_error BOOLEAN, has_error BOOLEAN, match_kind VARCHAR)))"
         }
@@ -10892,7 +10892,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(role VARCHAR, scope_kind VARCHAR, referents LIST(STRUCT(assignment_name VARCHAR, assignment_kind VARCHAR, span_id VARCHAR, qnames LIST(STRUCT(name VARCHAR, source VARCHAR)))), is_annotation BOOLEAN, is_type_hint BOOLEAN, qnames LIST(STRUCT(name VARCHAR, source VARCHAR)))"
         }
@@ -11088,7 +11088,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(role VARCHAR, scope_kind VARCHAR, referents LIST(STRUCT(assignment_name VARCHAR, assignment_kind VARCHAR, span_id VARCHAR, qnames LIST(STRUCT(name VARCHAR, source VARCHAR)))), is_annotation BOOLEAN, is_type_hint BOOLEAN, qnames LIST(STRUCT(name VARCHAR, source VARCHAR)))"
         }
@@ -11773,7 +11773,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(reserved BOOLEAN)"
         }
@@ -11888,7 +11888,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(node_type VARCHAR, has_error BOOLEAN, parse_state INTEGER)"
         }
@@ -12220,7 +12220,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(query_hash VARCHAR, pattern_index INTEGER, capture_index INTEGER, capture_name VARCHAR, pattern_count INTEGER, capture_count INTEGER, field_name VARCHAR, field_id INTEGER, literal_kind VARCHAR)"
         }
@@ -12341,7 +12341,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "STRUCT(query_hash VARCHAR, pattern_index INTEGER, capture_index INTEGER, capture_name VARCHAR, pattern_count INTEGER, capture_count INTEGER, field_name VARCHAR, field_id INTEGER, literal_kind VARCHAR)"
         }
@@ -14609,7 +14609,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "BLOB"
         }
@@ -14680,7 +14680,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "BLOB"
         }
@@ -14822,7 +14822,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "BLOB"
         }
@@ -14888,7 +14888,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "BLOB"
         }
@@ -14972,7 +14972,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "BLOB"
         }
@@ -15050,7 +15050,7 @@
         },
         {
           "description": null,
-          "name": "extras_json",
+          "name": "extras",
           "nullable": true,
           "type": "BLOB"
         }

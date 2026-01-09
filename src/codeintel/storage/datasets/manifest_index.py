@@ -274,6 +274,7 @@ def apply_tuning_options(
         metrics_enabled=options.metrics_enabled,
         schema=options.schema,
         columns=options.columns,
+        provenance_columns=options.provenance_columns,
         implicit_ordering=options.implicit_ordering,
         require_sequenced_output=options.require_sequenced_output,
         unify_schemas=options.unify_schemas,

@@ -11,7 +11,7 @@ from codeintel.build.tabular.arrow_ops import AlignmentReport, drain_alignment_d
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.primitives import TableSchema, resolve_stable_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 
 log = logging.getLogger(__name__)
@@ -59,6 +59,7 @@ def persist_contract_alignment_issues(
         partition_columns=partition_columns,
         schema_hash=schema_hash_value,
         manifest_extras={"table_schema": table_schema.to_json_obj()},
+        stable_sort_keys=resolve_stable_sort_keys(table_schema),
     )
     write_dataset(
         dataset_root=dataset_root,

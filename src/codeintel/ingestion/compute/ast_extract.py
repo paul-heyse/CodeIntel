@@ -22,7 +22,11 @@ from codeintel.core.columnar.rows import (
     columnar_batch_collector_for_table_key,
     empty_table_for_table,
 )
-from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.compute.base import (
+    BaseExtractStep,
+    finalize_arrow_tables,
+    persist_arrow_tables,
+)
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstCollectContext,
@@ -39,6 +43,7 @@ if TYPE_CHECKING:
 
     from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
+    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 AST_NODES_TABLE_KEY = "core.ast_nodes"
@@ -541,6 +546,7 @@ class AstExtractStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
+        storage: IngestStoragePort | None = None,
     ) -> AstExtractResult:
         """Execute AST extraction on the provided modules.
 
@@ -554,6 +560,8 @@ class AstExtractStep(BaseExtractStep):
             Commit identifier.
         context
             Optional ingestion context supplying repo/commit defaults.
+        storage
+            Optional storage port for persisting Arrow outputs.
 
         Returns
         -------
@@ -583,24 +591,41 @@ class AstExtractStep(BaseExtractStep):
                 collectors.metrics.append(result.metric_row)
             _flush_ast_collectors(collectors)
 
+        ast_rows_table = collectors.ast_nodes.to_table()
+        metric_rows_table = collectors.metrics.to_table()
+        finalized_tables, finalize_warnings = finalize_arrow_tables(
+            {
+                AST_NODES_TABLE_KEY: ast_rows_table,
+                AST_METRICS_TABLE_KEY: metric_rows_table,
+            }
+        )
+        warnings.extend(finalize_warnings)
+        ast_rows_table = finalized_tables[AST_NODES_TABLE_KEY]
+        metric_rows_table = finalized_tables[AST_METRICS_TABLE_KEY]
         log.info(
             "AST extraction: repo=%s commit=%s ast_rows=%d metrics=%d",
             resolved_repo,
             resolved_commit,
-            collectors.ast_nodes.row_count,
-            collectors.metrics.row_count,
+            ast_rows_table.num_rows,
+            metric_rows_table.num_rows,
         )
-
-        ast_rows_table = collectors.ast_nodes.to_table()
-        metric_rows_table = collectors.metrics.to_table()
+        scope = f"{resolved_repo}@{resolved_commit}"
+        persist_arrow_tables(
+            storage,
+            {
+                AST_NODES_TABLE_KEY: ast_rows_table,
+                AST_METRICS_TABLE_KEY: metric_rows_table,
+            },
+            scope=scope,
+        )
         return AstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
             ast_rows={},
             metric_rows={},
             ast_rows_reader=ast_rows_table,
             metric_rows_reader=metric_rows_table,
-            ast_row_count=collectors.ast_nodes.row_count,
-            metric_row_count=collectors.metrics.row_count,
+            ast_row_count=ast_rows_table.num_rows,
+            metric_row_count=metric_rows_table.num_rows,
         )
 
     def _iter_python_source_bundles(

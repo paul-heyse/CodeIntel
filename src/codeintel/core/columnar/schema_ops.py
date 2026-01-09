@@ -7,6 +7,8 @@ from typing import Literal
 
 import pyarrow as pa
 
+from codeintel.core.columnar.nested_ops import is_allowed_promotion
+
 SchemaPromoteOptions = Literal["default", "permissive"]
 DEFAULT_SCHEMA_PROMOTE_OPTIONS: SchemaPromoteOptions = "permissive"
 
@@ -111,10 +113,35 @@ def align_tables_to_schema(
     return target_schema, aligned
 
 
+def validate_contract_schema_promotions(
+    contract_schema: pa.Schema,
+    candidate_schema: pa.Schema,
+) -> None:
+    """Validate that candidate schema types can promote into the contract schema.
+
+    Raises
+    ------
+    ValueError
+        If a field promotion is disallowed.
+    """
+    for field in contract_schema:
+        if field.name not in candidate_schema.names:
+            continue
+        candidate_field = candidate_schema.field(field.name)
+        if is_allowed_promotion(candidate_field.type, field.type):
+            continue
+        msg = (
+            "Disallowed schema promotion for "
+            f"{field.name}: {candidate_field.type} -> {field.type}"
+        )
+        raise ValueError(msg)
+
+
 __all__ = [
     "DEFAULT_SCHEMA_PROMOTE_OPTIONS",
     "SchemaPromoteOptions",
     "align_tables_to_schema",
     "concat_tables_unified",
     "unify_schemas",
+    "validate_contract_schema_promotions",
 ]

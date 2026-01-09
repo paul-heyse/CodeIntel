@@ -9,7 +9,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.core.columnar.schema_ops import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
-from codeintel.core.columnar.streaming import DatasetScanOptions
+from codeintel.core.columnar.streaming import DatasetScanOptions, QueryPlanSpec
 from codeintel.core.columnar.streaming import build_scanner as _build_scanner
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
@@ -44,6 +44,7 @@ class ScannerParams:
     unify_schemas: bool = False
     schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
     metrics_enabled: bool = False
+    provenance_columns: Sequence[str] = ()
 
     def to_options(self) -> DatasetScanOptions:
         """Return DatasetScanOptions derived from the parameters.
@@ -72,6 +73,32 @@ class ScannerParams:
             unify_schemas=self.unify_schemas,
             schema_promote_options=self.schema_promote_options,
             metrics_enabled=self.metrics_enabled,
+            provenance_columns=self.provenance_columns,
+        )
+
+    def to_query_plan_spec(self, *, table_key: str) -> QueryPlanSpec:
+        """Return a query plan spec for telemetry or logging.
+
+        Returns
+        -------
+        QueryPlanSpec
+            Query plan metadata for scan logging.
+        """
+        columns = self.columns
+        if columns is None and self.provenance_columns:
+            resolved_columns = tuple(self.provenance_columns)
+        elif columns is None:
+            resolved_columns = ()
+        elif isinstance(columns, Mapping):
+            resolved_columns = tuple(columns.keys())
+        else:
+            resolved_columns = tuple(columns)
+        if self.provenance_columns:
+            resolved_columns = tuple(dict.fromkeys((*self.provenance_columns, *resolved_columns)))
+        return QueryPlanSpec(
+            table_key=table_key,
+            columns=resolved_columns,
+            filter_expression=self.filter_expression,
         )
 
 

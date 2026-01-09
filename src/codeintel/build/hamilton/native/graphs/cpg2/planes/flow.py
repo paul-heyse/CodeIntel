@@ -28,10 +28,9 @@ from codeintel.build.tabular.compute_helpers import (
     safe_filter_expr,
 )
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
-from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -177,7 +176,7 @@ def cpg2_nodes__cfg_blocks(
             right_output=["cpg_node_id", "source_pk_json"],
         ),
     )
-    joined_table = reader_to_table(joined.to_reader(use_threads=True))
+    joined_table = materialize_plan(joined, use_threads=True)
     if joined_table.num_rows > 0:
         joined_table = joined_table.take(
             stable_sort_indices(
@@ -571,7 +570,7 @@ def _cfg_block_lookup(cfg_blocks: pa.Table, goids: pa.Table) -> pa.Table:
             right_output=["repo", "commit"],
         ),
     )
-    joined_table = reader_to_table(joined.to_reader(use_threads=True))
+    joined_table = materialize_plan(joined, use_threads=True)
     joined_table = rename_table_columns(joined_table, {"file_path": "rel_path"})
     if joined_table.num_rows > 0:
         joined_table = joined_table.take(
@@ -709,7 +708,7 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table) -> pa.Table:
             right_output=["dst_block_idx", "dst_rel_path", "dst_repo", "dst_commit"],
         ),
     )
-    return reader_to_table(joined.to_reader(use_threads=True))
+    return materialize_plan(joined, use_threads=True)
 
 
 def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
@@ -782,7 +781,7 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table) -> pa.Table:
             right_output=["dst_cpg_node_id"],
         ),
     )
-    return reader_to_table(joined.to_reader(use_threads=True))
+    return materialize_plan(joined, use_threads=True)
 
 
 def _coalesce_rel_path(

@@ -260,6 +260,16 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         include_prefixes=("src/codeintel/storage/",),
     ),
     Guardrail(
+        name="expr_vocab_usage",
+        pattern=re.compile(r"\bpc\.(?:field|scalar)\b"),
+        message="Use ExprVocab (E.field/E.scalar) instead of pc.field/pc.scalar in app code.",
+        include_prefixes=("src/codeintel/",),
+        allow_prefixes=(
+            "src/codeintel/core/columnar/expr_vocab.py",
+            "src/codeintel/build/tabular/expr_vocab.py",
+        ),
+    ),
+    Guardrail(
         name="core_json_column_types",
         pattern=re.compile(r"Column\(\s*\"[^\"]+\"\s*,\s*\"JSON\""),
         message="Core table schemas must not declare JSON columns; use BLOB or Arrow-native types.",

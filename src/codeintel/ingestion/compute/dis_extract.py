@@ -27,7 +27,7 @@ from codeintel.core.columnar.rows import (
     columnar_batch_collector_for_table_key,
     empty_table_for_table,
 )
-from codeintel.ingestion.compute.base import BaseExtractStep
+from codeintel.ingestion.compute.base import BaseExtractStep, persist_arrow_tables
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.cst_utils import LineIndexedSource
 
@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 
     from codeintel.ingestion.infrastructure.py_frontend import PyFrontend
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
+    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 LOG = logging.getLogger(__name__)
 
@@ -1590,6 +1591,7 @@ class DisExtractStep(BaseExtractStep):
         repo: str | None = None,
         commit: str | None = None,
         context: IngestionContext | None = None,
+        storage: IngestStoragePort | None = None,
     ) -> DisExtractResult:
         """Execute bytecode extraction for the provided modules.
 
@@ -1667,6 +1669,19 @@ class DisExtractStep(BaseExtractStep):
             collectors.instructions.row_count,
         )
         tables = _build_dis_tables(collectors)
+        scope = f"{resolved_repo}@{resolved_commit}"
+        persist_arrow_tables(
+            storage,
+            {
+                PY_BC_CODE_UNITS_TABLE_KEY: tables.code_units,
+                PY_BC_INSTRUCTIONS_TABLE_KEY: tables.instructions,
+                PY_BC_EXCEPTION_TABLE_KEY: tables.exceptions,
+                PY_BC_BLOCKS_TABLE_KEY: tables.blocks,
+                PY_BC_CFG_EDGES_TABLE_KEY: tables.cfg_edges,
+                PY_BC_DEFUSE_EVENTS_TABLE_KEY: tables.defuse_events,
+            },
+            scope=scope,
+        )
         return DisExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
             code_unit_rows={},

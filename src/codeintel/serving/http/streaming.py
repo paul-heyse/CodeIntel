@@ -13,6 +13,9 @@ import pyarrow as pa
 from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.finalize_ops import finalize_table
+from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.exports import ARROW_IPC_STREAM_MIME, iter_ipc_stream
 from codeintel.serving.export.formats import mime_type_for_export_format
 from codeintel.serving.export.ndjson import (
@@ -25,6 +28,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping
 
     from pyarrow import RecordBatch
+
+    from codeintel.core.columnar.finalize_ops import FinalizeResult, FinalizeSpec
 
 
 def ndjson_stream(rows: Iterable[dict[str, object]]) -> Iterator[bytes]:
@@ -109,6 +114,8 @@ def ndjson_response_from_batches(
         batches,
         cancel_check=resolved.cancel_check,
         batch_hook=resolved.batch_hook,
+        finalize_spec=resolved.finalize_spec,
+        finalize_hook=resolved.finalize_hook,
     )
     return StreamingResponse(
         payload,
@@ -156,6 +163,8 @@ class ArrowIpcResponseOptions:
     options: pa.ipc.IpcWriteOptions | None = None
     cancel_check: Callable[[], None] | None = None
     background: BackgroundTask | None = None
+    finalize_spec: FinalizeSpec | None = None
+    finalize_hook: Callable[[FinalizeResult], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +176,8 @@ class NdjsonBatchResponseOptions:
     background: BackgroundTask | None = None
     cancel_check: Callable[[], None] | None = None
     batch_hook: Callable[[RecordBatch], None] | None = None
+    finalize_spec: FinalizeSpec | None = None
+    finalize_hook: Callable[[FinalizeResult], None] | None = None
 
 
 def arrow_ipc_response(
@@ -195,7 +206,12 @@ def arrow_ipc_response(
             headers=resolved.headers,
         )
         return StreamingResponse(
-            iter_ndjson_bytes_from_reader(source, cancel_check=resolved.cancel_check),
+            iter_ndjson_bytes_from_reader(
+                source,
+                cancel_check=resolved.cancel_check,
+                finalize_spec=resolved.finalize_spec,
+                finalize_hook=resolved.finalize_hook,
+            ),
             media_type=mime_type_for_export_format("jsonl"),
             headers=response_headers,
             background=resolved.background,
@@ -205,8 +221,16 @@ def arrow_ipc_response(
         headers=resolved.headers,
     )
     if isinstance(source, pa.RecordBatchReader):
+        reader = source
+        if resolved.finalize_spec is not None:
+            reader = _finalized_reader(
+                reader,
+                finalize_spec=resolved.finalize_spec,
+                finalize_hook=resolved.finalize_hook,
+                cancel_check=resolved.cancel_check,
+            )
         payload = iter_ipc_stream(
-            source,
+            reader,
             metadata=resolved.metadata,
             batch_metadata=resolved.batch_metadata,
             options=resolved.options,
@@ -220,6 +244,29 @@ def arrow_ipc_response(
         headers=response_headers,
         background=resolved.background,
     )
+
+
+def _finalized_reader(
+    reader: pa.RecordBatchReader,
+    *,
+    finalize_spec: FinalizeSpec,
+    finalize_hook: Callable[[FinalizeResult], None] | None,
+    cancel_check: Callable[[], None] | None,
+) -> pa.RecordBatchReader:
+    def _iter_batches() -> Iterator[RecordBatch]:
+        for batch in reader:
+            if cancel_check is not None:
+                cancel_check()
+            table = pa.Table.from_batches([batch], schema=batch.schema)
+            result = finalize_table(table, spec=finalize_spec)
+            if finalize_hook is not None:
+                finalize_hook(result)
+            yield from result.good.to_batches(max_chunksize=batch.num_rows)
+
+    finalized = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
+    if finalized is None:
+        return empty_reader_from_schema(reader.schema)
+    return finalized
 
 
 __all__ = [

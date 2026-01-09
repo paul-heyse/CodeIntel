@@ -24,7 +24,7 @@ def _reader_to_dicts(
 
 def _has_ast_extras(reader: pa.RecordBatchReader | pa.Table) -> bool:
     for row in _reader_to_dicts(reader):
-        extras = row.get("extras_json")
+        extras = row.get("extras")
         if not isinstance(extras, dict):
             continue
         if "ast_node_id" in extras:

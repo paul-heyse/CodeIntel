@@ -11,9 +11,12 @@ from typing import cast
 import pyarrow as pa
 
 from codeintel.build.graphs.assembly import table_rows
+from codeintel.build.hamilton.native.graphs.cpg2.edge_helpers import (
+    finalize_cpg_edge_rows,
+)
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 AST_NODES_TABLE_KEY = "core.ast_nodes"
@@ -118,12 +121,12 @@ def cpg2_edges__py_sym_scope_edges(
                 "extras_kv": extras_kv,
             }
         )
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
+    table = finalize_cpg_edge_rows(rows)
     _record_diagnostics(
         diagnostics,
         "overlay_symtable_scope_edges",
         expected_edges=scope_edges.num_rows * 2,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -167,12 +170,12 @@ def cpg2_edges__py_sym_namespace_edges(
         edge = _namespace_edge_row(row, bindings_by_scope)
         if edge:
             rows.append(edge)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
+    table = finalize_cpg_edge_rows(rows)
     _record_diagnostics(
         diagnostics,
         "overlay_symtable_namespace_edges",
         expected_edges=namespace_edges.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -244,12 +247,12 @@ def cpg2_edges__py_sym_binding_edges(
                 "extras_kv": extras_kv,
             }
         )
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
+    table = finalize_cpg_edge_rows(rows)
     _record_diagnostics(
         diagnostics,
         "overlay_symtable_binding_edges",
         expected_edges=bindings.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -278,12 +281,12 @@ def cpg2_edges__py_sym_resolution_edges(
     if not required.issubset(resolution_edges.column_names):
         return _empty_edges()
     rows = [_py_sym_resolution_edge_row(row) for row in table_rows(resolution_edges)]
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
+    table = finalize_cpg_edge_rows(rows)
     _record_diagnostics(
         diagnostics,
         "overlay_symtable_resolution_edges",
         expected_edges=resolution_edges.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -322,12 +325,12 @@ def cpg2_edges__py_sym_binding_symbol_edges(
     scope_index = _scope_qualname_index(scopes)
     symbol_index = _symbol_display_index(scip_symbols)
     rows = _binding_symbol_edge_rows(bindings, scope_index, symbol_index)
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, rows)
+    table = finalize_cpg_edge_rows(rows)
     _record_diagnostics(
         diagnostics,
         "overlay_symtable_binding_symbol_edges",
         expected_edges=bindings.num_rows,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 
@@ -353,12 +356,12 @@ def cpg2_edges__ast_binding_edges(
         bindings,
         resolution_edges,
     )
-    table, row_count = table_for_rows(CPG_EDGES_TABLE_KEY, edges)
+    table = finalize_cpg_edge_rows(edges)
     _record_diagnostics(
         diagnostics,
         "overlay_symtable_ast_binding_edges",
         expected_edges=event_count,
-        produced_edges=row_count,
+        produced_edges=table.num_rows,
     )
     return table
 

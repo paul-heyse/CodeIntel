@@ -15,7 +15,7 @@ import rustworkx as rx
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
-from codeintel.build.analytics.utilities.ast import RowDecoder, call_name, snippet_from_lines
+from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.tabular.arrow_ops import iter_rows
@@ -282,7 +282,14 @@ def _config_references_from_rows(
         key = row.get("key")
         if config_path is None or key is None:
             continue
-        for rel_path in _coerce_paths(row.get("reference_paths")):
+        extras = row.get("extras")
+        if isinstance(extras, Mapping):
+            reference_paths = extras.get("reference_paths")
+        else:
+            reference_paths = None
+        if reference_paths is None:
+            reference_paths = row.get("reference_paths")
+        for rel_path in _coerce_paths(reference_paths):
             refs.setdefault(rel_path, []).append((str(key), str(config_path)))
     return refs
 
@@ -488,9 +495,11 @@ def _build_config_flow_rows(
                             "config_path": config_path,
                             "function_goid_h128": goid,
                             "usage_kind": usage_kind,
-                            "evidence_json": evidence if evidence else None,
                             "call_chain_id": chain_id,
-                            "call_chain_json": list(chain),
+                            "extras": {
+                                "evidence": evidence if evidence else None,
+                                "call_chain": list(chain),
+                            },
                             "created_at": now,
                         }
                     )
@@ -503,8 +512,7 @@ def _rows_from_tabular(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    decoder = RowDecoder(columns=("reference_paths",))
     if isinstance(rows, pa.Table):
         table = _filter_table_by_scope(cast("pa.Table", rows), repo=repo, commit=commit)
-        return [decoder.decode(row) for row in iter_rows(table)]
-    return [decoder.decode(dict(row)) for row in rows]
+        return [dict(row) for row in iter_rows(table)]
+    return [dict(row) for row in rows]

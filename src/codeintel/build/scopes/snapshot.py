@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import pyarrow as pa
@@ -137,7 +137,7 @@ class SnapshotScanContext:
     def scan_options(
         self,
         *,
-        columns: Sequence[str] | None,
+        columns: Sequence[str] | Mapping[str, ds.Expression] | None,
         batch_size: int | None = None,
     ) -> DatasetScanOptions:
         """Build dataset scan options using the stored settings.

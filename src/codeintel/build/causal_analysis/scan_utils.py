@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.core.datasets.scanning import ParquetScanOptions, scan_parquet_table
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.normalization import normalize_table_for_compute
+from codeintel.core.datasets.scanning import (
+    ParquetScanOptions,
+    scan_parquet_dataset_with_telemetry,
+)
 
 LOG = logging.getLogger(__name__)
 
@@ -52,24 +57,45 @@ def scan_table_with_fallback(
     FileNotFoundError
         If the dataset snapshot directory is missing.
     """
-    options = ParquetScanOptions(columns=columns, repo=config.repo, commit=config.commit)
-    table = scan_parquet_table(
+    options = ParquetScanOptions(
+        columns=columns,
+        repo=config.repo,
+        commit=config.commit,
+        implicit_ordering=True,
+        require_sequenced_output=True,
+        metrics_enabled=True,
+    )
+    reader, telemetry = scan_parquet_dataset_with_telemetry(
         dataset_root=config.dataset_root,
         table_key=table_key,
         snapshot_id=config.snapshot_id,
         options=options,
     )
-    if table is None:
+    if telemetry is not None:
+        LOG.debug("Causal scan telemetry: %s", telemetry.to_mapping())
+    if reader is None:
         msg = f"{table_key} snapshot not found for {config.snapshot_id}"
         raise FileNotFoundError(msg)
+    table = normalize_table_for_compute(reader_to_table(reader))
     primary_rows = table.num_rows
     if primary_rows == 0 and (config.repo or config.commit):
-        fallback = scan_parquet_table(
+        fallback_reader, fallback_telemetry = scan_parquet_dataset_with_telemetry(
             dataset_root=config.dataset_root,
             table_key=table_key,
             snapshot_id=config.snapshot_id,
-            options=ParquetScanOptions(columns=columns),
+            options=ParquetScanOptions(
+                columns=columns,
+                implicit_ordering=True,
+                require_sequenced_output=True,
+                metrics_enabled=True,
+            ),
         )
+        if fallback_telemetry is not None:
+            LOG.debug("Causal scan fallback telemetry: %s", fallback_telemetry.to_mapping())
+        if fallback_reader is not None:
+            fallback = normalize_table_for_compute(reader_to_table(fallback_reader))
+        else:
+            fallback = None
         if fallback is not None and fallback.num_rows > 0:
             LOG.info(
                 "Filtered scan returned 0 rows for %s; falling back to unfiltered scan.",

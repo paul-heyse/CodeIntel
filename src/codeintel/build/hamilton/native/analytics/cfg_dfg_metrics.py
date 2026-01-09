@@ -31,6 +31,7 @@ from codeintel.build.graphs.runtime.context import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     MultiTableTargetContext,
@@ -43,7 +44,7 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
@@ -123,8 +124,7 @@ def _rows_to_reader(
 ) -> pa.Table:
     if not rows:
         return empty_table_for_table(table_key)
-    reader, _ = table_for_rows(table_key, rows)
-    return reader
+    return finalize_analytics_rows(table_key, rows)
 
 
 def _module_by_path(modules_frame: pa.Table) -> dict[str, str]:

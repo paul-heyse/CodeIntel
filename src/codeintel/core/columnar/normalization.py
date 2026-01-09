@@ -6,6 +6,8 @@ import contextlib
 
 import pyarrow as pa
 
+from codeintel.core.columnar.streaming import configure_arrow_threading
+
 
 def normalize_array(values: pa.Array | pa.ChunkedArray) -> pa.Array:
     """Return a single-chunk array suitable for compute kernels.
@@ -84,6 +86,7 @@ def normalize_table_for_compute(table: pa.Table) -> pa.Table:
     pyarrow.Table
         Normalized table with unified dictionaries and combined chunks.
     """
+    configure_arrow_threading()
     return normalize_table(table)
 
 

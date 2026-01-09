@@ -9,10 +9,9 @@ import pyarrow as pa
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.conversion import reader_to_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.schemas.row_models import columns_for_table_key
 
 if TYPE_CHECKING:
@@ -77,7 +76,7 @@ def build_subsystem_profile_cache_frame(
             ),
         )
     )
-    joined = reader_to_table(joined_plan.to_reader(use_threads=True))
+    joined = materialize_plan(joined_plan, use_threads=True)
     if joined.num_rows > 0:
         joined = joined.take(
             stable_sort_indices(

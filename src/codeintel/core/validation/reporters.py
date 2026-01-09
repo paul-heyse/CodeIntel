@@ -20,7 +20,7 @@ GraphValidationReporter
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import lru_cache
@@ -33,7 +33,6 @@ from codeintel.core.schemas.row_models import RowStructBuilder, RowStructSeriali
 from codeintel.core.schemas.row_serialization import row_struct_serializer_for_table_key
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.serialization.msgspec import to_builtins
-from codeintel.core.serialization.payload import encode_payload
 from codeintel.core.time import utc_now
 
 RowStructT = TypeVar("RowStructT", bound=msgspec.Struct)
@@ -99,7 +98,7 @@ class GraphValidationFinding(msgspec.Struct, frozen=True):
     severity: str | None
     rel_path: str | None
     detail: str
-    metadata: bytes | None
+    extras: dict[str, object] | None
     created_at: datetime
 
     def to_row(self, builder: RowStructBuilder) -> msgspec.Struct:
@@ -285,7 +284,8 @@ class GraphValidationReporter(BaseValidationReporter[msgspec.Struct]):
         self.total += 1
         severity = cast("str | None", extras.get("severity") if extras is not None else None)
         rel_path = cast("str | None", extras.get("rel_path") if extras is not None else None)
-        metadata = _encode_metadata(extras.get("metadata") if extras is not None else None)
+        metadata = extras.get("metadata") if extras is not None else None
+        extras_payload = {"metadata": metadata} if extras is not None else None
         entity = entity_id or graph_name
         finding = GraphValidationFinding(
             repo=self.repo,
@@ -296,7 +296,7 @@ class GraphValidationReporter(BaseValidationReporter[msgspec.Struct]):
             severity=severity,
             rel_path=rel_path,
             detail=detail,
-            metadata=metadata,
+            extras=extras_payload,
             created_at=gateway_timestamp(),
         )
         builder = _row_struct_builder(GRAPH_VALIDATION_TABLE_KEY)
@@ -314,16 +314,6 @@ class GraphValidationReporter(BaseValidationReporter[msgspec.Struct]):
         """
         serializer = _row_struct_serializer(GRAPH_VALIDATION_TABLE_KEY)
         return tuple(serializer(r) for r in self.rows)
-
-
-def _encode_metadata(value: object | None) -> bytes | None:
-    if value is None:
-        return None
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return encode_payload(value)
-    if isinstance(value, (str, int, float, bool, Mapping, Sequence)):
-        return encode_payload(value)
-    return encode_payload(str(value))
 
 
 def gateway_timestamp() -> datetime:

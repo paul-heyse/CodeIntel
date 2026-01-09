@@ -104,7 +104,7 @@ class TreeSitterNode:
     parse_state: int | None
     next_parse_state: int | None
     text_preview: str | None
-    extras_json: TreeSitterNodeExtras | None
+    extras: TreeSitterNodeExtras | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +132,7 @@ class TreeSitterToken:
     end_row: int
     end_col: int
     text_preview: str | None
-    extras_json: TreeSitterTokenExtras | None
+    extras: TreeSitterTokenExtras | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,7 +149,7 @@ class TreeSitterTrivia:
     end_row: int
     end_col: int
     text_preview: str | None
-    extras_json: TreeSitterTokenExtras | None
+    extras: TreeSitterTokenExtras | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -814,7 +814,7 @@ def _token_row(
         end_row=metadata.end_row,
         end_col=metadata.end_col,
         text_preview=_text_preview(context.source_bytes, metadata.start_byte, metadata.end_byte),
-        extras_json=token_extras,
+        extras=token_extras,
     )
 
 
@@ -853,7 +853,7 @@ def _trivia_row(
         end_row=metadata.end_row,
         end_col=metadata.end_col,
         text_preview=_text_preview(context.source_bytes, metadata.start_byte, metadata.end_byte),
-        extras_json=trivia_extras,
+        extras=trivia_extras,
     )
 
 
@@ -1096,7 +1096,7 @@ def _process_tree_node(
                 parse_state=_node_int(node, "parse_state"),
                 next_parse_state=_node_int(node, "next_parse_state"),
                 text_preview=_text_preview(context.source_bytes, start_byte, end_byte),
-                extras_json=None,
+                extras=None,
             )
         )
         if node_context.parent_id is not None:

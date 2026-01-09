@@ -30,6 +30,7 @@ from codeintel.build.graphs.rx.algos import GraphInput
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     TableTargetContext,
@@ -42,7 +43,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
+from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.spans import normalize_line_span
@@ -307,8 +308,7 @@ def config_references__base(
     )
     if not rows:
         return empty_table_for_table(CONFIG_REFERENCES_TABLE_KEY)
-    table, _ = table_for_rows(CONFIG_REFERENCES_TABLE_KEY, rows)
-    return table
+    return finalize_analytics_rows(CONFIG_REFERENCES_TABLE_KEY, rows)
 
 
 def config_data_flow_frames(
@@ -355,7 +355,7 @@ def config_data_flow__base(
     scope = SnapshotScope.from_snapshot(env.snapshot)
     config_reference_rows = collect_scoped_rows(
         config_data_flow_frames.config_references,
-        ("repo", "commit", "config_path", "key", "reference_paths"),
+        ("repo", "commit", "config_path", "key", "extras"),
         scope=scope,
     )
     entrypoint_rows = collect_scoped_rows(
@@ -397,8 +397,7 @@ def config_data_flow__base(
     )
     if result.rows is None:
         return empty_table_for_table(CONFIG_DATA_FLOW_TABLE_KEY)
-    reader, _ = table_for_rows(CONFIG_DATA_FLOW_TABLE_KEY, result.rows)
-    return reader
+    return finalize_analytics_rows(CONFIG_DATA_FLOW_TABLE_KEY, result.rows)
 
 
 @cache(behavior="default")
@@ -417,7 +416,7 @@ def config_graph_metrics_result(
     scope = SnapshotScope.from_snapshot(env.snapshot)
     config_reference_rows = collect_scoped_rows(
         config_references__base,
-        ("repo", "commit", "key", "reference_modules"),
+        ("repo", "commit", "key", "extras"),
         scope=scope,
     )
     module_rows = collect_scoped_rows(
@@ -451,11 +450,10 @@ def config_graph_metrics_keys__base(
     """
     if config_graph_metrics_result.key_rows is None:
         return empty_table_for_table(CONFIG_GRAPH_KEYS_TABLE_KEY)
-    reader, _ = table_for_rows(
+    return finalize_analytics_rows(
         CONFIG_GRAPH_KEYS_TABLE_KEY,
         config_graph_metrics_result.key_rows,
     )
-    return reader
 
 
 def config_graph_metrics_modules__base(
@@ -470,11 +468,10 @@ def config_graph_metrics_modules__base(
     """
     if config_graph_metrics_result.module_rows is None:
         return empty_table_for_table(CONFIG_GRAPH_MODULES_TABLE_KEY)
-    reader, _ = table_for_rows(
+    return finalize_analytics_rows(
         CONFIG_GRAPH_MODULES_TABLE_KEY,
         config_graph_metrics_result.module_rows,
     )
-    return reader
 
 
 def config_projection_key_edges__base(
@@ -489,11 +486,10 @@ def config_projection_key_edges__base(
     """
     if config_graph_metrics_result.key_edge_rows is None:
         return empty_table_for_table(CONFIG_GRAPH_KEY_EDGES_TABLE_KEY)
-    reader, _ = table_for_rows(
+    return finalize_analytics_rows(
         CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
         config_graph_metrics_result.key_edge_rows,
     )
-    return reader
 
 
 def config_projection_module_edges__base(
@@ -508,11 +504,10 @@ def config_projection_module_edges__base(
     """
     if config_graph_metrics_result.module_edge_rows is None:
         return empty_table_for_table(CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY)
-    reader, _ = table_for_rows(
+    return finalize_analytics_rows(
         CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
         config_graph_metrics_result.module_edge_rows,
     )
-    return reader
 
 
 _MODULE = sys.modules[__name__]

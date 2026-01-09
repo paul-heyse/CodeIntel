@@ -41,6 +41,7 @@ from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
+from codeintel.core.schemas.primitives import resolve_stable_sort_keys
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.validation.profiles import ValidationProfile
@@ -284,6 +285,7 @@ def _write_parquet_dataset(
         schema_hash=schema_hash_value,
         manifest_extras=_manifest_extras(table_schema),
         schema_metadata=metadata,
+        stable_sort_keys=resolve_stable_sort_keys(table_schema),
     )
     write_dataset(
         dataset_root=dataset_root_dir,

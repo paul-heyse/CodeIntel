@@ -2,28 +2,39 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pyarrow as pa
-import pyarrow.dataset as ds
 
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.finalize_ops import (
+    FinalizeDedupe,
+    FinalizeResult,
+    FinalizeSpec,
+    finalize_table,
+)
+from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.datasets.arrow_store import (
-    ArrowDatasetManifestRequest,
+    ArrowDatasetWriteOptions,
     ExistingDataBehavior,
-    build_dataset_manifest,
+    write_dataset,
 )
 from codeintel.core.datasets.manifests import (
     dataset_manifest_path,
     read_dataset_manifest,
-    write_dataset_manifest,
 )
-from codeintel.core.datasets.paths import dataset_snapshot_dir
+from codeintel.core.datasets.scanning import (
+    ParquetScanOptions,
+    scan_parquet_dataset_with_telemetry,
+)
 from codeintel.core.manifests import ArrowDatasetManifest
+from codeintel.core.query_results import records_from_arrow_table
+from codeintel.core.schemas.primitives import resolve_stable_sort_keys
+from codeintel.core.schemas.service import get_schema_service
 
-if TYPE_CHECKING:
-    from collections.abc import Sequence
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,30 +107,25 @@ def rewrite_dataset_partitions(
         snapshot_id=request.snapshot_id,
     )
     target_snapshot_id = request.output_snapshot_id or request.snapshot_id
-    source_dir = dataset_snapshot_dir(
-        request.dataset_root,
+    table = _scan_dataset_table(
+        dataset_root=request.dataset_root,
         table_key=request.table_key,
         snapshot_id=request.snapshot_id,
     )
-    target_dir = dataset_snapshot_dir(
-        request.dataset_root,
-        table_key=request.table_key,
-        snapshot_id=target_snapshot_id,
-    )
-    dataset = ds.dataset(str(source_dir), format="parquet")
-    ds.write_dataset(
-        dataset,
-        str(target_dir),
-        format="parquet",
-        partitioning=_partitioning(request.partition_columns, schema=dataset.schema),
+    finalized = _finalize_table_for_maintenance(table_key=request.table_key, table=table)
+    options = ArrowDatasetWriteOptions(
+        partition_columns=request.partition_columns,
         existing_data_behavior=request.existing_data_behavior,
+        schema_hash=source_manifest.schema_hash,
+        manifest_extras=source_manifest.extras,
+        stable_sort_keys=_stable_sort_keys_for_table(request.table_key),
     )
-    return _finalize_manifest(
+    return write_dataset(
         dataset_root=request.dataset_root,
         table_key=request.table_key,
         snapshot_id=target_snapshot_id,
-        partition_columns=request.partition_columns,
-        source_manifest=source_manifest,
+        data=finalized,
+        options=options,
     )
 
 
@@ -144,31 +150,26 @@ def compact_dataset_files(
         snapshot_id=request.snapshot_id,
     )
     target_snapshot_id = request.output_snapshot_id or request.snapshot_id
-    source_dir = dataset_snapshot_dir(
-        request.dataset_root,
+    table = _scan_dataset_table(
+        dataset_root=request.dataset_root,
         table_key=request.table_key,
         snapshot_id=request.snapshot_id,
     )
-    target_dir = dataset_snapshot_dir(
-        request.dataset_root,
-        table_key=request.table_key,
-        snapshot_id=target_snapshot_id,
-    )
-    dataset = ds.dataset(str(source_dir), format="parquet")
-    ds.write_dataset(
-        dataset,
-        str(target_dir),
-        format="parquet",
-        partitioning=_partitioning(source_manifest.partition_columns, schema=dataset.schema),
+    finalized = _finalize_table_for_maintenance(table_key=request.table_key, table=table)
+    options = ArrowDatasetWriteOptions(
+        partition_columns=source_manifest.partition_columns,
         existing_data_behavior=request.existing_data_behavior,
+        schema_hash=source_manifest.schema_hash,
+        manifest_extras=source_manifest.extras,
+        stable_sort_keys=_stable_sort_keys_for_table(request.table_key),
         max_rows_per_file=request.max_rows_per_file,
     )
-    return _finalize_manifest(
+    return write_dataset(
         dataset_root=request.dataset_root,
         table_key=request.table_key,
         snapshot_id=target_snapshot_id,
-        partition_columns=source_manifest.partition_columns,
-        source_manifest=source_manifest,
+        data=finalized,
+        options=options,
     )
 
 
@@ -229,6 +230,92 @@ def vacuum_dataset_manifest(
     )
 
 
+def _scan_dataset_table(
+    *,
+    dataset_root: Path,
+    table_key: str,
+    snapshot_id: str,
+) -> pa.Table:
+    options = ParquetScanOptions(
+        implicit_ordering=True,
+        require_sequenced_output=True,
+        metrics_enabled=True,
+    )
+    reader, telemetry = scan_parquet_dataset_with_telemetry(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+        options=options,
+    )
+    if telemetry is not None:
+        LOG.debug("Maintenance scan telemetry: %s", telemetry.to_mapping())
+    if reader is None:
+        msg = f"Dataset scan failed for {table_key}@{snapshot_id}"
+        raise FileNotFoundError(msg)
+    table = reader_to_table(reader)
+    return normalize_table_for_compute(table)
+
+
+def _finalize_table_for_maintenance(*, table_key: str, table: pa.Table) -> pa.Table:
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(
+            table_key=table_key,
+            mode="tolerant",
+            required_non_null=_required_non_null_columns(table_key),
+            dedupe=FinalizeDedupe(enabled=False),
+            emit_artifacts=True,
+        ),
+    )
+    _log_finalize_warnings(table_key, result)
+    return result.good
+
+
+def _required_non_null_columns(table_key: str) -> tuple[str, ...]:
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        return ()
+    if schema is None:
+        return ()
+    return tuple(column.name for column in schema.columns if not column.nullable)
+
+
+def _stable_sort_keys_for_table(table_key: str) -> tuple[str, ...] | None:
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        return None
+    return resolve_stable_sort_keys(schema)
+
+
+def _log_finalize_warnings(table_key: str, result: FinalizeResult) -> None:
+    if result.stats.num_rows:
+        for row in records_from_arrow_table(result.stats):
+            code = row.get("error_code")
+            count = row.get("count")
+            if isinstance(code, str):
+                LOG.warning(
+                    "Maintenance finalize error for %s: %s (%s rows)",
+                    table_key,
+                    code,
+                    count,
+                )
+            else:
+                LOG.warning("Maintenance finalize error for %s: %s", table_key, row)
+    if result.alignment.num_rows:
+        records = records_from_arrow_table(result.alignment)
+        if records:
+            row = records[0]
+            LOG.warning(
+                "Maintenance finalize alignment for %s: missing=%s extra=%s coerced=%s",
+                table_key,
+                row.get("missing_columns"),
+                row.get("extra_columns"),
+                row.get("coerced_columns"),
+            )
+
+
 def _require_manifest(
     *,
     dataset_root: Path,
@@ -246,41 +333,6 @@ def _require_manifest(
     return read_dataset_manifest(path)
 
 
-def _finalize_manifest(
-    *,
-    dataset_root: Path,
-    table_key: str,
-    snapshot_id: str,
-    partition_columns: tuple[str, ...],
-    source_manifest: ArrowDatasetManifest,
-) -> ArrowDatasetManifest:
-    snapshot_dir = dataset_snapshot_dir(
-        dataset_root,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
-    )
-    dataset = ds.dataset(str(snapshot_dir), format="parquet")
-    request = ArrowDatasetManifestRequest(
-        table_key=table_key,
-        snapshot_id=snapshot_id,
-        partition_columns=partition_columns,
-        schema_hash=source_manifest.schema_hash,
-        extras=source_manifest.extras,
-    )
-    manifest = build_dataset_manifest(
-        dataset=dataset,
-        snapshot_dir=snapshot_dir,
-        request=request,
-    )
-    manifest_path = dataset_manifest_path(
-        dataset_root=dataset_root,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
-    )
-    write_dataset_manifest(manifest_path, manifest)
-    return manifest
-
-
 def _expected_files(
     manifest: ArrowDatasetManifest,
     *,
@@ -296,24 +348,6 @@ def _expected_files(
 
 def _parquet_files(dataset_dir: Path) -> set[Path]:
     return {path.resolve() for path in dataset_dir.rglob("*.parquet")}
-
-
-def _partitioning(
-    columns: Sequence[str],
-    *,
-    schema: pa.Schema | None,
-) -> ds.Partitioning | None:
-    if not columns:
-        return None
-    if schema is None:
-        msg = "Partitioning requires a schema when partition columns are provided"
-        raise ValueError(msg)
-    try:
-        fields = [schema.field(str(column)) for column in columns]
-    except KeyError as exc:
-        msg = f"Partition columns missing from schema: {columns}"
-        raise ValueError(msg) from exc
-    return ds.partitioning(schema=pa.schema(fields))
 
 
 __all__ = [
