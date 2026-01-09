@@ -18,6 +18,10 @@ from codeintel.build.analytics.graphs.config_data_flow import (
 from codeintel.build.analytics.graphs.config_graph_metrics import (
     ConfigGraphMetricsRequest,
     ConfigGraphMetricsResult,
+    build_config_graph_metrics_keys_table,
+    build_config_graph_metrics_modules_table,
+    build_config_projection_key_edges_table,
+    build_config_projection_module_edges_table,
     compute_config_graph_metrics_result,
 )
 from codeintel.build.analytics.graphs.config_references import (
@@ -27,10 +31,14 @@ from codeintel.build.analytics.graphs.config_references import (
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.graphs.builders import build_call_graph_from_tables
+from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
+from codeintel.build.hamilton.native.analytics.finalize_helpers import (
+    finalize_analytics_reader,
+    finalize_analytics_rows,
+)
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     TableTargetContext,
@@ -361,19 +369,12 @@ def config_data_flow__base(
     return finalize_analytics_rows(CONFIG_DATA_FLOW_TABLE_KEY, result.rows)
 
 
-@cache(behavior="default")
-def config_graph_metrics_result(
+def _build_config_graph_metrics_request(
     env: BuildEnv,
+    *,
     config_references__base: InferableTabularInput,
     q__core__modules: InferableTabularInput,
-) -> ConfigGraphMetricsResult:
-    """Compute config graph metrics result rows.
-
-    Returns
-    -------
-    ConfigGraphMetricsResult
-        Computed config graph metrics container.
-    """
+) -> ConfigGraphMetricsRequest:
     scope = SnapshotScope.from_snapshot(env.snapshot)
     config_reference_rows = collect_scoped_rows(
         config_references__base,
@@ -390,7 +391,7 @@ def config_graph_metrics_result(
         scope=scope,
     )
     runtime_options = _graph_runtime_options(env)
-    request = ConfigGraphMetricsRequest(
+    return ConfigGraphMetricsRequest(
         repo=env.repo,
         commit=env.commit,
         config_value_rows=config_reference_rows,
@@ -398,11 +399,33 @@ def config_graph_metrics_result(
         runtime=runtime_options,
         ctx=env.execution_context,
     )
+
+
+@cache(behavior="default")
+def config_graph_metrics_result(
+    env: BuildEnv,
+    config_references__base: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
+) -> ConfigGraphMetricsResult:
+    """Compute config graph metrics result rows.
+
+    Returns
+    -------
+    ConfigGraphMetricsResult
+        Computed config graph metrics container.
+    """
+    request = _build_config_graph_metrics_request(
+        env,
+        config_references__base=config_references__base,
+        q__core__modules=q__core__modules,
+    )
     return compute_config_graph_metrics_result(request)
 
 
 def config_graph_metrics_keys__base(
-    config_graph_metrics_result: ConfigGraphMetricsResult,
+    env: BuildEnv,
+    config_references__base: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> pa.Table:
     """Build config graph key metrics rows.
 
@@ -411,16 +434,22 @@ def config_graph_metrics_keys__base(
     pa.Table
         Reader containing key metrics rows.
     """
-    if config_graph_metrics_result.key_rows is None:
-        return empty_table_for_table(CONFIG_GRAPH_KEYS_TABLE_KEY)
-    return finalize_analytics_rows(
-        CONFIG_GRAPH_KEYS_TABLE_KEY,
-        config_graph_metrics_result.key_rows,
+    request = _build_config_graph_metrics_request(
+        env,
+        config_references__base=config_references__base,
+        q__core__modules=q__core__modules,
     )
+    reader = run_rustworkx_external_plan(
+        builder=build_config_graph_metrics_keys_table,
+        args=(request,),
+    )
+    return finalize_analytics_reader(CONFIG_GRAPH_KEYS_TABLE_KEY, reader)
 
 
 def config_graph_metrics_modules__base(
-    config_graph_metrics_result: ConfigGraphMetricsResult,
+    env: BuildEnv,
+    config_references__base: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> pa.Table:
     """Build config graph module metrics rows.
 
@@ -429,16 +458,22 @@ def config_graph_metrics_modules__base(
     pa.Table
         Reader containing module metrics rows.
     """
-    if config_graph_metrics_result.module_rows is None:
-        return empty_table_for_table(CONFIG_GRAPH_MODULES_TABLE_KEY)
-    return finalize_analytics_rows(
-        CONFIG_GRAPH_MODULES_TABLE_KEY,
-        config_graph_metrics_result.module_rows,
+    request = _build_config_graph_metrics_request(
+        env,
+        config_references__base=config_references__base,
+        q__core__modules=q__core__modules,
     )
+    reader = run_rustworkx_external_plan(
+        builder=build_config_graph_metrics_modules_table,
+        args=(request,),
+    )
+    return finalize_analytics_reader(CONFIG_GRAPH_MODULES_TABLE_KEY, reader)
 
 
 def config_projection_key_edges__base(
-    config_graph_metrics_result: ConfigGraphMetricsResult,
+    env: BuildEnv,
+    config_references__base: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> pa.Table:
     """Build config projection key edge rows.
 
@@ -447,16 +482,22 @@ def config_projection_key_edges__base(
     pa.Table
         Reader containing config projection key edges.
     """
-    if config_graph_metrics_result.key_edge_rows is None:
-        return empty_table_for_table(CONFIG_GRAPH_KEY_EDGES_TABLE_KEY)
-    return finalize_analytics_rows(
-        CONFIG_GRAPH_KEY_EDGES_TABLE_KEY,
-        config_graph_metrics_result.key_edge_rows,
+    request = _build_config_graph_metrics_request(
+        env,
+        config_references__base=config_references__base,
+        q__core__modules=q__core__modules,
     )
+    reader = run_rustworkx_external_plan(
+        builder=build_config_projection_key_edges_table,
+        args=(request,),
+    )
+    return finalize_analytics_reader(CONFIG_GRAPH_KEY_EDGES_TABLE_KEY, reader)
 
 
 def config_projection_module_edges__base(
-    config_graph_metrics_result: ConfigGraphMetricsResult,
+    env: BuildEnv,
+    config_references__base: InferableTabularInput,
+    q__core__modules: InferableTabularInput,
 ) -> pa.Table:
     """Build config projection module edge rows.
 
@@ -465,12 +506,16 @@ def config_projection_module_edges__base(
     pa.Table
         Reader containing config projection module edges.
     """
-    if config_graph_metrics_result.module_edge_rows is None:
-        return empty_table_for_table(CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY)
-    return finalize_analytics_rows(
-        CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY,
-        config_graph_metrics_result.module_edge_rows,
+    request = _build_config_graph_metrics_request(
+        env,
+        config_references__base=config_references__base,
+        q__core__modules=q__core__modules,
     )
+    reader = run_rustworkx_external_plan(
+        builder=build_config_projection_module_edges_table,
+        args=(request,),
+    )
+    return finalize_analytics_reader(CONFIG_GRAPH_MODULE_EDGES_TABLE_KEY, reader)
 
 
 _MODULE = sys.modules[__name__]

@@ -86,13 +86,11 @@ def run_analytics_pipeline(request: AnalyticsPipelineRunRequest) -> FinalizeResu
     pipeline_options = PipelineRunOptions(
         ctx=resolved_ctx,
         manifest_dir=request.manifest_dir,
-        manifest_options=(
-            request.manifest_options
-            or run_manifest_options_for_context(
-                ctx=resolved_ctx,
-                ordering=plan.ordering,
-                scan_telemetry=scan_telemetry,
-            )
+        manifest_options=run_manifest_options_for_context(
+            ctx=resolved_ctx,
+            ordering=plan.ordering,
+            scan_telemetry=scan_telemetry,
+            options=request.manifest_options,
         ),
         scan_telemetry=scan_telemetry,
     )

@@ -16,7 +16,12 @@ if TYPE_CHECKING:
     type TabularFrame = pl.LazyFrame
     # RecordBatchReader inputs are single-consume; materialize if reuse is required.
     type InferableTabularInput = (
-        pa.RecordBatchReader | pa.Table | pl.DataFrame | TabularFrame | RecordBatchIterable
+        pa.RecordBatchReader
+        | pa.Table
+        | pl.DataFrame
+        | TabularFrame
+        | RecordBatchIterable
+        | DuckDBRelation
     )
     type TabularInput = InferableTabularInput
     type TabularInputWithRelation = TabularInput | TabularRelation
@@ -26,7 +31,12 @@ else:
     TabularFrame = pl.LazyFrame
     # RecordBatchReader inputs are single-consume; materialize if reuse is required.
     InferableTabularInput = (
-        pa.RecordBatchReader | pa.Table | pl.DataFrame | TabularFrame | RecordBatchIterable
+        pa.RecordBatchReader
+        | pa.Table
+        | pl.DataFrame
+        | TabularFrame
+        | RecordBatchIterable
+        | DuckDBRelation
     )
     TabularInput = InferableTabularInput
     TabularInputWithRelation = TabularInput | TabularRelation

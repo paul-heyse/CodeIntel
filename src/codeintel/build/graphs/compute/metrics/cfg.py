@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Hashable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
+
+import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.centrality import centrality_directed
 from codeintel.build.graphs.compute.metrics.paths import (
@@ -21,6 +23,7 @@ from codeintel.build.graphs.compute.metrics.types import (
 from codeintel.build.graphs.compute.metrics.types import (
     DominanceMetrics as DominanceSummary,
 )
+from codeintel.build.graphs.engine.protocol import GraphKind
 from codeintel.build.graphs.rx.algos import (
     GraphInput,
     dag_longest_path_length,
@@ -28,10 +31,19 @@ from codeintel.build.graphs.rx.algos import (
     dominance_frontiers_by_id,
     ensure_directed_store,
     immediate_dominators_by_id,
+    insert_node_on_out_edges_by_id,
     is_directed_acyclic,
+    remove_node_retain_edges_by_id,
 )
-from codeintel.build.graphs.rx.iterators import iter_edge_id_payloads
+from codeintel.build.graphs.rx.build_from_edges import (
+    BuildStoreOptions,
+    EdgeBuildSpec,
+    build_store_from_edge_tuples,
+)
+from codeintel.build.graphs.rx.iterators import iter_edge_id_payloads, iter_edge_id_weights
+from codeintel.build.graphs.rx.metadata import apply_graph_metadata, metadata_from_graph
 from codeintel.build.graphs.rx.normalize import stable_key
+from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, weight_policy_for_kind
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
@@ -81,6 +93,102 @@ def compute_dominator_tree(
     if store.graph.num_nodes() == 0:
         return {}
     return immediate_dominators_by_id(store, entry)
+
+
+def _clone_cfg_store(store: RxGraphStore) -> RxGraphStore:
+    edge_rows = [
+        (src_id, dst_id, weight) for src_id, dst_id, weight in iter_edge_id_weights(store)
+    ]
+    node_attrs = {node_id: dict(attrs) for node_id, attrs in store.node_attrs.items()}
+    spec = EdgeBuildSpec(
+        directed=True,
+        weight_policy=store.weight_policy,
+        numeric_policy=store.numeric_policy,
+    )
+    options = BuildStoreOptions(
+        stable_nodes=True,
+        aggregate_edges=True,
+        node_ids=store.node_ids(),
+        node_attrs=node_attrs or None,
+        node_hint=len(store.id_to_index),
+        edge_hint=len(edge_rows),
+    )
+    cloned = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
+    metadata = metadata_from_graph(store.graph)
+    if metadata is not None:
+        apply_graph_metadata(cloned.graph, metadata)
+    return cloned
+
+
+def _as_int_id(value: Hashable) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _next_synthetic_id(store: RxGraphStore) -> int:
+    numeric_ids = [_as_int_id(node_id) for node_id in store.node_ids()]
+    resolved = [node_id for node_id in numeric_ids if node_id is not None]
+    candidate = (min(resolved) - 1) if resolved else -1
+    while candidate in store.id_to_index:
+        candidate -= 1
+    return candidate
+
+
+def _insert_entry_fanout(store: RxGraphStore, entry_id: Hashable) -> int | None:
+    entry_idx = store.id_to_index.get(entry_id)
+    if entry_idx is None:
+        return None
+    directed_graph = cast("rx.PyDiGraph", store.graph)
+    if directed_graph.out_degree(entry_idx) <= 1:
+        return None
+    synthetic_id = _next_synthetic_id(store)
+    return insert_node_on_out_edges_by_id(
+        store,
+        synthetic_id,
+        entry_id,
+        attrs={"kind": "entry_fanout", "synthetic": True},
+    )
+
+
+def _prune_isolated_nodes(store: RxGraphStore, *, protected: set[Hashable]) -> None:
+    directed_graph = cast("rx.PyDiGraph", store.graph)
+    for node_id in store.node_ids():
+        if node_id in protected:
+            continue
+        node_idx = store.id_to_index.get(node_id)
+        if node_idx is None:
+            continue
+        if directed_graph.in_degree(node_idx) == 0 and directed_graph.out_degree(node_idx) == 0:
+            remove_node_retain_edges_by_id(store, node_id)
+
+
+def normalize_cfg_graph(
+    graph: GraphInput,
+    *,
+    entry_idx: Hashable,
+    exit_idx: Hashable,
+) -> RxGraphStore:
+    """Normalize a CFG for analysis using rustworkx mutation helpers.
+
+    Returns
+    -------
+    RxGraphStore
+        Normalized CFG graph for analysis metrics.
+    """
+    store = ensure_directed_store(graph)
+    normalized = _clone_cfg_store(store)
+    synthetic_id = _insert_entry_fanout(normalized, entry_idx)
+    protected: set[Hashable] = {entry_idx, exit_idx}
+    if synthetic_id is not None:
+        protected.add(synthetic_id)
+    _prune_isolated_nodes(normalized, protected=protected)
+    return normalized
 
 
 def compute_dominance_frontier(
@@ -369,22 +477,34 @@ def build_cfg_graph(
     tuple[RxGraphStore, int, int]
         Graph, entry node id, and exit node id.
     """
-    graph = RxGraphStore.directed()
-    entry_idx = None
-    exit_idx = None
+    entry_idx: int | None = None
+    exit_idx: int | None = None
     out_deg_map: dict[int, int] = {}
+    node_attrs: dict[Hashable, dict[str, object]] = {}
+    node_ids: list[int] = []
     for idx, kind, in_deg, out_deg in blocks:
-        graph.set_node_attrs(
-            idx,
-            {"kind": kind, "in_degree": in_deg, "out_degree": out_deg},
-        )
+        node_ids.append(idx)
+        node_attrs[idx] = {"kind": kind, "in_degree": in_deg, "out_degree": out_deg}
         if kind == "entry":
             entry_idx = idx
         if kind == "exit":
             exit_idx = idx
         out_deg_map[idx] = out_deg
-    for src, dst, _edge_type in edges:
-        graph.add_weighted_edge(src, dst, weight=1.0)
+    edge_rows = [(src, dst, 1.0) for src, dst, _edge_type in edges]
+    spec = EdgeBuildSpec(
+        directed=True,
+        weight_policy=weight_policy_for_kind(GraphKind.CFG_GRAPH),
+        numeric_policy=DEFAULT_NUMERIC_POLICY,
+    )
+    options = BuildStoreOptions(
+        stable_nodes=True,
+        aggregate_edges=True,
+        node_ids=node_ids or None,
+        node_attrs=node_attrs or None,
+        node_hint=len(node_ids) if node_ids else None,
+        edge_hint=len(edge_rows),
+    )
+    graph = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
     if entry_idx is None and graph.graph.num_nodes() > 0:
         entry_idx = min(int(str(node)) for node in graph.node_ids())
     if exit_idx is None:
@@ -407,4 +527,5 @@ __all__ = [
     "compute_dominator_depths",
     "compute_dominator_tree",
     "find_natural_loop_headers",
+    "normalize_cfg_graph",
 ]

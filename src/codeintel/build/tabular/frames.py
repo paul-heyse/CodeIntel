@@ -19,6 +19,7 @@ import pyarrow as pa
 
 from codeintel.build.tabular.conversion import (
     arrow_reader_to_lazyframe,
+    empty_table_from_schema,
     record_batch_reader_from_iterable,
     table_to_reader,
 )
@@ -100,7 +101,7 @@ def _empty_frame_from_schema(
         except KeyError:
             return None
         arrow_schema = arrow_contract_for_table_schema(table_schema=table_schema)
-    empty_table = pa.Table.from_batches([], schema=arrow_schema)
+    empty_table = empty_table_from_schema(arrow_schema)
     reader = table_to_reader(empty_table, batch_size=None)
     return arrow_reader_to_lazyframe(reader)
 

@@ -41,6 +41,12 @@ if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
 
+CORE_GOIDS_TABLE_KEY = "core.goids"
+CORE_MODULES_TABLE_KEY = "core.modules"
+FUNCTION_EFFECTS_TABLE_KEY = "analytics.function_effects"
+FUNCTION_CONTRACTS_TABLE_KEY = "analytics.function_contracts"
+GRAPH_METRICS_FUNCTIONS_TABLE_KEY = "analytics.graph_metrics_functions"
+
 
 @dataclass(frozen=True)
 class SemanticRolesResult:
@@ -278,6 +284,7 @@ def _function_worklist_table(
         commit=commit,
         columns=(goid_column, "rel_path", "qualname", "start_line", "end_line"),
         ctx=ctx,
+        table_key=CORE_GOIDS_TABLE_KEY,
     )
     if scoped.num_rows == 0:
         return scoped
@@ -320,6 +327,7 @@ def _effects_from_frame(
             "spawns_threads_or_tasks",
         ),
         ctx=ctx,
+        table_key=FUNCTION_EFFECTS_TABLE_KEY,
     )
     if scoped.num_rows == 0:
         return {}
@@ -393,6 +401,7 @@ def _contracts_from_frame(
         commit=commit,
         columns=("function_goid_h128", "extras"),
         ctx=ctx,
+        table_key=FUNCTION_CONTRACTS_TABLE_KEY,
     )
     if table.num_rows == 0:
         return {}
@@ -435,6 +444,7 @@ def _graph_metrics_from_frame(
         commit=commit,
         columns=("function_goid_h128", "call_fan_in", "call_fan_out"),
         ctx=ctx,
+        table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
     )
     if scoped.num_rows == 0:
         return {}
@@ -481,6 +491,7 @@ def _module_meta_from_frame(
         commit=commit,
         columns=("module", "path", "tags"),
         ctx=ctx,
+        table_key=CORE_MODULES_TABLE_KEY,
     )
     if table.num_rows == 0:
         return {}
@@ -506,12 +517,18 @@ def _scoped_table(
     commit: str,
     columns: Sequence[str],
     ctx: ExecutionContext | RuntimeExecutionContext | None,
+    table_key: str | None = None,
 ) -> pa.Table:
     require_columns(frame, ("repo", "commit"))
     return snapshot_table(
         frame,
         columns=columns,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=table_key,
+        ),
     )
 
 

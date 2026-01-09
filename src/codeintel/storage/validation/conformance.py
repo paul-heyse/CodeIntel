@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.duckdb_types import DuckDBError
@@ -84,10 +85,9 @@ def _validate_schema_rows(
         if ds.schema is None:
             continue
         try:
-            reader = (
-                con.table(ds.table_key)
-                .limit(sample_size)
-                .fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+            reader = tabular_to_arrow_reader(
+                con.table(ds.table_key).limit(sample_size),
+                batch_size=DEFAULT_ARROW_BATCH_SIZE,
             )
         except DuckDBError as exc:
             yield ConformanceIssue(dataset=name, message=f"Failed to sample rows: {exc}")

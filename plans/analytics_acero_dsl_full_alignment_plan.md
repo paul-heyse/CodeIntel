@@ -237,6 +237,10 @@ plan = plan_from_schema_defaults(
       (replace `build_snapshot_plan` / `resolve_default_projection` in
       `snapshot.py` and `catalogs.py`).
 
+**Progress**
+- [x] Added explicit `plan_policy` defaults for analytics tables that previously relied on
+      implicit defaults (`output_registry.py`).
+
 ---
 
 ## Scope 6 - Determinism Policy + Ordering Enforcement
@@ -282,6 +286,17 @@ plan = plan.aggregate(
 - [ ] Ensure finalize owns canonical ordering for persistent outputs.
 - [ ] Persist ordering keys + determinism tier in graph metadata.
 
+**Progress**
+- [x] Removed determinism-only ordering in `config_data_flow.py` (entrypoint/path ordering now
+      driven by graph semantics, not stable sort).
+- [x] Removed determinism-only ordering in `graph_metrics.py` subgraph filtering (preserve
+      store node order).
+- [x] Replaced determinism-only `sorted(...)` in analytics outputs with explicit
+      list-semantics normalization (config references, function effects, data model usage,
+      dependencies, entrypoints, semantic roles).
+- [x] Removed determinism-only ordering in traversal/filtering paths (`py_cpg_quality_report.py`,
+      catalogs snapshot filter).
+
 ---
 
 ## Scope 7 - Observability + Provenance Everywhere
@@ -321,6 +336,12 @@ result = run_pipeline(plan=ExecutionPlan.from_plan(plan), finalize=finalize, opt
 - [ ] Emit run manifests for all analytics pipelines.
 - [ ] Ensure Hamilton analytics outputs persist finalize artifacts and run manifests
       (route writes through analytics dataset helpers or a shared pipeline wrapper).
+
+**Progress**
+- [x] Run manifest options now always merge ordering + scan telemetry via
+      `run_manifest_options_for_context` (see `pipeline.py`).
+- [x] Row-based analytics writes now emit run manifests with schema-driven ordering +
+      determinism alongside finalize artifacts (`datasets.py`).
 
 ---
 

@@ -7,11 +7,14 @@ analogous to base types in graphs/compute/.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
 from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.conversion import empty_table_from_schema
 from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
 from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
@@ -20,6 +23,8 @@ from codeintel.core.columnar.finalize_ops import (
     finalize_spec_for_table,
 )
 from codeintel.core.columnar.ordering import OrderingSpec
+from codeintel.core.columnar.run_manifest import RunManifestOptions
+from codeintel.core.columnar.streaming import ScanTelemetry
 from codeintel.core.query_results import records_from_arrow_table
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.ingestion.compute import queryspecs as ingest_queryspecs
@@ -123,11 +128,21 @@ class BaseToolIngestStep:
         self._tools = tools
 
 
+@dataclass(frozen=True, slots=True)
+class FinalizeArrowRequest:
+    """Inputs for finalizing Arrow data against contracts."""
+
+    mode: FinalizeMode = "tolerant"
+    ctx: ExecutionContext | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
+    scan_telemetry: ScanTelemetry | None = None
+
+
 def finalize_arrow_tables(
     tables: Mapping[str, pa.Table],
     *,
-    mode: FinalizeMode = "tolerant",
-    ctx: ExecutionContext | None = None,
+    request: FinalizeArrowRequest,
 ) -> tuple[dict[str, pa.Table], list[str]]:
     """Finalize Arrow tables against their contracts in tolerant mode.
 
@@ -138,12 +153,12 @@ def finalize_arrow_tables(
     """
     finalized: dict[str, pa.Table] = {}
     warnings: list[str] = []
-    resolved_ctx = resolve_execution_context(ctx)
+    resolved_ctx = resolve_execution_context(request.ctx)
     ordering = OrderingSpec.implicit(reason="ingest table")
     for table_key, table in tables.items():
         spec = finalize_spec_for_table(
             table_key,
-            mode=mode,
+            mode=request.mode,
             dedupe=FinalizeDedupe(enabled=False),
             emit_artifacts=True,
         )
@@ -152,7 +167,12 @@ def finalize_arrow_tables(
             result = run_pipeline(
                 plan=plan,
                 finalize=spec,
-                options=PipelineRunOptions(ctx=resolved_ctx),
+                options=PipelineRunOptions(
+                    ctx=resolved_ctx,
+                    manifest_dir=request.manifest_dir,
+                    manifest_options=request.manifest_options,
+                    scan_telemetry=request.scan_telemetry,
+                ),
             )
         except ValueError as exc:
             warnings.append(f"{table_key}: {exc}")
@@ -166,8 +186,7 @@ def finalize_arrow_tables(
 def finalize_arrow_readers(
     readers: Mapping[str, pa.RecordBatchReader],
     *,
-    mode: FinalizeMode = "tolerant",
-    ctx: ExecutionContext | None = None,
+    request: FinalizeArrowRequest,
 ) -> tuple[dict[str, pa.Table], list[str]]:
     """Finalize Arrow readers against their contracts in tolerant mode.
 
@@ -178,12 +197,12 @@ def finalize_arrow_readers(
     """
     finalized: dict[str, pa.Table] = {}
     warnings: list[str] = []
-    resolved_ctx = resolve_execution_context(ctx)
+    resolved_ctx = resolve_execution_context(request.ctx)
     ordering = OrderingSpec.implicit(reason="ingest reader")
     for table_key, reader in readers.items():
         spec = finalize_spec_for_table(
             table_key,
-            mode=mode,
+            mode=request.mode,
             dedupe=FinalizeDedupe(enabled=False),
             emit_artifacts=True,
         )
@@ -192,11 +211,16 @@ def finalize_arrow_readers(
             result = run_pipeline(
                 plan=plan,
                 finalize=spec,
-                options=PipelineRunOptions(ctx=resolved_ctx),
+                options=PipelineRunOptions(
+                    ctx=resolved_ctx,
+                    manifest_dir=request.manifest_dir,
+                    manifest_options=request.manifest_options,
+                    scan_telemetry=request.scan_telemetry,
+                ),
             )
         except ValueError as exc:
             warnings.append(f"{table_key}: {exc}")
-            finalized[table_key] = pa.Table.from_batches([], schema=reader.schema)
+            finalized[table_key] = empty_table_from_schema(reader.schema)
             continue
         finalized[table_key] = result.good
         warnings.extend(_finalize_warnings(table_key, result))

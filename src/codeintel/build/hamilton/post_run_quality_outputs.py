@@ -52,11 +52,16 @@ from codeintel.build.tabular.finalize_ops import FinalizeResult
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
+    resolve_execution_context,
 )
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.ordering import OrderingSpec, SortDirection, SortKey
 from codeintel.core.columnar.plan_ops import QueryPlanOptions
-from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
+from codeintel.core.columnar.queryspec import (
+    PROVENANCE_FIELDS,
+    QuerySpec,
+    projection_spec_from_schema_defaults,
+)
 from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     columnar_batch_collector_for_table_key,
@@ -294,10 +299,13 @@ def _scan_snapshot_result(
             if resolved_columns is None and columns is not None:
                 return None
             predicate = _snapshot_predicate(dataset.schema, repo=env.repo, commit=env.commit)
+            ctx = _scan_execution_context(env)
             query_spec = _query_spec_for_snapshot(
                 dataset,
+                table_key=table_key,
                 columns=resolved_columns,
                 predicate=predicate,
+                execution_ctx=ctx,
             )
             telemetry = scan_telemetry_for_queryspec(dataset, spec=query_spec)
             log.debug(
@@ -315,7 +323,6 @@ def _scan_snapshot_result(
                 implicit_ordering=True,
                 require_sequenced_output=True,
             )
-            ctx = _scan_execution_context(env)
             try:
                 result = run_analytics_pipeline(
                     AnalyticsPipelineRunRequest(
@@ -418,10 +425,23 @@ def _resolve_snapshot_columns(
 def _query_spec_for_snapshot(
     dataset: ds.Dataset,
     *,
+    table_key: str,
     columns: tuple[str, ...] | None,
     predicate: Expression | None,
+    execution_ctx: ExecutionContext | None,
 ) -> QuerySpec:
-    projection = _projection_spec_for_columns(dataset, columns)
+    available_columns = tuple(dataset.schema.names)
+    provenance_columns = _provenance_columns_for_spec(
+        execution_ctx=execution_ctx,
+        available_columns=available_columns,
+    )
+    table_schema = get_schema_service().get_table_schema(table_key)
+    projection = projection_spec_from_schema_defaults(
+        columns,
+        table_schema=table_schema,
+        available_columns=available_columns,
+        provenance_columns=provenance_columns,
+    )
     return QuerySpec(
         predicate=predicate,
         pushdown_predicate=predicate,
@@ -429,13 +449,26 @@ def _query_spec_for_snapshot(
     )
 
 
-def _projection_spec_for_columns(
-    dataset: ds.Dataset,
-    columns: tuple[str, ...] | None,
-) -> ProjectionSpec:
-    if columns is None:
-        return ProjectionSpec(base_cols=tuple(dataset.schema.names))
-    return ProjectionSpec(base_cols=columns)
+def _provenance_columns_for_spec(
+    *,
+    execution_ctx: ExecutionContext | None,
+    available_columns: Sequence[str],
+) -> tuple[str, ...]:
+    resolved_ctx = resolve_execution_context(execution_ctx)
+    provenance = resolved_ctx.provenance
+    profile = resolved_ctx.runtime_profile
+    if profile is not None:
+        provenance = profile.resolve_provenance(default=provenance)
+    if resolved_ctx.resolve_determinism() == "canonical":
+        provenance = True
+    if not provenance:
+        return ()
+    available = set(available_columns)
+    return tuple(
+        output_name
+        for output_name, _source_name in PROVENANCE_FIELDS
+        if output_name in available
+    )
 
 
 def _emit_run_manifest(

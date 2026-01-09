@@ -22,6 +22,7 @@ from codeintel.build.analytics.compute.graphs import (
     cfg_longest_path_length,
     cfg_reachable_nodes,
     dfg_component_stats,
+    normalize_cfg_graph,
 )
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
 from codeintel.build.graphs.rx.store import RxGraphStore
@@ -49,6 +50,7 @@ class CfgFnContext:
     module: str | None
     qualname: str | None
     graph: GraphInput
+    analysis_graph: GraphInput
     entry_idx: int
     exit_idx: int
     sccs: list[set[int]]
@@ -272,9 +274,10 @@ def cfg_fn_rows(
     tuple[tuple[object, ...], list[tuple[object, ...]]]
         Function metrics row and block metrics rows.
     """
-    centrality_data = _compute_centrality_data(ctx.graph, ctx.entry_idx, ctx.graph_ctx)
+    centrality_data = _compute_centrality_data(ctx.analysis_graph, ctx.entry_idx, ctx.graph_ctx)
+    analysis_store = ensure_store(ctx.analysis_graph)
     graph_store = ensure_store(ctx.graph)
-    fn_row = _cfg_function_row(ctx, graph_store, centrality_data)
+    fn_row = _cfg_function_row(ctx, analysis_store, centrality_data)
     block_rows = _cfg_block_rows(ctx, graph_store, centrality_data)
     return fn_row, block_rows
 
@@ -295,9 +298,13 @@ def _cfg_function_row(
     loops = loop_stats(sccs)
     has_cycles = any(len(comp) > 1 for comp in sccs)
     is_dag = not has_cycles
-    longest_path_len = cfg_longest_path_length(ctx.graph, ctx.entry_idx, is_dag=is_dag)
-    avg_spl = cfg_avg_shortest_path_length(ctx.graph, ctx.entry_idx)
-    branching = branching_stats(ctx.graph)
+    longest_path_len = cfg_longest_path_length(
+        ctx.analysis_graph,
+        ctx.entry_idx,
+        is_dag=is_dag,
+    )
+    avg_spl = cfg_avg_shortest_path_length(ctx.analysis_graph, ctx.entry_idx)
+    branching = branching_stats(ctx.analysis_graph)
     dom_frontier_mean = (
         sum(centrality_data.dom_frontier_sizes.values()) / len(centrality_data.dom_frontier_sizes)
         if centrality_data.dom_frontier_sizes
@@ -394,13 +401,13 @@ def cfg_ext_row(
     tuple[object, ...]
         Row matching analytics.cfg_function_metrics_ext schema.
     """
-    reachable = cfg_reachable_nodes(ctx.graph, ctx.entry_idx)
-    unreachable_count = max(graph_node_count(ctx.graph) - len(reachable), 0)
+    reachable = cfg_reachable_nodes(ctx.analysis_graph, ctx.entry_idx)
+    unreachable_count = max(graph_node_count(ctx.analysis_graph) - len(reachable), 0)
 
     back_targets = {dst for _, dst, edge_kind in edges if edge_kind == "back"}
     edge_kinds = Counter(edge_kind for _, _, edge_kind in edges)
     simple_paths = bounded_simple_path_count(
-        ctx.graph,
+        ctx.analysis_graph,
         {ctx.entry_idx},
         {ctx.exit_idx},
         max_paths=MAX_SIMPLE_PATHS,
@@ -444,7 +451,12 @@ def cfg_rows_for_fn(
     if not blocks:
         return None
     graph, entry_idx, exit_idx = build_cfg_graph(blocks, edges)
-    _, sccs, _ = dfg_component_stats(graph)
+    analysis_graph = (
+        normalize_cfg_graph(graph, entry_idx=entry_idx, exit_idx=exit_idx)
+        if inputs.graph_ctx.enable_cfg_normalization
+        else graph
+    )
+    _, sccs, _ = dfg_component_stats(analysis_graph)
     ctx = CfgFnContext(
         repo=inputs.repo,
         commit=inputs.commit,
@@ -453,6 +465,7 @@ def cfg_rows_for_fn(
         module=meta[1],
         qualname=meta[2],
         graph=graph,
+        analysis_graph=analysis_graph,
         entry_idx=entry_idx,
         exit_idx=exit_idx,
         sccs=sccs,

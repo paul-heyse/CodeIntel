@@ -32,25 +32,8 @@ if TYPE_CHECKING:
         DEFAULT_TAKE,
     )
     from codeintel.core.columnar.compute_helpers import call_compute, require_array, require_scalar
-    from codeintel.core.columnar.dedupe_ops import (
-        DedupeDeterminism,
-        DedupeLegacy,
-        DedupeSpec,
-        DedupeStrategy,
-        DedupeTier,
-        DedupeTierNormalized,
-        dedupe_keep_first_after_sort,
-        dedupe_table_for_table,
-        normalize_dedupe_tier,
-    )
     from codeintel.core.columnar.execution_context import ExecutionContext, RuntimeProfile
-    from codeintel.core.columnar.explode_ops import (
-        ExplodeResult,
-        ExplodeSpec,
-        explode_edges,
-        explode_edges_with_aligned_lists,
-        explode_list_struct,
-    )
+    from codeintel.core.columnar.explode_ops import ExplodeResult, ExplodeSpec
     from codeintel.core.columnar.expr_vocab import E, Expression, ExprVocab
     from codeintel.core.columnar.external_plans import (
         register_default_external_plan_runners,
@@ -73,7 +56,6 @@ if TYPE_CHECKING:
         finalize_table,
         record_join_precheck_errors,
     )
-    from codeintel.core.columnar.groupby import group_by_aggregate
     from codeintel.core.columnar.ipc_ops import (
         ArrowIpcStreamError,
         iter_ipc_stream,
@@ -87,14 +69,27 @@ if TYPE_CHECKING:
         iter_rows_limit,
     )
     from codeintel.core.columnar.kernels import (
+        DedupeDeterminism,
+        DedupeLegacy,
+        DedupeSpec,
+        DedupeStrategy,
+        DedupeTier,
+        DedupeTierNormalized,
         case_when,
         coalesce,
+        dedupe_keep_first_after_sort,
+        dedupe_table_for_table,
+        explode_edges,
+        explode_edges_with_aligned_lists,
+        explode_list_struct,
+        group_by_aggregate,
         hash_struct_goid,
         hash_struct_ordinal,
         indices_nonzero,
         list_element,
         list_slice,
         list_value_length,
+        normalize_dedupe_tier,
         regex_match,
         regex_replace,
         replace_with_mask,
@@ -328,18 +323,18 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "call_compute": ("codeintel.core.columnar.compute_helpers", "call_compute"),
     "require_array": ("codeintel.core.columnar.compute_helpers", "require_array"),
     "require_scalar": ("codeintel.core.columnar.compute_helpers", "require_scalar"),
-    "DedupeDeterminism": ("codeintel.core.columnar.dedupe_ops", "DedupeDeterminism"),
-    "DedupeLegacy": ("codeintel.core.columnar.dedupe_ops", "DedupeLegacy"),
-    "DedupeSpec": ("codeintel.core.columnar.dedupe_ops", "DedupeSpec"),
-    "DedupeStrategy": ("codeintel.core.columnar.dedupe_ops", "DedupeStrategy"),
-    "DedupeTier": ("codeintel.core.columnar.dedupe_ops", "DedupeTier"),
-    "DedupeTierNormalized": ("codeintel.core.columnar.dedupe_ops", "DedupeTierNormalized"),
+    "DedupeDeterminism": ("codeintel.core.columnar.kernels", "DedupeDeterminism"),
+    "DedupeLegacy": ("codeintel.core.columnar.kernels", "DedupeLegacy"),
+    "DedupeSpec": ("codeintel.core.columnar.kernels", "DedupeSpec"),
+    "DedupeStrategy": ("codeintel.core.columnar.kernels", "DedupeStrategy"),
+    "DedupeTier": ("codeintel.core.columnar.kernels", "DedupeTier"),
+    "DedupeTierNormalized": ("codeintel.core.columnar.kernels", "DedupeTierNormalized"),
     "dedupe_keep_first_after_sort": (
-        "codeintel.core.columnar.dedupe_ops",
+        "codeintel.core.columnar.kernels",
         "dedupe_keep_first_after_sort",
     ),
-    "dedupe_table_for_table": ("codeintel.core.columnar.dedupe_ops", "dedupe_table_for_table"),
-    "normalize_dedupe_tier": ("codeintel.core.columnar.dedupe_ops", "normalize_dedupe_tier"),
+    "dedupe_table_for_table": ("codeintel.core.columnar.kernels", "dedupe_table_for_table"),
+    "normalize_dedupe_tier": ("codeintel.core.columnar.kernels", "normalize_dedupe_tier"),
     "ExecutionContext": ("codeintel.core.columnar.execution_context", "ExecutionContext"),
     "RuntimeProfile": ("codeintel.core.columnar.execution_context", "RuntimeProfile"),
     "ExecutionPlan": ("codeintel.core.columnar.arrowdsl", "ExecutionPlan"),
@@ -371,12 +366,12 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     ),
     "ExplodeResult": ("codeintel.core.columnar.explode_ops", "ExplodeResult"),
     "ExplodeSpec": ("codeintel.core.columnar.explode_ops", "ExplodeSpec"),
-    "explode_edges": ("codeintel.core.columnar.explode_ops", "explode_edges"),
+    "explode_edges": ("codeintel.core.columnar.kernels", "explode_edges"),
     "explode_edges_with_aligned_lists": (
-        "codeintel.core.columnar.explode_ops",
+        "codeintel.core.columnar.kernels",
         "explode_edges_with_aligned_lists",
     ),
-    "explode_list_struct": ("codeintel.core.columnar.explode_ops", "explode_list_struct"),
+    "explode_list_struct": ("codeintel.core.columnar.kernels", "explode_list_struct"),
     "AlignmentReport": ("codeintel.core.columnar.finalize_ops", "AlignmentReport"),
     "FinalizeDedupe": ("codeintel.core.columnar.finalize_ops", "FinalizeDedupe"),
     "FinalizeInvariant": ("codeintel.core.columnar.finalize_ops", "FinalizeInvariant"),
@@ -405,7 +400,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "codeintel.core.columnar.finalize_ops",
         "record_join_precheck_errors",
     ),
-    "group_by_aggregate": ("codeintel.core.columnar.groupby", "group_by_aggregate"),
+    "group_by_aggregate": ("codeintel.core.columnar.kernels", "group_by_aggregate"),
     "ArrowIpcStreamError": ("codeintel.core.columnar.ipc_ops", "ArrowIpcStreamError"),
     "join_safe_projection": ("codeintel.core.columnar.arrowdsl", "join_safe_projection"),
     "iter_ipc_stream": ("codeintel.core.columnar.ipc_ops", "iter_ipc_stream"),

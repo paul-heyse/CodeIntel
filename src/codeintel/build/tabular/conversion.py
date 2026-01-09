@@ -11,11 +11,15 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.types import InferableTabularInput, TabularRelation
 from codeintel.core.columnar.conversion import (
     arrow_reader_to_lazyframe,
+    empty_table_from_schema,
     lazyframe_to_reader,
+    reader_from_batches,
     reader_to_table,
+    relation_to_reader,
     record_batch_reader_from_iterable,
     table_to_lazyframe,
     table_to_reader,
+    table_from_batches,
 )
 from codeintel.core.columnar.conversion import (
     table_to_frame as _core_table_to_frame,
@@ -35,7 +39,11 @@ _GOID_COLUMN_MARKER = "goid_h128"
 _GOID_COLUMN_TYPE = pl.Decimal(38, 0)
 
 
-def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
+def relation_to_arrow_reader(
+    relation: TabularRelation,
+    *,
+    batch_size: int | None = None,
+) -> pa.RecordBatchReader:
     """Return a streaming Arrow reader for a DuckDB relation.
 
     Returns
@@ -43,7 +51,8 @@ def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
     pa.RecordBatchReader
         Arrow record batch reader for the relation.
     """
-    return relation.fetch_arrow_reader()
+    resolved_batch_size = batch_size
+    return relation_to_reader(relation, batch_size=resolved_batch_size)
 
 
 def relation_to_polars_lazy(relation: TabularRelation) -> pl.LazyFrame:
@@ -58,7 +67,11 @@ def relation_to_polars_lazy(relation: TabularRelation) -> pl.LazyFrame:
     return arrow_reader_to_lazyframe(reader)
 
 
-def tabular_to_arrow_reader(value: InferableTabularInput) -> pa.RecordBatchReader:
+def tabular_to_arrow_reader(
+    value: InferableTabularInput,
+    *,
+    batch_size: int | None = None,
+) -> pa.RecordBatchReader:
     """Convert an inferable tabular input to a RecordBatchReader.
 
     Parameters
@@ -76,10 +89,14 @@ def tabular_to_arrow_reader(value: InferableTabularInput) -> pa.RecordBatchReade
     RecordBatchReader inputs are single-consume; materialize to a table or
     LazyFrame if reuse is required.
     """
-    return _tabular_to_arrow_reader(value)
+    return _tabular_to_arrow_reader(value, batch_size=batch_size)
 
 
-def tabular_to_arrow_table(value: InferableTabularInput) -> pa.Table:
+def tabular_to_arrow_table(
+    value: InferableTabularInput,
+    *,
+    batch_size: int | None = None,
+) -> pa.Table:
     """Convert an inferable tabular input to an Arrow Table.
 
     Parameters
@@ -97,7 +114,7 @@ def tabular_to_arrow_table(value: InferableTabularInput) -> pa.Table:
     RecordBatchReader inputs are single-consume; avoid reusing them after
     calling this helper.
     """
-    return _tabular_to_arrow_table(value)
+    return _tabular_to_arrow_table(value, batch_size=batch_size)
 
 
 def tabular_to_scoped_table(
@@ -149,7 +166,7 @@ def tabular_to_lazyframe(value: InferableTabularInput) -> pl.LazyFrame:
     elif isinstance(value, pa.RecordBatchReader):
         result = arrow_reader_to_lazyframe(value)
     elif isinstance(value, DuckDBRelation):
-        result = arrow_reader_to_lazyframe(value.fetch_arrow_reader())
+        result = arrow_reader_to_lazyframe(relation_to_arrow_reader(value))
     elif isinstance(value, Iterable):
         reader = record_batch_reader_from_iterable(value, empty_policy="none")
         result = pl.DataFrame().lazy() if reader is None else arrow_reader_to_lazyframe(reader)
@@ -204,13 +221,16 @@ def _coerce_goid_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
 
 __all__ = [
     "arrow_reader_to_lazyframe",
+    "empty_table_from_schema",
     "lazyframe_to_reader",
+    "reader_from_batches",
     "reader_to_table",
     "record_batch_reader_from_iterable",
     "relation_to_arrow_reader",
     "relation_to_polars_lazy",
     "table_to_frame",
     "table_to_lazyframe",
+    "table_from_batches",
     "table_to_reader",
     "tabular_to_arrow_reader",
     "tabular_to_arrow_table",

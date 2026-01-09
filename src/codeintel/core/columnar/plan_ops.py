@@ -210,7 +210,8 @@ class Plan:
         """
         options = acero.FilterNodeOptions(expr)
         decl = acero.Declaration("filter", options, inputs=[self.declaration])
-        return Plan(decl, ordering=self._resolved_ordering())
+        ordering = _filter_ordering(self._resolved_ordering())
+        return Plan(decl, ordering=ordering)
 
     def aggregate(
         self,
@@ -411,6 +412,14 @@ def _project_ordering(
     return replace(ordering, keys=tuple(new_keys))
 
 
+def _filter_ordering(ordering: OrderingSpec) -> OrderingSpec:
+    if ordering.level == "unordered":
+        return ordering
+    if ordering.reason is not None:
+        return ordering
+    return replace(ordering, reason="filter preserves ordering")
+
+
 def _aggregate_ordering(
     ordering: OrderingSpec,
     *,
@@ -505,7 +514,7 @@ def materialize_plan(
         )
     configure_arrow_threading_for_context(ctx=execution_ctx)
     reader = plan.declaration.to_reader(use_threads=execution_ctx.resolve_use_threads())
-    table = reader.read_all()
+    table = reader_to_table(reader)
     return normalize_table_for_compute(table, combine_chunks=execution_ctx.combine_chunks)
 
 

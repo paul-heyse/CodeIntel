@@ -24,7 +24,6 @@ from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.scopes.snapshot import SnapshotScope
-from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
@@ -34,6 +33,8 @@ from codeintel.core.columnar.execution_context import (
     resolve_columnar_context,
     resolve_execution_context,
 )
+from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
@@ -311,16 +312,40 @@ def _load_goids_from_frame(
     dict[str, list[GoidRow]]
         GOIDs grouped by relative file path.
     """
+    if _missing_goid_columns(goids_table):
+        return {}
+    selected = _select_goids_table(goids_table, snapshot=snapshot, ctx=ctx)
+    if selected.num_rows == 0:
+        log.info("No function GOIDs found for repo=%s commit=%s", snapshot.repo, snapshot.commit)
+        return {}
+    grouped, columns = _group_goids_by_path(selected, ctx=ctx)
+    return _goids_by_file_from_grouped(grouped, columns=columns)
+
+
+def _missing_goid_columns(goids_table: pa.Table) -> bool:
     required = set(GOIDS_REQUIRED_COLUMNS)
     missing = required.difference(goids_table.column_names)
     if missing:
         log.warning("core.goids is missing columns: %s", ", ".join(sorted(missing)))
-        return {}
+        return True
+    return False
 
+
+def _select_goids_table(
+    goids_table: pa.Table,
+    *,
+    snapshot: SnapshotRef,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> pa.Table:
     plan = snapshot_plan(
         goids_table,
         columns=GOIDS_REQUIRED_COLUMNS,
-        context=SnapshotContext(repo=snapshot.repo, commit=snapshot.commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            ctx=ctx,
+            table_key="core.goids",
+        ),
     )
     plan = plan.filter(E.in_("kind", ["function", "method"]))
     aggregates: list[tuple[str, str, None, str]] = []
@@ -332,29 +357,68 @@ def _load_goids_from_frame(
     plan = plan.aggregate(keys=[E.field("goid_h128")], aggregates=aggregates)
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    selected = reader_to_table(reader)
-    rows = list(iter_rows(selected))
-    if not rows:
-        log.info("No function GOIDs found for repo=%s commit=%s", snapshot.repo, snapshot.commit)
-        return {}
+    return reader_to_table(reader)
 
+
+def _group_goids_by_path(
+    selected: pa.Table,
+    *,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> tuple[pa.Table, tuple[str, ...]]:
+    aggregates = [
+        (name, "list", None, name) for name in GOIDS_REQUIRED_COLUMNS if name != "rel_path"
+    ]
+    grouped = grouped_rollup_table(
+        selected,
+        spec=GroupedRollupSpec(
+            keys=("rel_path",),
+            aggregates=aggregates,
+            pre_sort_keys=(("rel_path", "ascending"), ("goid_h128", "ascending")),
+        ),
+        ctx=resolve_columnar_context(ctx),
+    )
+    columns = ("rel_path", *[name for name in GOIDS_REQUIRED_COLUMNS if name != "rel_path"])
+    return grouped, columns
+
+
+def _goids_by_file_from_grouped(
+    grouped: pa.Table,
+    *,
+    columns: tuple[str, ...],
+) -> dict[str, list[GoidRow]]:
     goids_by_file: dict[str, list[GoidRow]] = {}
-    for record in rows:
-        rel_path_raw = record.get("rel_path")
+    for values in iter_tuples(grouped.to_reader(), columns=columns):
+        rel_path_raw = values[0]
+        if rel_path_raw is None:
+            continue
         rel_path = str(rel_path_raw).replace("\\", "/")
-        goid_row: GoidRow = {
-            "goid_h128": coerce_int(record.get("goid_h128"), ctx="goid_h128"),
-            "urn": str(record.get("urn")),
-            "repo": str(record.get("repo")),
-            "commit": str(record.get("commit")),
-            "rel_path": rel_path,
-            "language": str(record.get("language")),
-            "kind": str(record.get("kind")),
-            "qualname": str(record.get("qualname")),
-            "start_line": coerce_int(record.get("start_line"), ctx="start_line"),
-            "end_line": coerce_optional_int(record.get("end_line"), ctx="end_line"),
-        }
-        goids_by_file.setdefault(rel_path, []).append(goid_row)
+        list_values = values[1:]
+        if not list_values:
+            continue
+        list_lengths = [len(value) for value in list_values if isinstance(value, list)]
+        if list_lengths and len(set(list_lengths)) != 1:
+            log.warning("GOID rollup list length mismatch for %s", rel_path)
+            continue
+        total = list_lengths[0] if list_lengths else 0
+        for idx in range(total):
+            record = {
+                name: list_values[pos][idx]
+                for pos, name in enumerate(columns[1:])
+                if isinstance(list_values[pos], list)
+            }
+            goid_row: GoidRow = {
+                "goid_h128": coerce_int(record.get("goid_h128"), ctx="goid_h128"),
+                "urn": str(record.get("urn")),
+                "repo": str(record.get("repo")),
+                "commit": str(record.get("commit")),
+                "rel_path": rel_path,
+                "language": str(record.get("language")),
+                "kind": str(record.get("kind")),
+                "qualname": str(record.get("qualname")),
+                "start_line": coerce_int(record.get("start_line"), ctx="start_line"),
+                "end_line": coerce_optional_int(record.get("end_line"), ctx="end_line"),
+            }
+            goids_by_file.setdefault(rel_path, []).append(goid_row)
     return goids_by_file
 
 

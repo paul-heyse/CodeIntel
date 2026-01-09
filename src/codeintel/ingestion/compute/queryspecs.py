@@ -10,6 +10,8 @@ from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_sc
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.service import get_schema_service
 
+_FALSE_LITERAL = False
+
 
 @dataclass(frozen=True, slots=True)
 class IngestQuerySpecRequest:
@@ -19,6 +21,7 @@ class IngestQuerySpecRequest:
     repo: str | None = None
     commit: str | None = None
     rel_path: str | None = None
+    rel_paths: Sequence[str] | None = None
     available_columns: Sequence[str] | None = None
 
 
@@ -41,6 +44,7 @@ def build_ingest_query_spec(table_key: str, request: IngestQuerySpecRequest) -> 
         repo=request.repo,
         commit=request.commit,
         rel_path=request.rel_path,
+        rel_paths=request.rel_paths,
     )
     projection = projection_spec_from_schema_defaults(
         request.columns,
@@ -73,13 +77,20 @@ def _ingest_scope_predicate(
     repo: str | None,
     commit: str | None,
     rel_path: str | None,
+    rel_paths: Sequence[str] | None,
 ) -> Expression | None:
     exprs: list[Expression] = []
     if repo is not None and "repo" in column_names:
         exprs.append(E.field("repo") == E.scalar(repo))
     if commit is not None and "commit" in column_names:
         exprs.append(E.field("commit") == E.scalar(commit))
-    if rel_path is not None and "rel_path" in column_names:
+    if rel_paths is not None and "rel_path" in column_names:
+        values = [str(path) for path in rel_paths if path]
+        if values:
+            exprs.append(E.in_("rel_path", values))
+        else:
+            exprs.append(E.scalar(_FALSE_LITERAL))
+    elif rel_path is not None and "rel_path" in column_names:
         exprs.append(E.field("rel_path") == E.scalar(rel_path))
     if not exprs:
         return None

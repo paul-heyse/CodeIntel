@@ -67,13 +67,13 @@ def _resolve_nan_policy(store: RxGraphStore, nan_policy: NanPolicy | None) -> Na
     return nan_policy
 
 
-def _normalize_float_mapping(
-    mapping: Mapping[Hashable, float],
+def _normalize_float_mapping[K: Hashable](
+    mapping: Mapping[K, float],
     *,
     nan_policy: NanPolicy,
     abs_tol: float = 0.0,
     rel_tol: float = 0.0,
-) -> dict[Hashable, float]:
+) -> dict[K, float]:
     normalized = normalize_mapping(mapping, nan_policy=nan_policy)
     if abs_tol == 0.0 and rel_tol == 0.0:
         return sorted_mapping(normalized)
@@ -181,6 +181,31 @@ class KatzOptions:
     tol: float = 1e-6
     weight: str | None = None
     nan_policy: NanPolicy | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BellmanFordRequest:
+    """Inputs for Bellman-Ford shortest path lengths."""
+
+    graph: GraphInput
+    source: Hashable
+    weight: str | None = None
+    nan_policy: NanPolicy | None = None
+    algo_config: GraphAlgoConfig | None = None
+    goal: Hashable | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class KShortestPathRequest:
+    """Inputs for kth shortest path lengths."""
+
+    graph: GraphInput
+    source: Hashable
+    k: int
+    weight: str | None = None
+    nan_policy: NanPolicy | None = None
+    algo_config: GraphAlgoConfig | None = None
+    goal: Hashable | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,6 +468,65 @@ def graph_to_store(graph: GraphInput) -> RxGraphStore:
         Store representation of the input.
     """
     return ensure_store(graph)
+
+
+def empty_rx_graph(
+    *,
+    directed: bool,
+    node_hint: int | None = None,
+    edge_hint: int | None = None,
+) -> RxGraph:
+    """Create an empty rustworkx graph with optional capacity hints.
+
+    Returns
+    -------
+    RxGraph
+        Empty rustworkx graph with the requested directedness.
+    """
+    if directed:
+        return rx.PyDiGraph(
+            multigraph=False,
+            node_count_hint=node_hint,
+            edge_count_hint=edge_hint,
+        )
+    return rx.PyGraph(
+        multigraph=False,
+        node_count_hint=node_hint,
+        edge_count_hint=edge_hint,
+    )
+
+
+def edge_subgraph_by_index(
+    store: RxGraphStore,
+    edges: Sequence[tuple[int, int]],
+) -> RxGraph:
+    """Return a subgraph containing the provided edge index pairs.
+
+    Returns
+    -------
+    RxGraph
+        Edge-induced subgraph of the backing rustworkx graph.
+    """
+    if store.is_directed:
+        return cast("DirectedRxGraph", store.graph.edge_subgraph(edges))
+    return cast("UndirectedRxGraph", store.graph.edge_subgraph(edges))
+
+
+def union_graphs(
+    left: RxGraph,
+    right: RxGraph,
+    *,
+    merge_nodes: bool = True,
+    merge_edges: bool = True,
+) -> RxGraph:
+    """Return the rustworkx union of two graphs.
+
+    Returns
+    -------
+    RxGraph
+        Union of the two graphs.
+    """
+    return rx.union(left, right, merge_nodes=merge_nodes, merge_edges=merge_edges)
 
 
 def _directed_graph(store: RxGraphStore) -> DirectedRxGraph:
@@ -2421,6 +2505,7 @@ def digraph_all_pairs_shortest_path_lengths_by_id(
     -------
     dict[Hashable, dict[Hashable, float]]
         Nested mapping of source node ids to target distances.
+
     """
     store = ensure_directed_store(graph, weight=weight, nan_policy=nan_policy)
     if store.graph.num_nodes() == 0:
@@ -2461,6 +2546,11 @@ def floyd_warshall_path_lengths_by_id(
     -------
     dict[Hashable, dict[Hashable, float]]
         Nested mapping of source node ids to target distances.
+
+    Raises
+    ------
+    TypeError
+        Raised when rustworkx returns an unexpected result type.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
     if store.graph.num_nodes() == 0:
@@ -2509,13 +2599,7 @@ def floyd_warshall_path_lengths_by_id(
 
 
 def bellman_ford_shortest_path_lengths_by_id(
-    graph: GraphInput,
-    source: Hashable,
-    *,
-    weight: str | None = None,
-    nan_policy: NanPolicy | None = None,
-    algo_config: GraphAlgoConfig | None = None,
-    goal: Hashable | None = None,
+    request: BellmanFordRequest,
 ) -> dict[Hashable, float]:
     """Return Bellman-Ford shortest path lengths keyed by node id.
 
@@ -2524,49 +2608,51 @@ def bellman_ford_shortest_path_lengths_by_id(
     dict[Hashable, float]
         Mapping of node ids to shortest path lengths.
     """
-    store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    store = ensure_store(request.graph, weight=request.weight, nan_policy=request.nan_policy)
     if store.graph.num_nodes() == 0:
         return {}
-    source_idx = store.id_to_index.get(source)
+    source_idx = store.id_to_index.get(request.source)
     if source_idx is None:
         return {}
-    goal_idx = store.id_to_index.get(goal) if goal is not None else None
-    if goal is not None and goal_idx is None:
+    goal_idx = store.id_to_index.get(request.goal) if request.goal is not None else None
+    if request.goal is not None and goal_idx is None:
         return {}
     weight_ctx = resolve_weight_context(
         store,
-        algo_config=algo_config,
-        nan_policy=nan_policy,
+        algo_config=request.algo_config,
+        nan_policy=request.nan_policy,
     )
     weight_fn = constant_weight_fn()
-    if weight is not None:
+    if request.weight is not None:
         weight_fn = edge_cost_weight_fn(context=weight_ctx)
-    _apply_rayon_threads(algo_config)
-    graph_obj = _directed_graph(store) if store.is_directed else _undirected_graph(store)
+    _apply_rayon_threads(request.algo_config)
     try:
         if store.is_directed:
+            directed_graph = _directed_graph(store)
             if goal_idx is None:
                 lengths = rx.digraph_bellman_ford_shortest_path_lengths(
-                    graph_obj,
+                    directed_graph,
                     source_idx,
                     weight_fn,
                 )
             else:
                 lengths = rx.digraph_bellman_ford_shortest_path_lengths(
-                    graph_obj,
+                    directed_graph,
                     source_idx,
                     weight_fn,
                     goal_idx,
                 )
         elif goal_idx is None:
+            undirected_graph = _undirected_graph(store)
             lengths = rx.graph_bellman_ford_shortest_path_lengths(
-                graph_obj,
+                undirected_graph,
                 source_idx,
                 weight_fn,
             )
         else:
+            undirected_graph = _undirected_graph(store)
             lengths = rx.graph_bellman_ford_shortest_path_lengths(
-                graph_obj,
+                undirected_graph,
                 source_idx,
                 weight_fn,
                 goal_idx,
@@ -2603,12 +2689,13 @@ def all_pairs_bellman_ford_path_lengths_by_id(
     if weight is not None:
         weight_fn = edge_cost_weight_fn(context=weight_ctx)
     _apply_rayon_threads(algo_config)
-    graph_obj = _directed_graph(store) if store.is_directed else _undirected_graph(store)
     try:
         if store.is_directed:
-            raw = rx.digraph_all_pairs_bellman_ford_path_lengths(graph_obj, weight_fn)
+            directed_graph = _directed_graph(store)
+            raw = rx.digraph_all_pairs_bellman_ford_path_lengths(directed_graph, weight_fn)
         else:
-            raw = rx.graph_all_pairs_bellman_ford_path_lengths(graph_obj, weight_fn)
+            undirected_graph = _undirected_graph(store)
+            raw = rx.graph_all_pairs_bellman_ford_path_lengths(undirected_graph, weight_fn)
     except rx.NullGraph:
         return {}
     mapped: dict[Hashable, dict[Hashable, float]] = {}
@@ -2620,14 +2707,7 @@ def all_pairs_bellman_ford_path_lengths_by_id(
 
 
 def k_shortest_path_lengths_by_id(
-    graph: GraphInput,
-    source: Hashable,
-    k: int,
-    *,
-    weight: str | None = None,
-    nan_policy: NanPolicy | None = None,
-    algo_config: GraphAlgoConfig | None = None,
-    goal: Hashable | None = None,
+    request: KShortestPathRequest,
 ) -> dict[Hashable, float]:
     """Return kth shortest path lengths keyed by node id.
 
@@ -2635,58 +2715,69 @@ def k_shortest_path_lengths_by_id(
     -------
     dict[Hashable, float]
         Mapping of node ids to kth shortest path lengths.
+
+    Raises
+    ------
+    ValueError
+        Raised when k is less than 1.
     """
-    if k < 1:
+    if request.k < 1:
         msg = "k must be >= 1 for kth shortest path lengths."
         raise ValueError(msg)
-    store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
+    store = ensure_store(
+        request.graph,
+        weight=request.weight,
+        nan_policy=request.nan_policy,
+    )
     if store.graph.num_nodes() == 0:
         return {}
-    source_idx = store.id_to_index.get(source)
+    source_idx = store.id_to_index.get(request.source)
     if source_idx is None:
         return {}
-    goal_idx = store.id_to_index.get(goal) if goal is not None else None
-    if goal is not None and goal_idx is None:
+    goal_idx = store.id_to_index.get(request.goal) if request.goal is not None else None
+    if request.goal is not None and goal_idx is None:
         return {}
     weight_ctx = resolve_weight_context(
         store,
-        algo_config=algo_config,
-        nan_policy=nan_policy,
+        algo_config=request.algo_config,
+        nan_policy=request.nan_policy,
     )
     weight_fn = constant_weight_fn()
-    if weight is not None:
+    if request.weight is not None:
         weight_fn = edge_cost_weight_fn(context=weight_ctx)
-    _apply_rayon_threads(algo_config)
-    graph_obj = _directed_graph(store) if store.is_directed else _undirected_graph(store)
+    _apply_rayon_threads(request.algo_config)
     try:
         if store.is_directed:
+            directed_graph = _directed_graph(store)
             if goal_idx is None:
                 lengths = rx.digraph_k_shortest_path_lengths(
-                    graph_obj,
+                    directed_graph,
                     source_idx,
-                    k,
+                    request.k,
                     weight_fn,
                 )
             else:
                 lengths = rx.digraph_k_shortest_path_lengths(
-                    graph_obj,
+                    directed_graph,
                     source_idx,
-                    k,
+                    request.k,
                     weight_fn,
                     goal_idx,
                 )
         elif goal_idx is None:
+            undirected_graph = _undirected_graph(store)
             lengths = rx.graph_k_shortest_path_lengths(
-                graph_obj,
+                undirected_graph,
                 source_idx,
-                k,
+                request.k,
                 weight_fn,
             )
         else:
+            undirected_graph = _undirected_graph(store)
             lengths = rx.graph_k_shortest_path_lengths(
-                graph_obj,
+                undirected_graph,
                 source_idx,
-                k,
+                request.k,
                 weight_fn,
                 goal_idx,
             )
@@ -2797,12 +2888,14 @@ def simple_paths_by_id(
 
 
 __all__ = [
+    "BellmanFordRequest",
     "BetweennessOptions",
     "EdgeBetweennessOptions",
     "EigenvectorOptions",
     "GraphAlgoConfig",
     "GraphInput",
     "HitsOptions",
+    "KShortestPathRequest",
     "KatzOptions",
     "PagerankOptions",
     "RxGraph",
@@ -2829,10 +2922,12 @@ __all__ = [
     "digraph_shortest_path_lengths_by_id",
     "dominance_frontiers_by_id",
     "edge_betweenness_by_id",
+    "edge_subgraph_by_index",
     "edge_cost_weight_fn",
     "edge_strength_weight_fn",
     "effective_size_by_id",
     "eigenvector_centrality_by_id",
+    "empty_rx_graph",
     "ensure_directed_store",
     "ensure_store",
     "floyd_warshall_path_lengths_by_id",
@@ -2869,6 +2964,7 @@ __all__ = [
     "total_degree_by_id",
     "transitivity_score",
     "triangles_by_id",
+    "union_graphs",
     "weakly_connected_components_by_id",
     "weighted_projection_store",
 ]

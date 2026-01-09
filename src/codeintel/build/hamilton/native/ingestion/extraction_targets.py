@@ -55,11 +55,10 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.arrow_ops import (
-    normalize_table_for_join,
-)
+from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_helpers import array_from_compute, safe_filter
 from codeintel.build.tabular.compute_masks import equal_mask, or_kleene
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -69,11 +68,11 @@ from codeintel.build.tabular.finalize_ops import (
     record_join_precheck_errors,
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.plan_builder import build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.execution.ids import RUN_PREFIX_INGEST, new_run_id
+from codeintel.core.schemas.primitives import resolve_join_safe_columns
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.ast_extract import AstExtractStep
 from codeintel.ingestion.compute.cst_extract import CstExtractStep
@@ -1566,6 +1565,13 @@ def _log_join_precheck_errors(
     )
 
 
+def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
+    if table_key is None:
+        return ()
+    schema = get_schema_service().get_table_schema(table_key)
+    return resolve_join_safe_columns(schema)
+
+
 def _hash_join_reader(
     left: pa.Table,
     right: pa.Table,
@@ -1583,8 +1589,14 @@ def _hash_join_reader(
         table_key=spec.right_table_key,
         join_keys=spec.right_keys,
     )
-    left_checked = normalize_table_for_join(left_checked)
-    right_checked = normalize_table_for_join(right_checked)
+    left_checked = normalize_table_for_join(
+        left_checked,
+        allowed_columns=_join_safe_allowlist(spec.left_table_key),
+    )
+    right_checked = normalize_table_for_join(
+        right_checked,
+        allowed_columns=_join_safe_allowlist(spec.right_table_key),
+    )
     left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
     right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
     left_plan = build_table_plan(table=left_checked).project(left_exprs)
@@ -1643,8 +1655,14 @@ def _build_py_sym_unresolved_bindings(
             table=unknown,
             target_name=SYMTABLE_TARGET_NAME,
         )
-    left = normalize_table_for_join(unknown)
-    right = normalize_table_for_join(bindings.select(["repo", "commit", "rel_path", "binding_id"]))
+    left = normalize_table_for_join(
+        unknown,
+        allowed_columns=_join_safe_allowlist(PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY),
+    )
+    right = normalize_table_for_join(
+        bindings.select(["repo", "commit", "rel_path", "binding_id"]),
+        allowed_columns=_join_safe_allowlist(PY_SYM_BINDINGS_TABLE_KEY),
+    )
     join_keys = ["repo", "commit", "rel_path", "binding_id"]
     joined_reader = _hash_join_reader(
         left,
@@ -1692,8 +1710,8 @@ def t__symtable__ingest(
             )
         )
 
-    resolution_edge_rows_table = reader_to_table(t__symtable__run.resolution_edge_rows)
-    binding_rows_table = reader_to_table(t__symtable__run.binding_rows)
+    resolution_edge_rows_table = tabular_to_arrow_table(t__symtable__run.resolution_edge_rows)
+    binding_rows_table = tabular_to_arrow_table(t__symtable__run.binding_rows)
     unresolved_bindings = _build_py_sym_unresolved_bindings(
         resolution_edge_rows_table,
         binding_rows_table,

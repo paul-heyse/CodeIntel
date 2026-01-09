@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import reader_from_batches, table_to_reader
 from codeintel.core.columnar.plan_ops import register_external_plan_runner
 
 try:
@@ -226,7 +227,7 @@ def _reader_from_frame(
         return frame
     if isinstance(frame, pa.Table):
         table = cast("pa.Table", frame)
-        return pa.RecordBatchReader.from_batches(table.schema, table.to_batches())
+        return table_to_reader(table, batch_size=None)
     batches = _batches_from_frame(frame)
     return _reader_from_batches(batches, frame=frame)
 
@@ -258,9 +259,9 @@ def _reader_from_batches(
     frame: DataFusionDataFrame | pa.RecordBatchReader | pa.Table,
 ) -> pa.RecordBatchReader:
     if batches:
-        return pa.RecordBatchReader.from_batches(batches[0].schema, batches)
+        return reader_from_batches(batches[0].schema, batches)
     schema = _schema_from_frame(frame) or pa.schema([])
-    return pa.RecordBatchReader.from_batches(schema, [])
+    return reader_from_batches(schema, [])
 
 
 def _schema_from_frame(

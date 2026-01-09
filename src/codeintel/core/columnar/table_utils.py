@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import empty_table_from_schema
 from codeintel.core.schemas.arrow_gen import (
     ArrowSchemaMetadata,
     ExtrasPolicy,
@@ -61,7 +62,7 @@ def empty_table_for_table(
         Empty table configured with the table schema.
     """
     arrow_schema = arrow_schema_for_table(table_key, extras_policy=extras_policy)
-    return pa.Table.from_batches([], schema=arrow_schema)
+    return empty_table_from_schema(arrow_schema)
 
 
 __all__ = ["arrow_schema_for_table", "empty_table_for_table"]

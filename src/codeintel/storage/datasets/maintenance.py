@@ -10,7 +10,10 @@ from pathlib import Path
 import pyarrow as pa
 
 from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
-from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.conversion import (
+    record_batch_reader_from_iterable,
+    table_from_batches,
+)
 from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
@@ -23,6 +26,8 @@ from codeintel.core.columnar.finalize_ops import (
 )
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.readers import empty_reader_from_schema
+from codeintel.core.columnar.run_manifest import RunManifestOptions
+from codeintel.core.columnar.streaming import ScanTelemetry
 from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS, DEFAULT_ARROW_USE_THREADS
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetWriteOptions,
@@ -80,6 +85,8 @@ class DatasetRewriteRequest:
     partition_columns: tuple[str, ...]
     output_snapshot_id: str | None = None
     existing_data_behavior: ExistingDataBehavior = "delete_matching"
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +99,8 @@ class DatasetCompactRequest:
     output_snapshot_id: str | None = None
     max_rows_per_file: int | None = None
     existing_data_behavior: ExistingDataBehavior = "delete_matching"
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
 
 
 def rewrite_dataset_partitions(
@@ -115,7 +124,7 @@ def rewrite_dataset_partitions(
         snapshot_id=request.snapshot_id,
     )
     target_snapshot_id = request.output_snapshot_id or request.snapshot_id
-    reader = _scan_dataset_reader(
+    reader, telemetry = _scan_dataset_reader(
         dataset_root=request.dataset_root,
         table_key=request.table_key,
         snapshot_id=request.snapshot_id,
@@ -123,6 +132,9 @@ def rewrite_dataset_partitions(
     finalized = _finalize_reader_for_maintenance(
         table_key=request.table_key,
         reader=reader,
+        manifest_dir=request.manifest_dir,
+        manifest_options=request.manifest_options,
+        scan_telemetry=telemetry,
     )
     options = ArrowDatasetWriteOptions(
         partition_columns=request.partition_columns,
@@ -161,7 +173,7 @@ def compact_dataset_files(
         snapshot_id=request.snapshot_id,
     )
     target_snapshot_id = request.output_snapshot_id or request.snapshot_id
-    reader = _scan_dataset_reader(
+    reader, telemetry = _scan_dataset_reader(
         dataset_root=request.dataset_root,
         table_key=request.table_key,
         snapshot_id=request.snapshot_id,
@@ -169,6 +181,9 @@ def compact_dataset_files(
     finalized = _finalize_reader_for_maintenance(
         table_key=request.table_key,
         reader=reader,
+        manifest_dir=request.manifest_dir,
+        manifest_options=request.manifest_options,
+        scan_telemetry=telemetry,
     )
     options = ArrowDatasetWriteOptions(
         partition_columns=source_manifest.partition_columns,
@@ -249,7 +264,7 @@ def _scan_dataset_reader(
     dataset_root: Path,
     table_key: str,
     snapshot_id: str,
-) -> pa.RecordBatchReader:
+) -> tuple[pa.RecordBatchReader, ScanTelemetry | None]:
     options = ParquetScanOptions(
         implicit_ordering=True,
         require_sequenced_output=True,
@@ -267,13 +282,16 @@ def _scan_dataset_reader(
     if reader is None:
         msg = f"Dataset scan failed for {table_key}@{snapshot_id}"
         raise FileNotFoundError(msg)
-    return reader
+    return reader, telemetry
 
 
 def _finalize_reader_for_maintenance(
     *,
     table_key: str,
     reader: pa.RecordBatchReader,
+    manifest_dir: Path | None,
+    manifest_options: RunManifestOptions | None,
+    scan_telemetry: ScanTelemetry | None,
 ) -> pa.RecordBatchReader:
     stable_sort_keys = _stable_sort_keys_for_table(table_key)
     execution_ctx = _execution_context_for_maintenance(
@@ -305,11 +323,16 @@ def _finalize_reader_for_maintenance(
         for batch in reader:
             if batch.num_rows == 0:
                 continue
-            table = pa.Table.from_batches([batch], schema=batch.schema)
+            table = table_from_batches([batch], schema=batch.schema)
             result = run_pipeline(
                 plan=ExecutionPlan.from_table(table),
                 finalize=finalize_spec,
-                options=PipelineRunOptions(ctx=execution_ctx),
+                options=PipelineRunOptions(
+                    ctx=execution_ctx,
+                    manifest_dir=manifest_dir,
+                    manifest_options=manifest_options,
+                    scan_telemetry=scan_telemetry,
+                ),
             )
             _log_finalize_warnings(table_key, result)
             yield from result.good.to_batches(max_chunksize=batch.num_rows)

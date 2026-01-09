@@ -27,6 +27,7 @@ from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.graphs.runtime.context import (
     GraphContext,
     GraphContextSpec,
+    graph_metrics_options_from_features,
     resolve_graph_context,
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -239,6 +240,8 @@ def _graph_context(
     betweenness_cap: int,
     eigen_cap: int,
 ) -> GraphContext:
+    features = env.execution_context.graph_features if env.execution_context is not None else None
+    options = graph_metrics_options_from_features(features)
     return resolve_graph_context(
         GraphContextSpec(
             repo=env.repo,
@@ -247,6 +250,7 @@ def _graph_context(
             now=now,
             betweenness_cap=betweenness_cap,
             eigen_cap=eigen_cap,
+            options=options,
         )
     )
 

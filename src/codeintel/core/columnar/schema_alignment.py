@@ -10,7 +10,11 @@ import msgspec
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.core.columnar.conversion import record_batch_reader_from_iterable, table_to_reader
+from codeintel.core.columnar.conversion import (
+    reader_to_table,
+    record_batch_reader_from_iterable,
+    table_to_reader,
+)
 from codeintel.core.columnar.nested_ops import deep_cast_array
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
@@ -151,7 +155,7 @@ def align_table_to_contract(
         schema_promote_options=schema_promote_options,
         cast_options=cast_options,
     )
-    return pa.Table.from_batches(aligned, schema=aligned.schema)
+    return reader_to_table(aligned)
 
 
 def extras_policy_from_schema(

@@ -40,13 +40,18 @@ from codeintel.core.columnar.execution_context import (
 )
 from codeintel.core.columnar.execution_context import (
     RuntimeProfile,
+    resolve_execution_context,
     runtime_profile_from_settings,
 )
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.iter import iter_rows_limit
 from codeintel.core.columnar.ordering import OrderingSpec, SortKey
 from codeintel.core.columnar.plan_ops import build_query_plan_for_context
-from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
+from codeintel.core.columnar.queryspec import (
+    PROVENANCE_FIELDS,
+    QuerySpec,
+    projection_spec_from_schema_defaults,
+)
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.columnar.run_manifest import RunManifestOptions, write_run_manifest
 from codeintel.core.columnar.runtime import apply_runtime_profile
@@ -292,10 +297,28 @@ def _reader_for_query_spec(
 
 def _query_spec_for_columns(
     *,
+    table_key: str | None,
     columns: Sequence[str],
     predicate: Expression | None,
+    available_columns: Sequence[str],
+    execution_ctx: ColumnarExecutionContext | None,
 ) -> QuerySpec:
-    projection = projection_spec_from_columns(tuple(columns), default_columns=None)
+    table_schema = None
+    if table_key is not None:
+        try:
+            table_schema = get_schema_service().get_table_schema(table_key)
+        except RuntimeError:
+            table_schema = None
+    provenance_columns = _provenance_columns_for_spec(
+        execution_ctx=execution_ctx,
+        available_columns=available_columns,
+    )
+    projection = projection_spec_from_schema_defaults(
+        columns,
+        table_schema=table_schema,
+        available_columns=available_columns,
+        provenance_columns=provenance_columns,
+    )
     return QuerySpec(
         predicate=predicate,
         pushdown_predicate=predicate,
@@ -303,15 +326,46 @@ def _query_spec_for_columns(
     )
 
 
+def _provenance_columns_for_spec(
+    *,
+    execution_ctx: ColumnarExecutionContext | None,
+    available_columns: Sequence[str],
+) -> tuple[str, ...]:
+    resolved_ctx = resolve_execution_context(execution_ctx)
+    provenance = resolved_ctx.provenance
+    profile = resolved_ctx.runtime_profile
+    if profile is not None:
+        provenance = profile.resolve_provenance(default=provenance)
+    if resolved_ctx.resolve_determinism() == "canonical":
+        provenance = True
+    if not provenance:
+        return ()
+    available = set(available_columns)
+    return tuple(
+        output_name
+        for output_name, _source_name in PROVENANCE_FIELDS
+        if output_name in available
+    )
+
+
 def _query_spec_for_run_id(
     *,
+    table_key: str | None,
     columns: Sequence[str],
     run_id: str,
+    available_columns: Sequence[str],
+    execution_ctx: ColumnarExecutionContext | None,
 ) -> QuerySpec:
     predicate = None
     if run_id:
         predicate = E.field("run_id") == E.scalar(run_id)
-    return _query_spec_for_columns(columns=columns, predicate=predicate)
+    return _query_spec_for_columns(
+        table_key=table_key,
+        columns=columns,
+        predicate=predicate,
+        available_columns=available_columns,
+        execution_ctx=execution_ctx,
+    )
 
 
 def _emit_diagnostics_run_manifest(
@@ -396,9 +450,13 @@ def _scan_telemetry_for_table(
         return _empty_scan_telemetry()
     scan_ctx = SnapshotScanContext.from_snapshot(snapshot)
     predicate = scan_ctx.filter_expr(dataset.schema)
+    available_columns = tuple(dataset.schema.names)
     spec = _query_spec_for_columns(
-        columns=tuple(dataset.schema.names),
+        table_key=table_key,
+        columns=available_columns,
         predicate=predicate,
+        available_columns=available_columns,
+        execution_ctx=None,
     )
     return scan_telemetry_for_queryspec(dataset, spec=spec)
 
@@ -707,6 +765,7 @@ def _contract_alignment_scan(
     totals = _ContractAlignmentTotals()
     for row in _iter_contract_alignment_rows(
         dataset,
+        table_key=CONTRACT_ALIGNMENT_ISSUES_TABLE_KEY,
         run_id=run_id,
         columns=columns,
         execution_ctx=execution_ctx,
@@ -773,11 +832,19 @@ def _contract_alignment_summary_payload(
 def _iter_contract_alignment_rows(
     dataset: ds.Dataset,
     *,
+    table_key: str | None,
     run_id: str,
     columns: Sequence[str],
     execution_ctx: ColumnarExecutionContext,
 ) -> Iterable[Mapping[str, object]]:
-    spec = _query_spec_for_run_id(columns=columns, run_id=run_id)
+    available_columns = tuple(dataset.schema.names)
+    spec = _query_spec_for_run_id(
+        table_key=table_key,
+        columns=columns,
+        run_id=run_id,
+        available_columns=available_columns,
+        execution_ctx=execution_ctx,
+    )
     reader = _reader_for_query_spec(dataset, spec=spec, execution_ctx=execution_ctx)
     for row in iter_rows_limit(reader, limit=_DIAGNOSTIC_ROW_LIMIT, columns=columns):
         run_id_value = row.get("run_id")
@@ -930,6 +997,7 @@ def _empty_dataset_issues_scan(
         _empty_dataset_issue_row(row, columns=columns)
         for row in _iter_empty_dataset_issue_rows(
             dataset,
+            table_key=EMPTY_DATASET_ISSUES_TABLE_KEY,
             run_id=run_id,
             columns=columns,
             execution_ctx=execution_ctx,
@@ -940,11 +1008,19 @@ def _empty_dataset_issues_scan(
 def _iter_empty_dataset_issue_rows(
     dataset: ds.Dataset,
     *,
+    table_key: str | None,
     run_id: str,
     columns: Sequence[str],
     execution_ctx: ColumnarExecutionContext,
 ) -> Iterable[Mapping[str, object]]:
-    spec = _query_spec_for_run_id(columns=columns, run_id=run_id)
+    available_columns = tuple(dataset.schema.names)
+    spec = _query_spec_for_run_id(
+        table_key=table_key,
+        columns=columns,
+        run_id=run_id,
+        available_columns=available_columns,
+        execution_ctx=execution_ctx,
+    )
     reader = _reader_for_query_spec(dataset, spec=spec, execution_ctx=execution_ctx)
     for row in iter_rows_limit(reader, limit=_DIAGNOSTIC_ROW_LIMIT, columns=columns):
         run_id_value = row.get("run_id")
@@ -1335,6 +1411,7 @@ def _null_inventory_for_table(
     row_count, null_counts = _null_counts_for_columns(
         dataset,
         columns,
+        table_key=table_key,
         execution_ctx=execution_ctx,
     )
     columns_with_nulls: list[dict[str, object]] = []
@@ -1393,9 +1470,17 @@ def _null_counts_for_columns(
     dataset: ds.Dataset,
     columns: Sequence[str],
     *,
+    table_key: str | None,
     execution_ctx: ColumnarExecutionContext,
 ) -> tuple[int, dict[str, int]]:
-    spec = _query_spec_for_columns(columns=columns, predicate=None)
+    available_columns = tuple(dataset.schema.names)
+    spec = _query_spec_for_columns(
+        table_key=table_key,
+        columns=columns,
+        predicate=None,
+        available_columns=available_columns,
+        execution_ctx=execution_ctx,
+    )
     reader = _reader_for_query_spec(dataset, spec=spec, execution_ctx=execution_ctx)
     null_counts = dict.fromkeys(columns, 0)
     row_count = 0

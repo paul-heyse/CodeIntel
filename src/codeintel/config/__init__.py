@@ -36,6 +36,7 @@ __all__ = [
     "CodeIntelConfig",
     "GraphBackendConfig",
     "GraphFeatureFlags",
+    "GraphOutputToggles",
     "RepoConfig",
     "SnapshotInit",
     "SnapshotRef",
@@ -55,6 +56,7 @@ if TYPE_CHECKING:
         BuildPaths,
         GraphBackendConfig,
         GraphFeatureFlags,
+        GraphOutputToggles,
         SnapshotInit,
         SnapshotRef,
     )
@@ -67,6 +69,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "CodeIntelConfig": ("codeintel.config.models", "CodeIntelConfig"),
     "GraphBackendConfig": ("codeintel.config.primitives", "GraphBackendConfig"),
     "GraphFeatureFlags": ("codeintel.config.primitives", "GraphFeatureFlags"),
+    "GraphOutputToggles": ("codeintel.config.primitives", "GraphOutputToggles"),
     "RepoConfig": ("codeintel.config.models", "RepoConfig"),
     "SnapshotInit": ("codeintel.config.primitives", "SnapshotInit"),
     "SnapshotRef": ("codeintel.config.primitives", "SnapshotRef"),

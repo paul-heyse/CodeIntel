@@ -14,6 +14,9 @@ from codeintel.core.columnar.execution_context import (
     resolve_execution_context,
 )
 from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.plan_kernels import (
+    build_grouped_rollup_plan as _build_grouped_rollup_plan,
+)
 from codeintel.core.columnar.plan_ops import (
     Plan,
     build_query_plan,
@@ -196,11 +199,12 @@ def build_grouped_rollup_plan(
     Plan
         Plan with aggregate (and optional order_by) applied.
     """
-    key_exprs = [E.field(name) for name in keys] if keys else None
-    plan = plan.aggregate(keys=key_exprs, aggregates=aggregates)
-    if order_by:
-        plan = plan.order_by(sort_keys=order_by)
-    return plan
+    return _build_grouped_rollup_plan(
+        plan,
+        keys=keys,
+        aggregates=aggregates,
+        order_by=order_by,
+    )
 
 
 def plan_from_schema_defaults(

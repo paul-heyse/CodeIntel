@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pyarrow as pa
+import pyarrow.dataset as ds
 
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
@@ -16,18 +17,20 @@ from codeintel.core.columnar.execution_context import (
 )
 from codeintel.core.columnar.expr_vocab import Expression
 from codeintel.core.columnar.plan_builder import (
+    SchemaPlanDefaultsRequest,
+    plan_from_schema_defaults,
+    require_columns,
+)
+from codeintel.core.columnar.plan_builder import (
     build_snapshot_plan as _build_snapshot_plan,
 )
 from codeintel.core.columnar.plan_builder import (
     build_snapshot_query_spec as _build_snapshot_query_spec,
 )
-from codeintel.core.columnar.plan_builder import (
-    require_columns,
-)
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.queryspec import QuerySpec
+from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
-from codeintel.core.schemas.primitives import resolve_default_projection
 from codeintel.core.schemas.service import get_schema_service
 
 
@@ -67,12 +70,8 @@ def build_snapshot_query_spec(
         Snapshot-scoped query specification with optional projection.
     """
     resolved_context = context or SnapshotContext()
-    resolved_base_cols = _resolve_default_projection(
-        base_cols=base_cols,
-        table_key=resolved_context.table_key,
-    )
     return _build_snapshot_query_spec(
-        base_cols=resolved_base_cols,
+        base_cols=base_cols,
         repo=resolved_context.repo,
         commit=resolved_context.commit,
         computed=computed,
@@ -109,11 +108,26 @@ def snapshot_plan(
         context=resolved_context,
         table=table,
     )
-    return _build_snapshot_plan(
-        table=table,
-        spec=spec,
-        ctx=resolve_columnar_context(resolved_context.ctx),
-    )
+    resolved_ctx = resolve_columnar_context(resolved_context.ctx)
+    resolved_table_key = resolved_context.table_key
+    if resolved_table_key is None:
+        metadata = decode_metadata(table.schema.metadata)
+        meta_value = metadata.get("codeintel.table_key")
+        if isinstance(meta_value, str):
+            resolved_table_key = meta_value
+    if resolved_table_key is not None:
+        dataset = ds.dataset(table)
+        return plan_from_schema_defaults(
+            schema_service=get_schema_service(),
+            request=SchemaPlanDefaultsRequest(
+                table_key=resolved_table_key,
+                dataset=dataset,
+                predicate=spec.predicate,
+                columns=spec.scan_columns(provenance=False),
+                ctx=resolved_ctx,
+            ),
+        )
+    return _build_snapshot_plan(table=table, spec=spec, ctx=resolved_ctx)
 
 
 def snapshot_table(
@@ -161,22 +175,6 @@ def snapshot_reader(
     resolved_context = context or SnapshotContext()
     execution_ctx = resolve_execution_context(resolve_columnar_context(resolved_context.ctx))
     return ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-
-
-def _resolve_default_projection(
-    *,
-    base_cols: Sequence[str],
-    table_key: str | None,
-) -> Sequence[str]:
-    if base_cols:
-        return base_cols
-    if table_key is None:
-        return base_cols
-    table_schema = get_schema_service().get_table_schema(table_key)
-    default_projection = resolve_default_projection(table_schema)
-    if default_projection is None:
-        return base_cols
-    return default_projection or base_cols
 
 
 __all__ = [

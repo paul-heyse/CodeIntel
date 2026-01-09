@@ -15,6 +15,7 @@ from codeintel.build.hamilton.transforms.ingestion_normalize import (
     finalize_ingest_table,
 )
 from codeintel.build.tabular.finalize_ops import FinalizeMode
+from codeintel.core.columnar.execution_context import ExecutionContext, resolve_columnar_context
 from codeintel.core.columnar.run_manifest import RunManifestOptions
 from codeintel.core.columnar.streaming import ScanTelemetry
 
@@ -26,6 +27,7 @@ class IngestManifestDetails:
     mode: FinalizeMode | None = None
     scan_telemetry: ScanTelemetry | None = None
     manifest_extras: Mapping[str, object] | None = None
+    execution_ctx: ExecutionContext | None = None
 
 
 def ingest_manifest_dir(env: BuildEnv) -> Path:
@@ -107,6 +109,7 @@ def finalize_ingest_reader_with_manifest(
         Finalized table containing valid rows.
     """
     resolved = details or IngestManifestDetails()
+    execution_ctx = resolved.execution_ctx or resolve_columnar_context(env.execution_context)
     options = IngestFinalizeOptions(
         target_name=target_name,
         mode=resolved.mode,
@@ -118,6 +121,7 @@ def finalize_ingest_reader_with_manifest(
             extras=resolved.manifest_extras,
         ),
         scan_telemetry=resolved.scan_telemetry,
+        execution_ctx=execution_ctx,
     )
     return finalize_ingest_reader(table_key, reader, options=options)
 
@@ -151,6 +155,7 @@ def finalize_ingest_table_with_manifest(
         Finalized table containing valid rows.
     """
     resolved = details or IngestManifestDetails()
+    execution_ctx = resolved.execution_ctx or resolve_columnar_context(env.execution_context)
     options = IngestFinalizeOptions(
         target_name=target_name,
         mode=resolved.mode,
@@ -162,6 +167,7 @@ def finalize_ingest_table_with_manifest(
             extras=resolved.manifest_extras,
         ),
         scan_telemetry=resolved.scan_telemetry,
+        execution_ctx=execution_ctx,
     )
     return finalize_ingest_table(table_key, table, options=options)
 

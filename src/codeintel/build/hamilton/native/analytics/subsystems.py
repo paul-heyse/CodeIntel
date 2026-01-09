@@ -10,12 +10,17 @@ import pyarrow as pa
 from codeintel.build.analytics.subsystems.materialize import (
     SubsystemBuildInputs,
     SubsystemRows,
+    build_subsystem_modules_table,
     build_subsystem_rows,
+    build_subsystems_table,
 )
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
+from codeintel.build.hamilton.native.analytics.finalize_helpers import (
+    finalize_analytics_reader,
+    finalize_analytics_rows,
+)
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     TableTargetTableContext,
@@ -26,7 +31,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table
+from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -111,39 +116,56 @@ def subsystem_rows(
     SubsystemRows
         Subsystem summary and membership rows.
     """
-    scope = SnapshotScope.from_snapshot(env.snapshot)
     return build_subsystem_rows(
         env.snapshot,
-        SubsystemBuildInputs(
-            modules_frame=tabular_to_scoped_table(
-                subsystem_core_frames.modules,
-                columns=None,
-                scope=scope,
-                require_scope_columns=True,
-            ),
-            import_graph_edges_frame=tabular_to_scoped_table(
-                subsystem_core_frames.import_graph_edges,
-                columns=None,
-                scope=scope,
-                require_scope_columns=True,
-            ),
-            symbol_use_edges_frame=tabular_to_scoped_table(
-                subsystem_core_frames.symbol_use_edges,
-                columns=None,
-                scope=scope,
-                require_scope_columns=True,
-            ),
-            config_values_frame=tabular_to_scoped_table(
-                subsystem_analytics_frames.config_values,
-                columns=None,
-                scope=scope,
-                require_scope_columns=True,
-            ),
+        _build_subsystem_inputs(
+            env,
+            subsystem_core_frames=subsystem_core_frames,
+            subsystem_analytics_frames=subsystem_analytics_frames,
         ),
     )
 
 
-def subsystems__base(subsystem_rows: SubsystemRows) -> pa.Table:
+def _build_subsystem_inputs(
+    env: BuildEnv,
+    *,
+    subsystem_core_frames: SubsystemCoreFrames,
+    subsystem_analytics_frames: SubsystemAnalyticsFrames,
+) -> SubsystemBuildInputs:
+    scope = SnapshotScope.from_snapshot(env.snapshot)
+    return SubsystemBuildInputs(
+        modules_frame=tabular_to_scoped_table(
+            subsystem_core_frames.modules,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        import_graph_edges_frame=tabular_to_scoped_table(
+            subsystem_core_frames.import_graph_edges,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        symbol_use_edges_frame=tabular_to_scoped_table(
+            subsystem_core_frames.symbol_use_edges,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+        config_values_frame=tabular_to_scoped_table(
+            subsystem_analytics_frames.config_values,
+            columns=None,
+            scope=scope,
+            require_scope_columns=True,
+        ),
+    )
+
+
+def subsystems__base(
+    env: BuildEnv,
+    subsystem_core_frames: SubsystemCoreFrames,
+    subsystem_analytics_frames: SubsystemAnalyticsFrames,
+) -> pa.Table:
     """Build subsystem summary rows.
 
     Returns
@@ -151,15 +173,26 @@ def subsystems__base(subsystem_rows: SubsystemRows) -> pa.Table:
     pa.Table
         Reader containing subsystem rows.
     """
-    if not subsystem_rows.subsystem_rows:
-        return empty_table_for_table(SUBSYSTEMS_TABLE_KEY)
-    return finalize_analytics_rows(
-        SUBSYSTEMS_TABLE_KEY,
-        subsystem_rows.subsystem_rows,
+    inputs = _build_subsystem_inputs(
+        env,
+        subsystem_core_frames=subsystem_core_frames,
+        subsystem_analytics_frames=subsystem_analytics_frames,
     )
+    reader = run_rustworkx_external_plan(
+        builder=build_subsystems_table,
+        kwargs={
+            "snapshot": env.snapshot,
+            "inputs": inputs,
+        },
+    )
+    return finalize_analytics_reader(SUBSYSTEMS_TABLE_KEY, reader)
 
 
-def subsystem_modules__base(subsystem_rows: SubsystemRows) -> pa.Table:
+def subsystem_modules__base(
+    env: BuildEnv,
+    subsystem_core_frames: SubsystemCoreFrames,
+    subsystem_analytics_frames: SubsystemAnalyticsFrames,
+) -> pa.Table:
     """Build subsystem membership rows.
 
     Returns
@@ -167,12 +200,19 @@ def subsystem_modules__base(subsystem_rows: SubsystemRows) -> pa.Table:
     pa.Table
         Reader containing subsystem membership rows.
     """
-    if not subsystem_rows.membership_rows:
-        return empty_table_for_table(SUBSYSTEM_MODULES_TABLE_KEY)
-    return finalize_analytics_rows(
-        SUBSYSTEM_MODULES_TABLE_KEY,
-        subsystem_rows.membership_rows,
+    inputs = _build_subsystem_inputs(
+        env,
+        subsystem_core_frames=subsystem_core_frames,
+        subsystem_analytics_frames=subsystem_analytics_frames,
     )
+    reader = run_rustworkx_external_plan(
+        builder=build_subsystem_modules_table,
+        kwargs={
+            "snapshot": env.snapshot,
+            "inputs": inputs,
+        },
+    )
+    return finalize_analytics_reader(SUBSYSTEM_MODULES_TABLE_KEY, reader)
 
 
 _MODULE = sys.modules[__name__]

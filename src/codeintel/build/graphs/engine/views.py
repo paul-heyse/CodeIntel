@@ -41,10 +41,9 @@ from codeintel.build.graphs.rx.policies import (
     weight_policy_for_kind,
 )
 from codeintel.build.graphs.rx.store import RxGraphStore
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
 from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table
 from codeintel.core.columnar.iter import iter_array_values, iter_tuples
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.plan_builder import (
@@ -72,6 +71,8 @@ if TYPE_CHECKING:
     from codeintel.core.columnar.streaming import ScanTelemetry
 
 log = logging.getLogger(__name__)
+
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 def _ensure_dataset_root(dataset_root: Path | None, table_key: str) -> Path | None:
@@ -1489,9 +1490,12 @@ def load_symbol_function_graph(
 
 
 def _plan_to_table(plan: Plan) -> pa.Table:
-    execution_ctx = resolve_execution_context(None)
-    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = run_pipeline(
+        plan=ExecutionPlan.from_plan(plan),
+        finalize=finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
+        options=PipelineRunOptions(ctx=None),
+    )
+    return result.good
 
 
 __all__ = [

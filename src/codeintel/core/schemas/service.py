@@ -10,14 +10,18 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Protocol
 
 from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
 from codeintel.core.schemas.contract_bundle import ContractBundle
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
-from codeintel.core.schemas.primitives import TableSchema
+from codeintel.core.schemas.primitives import (
+    TableSchema,
+    resolve_finalize_policy,
+    resolve_plan_policy,
+)
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema
 from codeintel.core.serialization.msgspec_json import encode_json_bytes
@@ -109,6 +113,20 @@ class SchemaService:
     _record_cache: dict[str, SchemaRecord] = field(default_factory=dict, repr=False)
     _bundle_cache: dict[str, ContractBundle] = field(default_factory=dict, repr=False)
 
+    @staticmethod
+    def _resolve_table_schema(schema: TableSchema | None) -> TableSchema | None:
+        if schema is None:
+            return None
+        resolved_plan = resolve_plan_policy(schema)
+        resolved_finalize = resolve_finalize_policy(schema)
+        if resolved_plan == schema.plan_policy and resolved_finalize == schema.finalize_policy:
+            return schema
+        return replace(
+            schema,
+            plan_policy=resolved_plan,
+            finalize_policy=resolved_finalize,
+        )
+
     def get_table_schema(self, table_key: str) -> TableSchema | None:
         """Return a TableSchema for a table key, or None if unknown.
 
@@ -125,8 +143,9 @@ class SchemaService:
         if table_key in self._table_cache:
             return self._table_cache[table_key]
         schema = self.table_provider.get_table_schema(table_key)
-        self._table_cache[table_key] = schema
-        return schema
+        resolved = self._resolve_table_schema(schema)
+        self._table_cache[table_key] = resolved
+        return resolved
 
     def require_table_schema(self, table_key: str) -> TableSchema:
         """Return a TableSchema for a table key, raising if unknown.
@@ -155,12 +174,21 @@ class SchemaService:
     def iter_table_schemas(self) -> Iterable[TableSchema]:
         """Iterate all known TableSchema values.
 
-        Returns
-        -------
-        Iterable[TableSchema]
+        Yields
+        ------
+        TableSchema
             Table schemas known to the provider.
         """
-        return self.table_provider.iter_table_schemas()
+        for schema in self.table_provider.iter_table_schemas():
+            if schema.table_key in self._table_cache:
+                cached = self._table_cache[schema.table_key]
+                if cached is not None:
+                    yield cached
+                continue
+            resolved = self._resolve_table_schema(schema)
+            self._table_cache[schema.table_key] = resolved
+            if resolved is not None:
+                yield resolved
 
     def get_dataset_schema(self, table_key: str) -> DatasetSchemaLike | None:
         """Return a DatasetSchema-like object when available.

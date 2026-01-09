@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import rustworkx as rx
 
@@ -17,9 +17,10 @@ from codeintel.build.graphs.rx.algos import (
 )
 from codeintel.build.graphs.rx.iterators import (
     edge_weight_map,
-    iter_edge_payloads,
+    iter_edge_index_pairs,
     neighbors_by_index,
 )
+from codeintel.build.graphs.rx.metadata import metadata_from_graph
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -63,40 +64,37 @@ def _store_without_edges(
     store: RxGraphStore,
     removed_edges: set[tuple[int, int]],
 ) -> RxGraphStore:
-    edge_graph = rx.PyGraph(multigraph=False)
-    edge_nodes: dict[int, object] = {}
-    for src_idx, dst_idx, _payload in iter_edge_payloads(store):
-        if _edge_key(src_idx, dst_idx) in removed_edges:
-            continue
-        edge_nodes[src_idx] = store.graph.get_node_data(src_idx)
-        edge_nodes[dst_idx] = store.graph.get_node_data(dst_idx)
-    idx_map: dict[int, int] = {}
-    ordered_edge_nodes = sorted(
-        edge_nodes,
-        key=lambda idx: stable_key(store.index_to_id.get(idx, idx)),
+    metadata = metadata_from_graph(store.graph)
+    edge_list = [
+        (src_idx, dst_idx)
+        for src_idx, dst_idx in iter_edge_index_pairs(store)
+        if _edge_key(src_idx, dst_idx) not in removed_edges
+    ]
+    edge_list.sort(
+        key=lambda edge: (
+            stable_key(store.index_to_id.get(edge[0], edge[0])),
+            stable_key(store.index_to_id.get(edge[1], edge[1])),
+        )
     )
-    for old_idx in ordered_edge_nodes:
-        payload = edge_nodes[old_idx]
-        idx_map[old_idx] = edge_graph.add_node(payload)
-    for src_idx, dst_idx, payload in iter_edge_payloads(store):
-        if _edge_key(src_idx, dst_idx) in removed_edges:
-            continue
-        src_new = idx_map.get(src_idx)
-        dst_new = idx_map.get(dst_idx)
-        if src_new is None or dst_new is None:
-            continue
-        edge_graph.add_edge(src_new, dst_new, payload)
-    isolate_graph = rx.PyGraph(multigraph=False)
     isolate_indices = sorted(
         store.graph.node_indices(),
         key=lambda idx: stable_key(store.index_to_id.get(idx, idx)),
     )
-    isolate_graph.add_nodes_from([store.graph.get_node_data(idx) for idx in isolate_indices])
-    merged = rx.union(edge_graph, isolate_graph, merge_nodes=True, merge_edges=True)
+    if store.is_directed:
+        edge_graph = cast("rx.PyDiGraph", store.graph.edge_subgraph(edge_list))
+        isolate_graph = rx.PyDiGraph(multigraph=False)
+        isolate_graph.add_nodes_from([store.graph.get_node_data(idx) for idx in isolate_indices])
+        merged = rx.union(edge_graph, isolate_graph, merge_nodes=True, merge_edges=True)
+    else:
+        edge_graph = cast("rx.PyGraph", store.graph.edge_subgraph(edge_list))
+        isolate_graph = rx.PyGraph(multigraph=False)
+        isolate_graph.add_nodes_from([store.graph.get_node_data(idx) for idx in isolate_indices])
+        merged = rx.union(edge_graph, isolate_graph, merge_nodes=True, merge_edges=True)
     return RxGraphStore.from_rx_graph(
         merged,
         weight_policy=store.weight_policy,
         numeric_policy=store.numeric_policy,
+        metadata=metadata,
     )
 
 

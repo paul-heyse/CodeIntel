@@ -29,7 +29,7 @@ from codeintel.build.graphs.rx.metadata import (
     apply_graph_metadata,
     metadata_from_graph,
 )
-from codeintel.build.graphs.rx.payloads import NODE_PAYLOAD_VERSION
+from codeintel.build.graphs.rx.payloads import EDGE_PAYLOAD_VERSION, NODE_PAYLOAD_VERSION
 from codeintel.build.graphs.rx.policies import weight_policy_for_name
 from codeintel.build.graphs.rx.serialization import dumps_node_link_json, loads_node_link_json
 from codeintel.build.graphs.rx.store import RxGraphStore
@@ -81,17 +81,33 @@ def _graph_metadata_for_cache(
     engine: str,
 ) -> GraphMetadata:
     existing = metadata_from_graph(graph.graph)
+    multigraph = getattr(graph.graph, "multigraph", None)
+    is_multigraph = multigraph if isinstance(multigraph, bool) else None
     return GraphMetadata(
         cache_version=GRAPH_CACHE_VERSION,
         engine=engine,
         graph_kind=_graph_kind_name(kind),
         weight_policy=graph.weight_policy.name,
         node_payload_version=NODE_PAYLOAD_VERSION,
+        edge_payload_version=EDGE_PAYLOAD_VERSION,
         determinism_tier=(
             existing.determinism_tier if existing is not None else DEFAULT_GRAPH_DETERMINISM_TIER
         ),
         scan_profile=existing.scan_profile if existing is not None else None,
         ordering_keys=existing.ordering_keys if existing is not None else None,
+        tie_breaker_keys=existing.tie_breaker_keys if existing is not None else None,
+        runtime_profile=existing.runtime_profile if existing is not None else None,
+        repo=existing.repo if existing is not None else None,
+        commit=existing.commit if existing is not None else None,
+        run_id=existing.run_id if existing is not None else None,
+        build_timestamp=existing.build_timestamp if existing is not None else None,
+        dataset_root=existing.dataset_root if existing is not None else None,
+        source_tables=existing.source_tables if existing is not None else (),
+        weight_semantics=existing.weight_semantics if existing is not None else None,
+        is_directed=graph.is_directed,
+        is_multigraph=is_multigraph,
+        node_count=graph.graph.num_nodes(),
+        edge_count=graph.graph.num_edges(),
     )
 
 

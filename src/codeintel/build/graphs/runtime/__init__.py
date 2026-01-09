@@ -14,6 +14,7 @@ from codeintel.build.graphs.runtime.context import (
     GraphContextSpec,
     GraphMetricsOptions,
     build_graph_context,
+    graph_metrics_options_from_features,
     load_prior_manifest,
     resolve_graph_context,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "PooledRuntime",
     "build_graph_context",
     "build_graph_runtime",
+    "graph_metrics_options_from_features",
     "graph_runtime_options_from_env",
     "load_prior_manifest",
     "resolve_graph_context",

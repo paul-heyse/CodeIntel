@@ -13,6 +13,7 @@ import pyarrow.parquet as pq
 from hamilton import registry
 from hamilton.io.data_adapters import DataLoader, DataSaver
 
+from codeintel.core.columnar.conversion import table_from_batches
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
@@ -196,7 +197,7 @@ class PyArrowParquetLoader(DataLoader):
                 batch_size=DEFAULT_ARROW_BATCH_SIZE,
                 use_threads=True,
             )
-            table = pa.Table.from_batches(batches, schema=parquet_file.schema_arrow)
+            table = table_from_batches(batches, schema=parquet_file.schema_arrow)
         except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError, TypeError):
             table = pq.read_table(self.path, read_dictionary=read_dictionary or False)
         if dictionary_columns:

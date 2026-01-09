@@ -53,7 +53,6 @@ from codeintel.build.tabular.compute_masks import (
     is_null_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -65,10 +64,18 @@ from codeintel.build.tabular.finalize_ops import (
 from codeintel.build.tabular.nested_ops import deep_cast_table_to_contract, make_extras_struct
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.conversion import empty_table_from_schema, table_from_batches
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.expr_vocab import E, Expression
+from codeintel.core.columnar.finalize_ops import (
+    finalize_spec_for_table as columnar_finalize_spec_for_table,
+)
+from codeintel.core.columnar.ordering import OrderingSpec
 from codeintel.core.columnar.plan_builder import build_table_plan
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
@@ -79,11 +86,14 @@ from codeintel.core.columnar.rows import (
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.intervals.span_resolver import SpanResolver
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
+from codeintel.core.schemas.primitives import resolve_join_safe_columns
 from codeintel.core.spans import normalize_byte_span
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, InferableTabularInput)
 
 LOG = logging.getLogger(__name__)
+
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 SYNTAX_AUGMENT_TARGET_NAME = "syntax_augment"
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
@@ -459,6 +469,22 @@ class _JoinSpec:
     right_table_key: str | None = None
 
 
+def _resolve_ingest_execution_ctx(env: BuildEnv | None) -> ExecutionContext:
+    if env is not None:
+        resolved = resolve_columnar_context(env.execution_context)
+        if resolved is not None:
+            return resolved
+    fallback: ExecutionContext | None = None
+    return resolve_execution_context(fallback)
+
+
+def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
+    if table_key is None:
+        return ()
+    schema = get_schema_service().get_table_schema(table_key)
+    return resolve_join_safe_columns(schema)
+
+
 def _join_casts(keys: Sequence[str]) -> dict[str, str]:
     casts: dict[str, str] = {}
     for key in keys:
@@ -536,54 +562,75 @@ def _log_join_precheck_errors(
     )
 
 
-def _hash_join_tables(
-    left: pa.Table,
-    right: pa.Table,
-    *,
-    spec: _JoinSpec,
-    how: JoinType = "left outer",
-    filter_expr: Expression | None = None,
-) -> pa.Table:
+@dataclass(frozen=True, slots=True)
+class _HashJoinRequest:
+    left: pa.Table
+    right: pa.Table
+    spec: _JoinSpec
+    how: JoinType = "left outer"
+    filter_expr: Expression | None = None
+    execution_ctx: ExecutionContext | None = None
+
+
+def _hash_join_tables(request: _HashJoinRequest) -> pa.Table:
     left_checked = _precheck_join_table(
-        left,
-        table_key=spec.left_table_key,
-        join_keys=spec.left_keys,
+        request.left,
+        table_key=request.spec.left_table_key,
+        join_keys=request.spec.left_keys,
     )
     right_checked = _precheck_join_table(
-        right,
-        table_key=spec.right_table_key,
-        join_keys=spec.right_keys,
+        request.right,
+        table_key=request.spec.right_table_key,
+        join_keys=request.spec.right_keys,
     )
-    left_checked = normalize_table_for_join(left_checked)
-    right_checked = normalize_table_for_join(right_checked)
-    left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
-    right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
+    left_checked = normalize_table_for_join(
+        left_checked,
+        allowed_columns=_join_safe_allowlist(request.spec.left_table_key),
+    )
+    right_checked = normalize_table_for_join(
+        right_checked,
+        allowed_columns=_join_safe_allowlist(request.spec.right_table_key),
+    )
+    left_exprs = _project_with_cast(left_checked, casts=_join_casts(request.spec.left_keys))
+    right_exprs = _project_with_cast(right_checked, casts=_join_casts(request.spec.right_keys))
     left_plan = build_table_plan(table=left_checked).project(left_exprs)
     right_plan = build_table_plan(table=right_checked).project(right_exprs)
     right_output = [name for name in right_exprs if name not in left_exprs]
     joined = left_plan.hash_join(
         right=right_plan,
         spec=HashJoinSpec(
-            left_keys=list(spec.left_keys),
-            right_keys=list(spec.right_keys),
-            how=how,
+            left_keys=list(request.spec.left_keys),
+            right_keys=list(request.spec.right_keys),
+            how=request.how,
             left_output=list(left_exprs.keys()),
             right_output=right_output,
         ),
     )
-    if filter_expr is not None:
-        joined = joined.filter(filter_expr)
-    joined = joined.order_by(sort_keys=[(key, "ascending") for key in spec.left_keys])
-    return _plan_to_table(joined)
+    if request.filter_expr is not None:
+        joined = joined.filter(request.filter_expr)
+    joined = joined.order_by(
+        sort_keys=[(key, "ascending") for key in request.spec.left_keys]
+    )
+    execution_ctx = request.execution_ctx or _resolve_ingest_execution_ctx(None)
+    return _plan_to_table(joined, execution_ctx=execution_ctx)
 
 
-def _plan_to_table(plan: Plan) -> pa.Table:
-    execution_ctx = resolve_execution_context(None)
-    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+def _plan_to_table(plan: Plan, *, execution_ctx: ExecutionContext) -> pa.Table:
+    resolved_ctx = resolve_execution_context(execution_ctx)
+    result = run_pipeline(
+        plan=ExecutionPlan.from_plan(plan),
+        finalize=columnar_finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
+        options=PipelineRunOptions(ctx=resolved_ctx),
+    )
+    return result.good
 
 
-def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
+def _xref_exact(
+    ts_nodes: pa.Table,
+    syntax_nodes: pa.Table,
+    *,
+    execution_ctx: ExecutionContext,
+) -> pa.Table:
     required_ts = {"repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"}
     required_syntax = {
         "repo",
@@ -603,23 +650,32 @@ def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
         ["repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"],
     )
     ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
-    ts_selected = normalize_table_for_join(ts_selected)
+    ts_selected = normalize_table_for_join(
+        ts_selected,
+        allowed_columns=_join_safe_allowlist(TS_NODES_TABLE_KEY),
+    )
     syntax_selected = select_table_columns(
         syntax_nodes,
         ["repo", "commit", "rel_path", "node_id", "start_byte", "end_byte", "producer"],
     )
     syntax_selected = _rename_columns(syntax_selected, {"node_id": "syntax_node_id"})
-    syntax_selected = normalize_table_for_join(syntax_selected)
+    syntax_selected = normalize_table_for_join(
+        syntax_selected,
+        allowed_columns=_join_safe_allowlist(SYNTAX_NODES_TABLE_KEY),
+    )
     join_keys = ["repo", "commit", "rel_path", "start_byte", "end_byte"]
     joined = _hash_join_tables(
-        ts_selected,
-        syntax_selected,
-        spec=_JoinSpec(
-            left_keys=join_keys,
-            right_keys=join_keys,
-            left_table_key=TS_NODES_TABLE_KEY,
-            right_table_key=SYNTAX_NODES_TABLE_KEY,
-        ),
+        _HashJoinRequest(
+            left=ts_selected,
+            right=syntax_selected,
+            spec=_JoinSpec(
+                left_keys=join_keys,
+                right_keys=join_keys,
+                left_table_key=TS_NODES_TABLE_KEY,
+                right_table_key=SYNTAX_NODES_TABLE_KEY,
+            ),
+            execution_ctx=execution_ctx,
+        )
     )
     syntax_null = is_null_mask(joined["syntax_node_id"])
     match_kind = _if_else(syntax_null, pa.scalar("NONE"), pa.scalar("EXACT"))
@@ -645,7 +701,12 @@ def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
     )
 
 
-def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
+def _unmatched_ts_nodes(
+    ts_nodes: pa.Table,
+    xref_exact: pa.Table,
+    *,
+    execution_ctx: ExecutionContext,
+) -> pa.Table:
     if ts_nodes.num_rows == 0:
         return _empty_selected(ts_nodes, ["repo", "commit", "rel_path", "language", "node_id"])
     required = {"repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"}
@@ -656,21 +717,30 @@ def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
         ["repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"],
     )
     ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
-    ts_selected = normalize_table_for_join(ts_selected)
+    ts_selected = normalize_table_for_join(
+        ts_selected,
+        allowed_columns=_join_safe_allowlist(TS_NODES_TABLE_KEY),
+    )
     if xref_exact.num_rows == 0 or "ts_node_id" not in xref_exact.column_names:
         return ts_selected
     xref_selected = select_table_columns(xref_exact, ["ts_node_id", "syntax_node_id"])
-    xref_selected = normalize_table_for_join(xref_selected)
-    return _hash_join_tables(
-        ts_selected,
+    xref_selected = normalize_table_for_join(
         xref_selected,
-        spec=_JoinSpec(
-            left_keys=["ts_node_id"],
-            right_keys=["ts_node_id"],
-            left_table_key=TS_NODES_TABLE_KEY,
-            right_table_key=TS_XREF_TABLE_KEY,
-        ),
-        filter_expr=E.is_null("syntax_node_id"),
+        allowed_columns=_join_safe_allowlist(TS_XREF_TABLE_KEY),
+    )
+    return _hash_join_tables(
+        _HashJoinRequest(
+            left=ts_selected,
+            right=xref_selected,
+            spec=_JoinSpec(
+                left_keys=["ts_node_id"],
+                right_keys=["ts_node_id"],
+                left_table_key=TS_NODES_TABLE_KEY,
+                right_table_key=TS_XREF_TABLE_KEY,
+            ),
+            filter_expr=E.is_null("syntax_node_id"),
+            execution_ctx=execution_ctx,
+        )
     )
 
 
@@ -831,16 +901,27 @@ def _xref_fuzzy(
     unmatched_ts_nodes: pa.Table,
     syntax_nodes: pa.Table,
     producer_table: pa.Table,
+    *,
+    execution_ctx: ExecutionContext,
 ) -> pa.Table:
     if unmatched_ts_nodes.num_rows == 0:
         return _empty_reader(TS_XREF_TABLE_KEY)
     index_by_path = _build_syntax_index(syntax_nodes)
-    unmatched_ts_nodes = normalize_table_for_join(unmatched_ts_nodes)
-    producer_table = normalize_table_for_join(producer_table)
-    joined = _hash_join_tables(
+    unmatched_ts_nodes = normalize_table_for_join(
         unmatched_ts_nodes,
+        allowed_columns=_join_safe_allowlist(TS_NODES_TABLE_KEY),
+    )
+    producer_table = normalize_table_for_join(
         producer_table,
-        spec=_JoinSpec(left_keys=["rel_path"], right_keys=["rel_path"]),
+        allowed_columns=_join_safe_allowlist(SYNTAX_NODES_TABLE_KEY),
+    )
+    joined = _hash_join_tables(
+        _HashJoinRequest(
+            left=unmatched_ts_nodes,
+            right=producer_table,
+            spec=_JoinSpec(left_keys=["rel_path"], right_keys=["rel_path"]),
+            execution_ctx=execution_ctx,
+        )
     )
     collector = columnar_batch_collector_for_table_key(TS_XREF_TABLE_KEY)
     columns = (
@@ -874,7 +955,10 @@ def _xref_fuzzy(
             )
             if row is not None:
                 collector.append(row)
-    return reader_to_table(collector.to_reader())
+    collector.flush()
+    if not collector.batches:
+        return empty_table_from_schema(collector.arrow_schema)
+    return table_from_batches(collector.batches, schema=collector.arrow_schema)
 
 
 def _xref_union(exact: pa.Table, fuzzy: pa.Table) -> pa.Table:
@@ -952,7 +1036,12 @@ def _ast_nodes_from_extras(syntax_nodes: pa.Table) -> pa.Array:
     return ensure_array(ast_nodes)
 
 
-def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
+def _ts_payloads_by_syntax_node(
+    ts_nodes: pa.Table,
+    xref: pa.Table,
+    *,
+    execution_ctx: ExecutionContext,
+) -> pa.Table:
     if ts_nodes.num_rows == 0 or xref.num_rows == 0:
         return pa.table({"syntax_node_id": [], "ts_nodes": []})
     if not {"ts_node_id", "syntax_node_id", "match_kind"}.issubset(set(xref.column_names)):
@@ -984,17 +1073,26 @@ def _ts_payloads_by_syntax_node(ts_nodes: pa.Table, xref: pa.Table) -> pa.Table:
         ],
     )
     ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
-    filtered = normalize_table_for_join(filtered)
-    ts_selected = normalize_table_for_join(ts_selected)
-    joined = _hash_join_tables(
+    filtered = normalize_table_for_join(
         filtered,
+        allowed_columns=_join_safe_allowlist(TS_XREF_TABLE_KEY),
+    )
+    ts_selected = normalize_table_for_join(
         ts_selected,
-        spec=_JoinSpec(
-            left_keys=["ts_node_id"],
-            right_keys=["ts_node_id"],
-            left_table_key=TS_XREF_TABLE_KEY,
-            right_table_key=TS_NODES_TABLE_KEY,
-        ),
+        allowed_columns=_join_safe_allowlist(TS_NODES_TABLE_KEY),
+    )
+    joined = _hash_join_tables(
+        _HashJoinRequest(
+            left=filtered,
+            right=ts_selected,
+            spec=_JoinSpec(
+                left_keys=["ts_node_id"],
+                right_keys=["ts_node_id"],
+                left_table_key=TS_XREF_TABLE_KEY,
+                right_table_key=TS_NODES_TABLE_KEY,
+            ),
+            execution_ctx=execution_ctx,
+        )
     )
     payload_source = _rename_columns(joined, {"node_type": "ts_node_type"})
     payload = make_extras_struct(payload_source, fields=_syntax_nodes_ts_payload_fields())
@@ -1033,6 +1131,8 @@ def _augment_syntax_nodes(syntax_nodes: pa.Table, ts_payloads: pa.Table) -> pa.T
 def _weld_coverage_table(
     ts_nodes: pa.Table,
     xref: pa.Table,
+    *,
+    execution_ctx: ExecutionContext,
 ) -> pa.Table:
     key_cols = ["repo", "commit", "rel_path", "language"]
     if not set(key_cols).issubset(set(ts_nodes.column_names)):
@@ -1069,9 +1169,12 @@ def _weld_coverage_table(
         mapped_counts = _count_by(mapped, count_col="ts_node_id", name="mapped_count")
 
     joined = _hash_join_tables(
-        ts_counts,
-        mapped_counts,
-        spec=_JoinSpec(left_keys=key_cols, right_keys=key_cols),
+        _HashJoinRequest(
+            left=ts_counts,
+            right=mapped_counts,
+            spec=_JoinSpec(left_keys=key_cols, right_keys=key_cols),
+            execution_ctx=execution_ctx,
+        )
     )
     mapped = _fill_null(_column_or_null(joined, "mapped_count"), pa.scalar(0))
     total = _column_or_null(joined, "ts_node_count")
@@ -1093,7 +1196,7 @@ def _weld_coverage_table(
 
 
 def _empty_table() -> pa.Table:
-    return pa.Table.from_batches([], schema=pa.schema([]))
+    return empty_table_from_schema(pa.schema([]))
 
 
 def _empty_selected(table: pa.Table, columns: Sequence[str]) -> pa.Table:
@@ -1113,7 +1216,13 @@ def _empty_reader(table_key: str) -> pa.Table:
 def _reader_from_table(env: BuildEnv, table_key: str, table: pa.Table) -> pa.Table:
     if table.num_rows == 0:
         return _empty_reader(table_key)
-    reader = table_to_reader(table, batch_size=None)
+    execution_ctx = resolve_columnar_context(env.execution_context)
+    resolved_ctx = resolve_execution_context(execution_ctx)
+    plan = ExecutionPlan.from_table(
+        table,
+        ordering=OrderingSpec.implicit(reason="ingest table"),
+    )
+    reader = plan.to_reader(ctx=resolved_ctx)
     return finalize_ingest_reader_with_manifest(
         env=env,
         table_key=table_key,
@@ -1269,11 +1378,21 @@ def _resolve_fallback_paths(
     return _failure_paths(parse_manifest)
 
 
-def _build_xref_table(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
-    xref_exact = _xref_exact(ts_nodes, syntax_nodes)
-    unmatched = _unmatched_ts_nodes(ts_nodes, xref_exact)
+def _build_xref_table(
+    ts_nodes: pa.Table,
+    syntax_nodes: pa.Table,
+    *,
+    execution_ctx: ExecutionContext,
+) -> pa.Table:
+    xref_exact = _xref_exact(ts_nodes, syntax_nodes, execution_ctx=execution_ctx)
+    unmatched = _unmatched_ts_nodes(ts_nodes, xref_exact, execution_ctx=execution_ctx)
     producer_table = _producer_table(syntax_nodes)
-    xref_fuzzy = _xref_fuzzy(unmatched, syntax_nodes, producer_table)
+    xref_fuzzy = _xref_fuzzy(
+        unmatched,
+        syntax_nodes,
+        producer_table,
+        execution_ctx=execution_ctx,
+    )
     return _xref_union(xref_exact, xref_fuzzy)
 
 
@@ -1311,6 +1430,7 @@ def syntax_augment__frames(
         Canonical syntax nodes, edges, and optional tree-sitter xref rows.
     """
     scope = SnapshotScope.from_snapshot(env.snapshot)
+    execution_ctx = _resolve_ingest_execution_ctx(env)
     inputs = syntax_augment__inputs
     syntax_nodes = scoped_table_for_ingest(
         inputs.syntax_nodes,
@@ -1355,10 +1475,14 @@ def syntax_augment__frames(
         ts_edges,
         fallback_paths,
     )
-    xref_table = _build_xref_table(ts_nodes, syntax_nodes)
+    xref_table = _build_xref_table(ts_nodes, syntax_nodes, execution_ctx=execution_ctx)
     syntax_nodes_augmented = _augment_syntax_nodes(
         syntax_nodes,
-        _ts_payloads_by_syntax_node(inputs.ts_nodes, xref_table),
+        _ts_payloads_by_syntax_node(
+            inputs.ts_nodes,
+            xref_table,
+            execution_ctx=execution_ctx,
+        ),
     )
 
     syntax_nodes_frame = _frame_or_empty(
@@ -1376,7 +1500,7 @@ def syntax_augment__frames(
     coverage_frame = _frame_or_empty(
         env,
         TS_WELD_COVERAGE_TABLE_KEY,
-        _weld_coverage_table(inputs.ts_nodes, xref_table),
+        _weld_coverage_table(inputs.ts_nodes, xref_table, execution_ctx=execution_ctx),
     )
 
     return SyntaxAugmentFrames(

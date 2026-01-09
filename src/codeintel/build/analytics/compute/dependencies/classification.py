@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
+from codeintel.build.analytics.utilities.list_semantics import normalize_list_semantics
 SEVERITY_SCORES: Final[dict[str, float]] = {
     "critical": 4.0,
     "high": 3.0,
@@ -152,7 +153,7 @@ def classify_modes(
     """
     for matcher in pattern.matchers:
         if matcher.matches(method, target):
-            return sorted(set(matcher.modes)), matcher
+            return normalize_list_semantics(set(matcher.modes)), matcher
     return ["unknown"], None
 
 

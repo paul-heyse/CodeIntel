@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from sqlglot import exp
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
@@ -267,10 +268,13 @@ def load_derived_lineage_columns(
         )
     )
     out: dict[str, list[tuple[str, str]]] = {}
-    reader = con.execute(
-        render_sql_duckdb(query),
-        [repo, commit, downstream_table],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = tabular_to_arrow_reader(
+        con.execute(
+            render_sql_duckdb(query),
+            [repo, commit, downstream_table],
+        ),
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+    )
     for downstream_column, upstream_table, upstream_column in iter_tuples_from_arrow_reader(reader):
         out.setdefault(str(downstream_column), []).append(
             (str(upstream_table), str(upstream_column))

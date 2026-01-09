@@ -27,6 +27,7 @@ from codeintel.build.analytics.subsystems.edge_stats import (
 from codeintel.build.graphs.builders import build_import_graph_from_tables
 from codeintel.build.graphs.rx.algos import GraphInput
 from codeintel.build.graphs.rx.store import RxGraphStore
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.subsystems.affinity import (
@@ -38,6 +39,8 @@ log = logging.getLogger(__name__)
 
 HASH_PREFIX_LENGTH = 16
 DEFAULT_MIN_MODULES = 3
+SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
+SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
 
 
 @dataclass(frozen=True)
@@ -189,6 +192,30 @@ def build_subsystem_rows(
         snapshot.commit,
     )
     return SubsystemRows(subsystem_rows=subsystem_rows, membership_rows=membership_rows)
+
+
+def build_subsystems_table(
+    snapshot: SnapshotRef,
+    inputs: SubsystemBuildInputs,
+) -> pa.Table:
+    """Build a subsystem summary table via the affinity graph pipeline."""
+    rows = build_subsystem_rows(snapshot, inputs)
+    if not rows.subsystem_rows:
+        return empty_table_for_table(SUBSYSTEMS_TABLE_KEY)
+    table, _ = table_for_rows(SUBSYSTEMS_TABLE_KEY, rows.subsystem_rows)
+    return table
+
+
+def build_subsystem_modules_table(
+    snapshot: SnapshotRef,
+    inputs: SubsystemBuildInputs,
+) -> pa.Table:
+    """Build a subsystem membership table via the affinity graph pipeline."""
+    rows = build_subsystem_rows(snapshot, inputs)
+    if not rows.membership_rows:
+        return empty_table_for_table(SUBSYSTEM_MODULES_TABLE_KEY)
+    table, _ = table_for_rows(SUBSYSTEM_MODULES_TABLE_KEY, rows.membership_rows)
+    return table
 
 
 def _build_rows(

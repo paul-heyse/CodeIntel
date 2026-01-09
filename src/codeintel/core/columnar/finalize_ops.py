@@ -12,7 +12,12 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
-from codeintel.core.columnar.conversion import reader_to_table, record_batch_reader_from_iterable
+from codeintel.core.columnar.conversion import (
+    empty_table_from_schema,
+    reader_to_table,
+    record_batch_reader_from_iterable,
+    table_from_batches,
+)
 from codeintel.core.columnar.dedupe_ops import (
     DedupeDeterminism,
     DedupeLegacy,
@@ -56,6 +61,7 @@ from codeintel.core.schemas.primitives import (
     FinalizePolicy,
     TableSchema,
     resolve_canonical_sort_keys,
+    resolve_finalize_policy,
 )
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.validation.schema_constraints import (
@@ -624,7 +630,7 @@ def finalize_reader_batches(
                 cancel_check()
             if batch.num_rows == 0:
                 continue
-            table = pa.Table.from_batches([batch], schema=batch.schema)
+            table = table_from_batches([batch], schema=batch.schema)
             result = finalize_table(table, spec=spec)
             if finalize_hook is not None:
                 finalize_hook(result)
@@ -1059,7 +1065,7 @@ def _resolve_invariants(spec: FinalizeSpec) -> tuple[FinalizeInvariant, ...]:
 
 def _resolve_finalize_spec(spec: FinalizeSpec) -> FinalizeSpec:
     schema = get_schema_service().get_table_schema(spec.table_key)
-    policy = schema.finalize_policy if schema is not None else None
+    policy = resolve_finalize_policy(schema)
     required_non_null = spec.required_non_null
     list_policies = spec.list_policies
     invariants = spec.invariants
@@ -1154,7 +1160,7 @@ def _finalize_policy_for_table(table_key: str) -> FinalizePolicy | None:
     schema = get_schema_service().get_table_schema(table_key)
     if schema is None:
         return None
-    return schema.finalize_policy
+    return resolve_finalize_policy(schema)
 
 
 def _dedupe_from_policy(policy: FinalizeDedupeSpec | None) -> FinalizeDedupe | None:
@@ -1745,7 +1751,7 @@ def _empty_error_table(
             fields.append(table.schema.field(name))
         elif name in context_columns:
             fields.append(pa.field(name, context_columns[name].type))
-    return pa.Table.from_batches([], schema=pa.schema(fields))
+    return empty_table_from_schema(pa.schema(fields))
 
 
 def _concat_errors(
@@ -1802,7 +1808,7 @@ def _empty_alignment_table() -> pa.Table:
             pa.field("coerced_columns", pa.list_(pa.string())),
         ]
     )
-    return pa.Table.from_batches([], schema=schema)
+    return empty_table_from_schema(schema)
 
 
 def _stats_table(errors: pa.Table) -> pa.Table:
@@ -1819,7 +1825,7 @@ def _empty_stats_table() -> pa.Table:
             pa.field("count", pa.int64()),
         ]
     )
-    return pa.Table.from_batches([], schema=schema)
+    return empty_table_from_schema(schema)
 
 
 def _compute_array(name: str, args: Sequence[object]) -> pa.Array | pa.ChunkedArray:

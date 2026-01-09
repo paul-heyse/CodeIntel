@@ -16,7 +16,10 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     pl = None
 
-from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.conversion import (
+    record_batch_reader_from_iterable,
+    table_from_batches,
+)
 from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
     finalize_spec_for_table,
@@ -628,7 +631,7 @@ def _pandera_batch_errors(
     error_types = pandera_error_types()
     if not error_types:
         return []
-    frame = pl.from_arrow(pa.Table.from_batches([batch]))
+    frame = pl.from_arrow(table_from_batches([batch]))
     if not isinstance(frame, pl.DataFrame):
         return []
     frame = _normalize_pandera_frame(frame)

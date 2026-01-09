@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.core.columnar.compute_helpers import combine_table_chunks
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.nested_ops import deep_cast_table_to_contract
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -80,7 +81,7 @@ class DatasetReadRepository(BaseRepository):
             table_key=table_key,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
         )
-        table = pa.Table.from_batches(reader, schema=reader.schema)
+        table = reader_to_table(reader)
         if not finalize:
             return table
         return _finalize_dataset_table(table_key, table)

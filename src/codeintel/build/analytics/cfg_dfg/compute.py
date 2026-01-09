@@ -35,8 +35,13 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
 )
-from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
+from codeintel.build.graphs.runtime.context import (
+    GraphContextSpec,
+    graph_metrics_options_from_features,
+    resolve_graph_context,
+)
 from codeintel.build.tabular.conversion import tabular_to_frame
+from codeintel.config.primitives import GraphFeatureFlags
 
 if TYPE_CHECKING:
     from codeintel.build.tabular.types import InferableTabularInput
@@ -135,6 +140,7 @@ def compute_cfg_metrics_pure(
         commit=snapshot.commit,
     )
     metadata = load_function_metadata(goids, modules, repo=snapshot.repo, commit=snapshot.commit)
+    options = graph_metrics_options_from_features(GraphFeatureFlags.from_env())
     metrics_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=snapshot.repo,
@@ -143,6 +149,7 @@ def compute_cfg_metrics_pure(
             now=datetime.now(UTC),
             betweenness_cap=MAX_CFG_CENTRALITY_SAMPLE,
             eigen_cap=MAX_CFG_EIGEN_SAMPLE,
+            options=options,
         )
     )
     resolved_now = metrics_ctx.resolved_now()
@@ -225,6 +232,7 @@ def compute_dfg_metrics_pure(
         commit=commit,
     )
     metadata = load_function_metadata(goids, modules, repo=repo, commit=commit)
+    options = graph_metrics_options_from_features(GraphFeatureFlags.from_env())
     metrics_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -233,6 +241,7 @@ def compute_dfg_metrics_pure(
             now=datetime.now(UTC),
             betweenness_cap=MAX_DFG_CENTRALITY_SAMPLE,
             eigen_cap=MAX_CFG_EIGEN_SAMPLE,
+            options=options,
         )
     )
     resolved_now = metrics_ctx.resolved_now()

@@ -17,6 +17,7 @@ from codeintel.build.validation.columnar import (
     validate_record_batch_reader,
     validate_table,
 )
+from codeintel.core.columnar.conversion import table_from_batches
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.validation.profiles import ValidationProfile, normalize_validation_profile
@@ -333,7 +334,7 @@ def _table_from_dataset(dataset: object) -> pa.Table | None:
     if isinstance(dataset, pa.Table):
         return dataset
     if isinstance(dataset, pa.RecordBatch):
-        return pa.Table.from_batches([dataset])
+        return table_from_batches([dataset])
     if isinstance(dataset, pl.DataFrame):
         return dataset.to_arrow()
     if isinstance(dataset, pl.LazyFrame):

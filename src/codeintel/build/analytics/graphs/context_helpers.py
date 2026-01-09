@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
+from codeintel.build.graphs.runtime import (
+    GraphMetricsOptions,
+    GraphRuntimeOptions,
+    graph_metrics_options_from_features,
+)
 from codeintel.build.graphs.runtime.context import (
     GraphContext,
     GraphContextSpec,
@@ -51,12 +55,15 @@ class GraphContextFactory:
             if resolved_overrides.community_detection_limit is None
             else resolved_overrides.community_detection_limit
         )
+        resolved_options = resolved_overrides.options
+        if resolved_options is None:
+            resolved_options = graph_metrics_options_from_features(runtime.features)
         return resolve_graph_context(
             GraphContextSpec(
                 repo=repo,
                 commit=commit,
                 use_gpu=resolved_use_gpu,
-                options=resolved_overrides.options,
+                options=resolved_options,
                 now=datetime.now(UTC),
                 betweenness_cap=self.betweenness_cap,
                 eigen_cap=self.eigen_cap,

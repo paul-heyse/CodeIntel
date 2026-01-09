@@ -128,6 +128,21 @@ def normalize_mapping[K: Hashable](
     }
 
 
+def _coerce_weight(value: object | None, *, nan_policy: NanPolicy) -> float:
+    if value is None:
+        return 1.0
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return normalize_float(float(value), nan_policy=nan_policy)
+    if isinstance(value, str):
+        try:
+            return normalize_float(float(value), nan_policy=nan_policy)
+        except ValueError:
+            return 1.0
+    return 1.0
+
+
 def edge_weight_from_payload(
     payload: object | None,
     *,
@@ -140,18 +155,12 @@ def edge_weight_from_payload(
     float
         Normalized numeric edge weight.
     """
-    if payload is None:
-        return 1.0
-    if isinstance(payload, bool):
-        return float(int(payload))
-    if isinstance(payload, (int, float)):
-        return normalize_float(float(payload), nan_policy=nan_policy)
-    if isinstance(payload, str):
-        try:
-            return normalize_float(float(payload), nan_policy=nan_policy)
-        except ValueError:
-            return 1.0
-    return 1.0
+    if isinstance(payload, Mapping):
+        return _coerce_weight(payload.get("weight"), nan_policy=nan_policy)
+    weight_attr = getattr(payload, "weight", None)
+    if weight_attr is not None:
+        return _coerce_weight(weight_attr, nan_policy=nan_policy)
+    return _coerce_weight(payload, nan_policy=nan_policy)
 
 
 __all__ = [

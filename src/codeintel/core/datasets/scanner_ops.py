@@ -16,7 +16,6 @@ from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_co
 from codeintel.core.columnar.schema_ops import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.streaming import (
     DatasetScanOptions,
-    QueryPlanSpec,
     build_scanner_for_queryspec_ctx,
 )
 from codeintel.core.columnar.streaming import build_scanner as _build_scanner
@@ -83,31 +82,6 @@ class ScannerParams:
             schema_promote_options=self.schema_promote_options,
             metrics_enabled=self.metrics_enabled,
             provenance_columns=self.provenance_columns,
-        )
-
-    def to_query_plan_spec(self, *, table_key: str) -> QueryPlanSpec:
-        """Return a query plan spec for telemetry or logging.
-
-        Returns
-        -------
-        QueryPlanSpec
-            Query plan metadata for scan logging.
-        """
-        columns = self.columns
-        if columns is None and self.provenance_columns:
-            resolved_columns = tuple(self.provenance_columns)
-        elif columns is None:
-            resolved_columns = ()
-        elif isinstance(columns, Mapping):
-            resolved_columns = tuple(columns.keys())
-        else:
-            resolved_columns = tuple(columns)
-        if self.provenance_columns:
-            resolved_columns = tuple(dict.fromkeys((*self.provenance_columns, *resolved_columns)))
-        return QueryPlanSpec(
-            table_key=table_key,
-            columns=resolved_columns,
-            filter_expression=self.filter_expression,
         )
 
     def to_query_spec(self) -> QuerySpec:

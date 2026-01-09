@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.utilities.ast import safe_unparse
+from codeintel.build.analytics.utilities.list_semantics import normalize_list_semantics
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -309,7 +310,7 @@ def _score_api_handlers(context: FunctionContext, accumulator: RoleAccumulator) 
     decorators = features.decorators if features is not None else context.decorators
 
     if features is not None and features.http_server_libs:
-        libs = ",".join(sorted(features.http_server_libs))
+        libs = ",".join(normalize_list_semantics(features.http_server_libs))
         accumulator.bump("api_handler", 0.7, f"http_server_libs:{libs}")
 
     _score_api_decorators(

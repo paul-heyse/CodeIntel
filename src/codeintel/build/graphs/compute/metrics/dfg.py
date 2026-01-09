@@ -7,7 +7,9 @@ metrics without any database or file I/O.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
+
+import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.centrality import centrality_directed
 from codeintel.build.graphs.compute.metrics.components import (
@@ -19,10 +21,20 @@ from codeintel.build.graphs.rx.algos import (
     bfs_distances_by_id,
     digraph_all_pairs_shortest_path_lengths_by_id,
     ensure_directed_store,
+    insert_node_on_out_edges_by_id,
     predecessors_by_id,
+    remove_node_retain_edges_by_id,
     simple_cycles_by_id,
     successors_by_id,
 )
+from codeintel.build.graphs.rx.build_from_edges import (
+    BuildStoreOptions,
+    EdgeBuildSpec,
+    build_store_from_edge_tuples,
+)
+from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
+from codeintel.build.graphs.rx.metadata import apply_graph_metadata, metadata_from_graph
+from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, DEFAULT_WEIGHT_POLICY
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
@@ -96,6 +108,101 @@ def compute_dfg_path_lengths(
             reach_count=0,
         )
     return result
+
+
+def _clone_dfg_store(store: RxGraphStore) -> RxGraphStore:
+    edge_rows = [
+        (src_id, dst_id, weight) for src_id, dst_id, weight in iter_edge_id_weights(store)
+    ]
+    node_attrs = {node_id: dict(attrs) for node_id, attrs in store.node_attrs.items()}
+    spec = EdgeBuildSpec(
+        directed=True,
+        weight_policy=store.weight_policy,
+        numeric_policy=store.numeric_policy,
+    )
+    options = BuildStoreOptions(
+        stable_nodes=True,
+        aggregate_edges=True,
+        node_ids=store.node_ids(),
+        node_attrs=node_attrs or None,
+        node_hint=len(store.id_to_index),
+        edge_hint=len(edge_rows),
+    )
+    cloned = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
+    metadata = metadata_from_graph(store.graph)
+    if metadata is not None:
+        apply_graph_metadata(cloned.graph, metadata)
+    return cloned
+
+
+def _as_int_id(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _next_synthetic_id(store: RxGraphStore) -> int:
+    numeric_ids = [_as_int_id(node_id) for node_id in store.node_ids()]
+    resolved = [node_id for node_id in numeric_ids if node_id is not None]
+    candidate = (min(resolved) - 1) if resolved else -1
+    while candidate in store.id_to_index:
+        candidate -= 1
+    return candidate
+
+
+def _insert_phi_fanout(store: RxGraphStore, node_id: int) -> int | None:
+    node_idx = store.id_to_index.get(node_id)
+    if node_idx is None:
+        return None
+    directed_graph = cast("rx.PyDiGraph", store.graph)
+    if directed_graph.out_degree(node_idx) <= 1:
+        return None
+    synthetic_id = _next_synthetic_id(store)
+    return insert_node_on_out_edges_by_id(
+        store,
+        synthetic_id,
+        node_id,
+        attrs={"kind": "phi_fanout", "synthetic": True},
+    )
+
+
+def _prune_isolated_nodes(store: RxGraphStore) -> None:
+    directed_graph = cast("rx.PyDiGraph", store.graph)
+    for node_id in store.node_ids():
+        node_idx = store.id_to_index.get(node_id)
+        if node_idx is None:
+            continue
+        if directed_graph.in_degree(node_idx) == 0 and directed_graph.out_degree(node_idx) == 0:
+            remove_node_retain_edges_by_id(store, node_id)
+
+
+def normalize_dfg_graph(
+    graph: GraphInput,
+    edges: list[tuple[int, int, str, str, bool, str]],
+) -> RxGraphStore:
+    """Normalize a DFG for analysis using rustworkx mutation helpers.
+
+    Returns
+    -------
+    RxGraphStore
+        Normalized DFG graph for analysis metrics.
+    """
+    store = ensure_directed_store(graph)
+    normalized = _clone_dfg_store(store)
+    totals: dict[int, tuple[int, int]] = {}
+    for src, _dst, _src_sym, _dst_sym, via_phi, _use_kind in edges:
+        total, phi = totals.get(src, (0, 0))
+        totals[src] = (total + 1, phi + (1 if via_phi else 0))
+    for src_id, (total, phi) in sorted(totals.items()):
+        if total > 1 and total == phi:
+            _insert_phi_fanout(normalized, src_id)
+    _prune_isolated_nodes(normalized)
+    return normalized
 
 
 def compute_dfg_components(
@@ -290,15 +397,30 @@ def build_dfg_graph(
     tuple[RxGraphStore, int, int]
         Graph, phi edge count, and symbol count.
     """
-    graph = RxGraphStore.directed()
     phi_edges = 0
     symbols: set[str] = set()
+    node_ids: set[int] = set()
+    edge_rows: list[tuple[int, int, float]] = []
     for src, dst, src_sym, dst_sym, via_phi, _use_kind in edges:
-        graph.add_weighted_edge(src, dst, weight=1.0)
+        edge_rows.append((src, dst, 1.0))
+        node_ids.update((src, dst))
         symbols.add(src_sym)
         symbols.add(dst_sym)
         if via_phi:
             phi_edges += 1
+    spec = EdgeBuildSpec(
+        directed=True,
+        weight_policy=DEFAULT_WEIGHT_POLICY,
+        numeric_policy=DEFAULT_NUMERIC_POLICY,
+    )
+    options = BuildStoreOptions(
+        stable_nodes=True,
+        aggregate_edges=True,
+        node_ids=node_ids or None,
+        node_hint=len(node_ids) if node_ids else None,
+        edge_hint=len(edge_rows),
+    )
+    graph = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
     return graph, phi_edges, len(symbols)
 
 
@@ -314,4 +436,5 @@ __all__ = [
     "dfg_component_stats",
     "dfg_path_lengths",
     "find_dfg_cycles",
+    "normalize_dfg_graph",
 ]

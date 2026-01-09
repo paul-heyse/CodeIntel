@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING, overload
 import pyarrow as pa
 
 from codeintel.core.columnar import table_utils
-from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.conversion import (
+    empty_table_from_schema,
+    record_batch_reader_from_iterable,
+    table_from_batches,
+)
 from codeintel.core.columnar.finalize_ops import (
     FinalizeMode,
     FinalizeResult,
@@ -256,8 +260,8 @@ class ColumnarBatchCollector:
         """
         self._flush()
         if not self.batches:
-            return pa.Table.from_batches([], schema=self.arrow_schema)
-        return pa.Table.from_batches(self.batches, schema=self.arrow_schema)
+            return empty_table_from_schema(self.arrow_schema)
+        return table_from_batches(self.batches, schema=self.arrow_schema)
 
     def to_reader(self) -> pa.RecordBatchReader:
         """Return a RecordBatchReader for the collected batches.
@@ -500,7 +504,7 @@ def table_for_columnar_rows(
     row_count = columnar_row_count(rows)
     if row_count == 0:
         arrow_schema = _arrow_schema_for_table(table_key, extras_policy=extras_policy)
-        return pa.Table.from_batches([], schema=arrow_schema), 0
+        return empty_table_from_schema(arrow_schema), 0
     contract_schema = _arrow_schema_for_table(table_key, extras_policy=extras_policy)
     normalized = {name: list(values) for name, values in rows.items()}
     arrays: list[pa.Array] = []
@@ -515,7 +519,7 @@ def table_for_columnar_rows(
         arrays.append(array)
         fields.append(pa.field(name, array.type))
     batch = pa.record_batch(arrays, schema=pa.schema(fields))
-    table = pa.Table.from_batches([batch], schema=batch.schema)
+    table = table_from_batches([batch], schema=batch.schema)
     aligned = align_table_to_contract(table, contract_schema, extras_policy=extras_policy)
     if not finalize:
         return aligned, row_count

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
     RelationBuildContext,
@@ -52,13 +53,7 @@ def _fetch_arrow_reader(
     *,
     batch_size: int,
 ) -> pa.RecordBatchReader:
-    fetcher = getattr(relation_or_con, "fetch_arrow_reader", None)
-    if callable(fetcher):
-        try:
-            return fetcher(batch_size)
-        except TypeError:
-            return fetcher()
-    return relation_or_con.fetch_record_batch(batch_size)
+    return tabular_to_arrow_reader(relation_or_con, batch_size=batch_size)
 
 
 def _contract_schema_for_table(
@@ -200,7 +195,7 @@ class DuckDBQueryEngine:
                     column_types=spec.column_types,
                     contract_schema=contract_schema,
                 ),
-                options=RelationPlanOptions(plan_spec=query.plan_spec),
+                options=RelationPlanOptions(query_spec=query.query_spec),
             )
             return DuckDBRelationPlan(
                 _relation=relation,

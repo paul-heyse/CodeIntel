@@ -58,9 +58,12 @@ from codeintel.core.columnar import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
+from codeintel.core.columnar.dedupe_ops import DedupeTier, normalize_dedupe_tier
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.ordering import OrderingSpec
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
+from codeintel.core.columnar.run_manifest import RunManifestOptions, write_run_manifest
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.streaming import DatasetScanOptions, build_scanner
 from codeintel.core.config.settings import BuildSettings
@@ -91,12 +94,17 @@ from codeintel.core.schemas.arrow_polars import (
     table_schema_from_polars_lazyframe,
 )
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
-from codeintel.core.schemas.primitives import TableSchema, resolve_stable_sort_keys
+from codeintel.core.schemas.primitives import (
+    TableSchema,
+    resolve_canonical_sort_keys,
+    resolve_stable_sort_keys,
+)
 from codeintel.core.schemas.resolution import resolve_table_schema
 
 if TYPE_CHECKING:
     from pyarrow import RecordBatchReader
 
+    from codeintel.core.columnar.finalize_ops import FinalizeResult
     from codeintel.core.config.settings import ArrowDatasetSettings
     from codeintel.core.manifests import ArrowDatasetManifest
 
@@ -122,6 +130,9 @@ _TABULAR_TYPES: tuple[type, ...] = (
     pl.DataFrame,
     pl.LazyFrame,
 )
+
+_ANALYTICS_TABLE_PREFIX = "analytics."
+_FINALIZE_ARTIFACTS: tuple[str, ...] = ("errors", "alignment", "stats")
 
 _DEFAULT_PARTITION_COLUMNS: tuple[str, ...] = ("repo", "commit")
 _COLLECT_GROUP_TAG = "ci.collect_group"
@@ -707,12 +718,14 @@ def _write_dataset_from_reader(
 ) -> ArrowDatasetManifest:
     table = reader_to_table(reader)
     order_by = _order_by_for_table(table, options=ctx.options)
+    emit_artifacts = _should_emit_finalize_artifacts(ctx.table_key)
     result = finalize_table(
         table,
         spec=finalize_spec_for_table(
             ctx.table_key,
             mode="tolerant",
             order_by=order_by,
+            emit_artifacts=emit_artifacts,
         ),
     )
     if result.errors.num_rows:
@@ -731,13 +744,25 @@ def _write_dataset_from_reader(
         snapshot_id=ctx.snapshot_id,
     )
     _prepare_snapshot_dir(snapshot_dir, behavior=ctx.options.existing_data_behavior)
-    return write_dataset(
+    manifest = write_dataset(
         dataset_root=ctx.dataset_root,
         table_key=ctx.table_key,
         snapshot_id=ctx.snapshot_id,
         data=reader,
         options=ctx.options,
     )
+    if emit_artifacts:
+        _write_finalize_artifacts(
+            ctx=ctx,
+            base_table_key=ctx.table_key,
+            result=result,
+        )
+    if _should_emit_run_manifest(ctx.table_key):
+        _write_run_manifest(
+            ctx=ctx,
+            result=result,
+        )
+    return manifest
 
 
 def _order_by_for_table(
@@ -752,6 +777,157 @@ def _order_by_for_table(
     if not available:
         return ()
     return tuple((name, "ascending") for name in available)
+
+
+def _should_emit_finalize_artifacts(table_key: str) -> bool:
+    return table_key.startswith(_ANALYTICS_TABLE_PREFIX)
+
+
+def _should_emit_run_manifest(table_key: str) -> bool:
+    return table_key.startswith(_ANALYTICS_TABLE_PREFIX)
+
+
+def _finalize_artifact_table_key(table_key: str, artifact: str) -> str:
+    return f"{table_key}__{artifact}"
+
+
+def _finalize_counts(result: FinalizeResult) -> dict[str, int]:
+    return {
+        "errors": result.errors.num_rows,
+        "alignment": result.alignment.num_rows,
+        "stats": result.stats.num_rows,
+    }
+
+
+def _determinism_for_manifest(table_schema: TableSchema | None) -> DedupeTier:
+    if table_schema is not None:
+        policy = table_schema.finalize_policy
+        if policy is not None and policy.dedupe is not None and policy.dedupe.tier is not None:
+            return policy.dedupe.tier
+    canonical_keys = resolve_canonical_sort_keys(table_schema)
+    if canonical_keys is not None:
+        return "throughput" if canonical_keys == () else "canonical"
+    return "stable_set"
+
+
+def _ordering_spec_for_manifest(
+    table_schema: TableSchema | None,
+    *,
+    determinism: DedupeTier,
+) -> OrderingSpec | None:
+    if normalize_dedupe_tier(determinism) != "canonical":
+        return None
+    canonical_keys = resolve_canonical_sort_keys(table_schema)
+    if not canonical_keys:
+        return None
+    sort_keys: tuple[SortKey, ...] = tuple((key, "ascending") for key in canonical_keys)
+    return OrderingSpec.explicit(keys=sort_keys, reason="canonical contract ordering")
+
+
+def _write_finalize_artifacts(
+    *,
+    ctx: _DatasetWriteContext,
+    base_table_key: str,
+    result: FinalizeResult,
+) -> None:
+    for artifact, table in (
+        ("errors", result.errors),
+        ("alignment", result.alignment),
+        ("stats", result.stats),
+    ):
+        _write_finalize_artifact(
+            ctx=ctx,
+            base_table_key=base_table_key,
+            artifact=artifact,
+            table=table,
+        )
+
+
+def _artifact_manifest_extras(
+    table_schema: TableSchema,
+    *,
+    base_table_key: str,
+    artifact: str,
+) -> dict[str, object]:
+    return {
+        "table_schema": table_schema.to_json_obj(),
+        "artifact_for": base_table_key,
+        "artifact_type": artifact,
+    }
+
+
+def _write_finalize_artifact(
+    *,
+    ctx: _DatasetWriteContext,
+    base_table_key: str,
+    artifact: str,
+    table: pa.Table,
+) -> None:
+    artifact_table_key = _finalize_artifact_table_key(base_table_key, artifact)
+    try:
+        table_schema = table_schema_from_arrow_schema(
+            arrow_schema=table.schema,
+            table_key=artifact_table_key,
+        )
+        stable_sort_keys = resolve_stable_sort_keys(table_schema)
+        options = ArrowDatasetWriteOptions(
+            partition_columns=(),
+            existing_data_behavior=ctx.options.existing_data_behavior,
+            persist_manifest=ctx.options.persist_manifest,
+            schema_hash=schema_hash(table_schema),
+            manifest_extras=_artifact_manifest_extras(
+                table_schema,
+                base_table_key=base_table_key,
+                artifact=artifact,
+            ),
+            stable_sort_keys=stable_sort_keys,
+        )
+        write_dataset(
+            dataset_root=ctx.dataset_root,
+            table_key=artifact_table_key,
+            snapshot_id=ctx.snapshot_id,
+            data=table,
+            options=options,
+        )
+    except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError) as exc:
+        LOG.warning(
+            "Finalize artifact write failed; table_key=%s artifact=%s error=%s",
+            base_table_key,
+            artifact,
+            exc,
+        )
+
+
+def _write_run_manifest(
+    *,
+    ctx: _DatasetWriteContext,
+    result: FinalizeResult,
+) -> None:
+    table_schema = resolve_table_schema(ctx.table_key)
+    determinism = _determinism_for_manifest(table_schema)
+    ordering = _ordering_spec_for_manifest(
+        table_schema,
+        determinism=determinism,
+    )
+    extras: dict[str, object] = {"finalize_counts": _finalize_counts(result)}
+    options = RunManifestOptions(
+        determinism=determinism,
+        ordering=ordering,
+        extras=extras,
+    )
+    snapshot_dir = dataset_snapshot_dir(
+        ctx.dataset_root,
+        table_key=ctx.table_key,
+        snapshot_id=ctx.snapshot_id,
+    )
+    try:
+        write_run_manifest(snapshot_dir, options=options)
+    except (OSError, ValueError) as exc:
+        LOG.warning(
+            "Run manifest write failed; table_key=%s error=%s",
+            ctx.table_key,
+            exc,
+        )
 
 
 def _write_profiled_dataset(

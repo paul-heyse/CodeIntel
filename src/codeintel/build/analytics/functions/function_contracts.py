@@ -20,6 +20,9 @@ from codeintel.build.analytics.utilities.ast import (
 )
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_table
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.core.columnar.execution_context import resolve_columnar_context
+from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -203,21 +206,39 @@ def _doc_map_from_frame(
     columns = ("rel_path", "qualname", "params", "returns")
     table = _scoped_table(
         frame,
-        repo=repo,
-        commit=commit,
-        columns=columns,
-        ctx=ctx,
+        request=_ScopedTableRequest(
+            repo=repo,
+            commit=commit,
+            columns=columns,
+            table_key="core.docstrings",
+            ctx=ctx,
+        ),
     )
     if table.num_rows == 0:
         return {}
+    grouped = grouped_rollup_table(
+        table,
+        spec=GroupedRollupSpec(
+            keys=("rel_path", "qualname"),
+            aggregates=[
+                ("params", "list", None, "params"),
+                ("returns", "list", None, "returns"),
+            ],
+            pre_sort_keys=(("rel_path", "ascending"), ("qualname", "ascending")),
+        ),
+        ctx=resolve_columnar_context(ctx),
+    )
     mapping: dict[tuple[str, str], dict[str, object]] = {}
-    for row in iter_rows(table, columns):
-        rel_path = row.get("rel_path")
-        qualname = row.get("qualname")
+    for rel_path, qualname, params_list, returns_list in iter_tuples(
+        grouped.to_reader(),
+        columns=columns,
+    ):
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
             continue
-        params = row.get("params")
-        returns = row.get("returns")
+        params = params_list[0] if isinstance(params_list, list) and params_list else params_list
+        returns = (
+            returns_list[0] if isinstance(returns_list, list) and returns_list else returns_list
+        )
         mapping[rel_path, qualname] = {
             "params": _coerce_json(params) or [],
             "returns": _coerce_json(returns),
@@ -243,10 +264,13 @@ def _type_map_from_frame(
         columns.append("param_types")
     table = _scoped_table(
         frame,
-        repo=repo,
-        commit=commit,
-        columns=tuple(columns),
-        ctx=ctx,
+        request=_ScopedTableRequest(
+            repo=repo,
+            commit=commit,
+            columns=tuple(columns),
+            table_key="analytics.function_types",
+            ctx=ctx,
+        ),
     )
     if table.num_rows == 0:
         return {}
@@ -268,18 +292,29 @@ def _type_map_from_frame(
     return mapping
 
 
+@dataclass(frozen=True, slots=True)
+class _ScopedTableRequest:
+    repo: str
+    commit: str
+    columns: Sequence[str]
+    table_key: str | None
+    ctx: ExecutionContext | RuntimeExecutionContext | None
+
+
 def _scoped_table(
     frame: pa.Table,
     *,
-    repo: str,
-    commit: str,
-    columns: Sequence[str],
-    ctx: ExecutionContext | RuntimeExecutionContext | None,
+    request: _ScopedTableRequest,
 ) -> pa.Table:
     return snapshot_table(
         frame,
-        columns=columns,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        columns=request.columns,
+        context=SnapshotContext(
+            repo=request.repo,
+            commit=request.commit,
+            ctx=request.ctx,
+            table_key=request.table_key,
+        ),
     )
 
 

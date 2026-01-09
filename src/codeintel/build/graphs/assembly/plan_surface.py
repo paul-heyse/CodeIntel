@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.expr_vocab import E, ExprVocab
 from codeintel.core.columnar.ordering import SortKey
 from codeintel.core.columnar.plan_builder import (
@@ -23,7 +24,11 @@ from codeintel.core.columnar.plan_ops import (
     QueryPlanOptions,
     build_query_plan,
 )
-from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
+from codeintel.core.columnar.queryspec import (
+    PROVENANCE_FIELDS,
+    QuerySpec,
+    projection_spec_from_schema_defaults,
+)
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
@@ -59,6 +64,28 @@ class HashJoinSpecRequest:
     filter_expression: pc.Expression | None = None
 
 
+def _provenance_columns_for_request(
+    *,
+    ctx: ExecutionContext | None,
+    available_columns: Sequence[str],
+) -> tuple[str, ...]:
+    resolved_ctx = resolve_execution_context(ctx)
+    provenance = resolved_ctx.provenance
+    profile = resolved_ctx.runtime_profile
+    if profile is not None:
+        provenance = profile.resolve_provenance(default=provenance)
+    if resolved_ctx.resolve_determinism() == "canonical":
+        provenance = True
+    if not provenance:
+        return ()
+    available = set(available_columns)
+    return tuple(
+        output_name
+        for output_name, _source_name in PROVENANCE_FIELDS
+        if output_name in available
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class GraphPlanSurface:
     """Plan helper surface for graph producers."""
@@ -90,9 +117,16 @@ class GraphPlanSurface:
                     ctx=request.ctx,
                 ),
             )
-        projection = projection_spec_from_columns(
+        available_columns = tuple(request.dataset.schema.names)
+        provenance_columns = _provenance_columns_for_request(
+            ctx=request.ctx,
+            available_columns=available_columns,
+        )
+        projection = projection_spec_from_schema_defaults(
             request.columns,
-            default_columns=tuple(request.dataset.schema.names),
+            table_schema=None,
+            available_columns=available_columns,
+            provenance_columns=provenance_columns,
         )
         query_spec = QuerySpec(
             predicate=request.filter_expr,

@@ -23,6 +23,7 @@ from codeintel.build.analytics.compute.dependencies.detection import (
 )
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
+from codeintel.build.analytics.utilities.list_semantics import normalize_list_semantics
 from codeintel.build.analytics.utilities.snapshot import (
     SnapshotContext,
     require_columns,
@@ -185,7 +186,7 @@ def _function_call_rows_pure(
     for library, calls in grouped.items():
         pattern = context.patterns[library]
         dep_id = _dep_id(context.repo, context.commit, library)
-        modes = sorted({mode for call in calls for mode in call.modes})
+        modes = normalize_list_semantics({mode for call in calls for mode in call.modes})
         collector = EvidenceCollector()
 
         for call in calls:
@@ -237,7 +238,13 @@ def _dependency_call_rows_from_frame(
 ) -> Iterable[tuple[object, ...]]:
     if frame is None or frame.num_rows == 0:
         return ()
-    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx)
+    filtered = _rows_for_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+        table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
+    )
     rows: list[tuple[object, ...]] = []
     for row in filtered:
         extras = row.get("extras")
@@ -350,9 +357,11 @@ def _serialize_dependency_rows(
                 "function_count": len(aggregate.functions),
                 "callsite_count": aggregate.callsite_count,
                 "extras": {
-                    "modules": sorted(aggregate.modules),
-                    "usage_modes": sorted(aggregate.modes),
-                    "config_keys": sorted(config_keys) if config_keys else None,
+                    "modules": normalize_list_semantics(aggregate.modules),
+                    "usage_modes": normalize_list_semantics(aggregate.modes),
+                    "config_keys": (
+                        normalize_list_semantics(config_keys) if config_keys else None
+                    ),
                 },
                 "risk_level": resolved_risk_level,
                 "created_at": now,
@@ -417,7 +426,13 @@ def _config_keys_from_frame(
     mapping: dict[str, set[str]] = {}
     if frame is None or frame.num_rows == 0:
         return mapping
-    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx)
+    filtered = _rows_for_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+        table_key="analytics.config_values",
+    )
     for row in filtered:
         extras = row.get("extras")
         ref_modules = extras.get("reference_modules") if isinstance(extras, Mapping) else None
@@ -436,11 +451,17 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
     ctx: ExecutionContext | RuntimeExecutionContext | None,
+    table_key: str | None = None,
 ) -> list[dict[str, object]]:
     require_columns(frame, ("repo", "commit"))
     filtered = snapshot_table(
         frame,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=table_key,
+        ),
     )
     return list(iter_rows(filtered))
 

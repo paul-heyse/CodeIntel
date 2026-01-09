@@ -49,11 +49,13 @@ from codeintel.build.tabular.plan_ops import Plan
 from codeintel.build.validation.columnar import ColumnarValidationContext, validate_table
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable, table_to_reader
+from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.ordering import OrderingSpec
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.rows import table_for_rows
-from codeintel.core.columnar.run_manifest import RunManifestOptions
+from codeintel.core.columnar.run_manifest import RunManifestOptions, write_run_manifest
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
@@ -268,6 +270,23 @@ def _manifest_extras(
     return extras
 
 
+def _row_ordering_spec(table_schema: TableSchema) -> OrderingSpec | None:
+    stable_sort_keys = _resolve_manifest_sort_keys(table_schema)
+    if stable_sort_keys is None:
+        return None
+    if stable_sort_keys == ():
+        return OrderingSpec.unordered(reason="schema stable_sort_keys=()")
+    sort_keys = tuple((name, "ascending") for name in stable_sort_keys)
+    return OrderingSpec.explicit(keys=sort_keys, reason="schema.canonical_sort_keys")
+
+
+def _row_determinism(table_schema: TableSchema) -> DedupeTier | None:
+    policy = table_schema.finalize_policy
+    if policy is None or policy.dedupe is None:
+        return None
+    return policy.dedupe.tier
+
+
 @dataclass(frozen=True, slots=True)
 class _ParquetMetadataContext:
     table_schema: TableSchema
@@ -419,6 +438,11 @@ def _write_parquet_dataset(
         context=write_context,
         base_table_key=contract.table_key,
         result=result,
+    )
+    _write_row_run_manifest(
+        context=write_context,
+        table_schema=table_schema,
+        base_table_key=contract.table_key,
     )
     _log_missing_metadata(
         dataset_root=write_context.dataset_root,
@@ -716,6 +740,42 @@ def _manifest_options_for_snapshot(
         "write_source": "analytics_insert",
     }
     return RunManifestOptions(extras=extras, filename=filename)
+
+
+def _write_row_run_manifest(
+    *,
+    context: _WriteContext,
+    table_schema: TableSchema,
+    base_table_key: str,
+) -> None:
+    manifest_dir = _manifest_dir_for_snapshot(
+        dataset_root=context.dataset_root,
+        table_key=base_table_key,
+        snapshot_id=context.snapshot_id,
+    )
+    if manifest_dir is None:
+        return
+    ordering = _row_ordering_spec(table_schema)
+    options = _manifest_options_for_snapshot(
+        table_key=base_table_key,
+        snapshot_id=context.snapshot_id,
+        repo=context.repo,
+        commit=context.commit,
+    )
+    options = RunManifestOptions(
+        determinism=_row_determinism(table_schema),
+        ordering=ordering,
+        extras=options.extras,
+        filename=options.filename,
+    )
+    try:
+        write_run_manifest(manifest_dir, options=options)
+    except (OSError, ValueError) as exc:
+        LOG.warning(
+            "Run manifest write failed for %s; error=%s",
+            base_table_key,
+            exc,
+        )
 
 
 def validate_contract_rows(

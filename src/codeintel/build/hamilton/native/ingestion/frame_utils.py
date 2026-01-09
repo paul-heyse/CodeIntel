@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import empty_table_from_schema
 from codeintel.core.columnar.rows import (
     columnar_row_count,
     empty_table_for_table,
@@ -65,7 +66,7 @@ def lazyframe_for_table_columns(
         try:
             return empty_table_for_table(table_key)
         except (KeyError, RuntimeError):
-            return pa.Table.from_batches(pa.schema([]), [])
+            return empty_table_from_schema(pa.schema([]))
     table, _ = table_for_columnar_rows(table_key, normalized)
     return table
 

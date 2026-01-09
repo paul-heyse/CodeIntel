@@ -11,13 +11,10 @@ from hamilton.function_modifiers import pipe_input, resolve_from_config, step, v
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.execution_context import resolve_execution_context
-from codeintel.core.columnar.expr_vocab import E
-from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -41,14 +38,9 @@ def _drop_null_rows(
     required = [name for name in required_cols if name in table.schema.names]
     if not required:
         return table
-    exprs = [E.is_valid(name) for name in required]
-    plan = build_table_plan(
-        table=table,
-        options=TablePlanOptions(filter_expr=E.and_(*exprs)),
-    )
-    execution_ctx = resolve_execution_context(None)
-    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    masks = [is_valid_mask(table[name]) for name in required]
+    mask = masks[0] if len(masks) == 1 else and_kleene(*masks)
+    return safe_filter(table, mask)
 
 
 def _pipe_ingest_rows(

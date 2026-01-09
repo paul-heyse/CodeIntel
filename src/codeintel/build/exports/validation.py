@@ -21,7 +21,7 @@ from codeintel.build.validation.columnar import (
     validate_parquet_path,
     validate_record_batch_reader,
 )
-from codeintel.core.columnar.conversion import table_to_reader
+from codeintel.core.columnar.conversion import empty_table_from_schema, table_to_reader
 from codeintel.core.columnar.schema_alignment import extras_policy_from_schema
 from codeintel.core.errors.schema import SCHEMA_NOT_FOUND, SCHEMA_VALIDATION_FAILED
 from codeintel.core.errors.taxonomy import NOT_FOUND
@@ -77,7 +77,7 @@ def _reader_for_jsonl(
         return pa_json.open_json(path, parse_options=parse_options), []
     except (pa.ArrowInvalid, OSError, ValueError) as exc:
         errors = [f"Failed to parse JSONL: {exc}"]
-        empty_table = pa.Table.from_batches([], schema=contract_schema)
+        empty_table = empty_table_from_schema(contract_schema)
         reader = table_to_reader(empty_table, batch_size=None)
         return reader, errors
 

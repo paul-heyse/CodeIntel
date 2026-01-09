@@ -10,7 +10,11 @@ from typing import TYPE_CHECKING, Literal, TypeGuard, cast
 import pyarrow as pa
 from sqlglot import exp
 
-from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.conversion import (
+    reader_to_table,
+    table_to_reader,
+    tabular_to_arrow_reader,
+)
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.ipc import schema_from_ipc_payload
@@ -414,7 +418,10 @@ def _load_latest_observed_schema_rows(
             )
         )
     )
-    reader = con.execute(render_sql_duckdb(query)).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = tabular_to_arrow_reader(
+        con.execute(render_sql_duckdb(query)),
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+    )
     return [
         (table_key, schema_json) for table_key, schema_json in iter_tuples_from_arrow_reader(reader)
     ]
@@ -512,8 +519,9 @@ def iter_table_schemas_from_connection(
         .join(versions, on=join_versions)
         .where(_inferred_registry_condition("registry"))
     )
-    inferred_reader = con.execute(render_sql_duckdb(inferred_query)).fetch_record_batch(
-        DEFAULT_ARROW_BATCH_SIZE
+    inferred_reader = tabular_to_arrow_reader(
+        con.execute(render_sql_duckdb(inferred_query)),
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
     )
     schemas_by_key: dict[str, TableSchema] = {}
     for table_key, schema_json_raw in observed_rows:
@@ -535,8 +543,9 @@ def iter_table_schemas_from_connection(
         .join(versions, on=join_versions)
         .order_by(exp.Ordered(this=exp.column("table_key", table="registry")))
     )
-    fallback_reader = con.execute(render_sql_duckdb(fallback_query)).fetch_record_batch(
-        DEFAULT_ARROW_BATCH_SIZE
+    fallback_reader = tabular_to_arrow_reader(
+        con.execute(render_sql_duckdb(fallback_query)),
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
     )
     for table_key, schema_json_raw in iter_tuples_from_arrow_reader(fallback_reader):
         if str(table_key) in schemas_by_key:
@@ -1128,10 +1137,13 @@ class SchemaCatalogTracking:
             )
             .limit(exp.Placeholder())
         )
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            [table_key, limit],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                [table_key, limit],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         summaries = [
             _decode_optional_json_dict(summary_raw)
             for (summary_raw,) in iter_tuples_from_arrow_reader(reader)
@@ -1211,10 +1223,13 @@ class SchemaCatalogTracking:
             )
             .limit(exp.Placeholder())
         )
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            [limit],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                [limit],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         return [
             (table_key, drift_summary, observed_at)
             for table_key, drift_summary, observed_at in iter_tuples_from_arrow_reader(reader)
@@ -1313,8 +1328,9 @@ class SchemaCatalogTracking:
             .order_by(exp.Ordered(this=exp.column("table_key", table="r")))
         )
         schemas: dict[str, TableSchema] = {}
-        reader = self._con.execute(render_sql_duckdb(query)).fetch_record_batch(
-            DEFAULT_ARROW_BATCH_SIZE
+        reader = tabular_to_arrow_reader(
+            self._con.execute(render_sql_duckdb(query)),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
         )
         for table_key, schema_json_raw in iter_tuples_from_arrow_reader(reader):
             schema_json = decode_json_dict(schema_json_raw)
@@ -1451,10 +1467,13 @@ class SchemaCatalogTracking:
         )
         params: list[object] = ["inferred_relation", "inferred", "override", *allowed_keys]
         schemas: dict[str, TableSchema] = {}
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            params,
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                params,
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         for table_key, schema_json_raw in iter_tuples_from_arrow_reader(reader):
             schema_json = decode_json_dict(schema_json_raw)
             if not schema_json:
@@ -1505,8 +1524,9 @@ class SchemaCatalogTracking:
             .join(versions, on=join_versions)
             .order_by(exp.Ordered(this=exp.column("table_key", table="r")))
         )
-        reader = self._con.execute(render_sql_duckdb(query)).fetch_record_batch(
-            DEFAULT_ARROW_BATCH_SIZE
+        reader = tabular_to_arrow_reader(
+            self._con.execute(render_sql_duckdb(query)),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
         )
         rows = iter_tuples_from_arrow_reader(reader)
         return [
@@ -1605,10 +1625,13 @@ class SchemaCatalogTracking:
             )
         )
         updates: list[tuple[object, str]] = []
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            list(digests),
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                list(digests),
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         for schema_digest, renderer_cache_raw in iter_tuples_from_arrow_reader(reader):
             digest = str(schema_digest)
             payload = payloads.get(digest)

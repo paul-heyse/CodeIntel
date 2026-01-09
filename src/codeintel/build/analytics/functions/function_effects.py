@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections import deque
 from collections.abc import Hashable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -16,12 +15,13 @@ from codeintel.build.analytics.compute.evidence.collection import EvidenceCollec
 from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.analytics.utilities.list_semantics import normalize_list_semantics
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.graphs.engine.protocol import GraphKind
 from codeintel.build.graphs.rx.algos import (
     GraphInput,
+    bfs_distances_by_id,
     ensure_directed_store,
-    successors_by_id,
 )
 from codeintel.build.graphs.rx.build_from_edges import (
     BuildStoreOptions,
@@ -32,13 +32,12 @@ from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, weight_po
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
-    resolve_execution_context,
 )
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import ColumnarRowBuffer
@@ -52,6 +51,9 @@ if TYPE_CHECKING:
     from codeintel.storage.catalog import FunctionCatalogProvider
 
 log = logging.getLogger(__name__)
+
+CALL_GRAPH_EDGES_TABLE_KEY = "graph.call_graph_edges"
+CALL_GRAPH_NODES_TABLE_KEY = "graph.call_graph_nodes"
 
 
 def _default_io_apis() -> dict[str, list[str]]:
@@ -223,7 +225,7 @@ def _effects_payload(
                 "details": {"goid": target},
                 "tags": ["transitive_effect"],
             }
-            for target in sorted(transitive_targets)
+            for target in normalize_list_semantics(transitive_targets)
         ]
     return payload
 
@@ -443,8 +445,10 @@ def _compute_transitive_effects(
     transitive: dict[int, set[int]] = {}
     store = ensure_directed_store(call_graph)
     for node_id in store.node_ids():
-        node = int(str(node_id))
-        if direct_flags.get(node):
+        normalized = normalize_decimal_id(node_id)
+        if normalized is None:
+            continue
+        if direct_flags.get(normalized):
             continue
         hits = _transitive_hits_for_node(
             store,
@@ -453,7 +457,7 @@ def _compute_transitive_effects(
             max_depth,
         )
         if hits:
-            transitive[node] = hits
+            transitive[normalized] = hits
     return transitive
 
 
@@ -470,23 +474,16 @@ def _transitive_hits_for_node(
     set[int]
         GOIDs for reachable nodes with direct effects.
     """
+    distances = bfs_distances_by_id(store, node_id, max_depth=max_depth)
     hits: set[int] = set()
-    visited: set[object] = {node_id}
-    queue: deque[tuple[object, int]] = deque([(node_id, 0)])
-    while queue:
-        current_id, depth = queue.popleft()
-        if depth >= max_depth:
+    for target_id, depth in distances.items():
+        if target_id == node_id or depth <= 0 or depth > max_depth:
             continue
-        for succ_id in successors_by_id(store, current_id):
-            if succ_id in visited:
-                continue
-            visited.add(succ_id)
-            succ = int(str(succ_id))
-            if direct_flags.get(succ):
-                hits.add(succ)
-            queue.append((succ_id, depth + 1))
-        if hits:
-            break
+        normalized = normalize_decimal_id(target_id)
+        if normalized is None:
+            continue
+        if direct_flags.get(normalized):
+            hits.add(normalized)
     return hits
 
 
@@ -572,7 +569,7 @@ def _call_graph_edges_from_frame(
         caller = normalize_decimal_id(row.get("caller_goid_h128"))
         if caller is None:
             continue
-        callee_ids = _coerce_sorted_goids(row.get("callee_goid_h128"))
+        callee_ids = _coerce_goids(row.get("callee_goid_h128"))
         if not callee_ids:
             continue
         caller_id = int(caller)
@@ -597,10 +594,15 @@ def _call_graph_nodes_from_frame(
     plan = snapshot_plan(
         nodes_frame,
         columns=("goid_h128", "kind"),
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CALL_GRAPH_NODES_TABLE_KEY,
+        ),
     )
     plan = plan.filter(E.is_valid("goid_h128"))
-    table = _materialize_plan(plan, ctx=ctx)
+    table = _materialize_plan(plan, table_key=CALL_GRAPH_NODES_TABLE_KEY, ctx=ctx)
     for row in iter_rows(table, ("goid_h128", "kind")):
         goid = normalize_decimal_id(row.get("goid_h128"))
         if goid is None:
@@ -630,7 +632,12 @@ def _call_graph_rowset(
     plan = snapshot_plan(
         edges_frame,
         columns=required,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CALL_GRAPH_EDGES_TABLE_KEY,
+        ),
     )
     plan = plan.filter(
         E.and_(
@@ -639,7 +646,7 @@ def _call_graph_rowset(
             E.field("callee_goid_h128") != E.scalar(-1),
         )
     )
-    filtered = _materialize_plan(plan, ctx=ctx)
+    filtered = _materialize_plan(plan, table_key=CALL_GRAPH_EDGES_TABLE_KEY, ctx=ctx)
     return grouped_rollup_table(
         filtered,
         spec=GroupedRollupSpec(
@@ -669,7 +676,12 @@ def _unresolved_call_rowset(
     plan = snapshot_plan(
         edges_frame,
         columns=required,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CALL_GRAPH_EDGES_TABLE_KEY,
+        ),
     )
     plan = plan.filter(
         E.and_(
@@ -680,7 +692,7 @@ def _unresolved_call_rowset(
             ),
         )
     )
-    filtered = _materialize_plan(plan, ctx=ctx)
+    filtered = _materialize_plan(plan, table_key=CALL_GRAPH_EDGES_TABLE_KEY, ctx=ctx)
     return grouped_rollup_table(
         filtered,
         spec=GroupedRollupSpec(
@@ -691,13 +703,12 @@ def _unresolved_call_rowset(
     )
 
 
-def _coerce_sorted_goids(raw: object) -> list[int]:
-    goids = [
+def _coerce_goids(raw: object) -> list[int]:
+    return [
         int(goid)
         for value in _list_values(raw)
         if (goid := normalize_decimal_id(value)) is not None
     ]
-    return sorted(goids)
 
 
 def _list_values(value: object) -> list[object]:
@@ -847,8 +858,13 @@ def _matches_api(target: str, patterns: dict[str, list[str]]) -> bool:
 def _materialize_plan(
     plan: Plan,
     *,
+    table_key: str,
     ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
-    execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
-    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    resolved_ctx = resolve_columnar_context(ctx)
+    result = run_pipeline(
+        plan=ExecutionPlan.from_plan(plan),
+        finalize=finalize_spec_for_table(table_key, mode="tolerant"),
+        options=PipelineRunOptions(ctx=resolved_ctx),
+    )
+    return result.good

@@ -327,6 +327,27 @@ def grouped_rollup_table(
     return columnar.ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
 
 
+def build_grouped_rollup_plan(
+    plan: Plan,
+    *,
+    keys: Sequence[str] | None,
+    aggregates: Sequence[tuple[object, str, object | None, str]],
+    order_by: Sequence[SortKey] = (),
+) -> Plan:
+    """Apply a group-by aggregate and optional ordering to a plan.
+
+    Returns
+    -------
+    Plan
+        Plan with aggregate (and optional order_by) applied.
+    """
+    key_exprs = [E.field(name) for name in keys] if keys else None
+    plan = plan.aggregate(keys=key_exprs, aggregates=aggregates)
+    if order_by:
+        plan = plan.order_by(sort_keys=order_by)
+    return plan
+
+
 def _unique_column_name(table: pa.Table, *, base: str) -> str:
     if base not in table.column_names:
         return base
@@ -343,6 +364,7 @@ __all__ = [
     "GroupedRollupSpec",
     "StableDedupeSpec",
     "WinnerSelectionSpec",
+    "build_grouped_rollup_plan",
     "explode_edges_for_join",
     "group_by_max_join_back",
     "grouped_rollup_table",

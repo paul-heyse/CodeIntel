@@ -14,7 +14,7 @@ Validation is expected to run post-materialization against Parquet-backed base t
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -68,7 +68,11 @@ from codeintel.core.columnar.execution_context import (
 )
 from codeintel.core.columnar.iter import iter_rows_limit
 from codeintel.core.columnar.ordering import OrderingSpec
-from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_schema_defaults
+from codeintel.core.columnar.queryspec import (
+    PROVENANCE_FIELDS,
+    QuerySpec,
+    projection_spec_from_schema_defaults,
+)
 from codeintel.core.columnar.run_manifest import (
     RunManifestOptions,
     run_manifest_options_for_context,
@@ -386,6 +390,7 @@ def _emit_validation_run_manifest(
         dataset_root_dir=dataset_root_dir,
         table_key=table_key,
         snapshot=request.snapshot,
+        execution_ctx=execution_ctx,
     )
     ordering = _manifest_ordering(table_key, execution_ctx=execution_ctx)
     threading_snapshot = apply_runtime_profile(
@@ -425,6 +430,7 @@ def _scan_telemetry_for_manifest(
     dataset_root_dir: Path,
     table_key: str,
     snapshot: SnapshotRef,
+    execution_ctx: ColumnarExecutionContext,
 ) -> ScanTelemetry:
     try:
         dataset = scan_dataset(
@@ -437,10 +443,16 @@ def _scan_telemetry_for_manifest(
     scan_ctx = SnapshotScanContext.from_snapshot(snapshot)
     predicate = scan_ctx.filter_expr(dataset.schema)
     table_schema = get_schema_service().get_table_schema(table_key)
+    available_columns = tuple(dataset.schema.names)
+    provenance_columns = _provenance_columns_for_spec(
+        execution_ctx=execution_ctx,
+        available_columns=available_columns,
+    )
     projection = projection_spec_from_schema_defaults(
         None,
         table_schema=table_schema,
-        available_columns=tuple(dataset.schema.names),
+        available_columns=available_columns,
+        provenance_columns=provenance_columns,
     )
     spec = QuerySpec(
         predicate=predicate,
@@ -448,6 +460,27 @@ def _scan_telemetry_for_manifest(
         projection=projection,
     )
     return scan_telemetry_for_queryspec(dataset, spec=spec)
+
+
+def _provenance_columns_for_spec(
+    *,
+    execution_ctx: ColumnarExecutionContext,
+    available_columns: Sequence[str],
+) -> tuple[str, ...]:
+    provenance = execution_ctx.provenance
+    profile = execution_ctx.runtime_profile
+    if profile is not None:
+        provenance = profile.resolve_provenance(default=provenance)
+    if execution_ctx.resolve_determinism() == "canonical":
+        provenance = True
+    if not provenance:
+        return ()
+    available = set(available_columns)
+    return tuple(
+        output_name
+        for output_name, _source_name in PROVENANCE_FIELDS
+        if output_name in available
+    )
 
 
 def _empty_scan_telemetry() -> ScanTelemetry:

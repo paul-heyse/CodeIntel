@@ -20,7 +20,11 @@ from sqlglot import exp
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
-from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.conversion import (
+    reader_to_table,
+    table_to_reader,
+    tabular_to_arrow_reader,
+)
 from codeintel.core.columnar.execution_context import (
     resolve_execution_context,
 )
@@ -30,8 +34,10 @@ from codeintel.core.columnar.kernels import stable_sort_indices
 from codeintel.core.columnar.masks import and_mask, fill_null_false, invert_mask
 from codeintel.core.columnar.normalization import normalize_array
 from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_schema_defaults
 from codeintel.core.columnar.rows import table_for_rows
-from codeintel.core.columnar.streaming import DatasetScanOptions
+from codeintel.core.columnar.run_manifest import RunManifestOptions
+from codeintel.core.columnar.streaming import DatasetScanOptions, scan_telemetry_for_queryspec
 from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetWriteOptions,
@@ -298,10 +304,13 @@ class BuildTracking:
                 )
             )
         )
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            [schema, table],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                [schema, table],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         columns = {str(row[0]) for row in iter_tuples_from_arrow_reader(reader)}
         self._table_columns_cache[table_key] = columns
         return columns
@@ -379,6 +388,20 @@ class BuildTracking:
             implicit_ordering=True,
             require_sequenced_output=True,
         )
+        available_columns = tuple(dataset.schema.names)
+        table_schema = get_schema_service().get_table_schema(table_key)
+        projection = projection_spec_from_schema_defaults(
+            scan_options.projection_columns(),
+            table_schema=table_schema,
+            available_columns=available_columns,
+            provenance_columns=scan_options.provenance_columns,
+        )
+        query_spec = QuerySpec(
+            predicate=None,
+            pushdown_predicate=None,
+            projection=projection,
+        )
+        telemetry = scan_telemetry_for_queryspec(dataset, spec=query_spec)
         plan = build_scan_plan(
             dataset,
             options=ScanPlanOptions(
@@ -418,10 +441,20 @@ class BuildTracking:
                 strategy="first",
             ),
         )
+        manifest_dir = snapshot_dir / "run_manifests"
+        manifest_options = RunManifestOptions(
+            extras={"table_key": table_key, "snapshot_id": snapshot_id},
+            filename="run_manifest_build_tracking.json",
+        )
         result = run_pipeline(
             plan=ExecutionPlan(table_thunk=_read_table),
             finalize=finalize_spec,
-            options=PipelineRunOptions(ctx=execution_ctx),
+            options=PipelineRunOptions(
+                ctx=execution_ctx,
+                manifest_dir=manifest_dir,
+                manifest_options=manifest_options,
+                scan_telemetry=telemetry,
+            ),
         )
         return result.good if result.good.num_rows else None
 
@@ -552,7 +585,7 @@ class BuildTracking:
         impl_column = self._manifest_impl_column(table_key)
         payload = _manifest_row_payload(manifest, impl_column=impl_column)
         reader, _ = table_for_rows(table_key, [payload])
-        new_table = reader.read_all()
+        new_table = reader_to_table(reader)
 
         with _MANIFEST_WRITE_LOCK:
             existing_table = self._load_manifest_table(
@@ -816,10 +849,13 @@ class BuildTracking:
             .where(where_expr)
             .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("target"))))
         )
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            [repo, commit],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                [repo, commit],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
 
         return tuple(_parse_manifest_row(row) for row in iter_tuples_from_arrow_reader(reader))
 
@@ -1048,10 +1084,13 @@ class BuildTracking:
             .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at")), desc=True))
             .limit(exp.Placeholder())
         )
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            [repo, limit],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                [repo, limit],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
 
         return tuple(_parse_run_row(row) for row in iter_tuples_from_arrow_reader(reader))
 
@@ -1176,10 +1215,13 @@ class BuildTracking:
             )
             .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("target"))))
         )
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            [run_id],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                [run_id],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
 
         return [
             {
@@ -1460,10 +1502,13 @@ class BuildTracking:
             .where(_combine_conditions(conditions))
             .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at"))))
         )
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            params,
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                params,
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
 
         return [
             {

@@ -33,14 +33,53 @@ from codeintel.build.graphs.rx.build_from_edges import (
     build_store_from_edge_tuples,
 )
 from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
+from codeintel.build.graphs.rx.metadata import GraphMetadata, apply_graph_metadata
 from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, DEFAULT_WEIGHT_POLICY
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.columnar.rows import ColumnarRowBuffer
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.graphs.graph_metrics import GraphMetricFilters
     from codeintel.build.analytics.graphs.orchestrator import GraphViews
     from codeintel.build.graphs.runtime.context import GraphContext
+
+
+SUBSYSTEM_GRAPH_METRICS_TABLE_KEY = "analytics.subsystem_graph_metrics"
+
+
+def _ordering_keys_for_table(table_key: str) -> tuple[str, ...] | None:
+    schema = get_schema_service().get_table_schema(table_key)
+    keys = resolve_canonical_sort_keys(schema)
+    if not keys:
+        return None
+    return tuple(keys)
+
+
+def _determinism_for_table(table_key: str) -> str:
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is not None:
+        policy = schema.finalize_policy
+        if policy is not None and policy.dedupe is not None and policy.dedupe.tier is not None:
+            return policy.dedupe.tier
+    keys = resolve_canonical_sort_keys(schema)
+    if keys == ():
+        return "throughput"
+    if keys:
+        return "canonical"
+    return "stable_set"
+
+
+def _apply_subsystem_graph_metadata(store: RxGraphStore) -> None:
+    ordering_keys = _ordering_keys_for_table(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY)
+    metadata = GraphMetadata(
+        weight_policy=store.weight_policy.name,
+        graph_kind="SUBSYSTEM_GRAPH",
+        ordering_keys=ordering_keys,
+        determinism_tier=_determinism_for_table(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
+    )
+    apply_graph_metadata(store.graph, metadata)
 
 
 def _subsystem_centralities(
@@ -95,10 +134,12 @@ def _build_subsystem_graph(
         node_ids.add(src_sub)
         node_ids.add(dst_sub)
     if not edge_rows and not node_ids:
-        return RxGraphStore.directed(
+        store = RxGraphStore.directed(
             weight_policy=DEFAULT_WEIGHT_POLICY,
             numeric_policy=DEFAULT_NUMERIC_POLICY,
         )
+        _apply_subsystem_graph_metadata(store)
+        return store
     spec = EdgeBuildSpec(
         directed=True,
         weight_policy=DEFAULT_WEIGHT_POLICY,
@@ -110,7 +151,9 @@ def _build_subsystem_graph(
         node_hint=len(node_ids) if node_ids else None,
         edge_hint=len(edge_rows),
     )
-    return build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
+    store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
+    _apply_subsystem_graph_metadata(store)
+    return store
 
 
 def _matches_optional_scope(value: object, expected: str) -> bool:

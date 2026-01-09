@@ -14,10 +14,10 @@ from codeintel.core.columnar.compute_helpers import (
     require_array,
     sort_options,
 )
-from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.conversion import empty_table_from_schema, reader_to_table
+from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
 from codeintel.core.columnar.iter import iter_rows
-from codeintel.core.columnar.kernels import (
+from codeintel.core.columnar.kernel_shared import (
     SortKey,
     hash_struct_ordinal,
     stable_sort_indices,
@@ -354,6 +354,32 @@ def stable_dedupe_with_ties(
     )
 
 
+def stable_dedupe_for_context(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+    order_by: Sequence[SortKey] = (),
+    tie_breakers: Sequence[SortKey] = (),
+    ctx: ExecutionContext | None = None,
+) -> pa.Table:
+    """Deduplicate with deterministic tie-breakers derived from context.
+
+    Returns
+    -------
+    pyarrow.Table
+        Deduplicated table honoring context determinism.
+    """
+    resolved_ctx = resolve_execution_context(ctx)
+    require_tie_breakers = resolved_ctx.resolve_determinism() == "canonical"
+    return stable_dedupe_with_ties(
+        table,
+        key_columns=key_columns,
+        order_by=order_by,
+        tie_breakers=tie_breakers,
+        require_tie_breakers=require_tie_breakers,
+    )
+
+
 def _dedupe_keep_best_by_score(
     table: pa.Table,
     *,
@@ -432,7 +458,7 @@ def _dedupe_keep_first_python(
         seen.add(key)
         rows.append(row)
     if not rows:
-        return pa.Table.from_batches([], schema=table.schema)
+        return empty_table_from_schema(table.schema)
     return pa.Table.from_pylist(rows, schema=table.schema)
 
 
@@ -689,7 +715,7 @@ def _drop_duplicates(
             seen.add(key)
             rows.append(row)
         if not rows:
-            return pa.Table.from_batches([], schema=table.schema)
+            return empty_table_from_schema(table.schema)
         return pa.Table.from_pylist(rows, schema=table.schema)
 
 
@@ -703,5 +729,6 @@ __all__ = [
     "dedupe_keep_first_after_sort",
     "dedupe_table_for_table",
     "normalize_dedupe_tier",
+    "stable_dedupe_for_context",
     "stable_dedupe_with_ties",
 ]

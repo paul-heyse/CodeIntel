@@ -14,7 +14,11 @@ from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
-from codeintel.core.columnar.conversion import table_to_frame
+from codeintel.core.columnar.conversion import (
+    table_from_batches,
+    table_to_frame,
+    tabular_to_arrow_reader,
+)
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBRelation
@@ -349,7 +353,7 @@ def records_from_arrow_batch(
     """
     if batch.num_rows == 0:
         return []
-    table = pa.Table.from_batches([batch])
+    table = table_from_batches([batch])
     frame = table_to_frame(table)
     if columns is not None:
         frame = frame.select(list(columns))
@@ -440,7 +444,7 @@ def iter_records_from_relation(
     dict[str, object]
         Normalized row dictionaries with missing values set to None.
     """
-    reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = tabular_to_arrow_reader(relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
     yield from iter_records_from_arrow_reader(
         reader,
         columns=columns,
@@ -500,7 +504,7 @@ def iter_json_lines_from_relation(
     str
         JSON Lines-encoded rows.
     """
-    reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = tabular_to_arrow_reader(relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
     yield from iter_json_lines_from_arrow_reader(
         reader,
         columns=columns,
@@ -560,7 +564,7 @@ def iter_tuples_from_relation(
     tuple[object, ...]
         Row tuples in column order.
     """
-    reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = tabular_to_arrow_reader(relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
     yield from iter_tuples_from_arrow_reader(
         reader,
         columns=columns,
@@ -612,7 +616,7 @@ def records_from_relation(
     list[dict[str, object]]
         List of row dictionaries with missing values set to None.
     """
-    reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = tabular_to_arrow_reader(relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
     return records_from_arrow_reader(reader, cancel_check=cancel_check)
 
 

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import duckdb
@@ -23,12 +25,14 @@ from codeintel.core.columnar.plan_ops import (
     ScanPlanOptions,
     build_scan_plan,
 )
+from codeintel.core.columnar.queryspec import QuerySpec
+from codeintel.core.columnar.run_manifest import RunManifestOptions
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
-from codeintel.core.columnar.streaming import DatasetScanOptions
+from codeintel.core.columnar.streaming import DatasetScanOptions, ScanTelemetry
 from codeintel.core.filters import FilterOpError, validate_filter_value
 from codeintel.core.schemas.primitives import COMPLEX_TYPE_BASES, column_type_base
 from codeintel.core.schemas.service import get_schema_service
@@ -44,7 +48,6 @@ from codeintel.storage.datasets.manifest_index import (
     dataset_scanner_for_entry,
     dataset_schema_for_entry,
 )
-from codeintel.storage.datasets.scanning import QueryPlanSpec
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
     ConstantExpression,
@@ -56,7 +59,7 @@ from codeintel.storage.duckdb_types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Sequence
 
     from duckdb.typing import DuckDBPyType
 
@@ -109,7 +112,8 @@ class RelationBuildContext:
 class RelationPlanOptions:
     """Options for building DuckDB relation plans."""
 
-    plan_spec: QueryPlanSpec | None = None
+    query_spec: QuerySpec | None = None
+    external_plan: ExternalPlanSpec | None = None
     apply_ast: bool = True
 
 
@@ -179,24 +183,28 @@ def build_relation_plan(
         Raised when the query plan cannot be represented.
     """
     resolved_options = options or RelationPlanOptions()
-    plan_spec = resolved_options.plan_spec
+    query_spec = resolved_options.query_spec
     filter_expression = (
-        plan_spec.filter_expression
-        if plan_spec is not None
+        query_spec.scan_filter_expression()
+        if query_spec is not None
         else dataset_filter_expression(
             filters=spec.filters,
             allowed_columns=spec.allowed_columns,
             column_types=context.column_types,
         )
     )
-    external_plan = plan_spec.external_plan if plan_spec is not None else None
+    external_plan = resolved_options.external_plan
     projection_columns = None
     if not _ast_has_joins(ast):
         ast_columns = _projection_columns_from_ast(ast)
         if ast_columns is None:
             projection_columns = None
-        elif plan_spec is not None and plan_spec.columns:
-            projection_columns = tuple(sorted(set(plan_spec.columns) | set(ast_columns)))
+        elif query_spec is not None:
+            query_columns = _projection_columns_for_queryspec(query_spec)
+            if query_columns is None:
+                projection_columns = ast_columns
+            else:
+                projection_columns = tuple(sorted(set(query_columns) | set(ast_columns)))
         else:
             projection_columns = ast_columns
     scan_plan = _RelationScanPlan(
@@ -337,6 +345,15 @@ def _projection_columns_from_ast(ast: exp.Expression) -> tuple[str, ...] | None:
     if not columns:
         return None
     return tuple(sorted(columns))
+
+
+def _projection_columns_for_queryspec(spec: QuerySpec) -> tuple[str, ...] | None:
+    columns = spec.scan_columns(provenance=False)
+    if columns is None:
+        return None
+    if isinstance(columns, Mapping):
+        return None
+    return tuple(columns)
 
 
 def _default_order_by_columns(
@@ -783,35 +800,43 @@ def _try_scan_arrow_relation(
         return None
 
 
+@dataclass(frozen=True, slots=True)
+class _FinalizeReaderRequest:
+    table_key: str
+    engine_name: str | None = None
+    use_threads: bool | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
+    scan_telemetry: ScanTelemetry | None = None
+
+
 def _finalize_reader_table(
     reader: pa.RecordBatchReader,
     *,
-    table_key: str,
-    engine_name: str | None = None,
-    use_threads: bool | None = None,
+    request: _FinalizeReaderRequest,
 ) -> pa.Table | None:
     def _read_table() -> pa.Table:
         return reader_to_table(reader)
 
     def _with_engine_context(table: pa.Table) -> pa.Table:
-        if engine_name is None:
+        if request.engine_name is None:
             return table
         if _EXTERNAL_PLAN_ENGINE_COLUMN in table.column_names:
             return table
-        engine_values = pa.array([engine_name] * table.num_rows, type=pa.string())
+        engine_values = pa.array([request.engine_name] * table.num_rows, type=pa.string())
         return table.append_column(_EXTERNAL_PLAN_ENGINE_COLUMN, engine_values)
 
     context_fields: tuple[str, ...] = (
-        (_EXTERNAL_PLAN_ENGINE_COLUMN,) if engine_name is not None else ()
+        (_EXTERNAL_PLAN_ENGINE_COLUMN,) if request.engine_name is not None else ()
     )
-    resolved_threads = True if use_threads is None else use_threads
+    resolved_threads = True if request.use_threads is None else request.use_threads
     execution_ctx = ExecutionContext(
         use_threads=resolved_threads,
         determinism="throughput",
         combine_chunks=True,
     )
     finalize_spec = finalize_spec_for_table(
-        table_key,
+        request.table_key,
         mode="tolerant",
         context_fields=context_fields,
         dedupe=FinalizeDedupe(
@@ -828,6 +853,9 @@ def _finalize_reader_table(
             options=PipelineRunOptions(
                 post=[_with_engine_context],
                 ctx=execution_ctx,
+                manifest_dir=request.manifest_dir,
+                manifest_options=request.manifest_options,
+                scan_telemetry=request.scan_telemetry,
             ),
         )
     except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
@@ -873,9 +901,11 @@ def _scan_aligned_sources(
         if finalize_reader:
             finalized = _finalize_reader_table(
                 reader.reader,
-                table_key=context.table_key,
-                engine_name=reader.engine_name,
-                use_threads=context.use_threads,
+                request=_FinalizeReaderRequest(
+                    table_key=context.table_key,
+                    engine_name=reader.engine_name,
+                    use_threads=context.use_threads,
+                ),
             )
             sources.append(finalized if finalized is not None else reader.reader)
         else:
@@ -900,9 +930,11 @@ def _scan_unaligned_sources(
         if finalize_reader:
             finalized = _finalize_reader_table(
                 source.reader,
-                table_key=context.table_key,
-                engine_name=source.engine_name,
-                use_threads=context.use_threads,
+                request=_FinalizeReaderRequest(
+                    table_key=context.table_key,
+                    engine_name=source.engine_name,
+                    use_threads=context.use_threads,
+                ),
             )
             sources.append(finalized if finalized is not None else source.reader)
         else:

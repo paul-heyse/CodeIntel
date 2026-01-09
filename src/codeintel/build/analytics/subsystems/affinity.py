@@ -20,13 +20,13 @@ from codeintel.build.graphs.rx.build_from_edges import (
 from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, DEFAULT_WEIGHT_POLICY
-from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges_for_join
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
@@ -210,19 +210,18 @@ def _config_edge_tuples(
     edges: list[tuple[str, str, float]] = []
     for row in iter_rows(config_rowset, ("reference_modules",)):
         reference_modules = row.get("reference_modules")
-        for raw_modules in _list_values(reference_modules):
-            modules_list = _flatten_tags(raw_modules)
-            filtered = [module for module in modules_list if module in ctx.modules]
-            if len(filtered) < MIN_SHARED_MODULES:
-                continue
-            edge_weight = ctx.weights.config_weight / max(len(filtered) - 1, 1)
-            if edge_weight <= 0:
-                continue
-            for idx, left in enumerate(filtered):
-                for right in filtered[idx + 1 :]:
-                    if left == right:
-                        continue
-                    edges.append((left, right, float(edge_weight)))
+        modules_list = _flatten_tags(reference_modules)
+        filtered = [module for module in modules_list if module in ctx.modules]
+        if len(filtered) < MIN_SHARED_MODULES:
+            continue
+        edge_weight = ctx.weights.config_weight / max(len(filtered) - 1, 1)
+        if edge_weight <= 0:
+            continue
+        for idx, left in enumerate(filtered):
+            for right in filtered[idx + 1 :]:
+                if left == right:
+                    continue
+                edges.append((left, right, float(edge_weight)))
     return edges
 
 
@@ -314,7 +313,12 @@ def _module_rowset(
         raise ValueError(msg)
     plan = snapshot_plan(
         frame,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key="core.modules",
+        ),
     )
     plan = plan.filter(E.is_valid("module"))
     plan = plan.project(
@@ -353,7 +357,12 @@ def _module_lookup_table(
         )
     plan = snapshot_plan(
         frame,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key="core.modules",
+        ),
     )
     plan = plan.project(
         {
@@ -465,7 +474,12 @@ def _symbol_edge_rowset(
     plan = snapshot_plan(
         frame,
         columns=("use_path", "def_path"),
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key="graph.symbol_use_edges",
+        ),
     )
     plan = plan.filter(E.and_(E.is_valid("use_path"), E.is_valid("def_path")))
     filtered = _materialize_plan(plan, ctx=ctx)
@@ -494,7 +508,12 @@ def _import_edge_rowset(
     plan = snapshot_plan(
         frame,
         columns=("src_module", "dst_module"),
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key="graph.import_graph_edges",
+        ),
     )
     plan = plan.filter(E.and_(E.is_valid("src_module"), E.is_valid("dst_module")))
     filtered = _materialize_plan(plan, ctx=ctx)
@@ -539,11 +558,28 @@ def _config_module_rowset(
         }
     )
     filtered = _materialize_plan(plan, ctx=ctx)
-    return grouped_rollup_table(
+    exploded = explode_edges_for_join(
         filtered,
+        spec=ExplodeSpec(
+            src_col="reference_modules",
+            dst_list_col="reference_module",
+            repeat_cols=("config_path", "key"),
+            null_list_policy="empty",
+            null_child_policy="drop",
+            error_context_cols=("config_path", "key"),
+        ),
+        allowed_columns=("config_path", "key", "reference_module"),
+    )
+    return grouped_rollup_table(
+        exploded.good,
         spec=GroupedRollupSpec(
             keys=("config_path", "key"),
-            aggregates=[("reference_modules", "list", None, "reference_modules")],
+            aggregates=[("reference_module", "list", None, "reference_modules")],
+            pre_sort_keys=(
+                ("config_path", "ascending"),
+                ("key", "ascending"),
+                ("reference_module", "ascending"),
+            ),
         ),
         ctx=ctx,
     )
@@ -556,21 +592,6 @@ def _flatten_tags(raw: object) -> list[str]:
             tags.extend(parse_tags(item))
         return tags
     return parse_tags(raw)
-
-
-def _list_values(value: object) -> list[object]:
-    if isinstance(value, list):
-        return value
-    if isinstance(value, tuple):
-        return list(value)
-    return []
-
-
-def add_graph_weight(graph: RxGraphStore, left: str, right: str, weight: float) -> None:
-    """Accumulate symmetric edge weights on an undirected graph."""
-    if weight <= 0 or left == right:
-        return
-    graph.add_weighted_edge(left, right, weight=weight)
 
 
 def graph_to_adjacency(graph: GraphInput) -> dict[str, dict[str, float]]:

@@ -9,6 +9,7 @@ from codeintel.build.graphs.compute.metrics.cfg import (
     cfg_dominance_metrics,
     cfg_longest_path_length,
     cfg_reachable_nodes,
+    normalize_cfg_graph,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "cfg_dominance_metrics",
     "cfg_longest_path_length",
     "cfg_reachable_nodes",
+    "normalize_cfg_graph",
 ]

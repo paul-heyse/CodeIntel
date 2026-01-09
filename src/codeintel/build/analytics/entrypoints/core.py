@@ -25,6 +25,7 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
 from codeintel.build.analytics.compute.row_builders import buffer_for_table
+from codeintel.build.analytics.utilities.list_semantics import normalize_list_semantics
 from codeintel.build.analytics.utilities.snapshot import (
     SnapshotContext,
     require_columns,
@@ -44,6 +45,10 @@ from codeintel.core.schemas.row_models import columns_for_table_key
 
 ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
 ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
+CORE_MODULES_TABLE_KEY = "core.modules"
+TEST_CATALOG_TABLE_KEY = "analytics.test_catalog"
+SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
+SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
 
 
 def _columns_for_table(table_key: str) -> list[str]:
@@ -260,10 +265,10 @@ def _materialize_candidate(
     extra_payload = cand.extra or {}
     if feature_vector is not None:
         feature_summary = {
-            "http_server_libs": sorted(feature_vector.http_server_libs),
-            "http_client_libs": sorted(feature_vector.http_client_libs),
-            "db_libs": sorted(feature_vector.db_libs),
-            "message_libs": sorted(feature_vector.message_libs),
+            "http_server_libs": normalize_list_semantics(feature_vector.http_server_libs),
+            "http_client_libs": normalize_list_semantics(feature_vector.http_client_libs),
+            "db_libs": normalize_list_semantics(feature_vector.db_libs),
+            "message_libs": normalize_list_semantics(feature_vector.message_libs),
             "uses_network": feature_vector.io_flags.uses_network,
             "uses_db": feature_vector.io_flags.uses_db,
             "uses_filesystem": feature_vector.io_flags.uses_filesystem,
@@ -349,7 +354,13 @@ def _module_context_from_frame(
 ) -> dict[str, ModuleContext]:
     if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx)
+    filtered = _rows_for_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+        table_key=CORE_MODULES_TABLE_KEY,
+    )
     context: dict[str, ModuleContext] = {}
     for row in filtered:
         rel_path = row.get("path")
@@ -375,7 +386,13 @@ def _test_meta_from_frame(
     meta: dict[str, TestMeta] = {}
     if frame is None or frame.num_rows == 0:
         return meta
-    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx)
+    filtered = _rows_for_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+        table_key=TEST_CATALOG_TABLE_KEY,
+    )
     for row in filtered:
         test_id = row.get("test_id")
         test_goid_h128 = row.get("test_goid_h128")
@@ -405,12 +422,13 @@ def _subsystem_maps_from_frame(
     subsystem_by_module: dict[str, str] = {}
     subsystem_names: dict[str, str] = {}
     if subsystem_modules_frame is not None and subsystem_modules_frame.num_rows > 0:
-        filtered = _rows_for_snapshot(
-            subsystem_modules_frame,
-            repo=repo,
-            commit=commit,
-            ctx=ctx,
-        )
+    filtered = _rows_for_snapshot(
+        subsystem_modules_frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+        table_key=SUBSYSTEM_MODULES_TABLE_KEY,
+    )
         for row in filtered:
             module = row.get("module")
             subsystem_id = row.get("subsystem_id")
@@ -421,7 +439,13 @@ def _subsystem_maps_from_frame(
             )
 
     if subsystems_frame is not None and subsystems_frame.num_rows > 0:
-        filtered = _rows_for_snapshot(subsystems_frame, repo=repo, commit=commit, ctx=ctx)
+        filtered = _rows_for_snapshot(
+            subsystems_frame,
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=SUBSYSTEMS_TABLE_KEY,
+        )
         for row in filtered:
             subsystem_id = row.get("subsystem_id")
             name = row.get("name")
@@ -439,11 +463,17 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
     ctx: ExecutionContext | RuntimeExecutionContext | None,
+    table_key: str | None = None,
 ) -> list[dict[str, object]]:
     require_columns(frame, ("repo", "commit"))
     filtered = snapshot_table(
         frame,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=table_key,
+        ),
     )
     return list(iter_rows(filtered))
 

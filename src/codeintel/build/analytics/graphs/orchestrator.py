@@ -48,16 +48,16 @@ from typing import TYPE_CHECKING, Protocol
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.rx.algos import (
     GraphInput,
+    edge_subgraph_by_index,
+    empty_rx_graph,
     ensure_directed_store,
     ensure_store,
     to_undirected_store,
+    union_graphs,
 )
-from codeintel.build.graphs.rx.build_from_edges import (
-    BuildStoreOptions,
-    EdgeBuildSpec,
-    build_store_from_edge_tuples,
-)
-from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
+from codeintel.build.graphs.rx.iterators import iter_edge_index_pairs
+from codeintel.build.graphs.rx.metadata import metadata_from_graph
+from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
@@ -242,14 +242,8 @@ _NO_OP_GRAPH_FILTERS: GraphFilterProtocol = _NoOpGraphFilters()
 
 
 def _copy_without_self_loops(store: RxGraphStore) -> RxGraphStore:
-    edge_rows: list[tuple[object, object, float]] = []
-    node_ids = list(store.node_ids())
-    node_attrs = {node_id: dict(store.get_node_attrs(node_id)) for node_id in node_ids}
-    for src_id, dst_id, weight in iter_edge_id_weights(store):
-        if src_id == dst_id:
-            continue
-        edge_rows.append((src_id, dst_id, weight))
-    if not edge_rows and not node_ids:
+    node_count = store.graph.num_nodes()
+    if node_count == 0:
         return (
             RxGraphStore.directed(
                 weight_policy=store.weight_policy,
@@ -261,19 +255,35 @@ def _copy_without_self_loops(store: RxGraphStore) -> RxGraphStore:
                 numeric_policy=store.numeric_policy,
             )
         )
-    spec = EdgeBuildSpec(
+    metadata = metadata_from_graph(store.graph)
+    edge_list = [
+        (src_idx, dst_idx)
+        for src_idx, dst_idx in iter_edge_index_pairs(store)
+        if src_idx != dst_idx
+    ]
+    edge_list.sort(
+        key=lambda edge: (
+            stable_key(store.index_to_id.get(edge[0], edge[0])),
+            stable_key(store.index_to_id.get(edge[1], edge[1])),
+        )
+    )
+    ordered_indices = sorted(
+        store.graph.node_indices(),
+        key=lambda idx: stable_key(store.index_to_id.get(idx, idx)),
+    )
+    edge_graph = edge_subgraph_by_index(store, edge_list)
+    isolate_graph = empty_rx_graph(
         directed=store.is_directed,
+        node_hint=len(ordered_indices),
+    )
+    isolate_graph.add_nodes_from([store.graph.get_node_data(idx) for idx in ordered_indices])
+    merged = union_graphs(edge_graph, isolate_graph, merge_nodes=True, merge_edges=True)
+    return RxGraphStore.from_rx_graph(
+        merged,
         weight_policy=store.weight_policy,
         numeric_policy=store.numeric_policy,
+        metadata=metadata,
     )
-    options = BuildStoreOptions(
-        stable_nodes=True,
-        node_ids=node_ids or None,
-        node_attrs=node_attrs or None,
-        node_hint=len(node_ids) if node_ids else None,
-        edge_hint=len(edge_rows),
-    )
-    return build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
 
 
 def build_graph_views(source_graph: GraphInput) -> GraphViews:

@@ -14,6 +14,7 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.functions.parsing import parse_python_file
+from codeintel.build.analytics.utilities.list_semantics import normalize_list_semantics
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
@@ -38,6 +39,7 @@ log = logging.getLogger(__name__)
 
 CONFIG_REFERENCES_TABLE_KEY = "analytics.config_references"
 CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
+CORE_MODULES_TABLE_KEY = "core.modules"
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,8 +102,8 @@ def compute_config_reference_rows(inputs: ConfigReferenceInputs) -> ColumnarRowB
     buffer = buffer_for_table(CONFIG_REFERENCES_TABLE_KEY)
     for entry in entries:
         accumulator = references.get(entry.key)
-        paths = sorted(accumulator.paths) if accumulator else []
-        modules = sorted(accumulator.modules) if accumulator else []
+        paths = normalize_list_semantics(accumulator.paths) if accumulator else []
+        modules = normalize_list_semantics(accumulator.modules) if accumulator else []
         buffer.append(
             {
                 "repo": inputs.snapshot.repo,
@@ -127,24 +129,13 @@ def _config_entries_from_tabular(
     ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> tuple[list[_ConfigKeyEntry], set[str]]:
     if isinstance(rows, pa.Table):
-        entry_table = _config_entry_rowset(rows, repo=repo, commit=commit, ctx=ctx)
-        return _config_entries_from_table(entry_table)
-    filtered: list[dict[str, object]] = []
-    for row in rows:
-        if not _matches_optional_scope(row.get("repo"), repo):
-            continue
-        if not _matches_optional_scope(row.get("commit"), commit):
-            continue
-        filtered.append(dict(row))
-    return _config_entries(filtered)
-
-
-def _matches_optional_scope(value: object, expected: str) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str) and not value.strip():
-        return True
-    return str(value) == expected
+        source = rows
+    else:
+        if not rows:
+            return [], set()
+        source = pa.Table.from_pylist(list(rows))
+    entry_table = _config_entry_rowset(source, repo=repo, commit=commit, ctx=ctx)
+    return _config_entries_from_table(entry_table)
 
 
 def _config_entry_rowset(
@@ -174,36 +165,15 @@ def _config_entry_rowset(
     return grouped_rollup_table(
         filtered,
         spec=GroupedRollupSpec(
-            keys=("config_path",),
-            aggregates=(("key", "list", None, "keys"),),
+            keys=("config_path", "key"),
+            aggregates=(),
+            pre_sort_keys=(
+                ("config_path", "ascending"),
+                ("key", "ascending"),
+            ),
         ),
         ctx=resolve_columnar_context(ctx),
     )
-
-
-def _config_entries(
-    rows: Sequence[Mapping[str, object]],
-) -> tuple[list[_ConfigKeyEntry], set[str]]:
-    entries: list[_ConfigKeyEntry] = []
-    keys: set[str] = set()
-    seen: set[tuple[str, str]] = set()
-    for row in rows:
-        config_path = row.get("config_path")
-        key = row.get("key")
-        if config_path is None or key is None:
-            continue
-        config_path_value = str(config_path).strip()
-        key_value = str(key).strip()
-        if not config_path_value or not key_value:
-            continue
-        normalized_path = normalize_path(config_path_value)
-        entry_key = (normalized_path, key_value)
-        if entry_key in seen:
-            continue
-        entries.append(_ConfigKeyEntry(config_path=normalized_path, key=key_value))
-        keys.add(key_value)
-        seen.add(entry_key)
-    return entries, keys
 
 
 def _config_entries_from_table(
@@ -211,26 +181,18 @@ def _config_entries_from_table(
 ) -> tuple[list[_ConfigKeyEntry], set[str]]:
     entries: list[_ConfigKeyEntry] = []
     keys: set[str] = set()
-    seen: set[tuple[str, str]] = set()
-    for config_path, key_list in iter_tuples(
+    for config_path, key in iter_tuples(
         table.to_reader(),
-        columns=("config_path", "keys"),
+        columns=("config_path", "key"),
     ):
-        if config_path is None:
+        if config_path is None or key is None:
             continue
         normalized_path = normalize_path(str(config_path).strip())
-        if not normalized_path:
+        key_value = str(key).strip()
+        if not normalized_path or not key_value:
             continue
-        for key in _list_values(key_list):
-            key_value = str(key).strip()
-            if not key_value:
-                continue
-            entry_key = (normalized_path, key_value)
-            if entry_key in seen:
-                continue
-            entries.append(_ConfigKeyEntry(config_path=normalized_path, key=key_value))
-            keys.add(key_value)
-            seen.add(entry_key)
+        entries.append(_ConfigKeyEntry(config_path=normalized_path, key=key_value))
+        keys.add(key_value)
     return entries, keys
 
 
@@ -297,7 +259,12 @@ def _module_rowset(
     plan = snapshot_plan(
         table,
         columns=tuple(columns),
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CORE_MODULES_TABLE_KEY,
+        ),
     )
     filters = [E.is_valid("path"), E.is_valid("module")]
     if "language" in table.column_names:

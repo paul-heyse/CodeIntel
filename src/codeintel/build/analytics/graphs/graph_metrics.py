@@ -38,13 +38,7 @@ from codeintel.build.analytics.graphs.orchestrator import (
     build_metrics_pipeline_rows,
 )
 from codeintel.build.graphs.builders import (
-    build_call_graph_from_rows as _build_call_graph_from_rows,
-)
-from codeintel.build.graphs.builders import (
     build_call_graph_from_tables as _build_call_graph_from_tables,
-)
-from codeintel.build.graphs.builders import (
-    build_import_graph_from_rows as _build_import_graph_from_rows,
 )
 from codeintel.build.graphs.builders import (
     build_import_graph_from_tables as _build_import_graph_from_tables,
@@ -52,7 +46,6 @@ from codeintel.build.graphs.builders import (
 from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
 from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
-from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 from codeintel.core.columnar.rows import ColumnarRowBuffer
@@ -77,7 +70,7 @@ def _filter_store(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphSt
     store = ensure_store(graph)
     allowed_set = set(allowed)
     node_indices = [
-        store.id_to_index[node_id] for node_id in allowed_set if node_id in store.id_to_index
+        store.id_to_index[node_id] for node_id in store.node_ids() if node_id in allowed_set
     ]
     if not node_indices:
         if store.is_directed:
@@ -89,7 +82,6 @@ def _filter_store(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphSt
             weight_policy=store.weight_policy,
             numeric_policy=store.numeric_policy,
         )
-    node_indices.sort(key=lambda idx: stable_key(store.index_to_id[idx]))
     subgraph, _ = store.graph.subgraph_with_nodemap(node_indices, preserve_attrs=True)
     return RxGraphStore.from_rx_graph(
         subgraph,
@@ -245,20 +237,6 @@ def build_graph_metric_filters_from_sets(
     )
 
 
-def build_call_graph_from_rows(
-    call_graph_edges: Iterable[Mapping[str, object]],
-    call_graph_nodes: Iterable[Mapping[str, object]] | None = None,
-) -> GraphInput:
-    """Build a call graph from scoped call graph edge/node rows.
-
-    Returns
-    -------
-    GraphInput
-        Directed call graph populated from the provided rows.
-    """
-    return _build_call_graph_from_rows(call_graph_edges, call_graph_nodes)
-
-
 def build_call_graph_from_tables(
     call_graph_edges: pa.Table,
     call_graph_nodes: pa.Table | None = None,
@@ -279,20 +257,6 @@ def build_call_graph_from_tables(
         repo=repo,
         commit=commit,
     )
-
-
-def build_import_graph_from_rows(
-    import_graph_edges: Iterable[Mapping[str, object]],
-    import_modules: Iterable[Mapping[str, object]] | None = None,
-) -> GraphInput:
-    """Build an import graph from scoped import edges and module rows.
-
-    Returns
-    -------
-    GraphInput
-        Directed import graph populated from the provided rows.
-    """
-    return _build_import_graph_from_rows(import_graph_edges, import_modules)
 
 
 def build_import_graph_from_tables(

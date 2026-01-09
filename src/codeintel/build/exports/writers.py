@@ -13,6 +13,11 @@ import pyarrow.parquet as pq
 from codeintel.build.tabular.arrow_ops import json_writer_available, write_json_streaming
 from codeintel.build.tabular.compute_helpers import array_from_compute
 from codeintel.build.tabular.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.conversion import (
+    empty_table_from_schema,
+    table_from_batches,
+    tabular_to_arrow_reader,
+)
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
@@ -129,7 +134,7 @@ def write_jsonl_records(
     if serializer is not default_json_serializer:
         msg = "Custom JSON serializers are not supported for columnar JSONL exports"
         raise ValueError(msg)
-    reader = rel.fetch_record_batch(batch_size)
+    reader = tabular_to_arrow_reader(rel, batch_size=batch_size)
     return write_jsonl_reader(output_path, reader=reader, record_type=record_type)
 
 
@@ -251,7 +256,7 @@ def write_parquet_relation(
         row_count_row = rel.aggregate("count(*)").fetchone()
         return _coerce_row_count(row_count_row[0]) if row_count_row else 0
 
-    reader = rel.fetch_record_batch(batch_size)
+    reader = tabular_to_arrow_reader(rel, batch_size=batch_size)
     return write_parquet_reader(
         reader=reader,
         output_path=output_path,
@@ -295,11 +300,11 @@ def write_parquet_reader(
         for batch in _iter_batches(reader):
             rows_written += batch.num_rows
             wrote_batches = True
-            table = pa.Table.from_batches([cast("pa.RecordBatch", batch)], schema=reader.schema)
+            table = table_from_batches([cast("pa.RecordBatch", batch)], schema=reader.schema)
             table = _maybe_dictionary_encode_table(table, dictionary_columns)
             writer.write_table(table)
     if not wrote_batches:
-        empty_table = pa.Table.from_batches([], schema=reader.schema)
+        empty_table = empty_table_from_schema(reader.schema)
         empty_table = _maybe_dictionary_encode_table(empty_table, dictionary_columns)
         pq.write_table(
             empty_table,

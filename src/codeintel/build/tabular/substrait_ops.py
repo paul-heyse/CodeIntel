@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.plan_ops import register_external_plan_runner
 
 try:
@@ -112,7 +113,7 @@ def _reader_from_result(result: pa.RecordBatchReader | pa.Table) -> pa.RecordBat
     if isinstance(result, pa.RecordBatchReader):
         return result
     if isinstance(result, pa.Table):
-        return pa.RecordBatchReader.from_batches(result.schema, result.to_batches())
+        return table_to_reader(result, batch_size=None)
     msg = f"Unexpected Substrait result type: {type(result)}"
     raise TypeError(msg)
 

@@ -57,6 +57,9 @@ def _columns_for_table(table_key: str) -> list[str]:
 DATA_MODELS_COLS = _columns_for_table("analytics.data_models")
 DATA_MODEL_FIELDS_COLS = _columns_for_table("analytics.data_model_fields")
 DATA_MODEL_RELATIONSHIPS_COLS = _columns_for_table("analytics.data_model_relationships")
+CORE_GOIDS_TABLE_KEY = "core.goids"
+CORE_MODULES_TABLE_KEY = "core.modules"
+CORE_DOCSTRINGS_TABLE_KEY = "core.docstrings"
 
 log = logging.getLogger(__name__)
 
@@ -670,8 +673,18 @@ def _load_class_metadata(
     list[ClassMeta]
         Class metadata entries for the snapshot.
     """
-    goids_filtered = _rows_for_snapshot(goids_frame, repo=repo, commit=commit)
-    modules_filtered = _rows_for_snapshot(modules_frame, repo=repo, commit=commit)
+    goids_filtered = _rows_for_snapshot(
+        goids_frame,
+        repo=repo,
+        commit=commit,
+        table_key=CORE_GOIDS_TABLE_KEY,
+    )
+    modules_filtered = _rows_for_snapshot(
+        modules_frame,
+        repo=repo,
+        commit=commit,
+        table_key=CORE_MODULES_TABLE_KEY,
+    )
     module_by_path: dict[str, str] = {}
     for row in modules_filtered:
         path = row.get("path")
@@ -717,7 +730,12 @@ def _doc_map(
     dict[tuple[str, str], tuple[str | None, str | None]]
         Mapping of (path, qualname) to short and long docstring summaries.
     """
-    filtered = _rows_for_snapshot(docstrings_frame, repo=repo, commit=commit)
+    filtered = _rows_for_snapshot(
+        docstrings_frame,
+        repo=repo,
+        commit=commit,
+        table_key=CORE_DOCSTRINGS_TABLE_KEY,
+    )
     mapping: dict[tuple[str, str], tuple[str | None, str | None]] = {}
     for row in filtered:
         kind = row.get("kind")
@@ -742,11 +760,17 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
     ctx: ExecutionContext | None = None,
+    table_key: str | None = None,
 ) -> list[dict[str, object]]:
     require_columns(frame, ("repo", "commit"))
     filtered = snapshot_table(
         frame,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=table_key,
+        ),
     )
     return list(iter_rows(filtered))
 

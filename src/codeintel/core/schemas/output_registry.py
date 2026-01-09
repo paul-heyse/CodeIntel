@@ -1871,6 +1871,15 @@ MODULES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         finalize_policy=FinalizePolicy(
             dedupe=FinalizeDedupeSpec(prefer_columns=("mtime_ns", "content_hash")),
         ),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "rel_path",
+                "language",
+                "size_bytes",
+                "mtime_ns",
+                "content_hash",
+            ),
+        ),
         description="Per-commit file digests used for incremental ingestion",
     ),
     TableSchema(
@@ -1884,6 +1893,9 @@ MODULES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("generated_at", "TIMESTAMP"),
         ],
         primary_key=("repo", "commit"),
+        plan_policy=PlanPolicy(
+            default_projection=("repo", "commit", "modules", "overlays", "generated_at"),
+        ),
         description="Per-commit module manifest and overlays",
     ),
 )
@@ -1902,6 +1914,9 @@ FILE_LINE_INDEX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "rel_path", "line"),
         indexes=(Index("idx_core_file_line_index_path", ("rel_path",)),),
+        plan_policy=PlanPolicy(
+            default_projection=("rel_path", "line", "start_byte", "end_byte", "encoding"),
+        ),
         description="Line-level byte offsets for each source file.",
     ),
 )
@@ -1915,6 +1930,16 @@ EXAMPLE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("value", "INTEGER", nullable=False),
         ],
         primary_key=("message", "value"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "message",
+                "value",
+            ),
+            join_safe_columns=(
+                "message",
+                "value",
+            ),
+        ),
         finalize_policy=FinalizePolicy(
             required_non_null=("message", "value"),
             dedupe=FinalizeDedupeSpec(keys=("message", "value")),
@@ -2162,6 +2187,17 @@ SCIP_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Index("idx_core_scip_module_state_path", ("rel_path",)),
             Index("idx_core_scip_module_state_repo_commit", ("repo", "commit")),
         ),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "rel_path",
+                "content_hash",
+                "options_hash",
+                "tool_version",
+                "environment_source",
+                "shard_path",
+                "updated_at",
+            ),
+        ),
         description="Per-module SCIP shard state for incremental updates",
     ),
 )
@@ -2289,6 +2325,24 @@ SCIP_ANALYTICS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             "package_name",
             "package_version",
         ),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "package_manager",
+                "package_name",
+                "package_version",
+                "symbol_count",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "package_manager",
+                "package_name",
+                "package_version",
+            ),
+        ),
         description="Aggregated external symbol usage derived from SCIP external symbols.",
     ),
     TableSchema(
@@ -2393,6 +2447,23 @@ TYPING_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("has_errors", "BOOLEAN", nullable=False),
         ],
         primary_key=("repo", "commit", "rel_path"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "rel_path",
+                "pyrefly_errors",
+                "pyright_errors",
+                "ruff_errors",
+                "total_errors",
+                "has_errors",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "rel_path",
+            ),
+        ),
         description="Per-file static diagnostic counts",
     ),
 )
@@ -2453,6 +2524,20 @@ HOTSPOTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("score", "DOUBLE"),
         ],
         primary_key=("rel_path",),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "rel_path",
+                "commit_count",
+                "author_count",
+                "lines_added",
+                "lines_deleted",
+                "complexity",
+                "score",
+            ),
+            join_safe_columns=(
+                "rel_path",
+            ),
+        ),
         description="Repository change hotspots by file path.",
     ),
 )
@@ -2478,6 +2563,27 @@ TESTS_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP"),
         ],
         primary_key=("test_id",),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "test_id",
+                "test_goid_h128",
+                "urn",
+                "repo",
+                "commit",
+                "rel_path",
+                "qualname",
+                "kind",
+                "status",
+                "duration_ms",
+                "extras",
+                "parametrized",
+                "flaky",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "test_id",
+            ),
+        ),
         indexes=(Index("idx_analytics_test_catalog_id", ("test_id",), unique=True),),
         finalize_policy=FinalizePolicy(
             list_policies=(FinalizeListPolicySpec(column="extras.markers", null_policy="empty"),),
@@ -2527,6 +2633,52 @@ TESTS_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP"),
         ],
         primary_key=("repo", "commit", "test_id"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "test_id",
+                "test_goid_h128",
+                "urn",
+                "rel_path",
+                "module",
+                "qualname",
+                "language",
+                "kind",
+                "status",
+                "duration_ms",
+                "extras",
+                "flaky",
+                "last_run_at",
+                "functions_covered_count",
+                "subsystems_covered_count",
+                "primary_subsystem_id",
+                "assert_count",
+                "raise_count",
+                "uses_parametrize",
+                "uses_fixtures",
+                "io_bound",
+                "uses_network",
+                "uses_db",
+                "uses_filesystem",
+                "uses_subprocess",
+                "flakiness_score",
+                "importance_score",
+                "notes",
+                "tg_degree",
+                "tg_weighted_degree",
+                "tg_proj_degree",
+                "tg_proj_weight",
+                "tg_proj_clustering",
+                "tg_proj_betweenness",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "test_id",
+            ),
+        ),
         indexes=(Index("idx_analytics_test_profile_id", ("test_id",)),),
         finalize_policy=FinalizePolicy(
             list_policies=(
@@ -2565,6 +2717,27 @@ TESTS_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP"),
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "function_goid_h128",
+                "repo",
+                "commit",
+                "tests_degree",
+                "tests_weighted_degree",
+                "tests_degree_centrality",
+                "proj_degree",
+                "proj_weight",
+                "proj_clustering",
+                "proj_betweenness",
+                "tests_risk_weighted_degree",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+            ),
+        ),
         indexes=(
             Index(
                 "idx_analytics_test_graph_metrics_functions_goid",
@@ -2592,6 +2765,29 @@ TESTS_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP"),
         ],
         primary_key=("repo", "commit", "test_id", "function_goid_h128"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "test_id",
+                "test_goid_h128",
+                "function_goid_h128",
+                "urn",
+                "repo",
+                "commit",
+                "rel_path",
+                "qualname",
+                "covered_lines",
+                "executable_lines",
+                "coverage_ratio",
+                "last_status",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "test_id",
+                "function_goid_h128",
+            ),
+        ),
         indexes=(
             Index("idx_analytics_test_coverage_edges_test_id", ("test_id",)),
             Index("idx_analytics_test_coverage_edges_function", ("function_goid_h128",)),
@@ -3272,6 +3468,40 @@ ENTRYPOINTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "entrypoint_id"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "entrypoint_id",
+                "kind",
+                "framework",
+                "handler_goid_h128",
+                "handler_urn",
+                "handler_rel_path",
+                "handler_module",
+                "handler_qualname",
+                "http_method",
+                "route_path",
+                "auth_required",
+                "command_name",
+                "schedule",
+                "trigger",
+                "subsystem_id",
+                "subsystem_name",
+                "extras",
+                "tests_touching",
+                "failing_tests",
+                "slow_tests",
+                "flaky_tests",
+                "last_test_status",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "entrypoint_id",
+            ),
+        ),
         finalize_policy=FinalizePolicy(
             list_policies=(
                 FinalizeListPolicySpec(
@@ -3298,6 +3528,24 @@ ENTRYPOINTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "entrypoint_id", "test_id"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "entrypoint_id",
+                "test_id",
+                "test_goid_h128",
+                "status",
+                "duration_ms",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "entrypoint_id",
+                "test_id",
+            ),
+        ),
         description="Bipartite edges between entrypoints and tests",
     ),
 )
@@ -3324,6 +3572,30 @@ EXTERNAL_DEPS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "dep_id"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "dep_id",
+                "library",
+                "service_name",
+                "category",
+                "language",
+                "severity",
+                "criticality",
+                "risk_score",
+                "function_count",
+                "callsite_count",
+                "extras",
+                "risk_level",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "dep_id",
+            ),
+        ),
         finalize_policy=FinalizePolicy(
             list_policies=(
                 FinalizeListPolicySpec(column="extras.modules", null_policy="empty"),
@@ -3357,6 +3629,34 @@ EXTERNAL_DEPS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "dep_id", "function_goid_h128"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "dep_id",
+                "library",
+                "service_name",
+                "language",
+                "severity",
+                "criticality",
+                "risk_score",
+                "matched_pattern",
+                "function_goid_h128",
+                "function_urn",
+                "rel_path",
+                "module",
+                "qualname",
+                "callsite_count",
+                "extras",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "dep_id",
+                "function_goid_h128",
+            ),
+        ),
         finalize_policy=FinalizePolicy(
             list_policies=(FinalizeListPolicySpec(column="extras.modes", null_policy="empty"),),
         ),
@@ -3924,6 +4224,24 @@ FUNCTION_ANALYTICS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "function_goid_h128", "issue"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+                "created_at",
+                "rel_path",
+                "qualname",
+                "issue",
+                "detail",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+                "issue",
+            ),
+        ),
         indexes=(Index("idx_function_validation_repo_commit", ("repo", "commit")),),
         description="Validation findings for function analytics gaps",
     ),
@@ -4121,6 +4439,44 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "created_at",
+                "function_goid_h128",
+                "urn",
+                "repo",
+                "commit",
+                "rel_path",
+                "language",
+                "kind",
+                "qualname",
+                "loc",
+                "logical_loc",
+                "cyclomatic_complexity",
+                "complexity_bucket",
+                "typedness_bucket",
+                "typedness_source",
+                "hotspot_score",
+                "file_typed_ratio",
+                "static_error_count",
+                "has_static_errors",
+                "executable_lines",
+                "covered_lines",
+                "coverage_ratio",
+                "tested",
+                "test_count",
+                "failing_test_count",
+                "last_test_status",
+                "risk_score",
+                "risk_level",
+                "extras",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+            ),
+        ),
         indexes=(Index("idx_analytics_goid_risk_factors_goid", ("function_goid_h128",)),),
         finalize_policy=FinalizePolicy(
             list_policies=(
@@ -4229,6 +4585,108 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "created_at",
+                "function_goid_h128",
+                "urn",
+                "repo",
+                "commit",
+                "rel_path",
+                "module",
+                "language",
+                "kind",
+                "qualname",
+                "start_line",
+                "end_line",
+                "loc",
+                "logical_loc",
+                "cyclomatic_complexity",
+                "complexity_bucket",
+                "param_count",
+                "positional_params",
+                "keyword_params",
+                "vararg",
+                "kwarg",
+                "max_nesting_depth",
+                "stmt_count",
+                "decorator_count",
+                "has_docstring",
+                "total_params",
+                "annotated_params",
+                "return_type",
+                "extras",
+                "fully_typed",
+                "partial_typed",
+                "untyped",
+                "typedness_bucket",
+                "typedness_source",
+                "file_typed_ratio",
+                "static_error_count",
+                "has_static_errors",
+                "executable_lines",
+                "covered_lines",
+                "coverage_ratio",
+                "tested",
+                "untested_reason",
+                "tests_touching",
+                "failing_tests",
+                "slow_tests",
+                "flaky_tests",
+                "last_test_status",
+                "dominant_test_status",
+                "slow_test_threshold_ms",
+                "created_in_commit",
+                "created_at_history",
+                "last_modified_commit",
+                "last_modified_at",
+                "age_days",
+                "commit_count",
+                "author_count",
+                "lines_added",
+                "lines_deleted",
+                "churn_score",
+                "stability_bucket",
+                "call_fan_in",
+                "call_fan_out",
+                "call_edge_in_count",
+                "call_edge_out_count",
+                "call_is_leaf",
+                "call_is_entrypoint",
+                "call_is_public",
+                "risk_score",
+                "risk_level",
+                "risk_component_coverage",
+                "risk_component_complexity",
+                "risk_component_static",
+                "risk_component_hotspot",
+                "is_pure",
+                "uses_io",
+                "touches_db",
+                "uses_time",
+                "uses_randomness",
+                "modifies_globals",
+                "modifies_closure",
+                "spawns_threads_or_tasks",
+                "has_transitive_effects",
+                "purity_confidence",
+                "return_nullability",
+                "has_preconditions",
+                "has_postconditions",
+                "has_raises",
+                "contract_confidence",
+                "role",
+                "framework",
+                "role_confidence",
+                "doc_short",
+                "doc_long",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+            ),
+        ),
         indexes=(Index("idx_analytics_function_profile_goid", ("function_goid_h128",)),),
         finalize_policy=FinalizePolicy(
             list_policies=(
@@ -4267,6 +4725,38 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at_1", "VARCHAR"),
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+                "urn",
+                "rel_path",
+                "module",
+                "qualname",
+                "created_in_commit",
+                "created_at",
+                "last_modified_commit",
+                "last_modified_at",
+                "age_days",
+                "commit_count",
+                "author_count",
+                "lines_added",
+                "lines_deleted",
+                "churn_score",
+                "stability_bucket",
+                "history_window_start",
+                "history_window_end",
+                "created_at_row",
+                "function_goid_h128_1",
+                "created_at_1",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+            ),
+        ),
         indexes=(Index("idx_analytics_function_history_goid", ("function_goid_h128",)),),
         description="Historical churn metadata per function over a reporting window.",
     ),
@@ -4297,6 +4787,37 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at_row_1", "VARCHAR"),
         ],
         primary_key=("repo", "entity_kind", "entity_stable_id", "commit"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "entity_kind",
+                "entity_stable_id",
+                "function_goid_h128",
+                "module",
+                "rel_path",
+                "language",
+                "qualname",
+                "commit",
+                "commit_ts",
+                "loc",
+                "cyclomatic_complexity",
+                "coverage_ratio",
+                "static_error_count",
+                "typedness_bucket",
+                "risk_score",
+                "risk_level",
+                "bucket_label",
+                "created_at_row",
+                "function_goid_h128_1",
+                "created_at_row_1",
+            ),
+            join_safe_columns=(
+                "repo",
+                "entity_kind",
+                "entity_stable_id",
+                "commit",
+            ),
+        ),
         indexes=(Index("idx_analytics_history_timeseries_entity", ("entity_stable_id",)),),
         description="Timeseries snapshots for function/module history analytics.",
     ),
@@ -4334,6 +4855,43 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "module"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "created_at",
+                "repo",
+                "commit",
+                "module",
+                "path",
+                "language",
+                "file_count",
+                "total_loc",
+                "total_logical_loc",
+                "function_count",
+                "class_count",
+                "avg_file_complexity",
+                "max_file_complexity",
+                "high_risk_function_count",
+                "medium_risk_function_count",
+                "low_risk_function_count",
+                "max_risk_score",
+                "avg_risk_score",
+                "module_coverage_ratio",
+                "tested_function_count",
+                "untested_function_count",
+                "import_fan_in",
+                "import_fan_out",
+                "cycle_group",
+                "in_cycle",
+                "role",
+                "role_confidence",
+                "extras",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "module",
+            ),
+        ),
         indexes=(Index("idx_analytics_module_profile_module", ("module",)),),
         finalize_policy=FinalizePolicy(
             list_policies=(
@@ -4363,6 +4921,29 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at_1", "VARCHAR"),
         ],
         primary_key=("repo", "commit", "test_id"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "created_at",
+                "repo",
+                "commit",
+                "test_id",
+                "test_goid_h128",
+                "rel_path",
+                "qualname",
+                "extras",
+                "tag_source",
+                "heuristic_version",
+                "llm_model",
+                "llm_run_id",
+                "test_goid_h128_1",
+                "created_at_1",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "test_id",
+            ),
+        ),
         indexes=(Index("idx_analytics_behavioral_coverage_test", ("test_id",)),),
         finalize_policy=FinalizePolicy(
             list_policies=(
@@ -4395,6 +4976,27 @@ DATA_MODELS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "model_id"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "model_id",
+                "goid_h128",
+                "model_name",
+                "module",
+                "rel_path",
+                "model_kind",
+                "extras",
+                "doc_short",
+                "doc_long",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "model_id",
+            ),
+        ),
         finalize_policy=FinalizePolicy(
             list_policies=(
                 FinalizeListPolicySpec(column="extras.base_classes", null_policy="empty"),
@@ -4421,6 +5023,29 @@ DATA_MODELS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "model_id", "field_name"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "model_id",
+                "field_name",
+                "field_type",
+                "required",
+                "has_default",
+                "default_expr",
+                "extras",
+                "source",
+                "rel_path",
+                "lineno",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "model_id",
+                "field_name",
+            ),
+        ),
         description="Normalized field definitions extracted from analytics.data_models.",
     ),
     TableSchema(
@@ -4450,6 +5075,32 @@ DATA_MODELS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             "target_model_id",
             "relationship_kind",
         ),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "source_model_id",
+                "target_model_id",
+                "target_module",
+                "target_model_name",
+                "field_name",
+                "relationship_kind",
+                "multiplicity",
+                "via",
+                "extras",
+                "rel_path",
+                "lineno",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "source_model_id",
+                "field_name",
+                "target_model_id",
+                "relationship_kind",
+            ),
+        ),
         description="Resolved relationships between data models with evidence and provenance.",
     ),
 )
@@ -4467,6 +5118,22 @@ DATA_MODEL_USAGE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "model_id", "function_goid_h128"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "model_id",
+                "function_goid_h128",
+                "extras",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "model_id",
+                "function_goid_h128",
+            ),
+        ),
         finalize_policy=FinalizePolicy(
             list_policies=(
                 FinalizeListPolicySpec(column="extras.usage_kinds", null_policy="empty"),
@@ -4500,6 +5167,32 @@ FUNCTION_AST_FEATURES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+                "rel_path",
+                "qualname",
+                "is_async",
+                "uses_network",
+                "uses_db",
+                "uses_filesystem",
+                "uses_subprocess",
+                "uses_concurrency_lib",
+                "uses_threading",
+                "uses_asyncio_lib",
+                "config_read_count",
+                "feature_flag_count",
+                "extras",
+                "created_at",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+            ),
+        ),
         indexes=(
             Index(
                 "idx_analytics_function_ast_features_repo_commit",
@@ -4739,6 +5432,27 @@ GRAPH_METRICS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("graph_name", "repo", "commit"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "created_at",
+                "graph_name",
+                "node_count",
+                "edge_count",
+                "weak_component_count",
+                "scc_count",
+                "component_layers",
+                "avg_clustering",
+                "diameter_estimate",
+                "avg_shortest_path_estimate",
+            ),
+            join_safe_columns=(
+                "graph_name",
+                "repo",
+                "commit",
+            ),
+        ),
         description="Global graph-level statistics for call/import graphs",
     ),
 )
@@ -4759,6 +5473,27 @@ GRAPH_VALIDATION_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "graph_name", "entity_id", "issue"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "created_at",
+                "graph_name",
+                "entity_id",
+                "issue",
+                "severity",
+                "rel_path",
+                "detail",
+                "extras",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "graph_name",
+                "entity_id",
+                "issue",
+            ),
+        ),
         indexes=(Index("idx_graph_validation_repo_commit", ("repo", "commit")),),
         description="Validation findings for analytics graph consistency checks",
     ),
@@ -4780,6 +5515,25 @@ CONTRACT_ALIGNMENT_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "run_id"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "created_at",
+                "run_id",
+                "issue_count",
+                "target_count",
+                "table_count",
+                "missing_total",
+                "extra_total",
+                "coerced_total",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "run_id",
+            ),
+        ),
         indexes=(Index("idx_analytics_contract_alignment_run_id", ("run_id",)),),
         description="Run-level contract alignment issue counts and column drift totals",
     ),
@@ -4981,6 +5735,22 @@ SUBSYSTEM_AGREEMENT_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "module"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "module",
+                "created_at",
+                "subsystem_id",
+                "import_community_id",
+                "agrees",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "module",
+            ),
+        ),
         description="Agreement check between subsystem labels and import communities",
     ),
 )
@@ -5007,6 +5777,32 @@ SUBSYSTEMS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "subsystem_id"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "subsystem_id",
+                "created_at",
+                "name",
+                "description",
+                "module_count",
+                "extras",
+                "internal_edge_count",
+                "external_edge_count",
+                "fan_in",
+                "fan_out",
+                "function_count",
+                "avg_risk_score",
+                "max_risk_score",
+                "high_risk_function_count",
+                "risk_level",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "subsystem_id",
+            ),
+        ),
         indexes=(
             Index(
                 "idx_analytics_subsystems_repo_commit_id",
@@ -5033,6 +5829,21 @@ SUBSYSTEMS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("role", "VARCHAR"),
         ],
         primary_key=("repo", "commit", "subsystem_id", "module"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "subsystem_id",
+                "module",
+                "role",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "subsystem_id",
+                "module",
+            ),
+        ),
         indexes=(Index("idx_analytics_subsystem_modules_module", ("module",)),),
         description="Mapping of subsystems to member modules",
     ),
@@ -5066,6 +5877,38 @@ SUBSYSTEM_CACHE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL_NULLABLE,
         ],
         primary_key=("repo", "commit", "subsystem_id"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "subsystem_id",
+                "created_at",
+                "name",
+                "description",
+                "module_count",
+                "extras",
+                "internal_edge_count",
+                "external_edge_count",
+                "fan_in",
+                "fan_out",
+                "function_count",
+                "avg_risk_score",
+                "max_risk_score",
+                "high_risk_function_count",
+                "risk_level",
+                "import_in_degree",
+                "import_out_degree",
+                "import_pagerank",
+                "import_betweenness",
+                "import_closeness",
+                "import_layer",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "subsystem_id",
+            ),
+        ),
         finalize_policy=FinalizePolicy(
             required_non_null=("repo", "commit", "subsystem_id"),
             list_policies=(
@@ -5096,6 +5939,23 @@ SEMANTIC_ROLES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+                "created_at",
+                "role",
+                "framework",
+                "role_confidence",
+                "extras",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "function_goid_h128",
+            ),
+        ),
         indexes=(Index("idx_analytics_semantic_roles_fn", ("function_goid_h128",)),),
         finalize_policy=FinalizePolicy(
             required_non_null=("repo", "commit", "function_goid_h128"),
@@ -5118,6 +5978,22 @@ SEMANTIC_ROLES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "module"),
+        plan_policy=PlanPolicy(
+            default_projection=(
+                "repo",
+                "commit",
+                "module",
+                "created_at",
+                "role",
+                "role_confidence",
+                "extras",
+            ),
+            join_safe_columns=(
+                "repo",
+                "commit",
+                "module",
+            ),
+        ),
         indexes=(Index("idx_analytics_semantic_roles_mod", ("module",)),),
         finalize_policy=FinalizePolicy(
             required_non_null=("repo", "commit", "module"),
@@ -5130,56 +6006,6 @@ SEMANTIC_ROLES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         description="Semantic role classification per module",
     ),
 )
-
-
-def _table_has_column(table: TableSchema, column: str) -> bool:
-    return any(col.name == column for col in table.columns)
-
-
-def _apply_analytics_plan_policy(table: TableSchema) -> TableSchema:
-    if table.schema != "analytics":
-        return table
-    if table.plan_policy is not None:
-        return table
-    default_projection = tuple(table.column_names())
-    policy = PlanPolicy(
-        default_projection=default_projection,
-        join_safe_columns=table.primary_key,
-    )
-    return replace(table, plan_policy=policy)
-
-
-def _apply_core_plan_policy(table: TableSchema) -> TableSchema:
-    if table.schema != "core":
-        return table
-    if table.plan_policy is not None:
-        return table
-    default_projection = tuple(table.column_names())
-    policy = PlanPolicy(default_projection=default_projection, join_safe_columns=())
-    return replace(table, plan_policy=policy)
-
-
-def _apply_analytics_finalize_policy(table: TableSchema) -> TableSchema:
-    if table.schema != "analytics":
-        return table
-    if table.finalize_policy is not None:
-        return table
-    if not table.primary_key:
-        return table
-    prefer_columns = ("created_at",) if _table_has_column(table, "created_at") else ()
-    if table.write_policy is not None and table.write_policy.stable_sort_keys is not None:
-        canonical_sort_keys = table.write_policy.stable_sort_keys
-    else:
-        canonical_sort_keys = table.primary_key
-    policy = FinalizePolicy(
-        required_non_null=table.primary_key,
-        dedupe=FinalizeDedupeSpec(
-            keys=table.primary_key,
-            prefer_columns=prefer_columns,
-        ),
-        canonical_sort_keys=canonical_sort_keys,
-    )
-    return replace(table, finalize_policy=policy)
 
 
 def _disable_stable_sort_key(table: TableSchema) -> TableSchema:
@@ -5372,13 +6198,10 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
 def _build_output_table_schemas() -> dict[str, TableSchema]:
     table_map: dict[str, TableSchema] = {}
     for table in _all_output_tables():
-        resolved = _apply_core_plan_policy(table)
-        resolved = _apply_analytics_plan_policy(resolved)
-        resolved = _apply_analytics_finalize_policy(resolved)
-        if resolved.table_key in table_map:
-            msg = f"Duplicate output TableSchema: {resolved.table_key}"
+        if table.table_key in table_map:
+            msg = f"Duplicate output TableSchema: {table.table_key}"
             raise ValueError(msg)
-        table_map[resolved.table_key] = resolved
+        table_map[table.table_key] = table
     missing = NON_INFERABLE_OUTPUT_KEYS.difference(table_map)
     if missing:
         msg = f"Missing non-inferable TableSchemas: {sorted(missing)}"

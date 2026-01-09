@@ -679,6 +679,75 @@ def resolve_stable_sort_keys(table_schema: TableSchema | None) -> tuple[str, ...
     return table_schema.primary_key or None
 
 
+def resolve_plan_policy(table_schema: TableSchema | None) -> PlanPolicy | None:
+    """Resolve plan policy defaults for a table schema.
+
+    Returns
+    -------
+    PlanPolicy | None
+        Resolved plan policy when available.
+    """
+    if table_schema is None:
+        return None
+    if table_schema.plan_policy is not None:
+        return table_schema.plan_policy
+    if table_schema.schema not in {"analytics", "core"}:
+        return None
+    default_projection = tuple(table_schema.column_names())
+    if table_schema.schema == "analytics":
+        join_safe_columns = table_schema.primary_key
+    else:
+        join_safe_columns = _list_columns(table_schema)
+    return PlanPolicy(
+        default_projection=default_projection,
+        join_safe_columns=join_safe_columns,
+    )
+
+
+def resolve_finalize_policy(table_schema: TableSchema | None) -> FinalizePolicy | None:
+    """Resolve finalize policy defaults for a table schema.
+
+    Returns
+    -------
+    FinalizePolicy | None
+        Resolved finalize policy when available.
+    """
+    if table_schema is None:
+        return None
+    if table_schema.finalize_policy is not None:
+        return table_schema.finalize_policy
+    if table_schema.schema != "analytics" or not table_schema.primary_key:
+        return None
+    prefer_columns = ("created_at",) if _table_has_column(table_schema, "created_at") else ()
+    if (
+        table_schema.write_policy is not None
+        and table_schema.write_policy.stable_sort_keys is not None
+    ):
+        canonical_sort_keys = table_schema.write_policy.stable_sort_keys
+    else:
+        canonical_sort_keys = table_schema.primary_key
+    return FinalizePolicy(
+        required_non_null=table_schema.primary_key,
+        dedupe=FinalizeDedupeSpec(
+            keys=table_schema.primary_key,
+            prefer_columns=prefer_columns,
+        ),
+        canonical_sort_keys=canonical_sort_keys,
+    )
+
+
+def _table_has_column(table_schema: TableSchema, column: str) -> bool:
+    return any(col.name == column for col in table_schema.columns)
+
+
+def _list_columns(table_schema: TableSchema) -> tuple[str, ...]:
+    return tuple(
+        column.name
+        for column in table_schema.columns
+        if column_type_base(column.type) == "LIST"
+    )
+
+
 def resolve_canonical_sort_keys(table_schema: TableSchema | None) -> tuple[str, ...] | None:
     """Resolve canonical sort keys for finalization/ordering metadata.
 
@@ -709,7 +778,7 @@ def resolve_default_projection(table_schema: TableSchema | None) -> tuple[str, .
     """
     if table_schema is None:
         return None
-    plan_policy = table_schema.plan_policy
+    plan_policy = resolve_plan_policy(table_schema)
     if plan_policy is None:
         return None
     return plan_policy.default_projection
@@ -725,7 +794,7 @@ def resolve_join_safe_columns(table_schema: TableSchema | None) -> tuple[str, ..
     """
     if table_schema is None:
         return ()
-    plan_policy = table_schema.plan_policy
+    plan_policy = resolve_plan_policy(table_schema)
     if plan_policy is None:
         return ()
     return plan_policy.join_safe_columns
@@ -759,6 +828,8 @@ __all__ = [
     "normalize_column_type",
     "resolve_canonical_sort_keys",
     "resolve_default_projection",
+    "resolve_finalize_policy",
     "resolve_join_safe_columns",
+    "resolve_plan_policy",
     "resolve_stable_sort_keys",
 ]

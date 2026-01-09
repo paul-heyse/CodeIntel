@@ -392,6 +392,16 @@ def coerce_arrow_reader(
     """
     if isinstance(value, pa.RecordBatchReader):
         return value
+    fetch_record_batch = getattr(value, "fetch_record_batch", None)
+    if callable(fetch_record_batch):
+        size = batch_size or DEFAULT_ARROW_BATCH_SIZE
+        try:
+            return fetch_record_batch(size)
+        except TypeError:
+            return fetch_record_batch()
+    fetch_arrow_reader = getattr(value, "fetch_arrow_reader", None)
+    if callable(fetch_arrow_reader):
+        return fetch_arrow_reader()
     reader = _import_c_stream(value)
     if reader is not None:
         return reader
@@ -482,7 +492,8 @@ def _table_from_c_array(value: object) -> pa.Table | None:
         batch = batch_importer(array_fn(), schema)
     except (TypeError, ValueError, pa.ArrowInvalid):
         return None
-    return pa.Table.from_batches([batch], schema=schema)
+    reader = record_batch_reader_from_batches(schema, [batch])
+    return RecordBatchReaderStream(reader).to_table()
 
 
 def _table_from_interchange(value: object) -> pa.Table | None:

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.core.validation.schema_constraints import (
     schema_errors,
     schema_metadata_errors,
@@ -75,7 +76,10 @@ def _arrow_schema_for_table(
     relation_to_read = (
         limited if callable(getattr(limited, "fetch_record_batch", None)) else relation
     )
-    reader = cast("DuckDBRelation", relation_to_read).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = tabular_to_arrow_reader(
+        cast("DuckDBRelation", relation_to_read),
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+    )
     return reader.schema
 
 

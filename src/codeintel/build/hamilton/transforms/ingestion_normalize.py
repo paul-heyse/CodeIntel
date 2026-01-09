@@ -17,7 +17,7 @@ from codeintel.build.tabular.arrow_ops import (
     dedupe_table_for_table,
     emit_alignment_report,
 )
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import empty_table_from_schema, tabular_to_arrow_table
 from codeintel.build.tabular.finalize_ops import (
     FinalizeMode,
     FinalizeResult,
@@ -65,6 +65,7 @@ class IngestFinalizeOptions:
     manifest_dir: Path | None = None
     manifest_options: RunManifestOptions | None = None
     scan_telemetry: ScanTelemetry | None = None
+    execution_ctx: ExecutionContext | None = None
 
 
 _TOLERANT_INGEST_TABLE_KEYS = frozenset(
@@ -160,7 +161,7 @@ def finalize_ingest_table(
         target_name=resolved.target_name,
         mode=resolved.mode,
     )
-    resolved_ctx = resolve_execution_context(None)
+    resolved_ctx = resolve_execution_context(resolved.execution_ctx)
     plan = ExecutionPlan.from_table(
         table,
         ordering=OrderingSpec.implicit(reason="ingest table"),
@@ -203,7 +204,7 @@ def finalize_ingest_reader(
         target_name=resolved.target_name,
         mode=resolved.mode,
     )
-    resolved_ctx = resolve_execution_context(None)
+    resolved_ctx = resolve_execution_context(resolved.execution_ctx)
     plan = ExecutionPlan.from_reader(
         reader,
         ordering=OrderingSpec.implicit(reason="ingest reader"),
@@ -338,7 +339,7 @@ def normalize_ingest_frame(
         return None
     table = tabular_to_arrow_table(frame)
     if table.num_rows == 0:
-        return pa.Table.from_batches([], schema=table.schema)
+        return empty_table_from_schema(table.schema)
     resolved_options = _merge_normalization_options(options, overrides)
     extras_policy = None
     if resolved_options.keep_extras is True:

@@ -22,21 +22,25 @@ from codeintel.core.columnar.arrowdsl import (
 )
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
+    resolve_execution_context,
     runtime_profile_from_settings,
 )
 from codeintel.core.columnar.finalize_ops import (
     FinalizeResult,
     finalize_spec_for_table,
 )
-from codeintel.core.columnar.plan_builder import (
-    SchemaPlanDefaultsRequest,
-    plan_from_schema_defaults,
-)
+from codeintel.core.columnar.ordering import SortDirection, SortKey
 from codeintel.core.columnar.plan_ops import (
     Plan,
     QueryPlanOptions,
+    build_query_plan_for_context,
+    query_plan_options_for_context,
 )
-from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_schema_defaults
+from codeintel.core.columnar.queryspec import (
+    PROVENANCE_FIELDS,
+    QuerySpec,
+    projection_spec_from_schema_defaults,
+)
 from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetWriteOptions,
@@ -87,6 +91,8 @@ class SnapshotScanRequest:
     require_sequenced_output: bool | None = True
     metrics_enabled: bool = True
     execution_ctx: ExecutionContext | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +201,8 @@ class GraphViewFactory:
             require_sequenced_output=resolved_scan_options.require_sequenced_output,
             metrics_enabled=resolved_scan_options.metrics_enabled,
             execution_ctx=resolved_scan_options.execution_ctx,
+            manifest_dir=resolved_scan_options.manifest_dir,
+            manifest_options=resolved_scan_options.manifest_options,
         )
         return scan_snapshot_reader(request)
 
@@ -243,6 +251,8 @@ class GraphViewFactory:
             require_sequenced_output=resolved_scan_options.require_sequenced_output,
             metrics_enabled=resolved_scan_options.metrics_enabled,
             execution_ctx=resolved_scan_options.execution_ctx,
+            manifest_dir=resolved_scan_options.manifest_dir,
+            manifest_options=resolved_scan_options.manifest_options,
         )
         return scan_snapshot_plan(request)
 
@@ -291,6 +301,8 @@ class GraphViewFactory:
             require_sequenced_output=resolved_scan_options.require_sequenced_output,
             metrics_enabled=resolved_scan_options.metrics_enabled,
             execution_ctx=resolved_scan_options.execution_ctx,
+            manifest_dir=resolved_scan_options.manifest_dir,
+            manifest_options=resolved_scan_options.manifest_options,
         )
         return scan_snapshot_plan_with_telemetry(request)
 
@@ -434,33 +446,36 @@ def scan_snapshot_plan_with_telemetry(
         return None
     query_spec = _query_spec_for_request(
         dataset,
-        table_key=request.table_key,
+        request=request,
         columns=resolved_columns,
         predicate=filter_expression,
     )
-    scan_telemetry = None
-    if request.metrics_enabled:
-        scan_telemetry = _log_scan_telemetry(
-            dataset,
-            table_key=request.table_key,
-            snapshot_id=request.snapshot_id,
-            query_spec=query_spec,
-        )
+    scan_telemetry = _log_scan_telemetry(
+        dataset,
+        table_key=request.table_key,
+        snapshot_id=request.snapshot_id,
+        query_spec=query_spec,
+        log_enabled=request.metrics_enabled,
+    )
     options = QueryPlanOptions(
         provenance=request.provenance,
         implicit_ordering=request.implicit_ordering,
         require_sequenced_output=request.require_sequenced_output,
     )
-    plan = plan_from_schema_defaults(
-        schema_service=get_schema_service(),
-        request=SchemaPlanDefaultsRequest(
-            table_key=request.table_key,
-            dataset=dataset,
-            predicate=filter_expression,
-            columns=resolved_columns,
-            options=options,
-            ctx=request.execution_ctx,
-        ),
+    resolved_options = query_plan_options_for_context(
+        ctx=request.execution_ctx,
+        options=options,
+    )
+    resolved_options = _apply_canonical_order_by(
+        resolved_options,
+        ctx=request.execution_ctx,
+        table_key=request.table_key,
+    )
+    plan = build_query_plan_for_context(
+        dataset,
+        spec=query_spec,
+        ctx=request.execution_ctx,
+        options=resolved_options,
     )
     return SnapshotPlanResult(plan=plan, scan_telemetry=scan_telemetry)
 
@@ -545,6 +560,8 @@ def scan_snapshot_table(
         options=PipelineRunOptions(
             ctx=execution_ctx,
             scan_telemetry=plan_result.scan_telemetry,
+            manifest_dir=request.manifest_dir,
+            manifest_options=request.manifest_options,
         ),
     )
     return result.good
@@ -629,15 +646,22 @@ def _resolve_columns(
 def _query_spec_for_request(
     dataset: ds.Dataset,
     *,
-    table_key: str,
+    request: SnapshotScanRequest,
     columns: tuple[str, ...] | Mapping[str, pc.Expression] | None,
     predicate: pc.Expression | None,
 ) -> QuerySpec:
-    table_schema = get_schema_service().get_table_schema(table_key)
+    table_schema = get_schema_service().get_table_schema(request.table_key)
+    available_columns = tuple(dataset.schema.names)
+    provenance_columns = _provenance_columns_for_spec(
+        provenance=request.provenance,
+        execution_ctx=request.execution_ctx,
+        available_columns=available_columns,
+    )
     projection = projection_spec_from_schema_defaults(
         columns,
         table_schema=table_schema,
-        available_columns=tuple(dataset.schema.names),
+        available_columns=available_columns,
+        provenance_columns=provenance_columns,
     )
     return QuerySpec(
         predicate=predicate,
@@ -652,16 +676,18 @@ def _log_scan_telemetry(
     table_key: str,
     snapshot_id: str,
     query_spec: QuerySpec,
+    log_enabled: bool,
 ) -> ScanTelemetry:
     telemetry = scan_telemetry_for_queryspec(dataset, spec=query_spec)
-    LOG.debug(
-        "Dataset scan telemetry table=%s snapshot=%s fragments=%s rows=%s filter=%s",
-        table_key,
-        snapshot_id,
-        telemetry.fragment_count,
-        telemetry.estimated_rows,
-        query_spec.scan_filter_expression(),
-    )
+    if log_enabled:
+        LOG.debug(
+            "Dataset scan telemetry table=%s snapshot=%s fragments=%s rows=%s filter=%s",
+            table_key,
+            snapshot_id,
+            telemetry.fragment_count,
+            telemetry.estimated_rows,
+            query_spec.scan_filter_expression(),
+        )
     return telemetry
 
 
@@ -685,6 +711,49 @@ def _resolve_execution_context(
     if request.use_threads is None:
         return execution_ctx
     return replace(execution_ctx, use_threads=use_threads)
+
+
+def _provenance_columns_for_spec(
+    *,
+    provenance: bool,
+    execution_ctx: ExecutionContext | None,
+    available_columns: Sequence[str],
+) -> tuple[str, ...]:
+    resolved_ctx = resolve_execution_context(execution_ctx)
+    enabled = provenance or resolved_ctx.provenance
+    profile = resolved_ctx.runtime_profile
+    if profile is not None:
+        enabled = profile.resolve_provenance(default=enabled)
+    if resolved_ctx.resolve_determinism() == "canonical":
+        enabled = True
+    if not enabled:
+        return ()
+    available = set(available_columns)
+    return tuple(
+        output_name
+        for output_name, _source_name in PROVENANCE_FIELDS
+        if output_name in available
+    )
+
+
+def _apply_canonical_order_by(
+    options: QueryPlanOptions,
+    *,
+    ctx: ExecutionContext | None,
+    table_key: str,
+) -> QueryPlanOptions:
+    if options.order_by is not None:
+        return options
+    resolved_ctx = resolve_execution_context(ctx)
+    if resolved_ctx.resolve_determinism() != "canonical":
+        return options
+    schema = get_schema_service().get_table_schema(table_key)
+    canonical_keys = resolve_canonical_sort_keys(schema)
+    if not canonical_keys:
+        return options
+    direction: SortDirection = "ascending"
+    order_by: tuple[SortKey, ...] = tuple((key, direction) for key in canonical_keys)
+    return replace(options, order_by=order_by)
 
 
 def persist_finalize_artifacts(

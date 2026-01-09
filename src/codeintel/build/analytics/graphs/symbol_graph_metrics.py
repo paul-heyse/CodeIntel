@@ -32,13 +32,7 @@ from codeintel.build.analytics.graphs.orchestrator import (
     build_store_views,
 )
 from codeintel.build.graphs.builders import (
-    build_symbol_function_graph as _build_symbol_function_graph,
-)
-from codeintel.build.graphs.builders import (
     build_symbol_function_graph_from_tables as _build_symbol_function_graph_from_tables,
-)
-from codeintel.build.graphs.builders import (
-    build_symbol_module_graph as _build_symbol_module_graph,
 )
 from codeintel.build.graphs.builders import (
     build_symbol_module_graph_from_tables as _build_symbol_module_graph_from_tables,
@@ -46,17 +40,12 @@ from codeintel.build.graphs.builders import (
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
-from codeintel.build.graphs.rx.build_from_edges import (
-    BuildStoreOptions,
-    EdgeBuildSpec,
-    build_store_from_edge_tuples,
-)
-from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
+from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping
+    from collections.abc import Callable, Mapping
 
     from codeintel.build.analytics.compute.graphs import (
         CentralityBundle,
@@ -64,20 +53,6 @@ if TYPE_CHECKING:
     )
     from codeintel.build.analytics.graphs.orchestrator import GraphViews
     from codeintel.build.graphs.runtime.context import GraphContext
-
-
-def build_symbol_module_graph(
-    symbol_use_edges: Iterable[Mapping[str, object]],
-    module_by_path: Mapping[str, str],
-) -> GraphInput:
-    """Build an undirected weighted symbol-module graph from use edges.
-
-    Returns
-    -------
-    GraphInput
-        Undirected graph linking modules by symbol coupling.
-    """
-    return _build_symbol_module_graph(symbol_use_edges, module_by_path)
 
 
 def build_symbol_module_graph_from_tables(
@@ -100,19 +75,6 @@ def build_symbol_module_graph_from_tables(
         repo=repo,
         commit=commit,
     )
-
-
-def build_symbol_function_graph(
-    symbol_use_edges: Iterable[Mapping[str, object]],
-) -> GraphInput:
-    """Build an undirected weighted symbol-function graph from use edges.
-
-    Returns
-    -------
-    GraphInput
-        Undirected graph linking functions by symbol coupling.
-    """
-    return _build_symbol_function_graph(symbol_use_edges)
 
 
 def build_symbol_function_graph_from_tables(
@@ -155,18 +117,11 @@ def _parse_int_node(node: object) -> int | None:
 
 def _filter_nodes(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphStore:
     store = ensure_store(graph)
-    edge_rows: list[tuple[Hashable, Hashable, float]] = []
-    node_ids: set[Hashable] = set()
-    node_attrs: dict[Hashable, dict[str, object]] = {}
-    for node_id in store.node_ids():
-        if node_id in allowed:
-            node_ids.add(node_id)
-            node_attrs[node_id] = dict(store.get_node_attrs(node_id))
-    for src_id, dst_id, weight in iter_edge_id_weights(store):
-        if src_id not in allowed or dst_id not in allowed:
-            continue
-        edge_rows.append((src_id, dst_id, weight))
-    if not edge_rows and not node_ids:
+    allowed_set = set(allowed)
+    node_indices = [
+        store.id_to_index[node_id] for node_id in allowed_set if node_id in store.id_to_index
+    ]
+    if not node_indices:
         return (
             RxGraphStore.directed(
                 weight_policy=store.weight_policy,
@@ -178,19 +133,13 @@ def _filter_nodes(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphSt
                 numeric_policy=store.numeric_policy,
             )
         )
-    spec = EdgeBuildSpec(
-        directed=store.is_directed,
+    node_indices.sort(key=lambda idx: stable_key(store.index_to_id[idx]))
+    subgraph, _ = store.graph.subgraph_with_nodemap(node_indices, preserve_attrs=True)
+    return RxGraphStore.from_rx_graph(
+        subgraph,
         weight_policy=store.weight_policy,
         numeric_policy=store.numeric_policy,
     )
-    options = BuildStoreOptions(
-        stable_nodes=True,
-        node_ids=node_ids or None,
-        node_attrs=node_attrs or None,
-        node_hint=len(node_ids) if node_ids else None,
-        edge_hint=len(edge_rows),
-    )
-    return build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
 
 
 @dataclass(frozen=True)

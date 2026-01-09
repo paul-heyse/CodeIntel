@@ -3,25 +3,50 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.core.columnar.compute_helpers import (
-    call_compute,
-    cast_options,
-    require_array,
-    sort_options,
+from codeintel.core.columnar.compute_helpers import call_compute, cast_options, require_array
+from codeintel.core.columnar.dedupe_ops import (
+    DedupeDeterminism,
+    DedupeLegacy,
+    DedupeSpec,
+    DedupeStrategy,
+    DedupeTier,
+    DedupeTierNormalized,
 )
-from codeintel.core.columnar.explode_ops import ExplodeResult, ExplodeSpec
-from codeintel.core.columnar.explode_ops import explode_list_struct as _explode_list_struct
+from codeintel.core.columnar.dedupe_ops import (
+    dedupe_keep_first_after_sort as _dedupe_keep_first_after_sort,
+)
+from codeintel.core.columnar.dedupe_ops import (
+    dedupe_table_for_table as _dedupe_table_for_table,
+)
+from codeintel.core.columnar.dedupe_ops import (
+    normalize_dedupe_tier as _normalize_dedupe_tier,
+)
+from codeintel.core.columnar.dedupe_ops import (
+    stable_dedupe_with_ties as _stable_dedupe_with_ties,
+)
+from codeintel.core.columnar.explode_ops import (
+    ExplodeResult,
+    ExplodeSpec,
+)
+from codeintel.core.columnar.explode_ops import (
+    explode_list_struct as _explode_list_struct,
+)
+from codeintel.core.columnar.kernel_shared import (
+    SortKey,
+    _make_struct,
+    hash_struct_ordinal,
+    stable_sort_indices,
+    stable_sort_table,
+)
 from codeintel.core.columnar.plan_kernels import explode_edges_for_join as _explode_edges_for_join
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.service import SchemaService
-
-SortKey = tuple[str, Literal["ascending", "descending"]]
 
 
 def explode_edges(
@@ -98,71 +123,96 @@ def explode_list_struct(
     )
 
 
-def stable_sort_indices(
+def group_by_aggregate(
     table: pa.Table,
     *,
-    sort_keys: Sequence[SortKey],
-    null_placement: Literal["at_end", "at_start"] = "at_end",
-) -> pa.Array | pa.ChunkedArray:
-    """Return stable sort indices for a table.
-
-    Parameters
-    ----------
-    table
-        Table to sort.
-    sort_keys
-        Sequence of (column, order) pairs.
-    null_placement
-        Null placement policy.
-
-    Returns
-    -------
-    pyarrow.Array | pyarrow.ChunkedArray
-        Indices that define a stable sort order.
-
-    Raises
-    ------
-    TypeError
-        If Arrow does not return an array.
-    """
-    options = sort_options(sort_keys, null_placement=null_placement)
-    result = call_compute("sort_indices", [table], options=options)
-    if isinstance(result, (pa.Array, pa.ChunkedArray)):
-        return result
-    msg = "Arrow compute sort_indices did not return an array."
-    raise TypeError(msg)
-
-
-def stable_sort_table(
-    table: pa.Table,
-    *,
-    sort_keys: Sequence[SortKey],
-    null_placement: Literal["at_end", "at_start"] = "at_end",
+    keys: Sequence[str],
+    aggregations: Sequence[tuple[str, str]],
 ) -> pa.Table:
-    """Return a table sorted using stable sort indices.
+    """Group by keys and aggregate columns.
 
     Parameters
     ----------
     table
-        Table to sort.
-    sort_keys
-        Sequence of (column, order) pairs.
-    null_placement
-        Null placement policy.
+        Arrow table to aggregate.
+    keys
+        Column names to group by.
+    aggregations
+        Sequence of (column, aggregation) tuples.
 
     Returns
     -------
     pyarrow.Table
-        Table sorted by the provided keys.
+        Aggregated Arrow table.
     """
-    if table.num_rows <= 1 or not sort_keys:
-        return table
-    indices = stable_sort_indices(
+    return table.group_by(list(keys)).aggregate(list(aggregations))
+
+
+def dedupe_keep_first_after_sort(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+) -> pa.Table:
+    """Return a table with the first row kept per key after sorting.
+
+    Returns
+    -------
+    pyarrow.Table
+        Deduped table with one row per key.
+    """
+    return _dedupe_keep_first_after_sort(table, key_columns=key_columns)
+
+
+def stable_dedupe_with_ties(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+    order_by: Sequence[SortKey] = (),
+    tie_breakers: Sequence[SortKey] = (),
+    require_tie_breakers: bool = False,
+) -> pa.Table:
+    """Return a deduped table with deterministic tie handling.
+
+    Returns
+    -------
+    pyarrow.Table
+        Deduped table with tie handling applied.
+    """
+    return _stable_dedupe_with_ties(
         table,
-        sort_keys=sort_keys,
-        null_placement=null_placement,
+        key_columns=key_columns,
+        order_by=order_by,
+        tie_breakers=tie_breakers,
+        require_tie_breakers=require_tie_breakers,
     )
-    return table.take(indices)
+
+
+def dedupe_table_for_table(
+    table_key: str,
+    table: pa.Table,
+    *,
+    spec: DedupeSpec | None = None,
+    legacy: DedupeLegacy | None = None,
+) -> pa.Table:
+    """Return a table with duplicate primary-key rows removed.
+
+    Returns
+    -------
+    pyarrow.Table
+        Deduped table.
+    """
+    return _dedupe_table_for_table(table_key, table, spec=spec, legacy=legacy)
+
+
+def normalize_dedupe_tier(tier: DedupeTier | None) -> DedupeTierNormalized:
+    """Return a normalized dedupe tier for policy enforcement.
+
+    Returns
+    -------
+    DedupeTierNormalized
+        Normalized dedupe tier.
+    """
+    return _normalize_dedupe_tier(tier)
 
 
 def coalesce(
@@ -227,59 +277,6 @@ def case_when(
     )
     args = [cond_struct, *values, else_]
     return require_array(call_compute("case_when", args), name="case_when")
-
-
-def hash_struct_ordinal(
-    table: pa.Table,
-    *,
-    columns: Sequence[str],
-    modulus: int,
-) -> pa.Array | pa.ChunkedArray:
-    """Hash columns into a deterministic ordinal when kernels are available.
-
-    Parameters
-    ----------
-    table
-        Source table containing the columns to hash.
-    columns
-        Column names to hash together.
-    modulus
-        Modulus applied to the hash result.
-
-    Returns
-    -------
-    pyarrow.Array | pyarrow.ChunkedArray
-        Ordinal values derived from the hash.
-
-    Raises
-    ------
-    RuntimeError
-        If the hash kernel is unavailable.
-    ValueError
-        If the modulus is invalid.
-    """
-    if modulus <= 0:
-        msg = "hash_struct_ordinal requires a positive modulus"
-        raise ValueError(msg)
-    if not columns:
-        msg = "hash_struct_ordinal requires at least one column"
-        raise ValueError(msg)
-    try:
-        pc.get_function("hash")
-    except (AttributeError, KeyError):
-        msg = "Arrow hash kernel is unavailable; upgrade pyarrow to enable it."
-        raise RuntimeError(msg) from None
-    struct_values = _make_struct(
-        [table[column] for column in columns],
-        field_names=list(columns),
-    )
-    hashed = require_array(call_compute("hash", [struct_values]), name="hash")
-    hashed_u64 = pc.cast(hashed, pa.uint64())
-    modded = require_array(
-        call_compute("mod", [hashed_u64, pa.scalar(modulus, type=pa.uint64())]),
-        name="mod",
-    )
-    return pc.cast(modded, pa.int64())
 
 
 def hash_struct_goid(
@@ -590,23 +587,21 @@ def _replace_regex_options(
         return options_type(pattern=pattern, replacement=replacement)
 
 
-def _make_struct(
-    values: Sequence[pa.Array | pa.ChunkedArray],
-    *,
-    field_names: Sequence[str],
-) -> pa.Array | pa.ChunkedArray:
-    options_factory = getattr(pc, "MakeStructOptions", None)
-    options = options_factory(field_names=list(field_names)) if callable(options_factory) else None
-    result = call_compute("make_struct", list(values), options=options)
-    return require_array(result, name="make_struct")
-
-
 __all__ = [
+    "DedupeDeterminism",
+    "DedupeLegacy",
+    "DedupeSpec",
+    "DedupeStrategy",
+    "DedupeTier",
+    "DedupeTierNormalized",
     "case_when",
     "coalesce",
+    "dedupe_keep_first_after_sort",
+    "dedupe_table_for_table",
     "explode_edges",
     "explode_edges_with_aligned_lists",
     "explode_list_struct",
+    "group_by_aggregate",
     "hash_struct_goid",
     "hash_struct_ordinal",
     "indices_nonzero",
@@ -615,11 +610,13 @@ __all__ = [
     "list_parent_indices",
     "list_slice",
     "list_value_length",
+    "normalize_dedupe_tier",
     "regex_match",
     "regex_replace",
     "replace_with_mask",
     "safe_cast",
     "safe_divide",
+    "stable_dedupe_with_ties",
     "stable_sort_indices",
     "stable_sort_table",
     "struct_field",

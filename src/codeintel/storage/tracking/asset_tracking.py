@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, Any
 import pyarrow as pa
 from sqlglot import exp
 
-from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.conversion import (
+    reader_to_table,
+    table_to_reader,
+    tabular_to_arrow_reader,
+)
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.iter import iter_rows
@@ -681,10 +685,13 @@ class AssetTracking:
             )
             .limit(exp.Placeholder())
         )
-        reader = self._con.execute(
-            render_sql_duckdb(query),
-            [repo, commit, asset_kind, asset_key, limit],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self._con.execute(
+                render_sql_duckdb(query),
+                [repo, commit, asset_kind, asset_key, limit],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         return [
             self._parse_asset_version_history_row(row)
             for row in iter_tuples_from_arrow_reader(reader)
@@ -840,7 +847,9 @@ class AssetTracking:
         reader = self._con.execute(
             render_sql_duckdb(query),
             [run_id],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        ),
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+    )
         return [
             RunAssetVersionRecord(
                 run_id=coerce_str(row[0], ctx="run_asset_versions.run_id"),
@@ -1142,7 +1151,9 @@ class AssetTracking:
         reader = self._con.execute(
             render_sql_duckdb(query),
             params,
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        ),
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+    )
         return [
             AssetLineageEdgeRecord(
                 downstream_kind=coerce_str(row[0], ctx="asset_lineage.downstream_kind"),

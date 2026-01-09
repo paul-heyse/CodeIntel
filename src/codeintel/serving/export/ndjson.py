@@ -4,18 +4,31 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
+from codeintel.core.columnar.conversion import table_from_batches
 from codeintel.core.columnar.arrowdsl import (
     ExecutionContext,
     ExecutionPlan,
     PipelineRunOptions,
     run_pipeline,
 )
+from codeintel.core.columnar.run_manifest import RunManifestOptions
+from codeintel.core.columnar.streaming import ScanTelemetry
 from codeintel.core.exports.serialization import coerce_export_row
 from codeintel.storage.query_results import records_from_arrow_batch
+
+
+@dataclass(frozen=True, slots=True)
+class _FinalizeBatchRequest:
+    finalize_spec: FinalizeSpec
+    execution_ctx: ExecutionContext | None
+    manifest_dir: Path | None
+    manifest_options: RunManifestOptions | None
+    scan_telemetry: ScanTelemetry | None
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -49,6 +62,9 @@ class NdjsonBatchOptions:
     finalize_spec: FinalizeSpec | None = None
     finalize_hook: Callable[[FinalizeResult], None] | None = None
     execution_ctx: ExecutionContext | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
+    scan_telemetry: ScanTelemetry | None = None
 
 
 def encode_ndjson_line(row: Mapping[str, object]) -> bytes:
@@ -113,6 +129,9 @@ def iter_ndjson_bytes_from_batches(
     finalize_spec = resolved.finalize_spec
     finalize_hook = resolved.finalize_hook
     execution_ctx = resolved.execution_ctx
+    manifest_dir = resolved.manifest_dir
+    manifest_options = resolved.manifest_options
+    scan_telemetry = resolved.scan_telemetry
     for batch in batches:
         if cancel_check is not None:
             cancel_check()
@@ -125,8 +144,13 @@ def iter_ndjson_bytes_from_batches(
             continue
         finalized_batches, finalize_result = _finalize_batches(
             batch,
-            finalize_spec=finalize_spec,
-            execution_ctx=execution_ctx,
+            request=_FinalizeBatchRequest(
+                finalize_spec=finalize_spec,
+                execution_ctx=execution_ctx,
+                manifest_dir=manifest_dir,
+                manifest_options=manifest_options,
+                scan_telemetry=scan_telemetry,
+            ),
         )
         if finalize_hook is not None:
             finalize_hook(finalize_result)
@@ -170,15 +194,19 @@ def _batch_to_ndjson_bytes(batch: RecordBatch, *, columns: list[str]) -> bytes:
 def _finalize_batches(
     batch: RecordBatch,
     *,
-    finalize_spec: FinalizeSpec,
-    execution_ctx: ExecutionContext | None,
+    request: _FinalizeBatchRequest,
 ) -> tuple[list[RecordBatch], FinalizeResult]:
-    table = pa.Table.from_batches([batch], schema=batch.schema)
-    resolved_ctx = execution_ctx or ExecutionContext()
+    table = table_from_batches([batch], schema=batch.schema)
+    resolved_ctx = request.execution_ctx or ExecutionContext()
     result = run_pipeline(
         plan=ExecutionPlan.from_table(table),
-        finalize=finalize_spec,
-        options=PipelineRunOptions(ctx=resolved_ctx),
+        finalize=request.finalize_spec,
+        options=PipelineRunOptions(
+            ctx=resolved_ctx,
+            manifest_dir=request.manifest_dir,
+            manifest_options=request.manifest_options,
+            scan_telemetry=request.scan_telemetry,
+        ),
     )
     if result.good.num_rows == 0:
         return [], result

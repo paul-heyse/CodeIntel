@@ -180,7 +180,12 @@ def _aggregate_rollup_table(
     column_names = set(table.column_names)
     plan = snapshot_plan(
         table,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=SCIP_DIAGNOSTICS_TABLE_KEY,
+        ),
     )
     project = {
         column: _normalized_text_expr(column, columns=column_names) for column in group_columns

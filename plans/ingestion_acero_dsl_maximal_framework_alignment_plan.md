@@ -59,9 +59,9 @@ reader = ExecutionPlan.from_plan(plan).to_reader(ctx=ctx)
 - `src/codeintel/build/hamilton/native/ingestion/extraction_targets.py`
 
 **Implementation checklist**
-- [ ] Replace ad hoc plan construction in ingestion nodes with the ingestion facade.
-- [ ] Stop calling `resolve_execution_context(None)` inside nodes; resolve from ctx/env.
-- [ ] Ensure runtime profile defaults (threads/determinism/provenance) flow into readers.
+- [x] Replace ad hoc plan construction in ingestion nodes with the ingestion facade.
+- [x] Stop calling `resolve_execution_context(None)` inside nodes; resolve from ctx/env.
+- [x] Ensure runtime profile defaults (threads/determinism/provenance) flow into readers.
 - [ ] Remove duplicated plan helpers that bypass the ingestion facade.
 
 ---
@@ -106,11 +106,13 @@ reader = scanner.to_reader()
 - `src/codeintel/build/hamilton/native/ingestion/scip.py`
 
 **Implementation checklist**
-- [ ] Centralize ingest projection/predicate generation in QuerySpec helpers.
-- [ ] Enforce `build_query_plan_for_context` as the dataset scan entrypoint.
-- [ ] Route direct scans through `build_scanner_for_queryspec_ctx`.
-- [ ] Capture `ScanTelemetry` for every dataset scan and pass into manifests.
-- [ ] Ensure provenance columns are included when determinism is canonical.
+- [x] Centralize ingest projection/predicate generation in QuerySpec helpers.
+- [x] Enforce `build_query_plan_for_context` as the dataset scan entrypoint.
+- [x] Capture scan telemetry in graph dataset scans and expose it on `ScanRequest`.
+- [x] Route direct scans through `build_scanner_for_queryspec_ctx`.
+- [x] Capture `ScanTelemetry` for every dataset scan and pass into manifests.
+- [x] Capture change-detection scan telemetry and surface it in module ingest manifests.
+- [x] Ensure provenance columns are included when determinism is canonical for dataset scans.
 
 ---
 
@@ -162,7 +164,8 @@ deduped = stable_dedupe_with_ties(
 
 **Implementation checklist**
 - [ ] Replace ad hoc list alignment with explode kernels and list invariants.
-- [ ] Replace manual dedupe/winner logic with stable kernel helpers.
+- [x] Migrate `scip_resolution` winner selection to `stable_dedupe_for_context`.
+- [ ] Replace remaining manual dedupe/winner logic with stable kernel helpers.
 - [ ] Standardize null list policy errors and propagate to FinalizeResult.
 - [ ] Keep row-changing operations in kernel lane only.
 
@@ -204,7 +207,10 @@ result = run_pipeline(
 - `src/codeintel/build/hamilton/native/ingestion/scip_resolution.py`
 
 **Implementation checklist**
-- [ ] Annotate ordering transitions in plan ops (scan/hash_join/aggregate/order_by).
+- [x] Annotate filter ordering transitions in plan ops.
+- [ ] Annotate remaining ordering transitions in plan ops (scan/hash_join/aggregate/order_by).
+- [x] Replace `table_to_reader` usage in `scip_resolution` and `syntax_augment` with
+  `ExecutionPlan.from_table` using implicit ordering metadata.
 - [ ] Preserve ordering metadata by avoiding `_plan_to_table` before finalize.
 - [ ] Enforce canonical tie-breakers when determinism is canonical.
 - [ ] Ensure finalize emits stable ordering and artifacts consistently.
@@ -256,6 +262,8 @@ plan = plan_from_schema_defaults(
 - [ ] Ensure all ingestion tables define PlanPolicy defaults.
 - [ ] Replace call-site projection lists with schema-driven defaults.
 - [ ] Use schema join-safe columns for all hash joins.
+- [x] Tighten PlanPolicy defaults for high-volume ingestion tables
+  (`core.file_state`, `core.file_line_index`, `core.scip_module_state`).
 
 ---
 
@@ -301,7 +309,7 @@ result = run_pipeline(plan=ExecutionPlan.from_plan(plan), finalize=finalize, opt
 - [ ] Emit run manifests for every ingestion finalize path.
 - [ ] Include ordering/determinism/profile metadata in manifests.
 - [ ] Ensure provenance columns flow into error artifacts when enabled.
-- [ ] Attach tool metadata (counts, warnings, errors) to manifest extras.
+- [x] Attach tool metadata (counts, warnings, errors) to manifest extras.
 
 ---
 
@@ -332,9 +340,9 @@ table = finalize_ingest_reader_with_manifest(
 - `src/codeintel/ingestion/compute/*`
 
 **Implementation checklist**
-- [ ] Remove `to_table()`/`read_all()`/`reader_to_table` outside finalize boundaries.
+- [x] Remove `to_table()`/`read_all()`/`reader_to_table` outside finalize boundaries.
 - [ ] Replace row materialization with plan filters/aggregates where possible.
-- [ ] Extend guardrail lint coverage to all ingestion modules.
+- [x] Extend guardrail lint coverage to all ingestion modules.
 
 ---
 
@@ -443,7 +451,7 @@ reader = scan_parquet_dataset(
 - `src/codeintel/build/hamilton/native/ingestion/ingest_targets.py`
 
 **Implementation checklist**
-- [ ] Remove any storage port usage from ingestion paths.
+- [x] Remove any storage port usage from ingestion paths.
 - [ ] Ensure scan outputs are readers only and finalized centrally.
 - [ ] Align change detection scans with QuerySpec/profile defaults.
 - [ ] Persist via dataset/Parquet-only flows.

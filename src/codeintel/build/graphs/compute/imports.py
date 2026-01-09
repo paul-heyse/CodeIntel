@@ -9,24 +9,35 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-import rustworkx as rx
-
+from codeintel.build.graphs.engine.protocol import GraphKind
 from codeintel.build.graphs.rx.algos import (
     strongly_connected_components_by_id,
     topological_layers_by_id,
 )
-from codeintel.build.graphs.rx.build_from_edges import BulkEdgeInserter
+from codeintel.build.graphs.rx.build_from_edges import (
+    BuildStoreOptions,
+    EdgeBuildSpec,
+    build_store_from_edge_tuples,
+)
 from codeintel.build.graphs.rx.condensation import condensation_store
+from codeintel.build.graphs.rx.metadata import GraphMetadata, apply_graph_metadata
+from codeintel.build.graphs.rx.payloads import EDGE_PAYLOAD_VERSION
 from codeintel.build.graphs.rx.normalize import stable_key
-from codeintel.build.graphs.rx.payloads import encode_node_payload
+from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, weight_policy_for_kind
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.data_models.rows import ImportEdgeRow, ImportModuleRow
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from collections.abc import Set as AbstractSet
+
+    from codeintel.core.columnar.dedupe_ops import DedupeTier
+
+IMPORT_GRAPH_EDGES_TABLE_KEY = "graph.import_graph_edges"
 
 
 @dataclass(frozen=True)
@@ -67,6 +78,28 @@ class ImportAnalysisResult:
     layer_map: Mapping[str, int]
 
 
+def _determinism_for_import_edges() -> DedupeTier:
+    schema = get_schema_service().get_table_schema(IMPORT_GRAPH_EDGES_TABLE_KEY)
+    if schema is not None:
+        policy = schema.finalize_policy
+        if policy is not None and policy.dedupe is not None and policy.dedupe.tier is not None:
+            return policy.dedupe.tier
+    canonical_keys = resolve_canonical_sort_keys(schema)
+    if canonical_keys == ():
+        return "throughput"
+    if canonical_keys:
+        return "canonical"
+    return "stable_set"
+
+
+def _ordering_keys_for_import_edges() -> tuple[str, ...] | None:
+    schema = get_schema_service().get_table_schema(IMPORT_GRAPH_EDGES_TABLE_KEY)
+    keys = resolve_canonical_sort_keys(schema)
+    if not keys:
+        return None
+    return tuple(keys)
+
+
 def collect_import_edges(
     module_name: str,
     imports: Sequence[tuple[str, tuple[str, ...]]],
@@ -96,27 +129,52 @@ def _build_import_store(
     edges: Sequence[ImportEdge],
     modules: AbstractSet[str],
 ) -> RxGraphStore:
-    store = RxGraphStore.directed(node_hint=len(modules), edge_hint=len(edges))
-    inserter = BulkEdgeInserter(store=store)
-    for edge in sorted(
-        edges,
-        key=lambda item: (stable_key(item.src_module), stable_key(item.dst_module)),
-    ):
-        inserter.add(edge.src_module, edge.dst_module, weight=1.0)
-    inserter.flush()
-    missing = [module for module in modules if module not in store.id_to_index]
-    if not missing:
-        return store
-    isolate_graph = rx.PyDiGraph(multigraph=False)
-    for module in sorted(missing, key=stable_key):
-        isolate_graph.add_node(encode_node_payload(module, {}))
-    directed_graph = cast("rx.PyDiGraph", store.graph)
-    merged = rx.union(directed_graph, isolate_graph, merge_nodes=True, merge_edges=True)
-    return RxGraphStore.from_rx_graph(
-        merged,
-        weight_policy=store.weight_policy,
-        numeric_policy=store.numeric_policy,
+    edge_rows = [
+        (edge.src_module, edge.dst_module, 1.0)
+        for edge in sorted(
+            edges,
+            key=lambda item: (stable_key(item.src_module), stable_key(item.dst_module)),
+        )
+    ]
+    node_ids = sorted(
+        {edge.src_module for edge in edges}
+        | {edge.dst_module for edge in edges}
+        | set(modules),
+        key=stable_key,
     )
+    policy = weight_policy_for_kind(GraphKind.IMPORT_GRAPH)
+    spec = EdgeBuildSpec(
+        directed=True,
+        weight_policy=policy,
+        numeric_policy=DEFAULT_NUMERIC_POLICY,
+    )
+    options = BuildStoreOptions(
+        stable_nodes=True,
+        aggregate_edges=True,
+        node_ids=node_ids or None,
+        node_hint=len(node_ids) if node_ids else None,
+        edge_hint=len(edge_rows),
+    )
+    store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
+    graph_kind_name = GraphKind.IMPORT_GRAPH.name or str(GraphKind.IMPORT_GRAPH)
+    apply_graph_metadata(
+        store.graph,
+        GraphMetadata(
+            weight_policy=store.weight_policy.name,
+            graph_kind=graph_kind_name,
+            determinism_tier=_determinism_for_import_edges(),
+            ordering_keys=_ordering_keys_for_import_edges(),
+            edge_payload_version=EDGE_PAYLOAD_VERSION,
+            source_tables=(IMPORT_GRAPH_EDGES_TABLE_KEY,),
+            is_directed=store.is_directed,
+            is_multigraph=getattr(store.graph, "multigraph", None)
+            if isinstance(getattr(store.graph, "multigraph", None), bool)
+            else None,
+            node_count=store.graph.num_nodes(),
+            edge_count=store.graph.num_edges(),
+        ),
+    )
+    return store
 
 
 def compute_scc(

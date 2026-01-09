@@ -42,7 +42,6 @@ if TYPE_CHECKING:
     from polars import LazyFrame
     from pyarrow.dataset import Scanner
 
-    from codeintel.core.columnar.plan_ops import ExternalPlanSpec
     from codeintel.core.columnar.profiles import RuntimeProfile
 
     type PolarsLazyFrame = LazyFrame
@@ -63,16 +62,6 @@ class ScanTelemetry:
 
     fragment_count: int | None
     estimated_rows: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class QueryPlanSpec:
-    """Shared query plan details for dataset scanning."""
-
-    table_key: str
-    columns: tuple[str, ...]
-    filter_expression: ds.Expression | None
-    external_plan: ExternalPlanSpec | None = None
 
 
 _DATASET_IGNORE_PREFIXES: tuple[str, ...] = (".", "_")
@@ -1029,7 +1018,6 @@ def _scan_parquet_with_row_index(
 
 __all__ = [
     "DatasetScanOptions",
-    "QueryPlanSpec",
     "ScanProfile",
     "ScanTelemetry",
     "apply_row_group_pruning",

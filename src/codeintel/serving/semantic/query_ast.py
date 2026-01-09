@@ -5,24 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
 from codeintel.core.sqlglot_tools import canonicalize_select_duckdb, schema_mapping_for_table_key
-from codeintel.serving.semantic.arrow_plan_builder import (
-    ArrowPlanSpec,
-    build_arrow_plan_spec,
-    build_arrow_query_spec,
-)
+from codeintel.serving.semantic.arrow_plan_builder import ArrowPlanSpec, build_arrow_plan_spec
 from codeintel.serving.semantic.duckdb_relation_builder import validate_query_ast
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import build_sqlglot_query
 from codeintel.storage.datasets.manifest_index import dataset_filter_expression
-from codeintel.storage.datasets.scanning import QueryPlanSpec
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from sqlglot import exp
-
-    from codeintel.core.columnar.queryspec import QuerySpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,9 +25,8 @@ class ServingQuery:
 
     spec: SemanticQuerySpec
     ast: exp.Select
-    plan_spec: QueryPlanSpec
     arrow_plan: ArrowPlanSpec | None
-    query_spec: QuerySpec | None = None
+    query_spec: QuerySpec
 
 
 _ALLOWED_ANONYMOUS_FUNCTIONS = frozenset(
@@ -104,21 +97,21 @@ def build_serving_query(*, spec: SemanticQuerySpec) -> ServingQuery:
         allowed_columns=spec.allowed_columns,
         column_types=spec.column_types,
     )
-    plan_spec = QueryPlanSpec(
-        table_key=spec.table_key,
-        columns=_plan_columns_for_spec(spec),
-        filter_expression=dataset_filter_expression(
-            filters=spec.filters,
-            allowed_columns=spec.allowed_columns,
-            column_types=spec.column_types,
-        ),
+    filter_expression = dataset_filter_expression(
+        filters=spec.filters,
+        allowed_columns=spec.allowed_columns,
+        column_types=spec.column_types,
+    )
+    projection = projection_spec_from_columns(_plan_columns_for_spec(spec))
+    query_spec = QuerySpec(
+        predicate=filter_expression,
+        pushdown_predicate=filter_expression,
+        projection=projection,
     )
     arrow_plan = build_arrow_plan_spec(spec=spec, ast=canonical)
-    query_spec = build_arrow_query_spec(arrow_plan) if arrow_plan is not None else None
     return ServingQuery(
         spec=spec,
         ast=canonical,
-        plan_spec=plan_spec,
         arrow_plan=arrow_plan,
         query_spec=query_spec,
     )

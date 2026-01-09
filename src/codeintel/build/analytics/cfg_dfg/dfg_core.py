@@ -20,6 +20,7 @@ from codeintel.build.analytics.compute.graphs import (
     dfg_centralities,
     dfg_component_stats,
     dfg_path_lengths,
+    normalize_dfg_graph,
 )
 from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
@@ -169,8 +170,13 @@ def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
         return None
 
     graph, phi_edges, symbol_count = build_dfg_graph(inputs.edges)
-    dfg_in_deg = degree_dict(graph, direction="in")
-    dfg_out_deg = degree_dict(graph, direction="out")
+    analysis_graph = (
+        normalize_dfg_graph(graph, inputs.edges)
+        if inputs.graph_ctx.enable_dfg_normalization
+        else graph
+    )
+    dfg_in_deg = degree_dict(analysis_graph, direction="in")
+    dfg_out_deg = degree_dict(analysis_graph, direction="out")
     dfg_phi_in = {int(str(node_id)): 0 for node_id in graph.node_ids()}
     dfg_phi_out = {int(str(node_id)): 0 for node_id in graph.node_ids()}
     for src, dst, _src_var, _dst_var, via_phi, _use_kind in inputs.edges:
@@ -179,10 +185,10 @@ def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
         dfg_phi_out[src] = dfg_phi_out.get(src, 0) + 1
         dfg_phi_in[dst] = dfg_phi_in.get(dst, 0) + 1
 
-    component_stats = dfg_component_stats(graph)
-    path_lengths = dfg_path_lengths(graph)
+    component_stats = dfg_component_stats(analysis_graph)
+    path_lengths = dfg_path_lengths(analysis_graph)
     centralities = dfg_centralities(
-        graph,
+        analysis_graph,
         ctx=replace(
             inputs.graph_ctx,
             betweenness_sample=min(

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 from sqlglot import exp, parse_one
 
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.arrow_plan_builder import ArrowPlanSpec
 from codeintel.serving.semantic.engines.protocol import EngineContext
@@ -19,7 +20,6 @@ from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.datasets.manifest_index import DatasetManifestIndex
-from codeintel.storage.datasets.scanning import QueryPlanSpec
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -75,16 +75,16 @@ def _serving_query(
         column_types=None,
     )
     ast = cast("exp.Select", parse_one(ast_sql, dialect=DUCKDB_DIALECT))
-    plan_spec = QueryPlanSpec(
-        table_key=view.table_key,
-        columns=tuple(view.columns),
-        filter_expression=None,
+    query_spec = QuerySpec(
+        predicate=None,
+        pushdown_predicate=None,
+        projection=projection_spec_from_columns(tuple(view.columns)),
     )
     return ServingQuery(
         spec=spec,
         ast=ast,
-        plan_spec=plan_spec,
         arrow_plan=arrow_plan,
+        query_spec=query_spec,
     )
 
 

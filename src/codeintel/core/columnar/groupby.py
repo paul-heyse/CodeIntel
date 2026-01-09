@@ -6,6 +6,8 @@ from collections.abc import Sequence
 
 import pyarrow as pa
 
+from codeintel.core.columnar.kernels import group_by_aggregate as _group_by_aggregate
+
 
 def group_by_aggregate(
     table: pa.Table,
@@ -29,7 +31,7 @@ def group_by_aggregate(
     pyarrow.Table
         Aggregated Arrow table.
     """
-    return table.group_by(list(keys)).aggregate(list(aggregations))
+    return _group_by_aggregate(table, keys=keys, aggregations=aggregations)
 
 
 __all__ = [

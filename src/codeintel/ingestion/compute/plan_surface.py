@@ -18,6 +18,12 @@ from codeintel.core.columnar.plan_ops import (
     query_plan_options_for_context,
 )
 from codeintel.core.columnar.queryspec import QuerySpec
+from codeintel.core.columnar.streaming import (
+    DatasetScanOptions,
+    ScanTelemetry,
+    build_scanner_for_queryspec_ctx,
+    scan_telemetry_for_queryspec,
+)
 from codeintel.ingestion.compute.queryspecs import (
     IngestQuerySpecRequest,
     build_ingest_query_spec,
@@ -33,6 +39,7 @@ class IngestQuery:
     repo: str | None = None
     commit: str | None = None
     rel_path: str | None = None
+    rel_paths: Sequence[str] | None = None
 
     def to_query_spec(
         self,
@@ -51,6 +58,7 @@ class IngestQuery:
             repo=self.repo,
             commit=self.commit,
             rel_path=self.rel_path,
+            rel_paths=self.rel_paths,
             available_columns=available_columns,
         )
         return build_ingest_query_spec(self.table_key, request)
@@ -119,9 +127,18 @@ def ingest_plan_for_dataset(
     Plan
         Plan compiled from a QuerySpec and execution context.
     """
-    resolved_ctx = resolve_execution_context(ctx)
-    spec = query.to_query_spec(available_columns=dataset.schema.names)
-    return build_query_plan_for_context(dataset, spec=spec, ctx=resolved_ctx, options=options)
+    spec, resolved_ctx, resolved_options = _resolve_dataset_query(
+        dataset,
+        query=query,
+        ctx=ctx,
+        options=options,
+    )
+    return build_query_plan_for_context(
+        dataset,
+        spec=spec,
+        ctx=resolved_ctx,
+        options=resolved_options,
+    )
 
 
 def ingest_reader_for_plan(
@@ -184,13 +201,60 @@ def ingest_reader_for_dataset(
     pyarrow.RecordBatchReader
         Reader for the plan output.
     """
-    plan = ingest_plan_for_dataset(
+    spec, resolved_ctx, resolved_options = _resolve_dataset_query(
         dataset,
         query=query,
         ctx=ctx,
         options=options,
     )
-    return ingest_reader_for_plan(plan, ctx=ctx)
+    if resolved_options.order_by is None:
+        scan_options = DatasetScanOptions(
+            implicit_ordering=resolved_options.implicit_ordering,
+            require_sequenced_output=resolved_options.require_sequenced_output,
+        )
+        scanner = build_scanner_for_queryspec_ctx(
+            dataset,
+            spec=spec,
+            ctx=resolved_ctx,
+            options=scan_options,
+        )
+        return scanner.to_reader()
+    plan = build_query_plan_for_context(
+        dataset,
+        spec=spec,
+        ctx=resolved_ctx,
+        options=resolved_options,
+    )
+    return ingest_reader_for_plan(plan, ctx=resolved_ctx)
+
+
+def ingest_scan_telemetry_for_dataset(
+    dataset: ds.Dataset,
+    *,
+    query: IngestQuery,
+) -> ScanTelemetry:
+    """Return scan telemetry for an ingestion QuerySpec.
+
+    Returns
+    -------
+    ScanTelemetry
+        Fragment count and estimated rows for the query.
+    """
+    spec = query.to_query_spec(available_columns=dataset.schema.names)
+    return scan_telemetry_for_queryspec(dataset, spec=spec)
+
+
+def _resolve_dataset_query(
+    dataset: ds.Dataset,
+    *,
+    query: IngestQuery,
+    ctx: ExecutionContext | None,
+    options: QueryPlanOptions | None,
+) -> tuple[QuerySpec, ExecutionContext, QueryPlanOptions]:
+    resolved_ctx = resolve_execution_context(ctx)
+    spec = query.to_query_spec(available_columns=dataset.schema.names)
+    resolved_options = query_plan_options_for_context(ctx=resolved_ctx, options=options)
+    return spec, resolved_ctx, resolved_options
 
 
 __all__ = [
@@ -200,4 +264,5 @@ __all__ = [
     "ingest_reader_for_dataset",
     "ingest_reader_for_plan",
     "ingest_reader_for_table",
+    "ingest_scan_telemetry_for_dataset",
 ]

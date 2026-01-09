@@ -27,7 +27,11 @@ from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -40,7 +44,11 @@ FILE_LINE_INDEX_TARGET_NAME = "file_line_index"
 FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
 
 
-def _resolve_module_paths(modules_table: pa.Table) -> dict[str, str | None]:
+def _resolve_module_paths(
+    modules_table: pa.Table,
+    *,
+    execution_ctx: ExecutionContext,
+) -> dict[str, str | None]:
     if modules_table.num_rows == 0 or "path" not in modules_table.column_names:
         return {}
     columns = ["path"]
@@ -63,7 +71,6 @@ def _resolve_module_paths(modules_table: pa.Table) -> dict[str, str | None]:
             aggregates=(),
             order_by=(("path", "ascending"),),
         )
-    execution_ctx = resolve_execution_context(None)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
     paths: dict[str, str | None] = {}
     for batch in reader:
@@ -149,7 +156,9 @@ def file_line_index__base(
         return empty_table_for_table(FILE_LINE_INDEX_TABLE_KEY)
 
     repo_root = Path(env.snapshot.repo_root)
-    path_languages = _resolve_module_paths(modules_table)
+    execution_ctx = resolve_columnar_context(env.execution_context)
+    resolved_ctx = resolve_execution_context(execution_ctx)
+    path_languages = _resolve_module_paths(modules_table, execution_ctx=resolved_ctx)
     if not path_languages:
         return empty_table_for_table(FILE_LINE_INDEX_TABLE_KEY)
 

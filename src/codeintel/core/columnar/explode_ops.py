@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
+from codeintel.core.columnar.conversion import empty_table_from_schema
 from codeintel.core.columnar.join_safe import join_safe_projection
 
 NullListPolicy = Literal["error", "empty"]
@@ -205,7 +206,7 @@ def _empty_explode_result(table: pa.Table, spec: ExplodeSpec) -> ExplodeResult:
 
 def _empty_explode_good(table: pa.Table, spec: ExplodeSpec) -> pa.Table:
     schema = _explode_schema(table, spec)
-    return pa.Table.from_batches([], schema=schema)
+    return empty_table_from_schema(schema)
 
 
 def _filter_parents(context: ErrorContext, spec: ExplodeSpec) -> ParentFilterResult:
@@ -540,7 +541,7 @@ def _empty_error_table(table: pa.Table, error_context_cols: Sequence[str]) -> pa
     fields.extend(
         [table.schema.field(name) for name in error_context_cols if name in table.column_names]
     )
-    return pa.Table.from_batches([], schema=pa.schema(fields))
+    return empty_table_from_schema(pa.schema(fields))
 
 
 def _concat_errors(

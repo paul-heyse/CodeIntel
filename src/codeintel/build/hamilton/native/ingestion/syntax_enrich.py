@@ -38,14 +38,21 @@ from codeintel.build.tabular.finalize_ops import (
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.table_ops import ensure_table_columns
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_columnar_context,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.expr_vocab import E, Expression
+from codeintel.core.columnar.finalize_ops import (
+    finalize_spec_for_table as columnar_finalize_spec_for_table,
+)
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
+from codeintel.core.schemas.primitives import resolve_join_safe_columns
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -62,6 +69,7 @@ SYNTAX_CALLS_TABLE_KEY = "core.syntax_calls"
 SYNTAX_IMPORTS_TABLE_KEY = "core.syntax_imports"
 SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY = "core.scip_occurrence_span_xref"
 SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY = "core.scip_occurrence_syntax_xref"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 _OCCURRENCE_INT_COLUMNS = (
     "occ_start_line",
     "occ_start_col",
@@ -78,6 +86,13 @@ def _ordered_columns(table_key: str) -> list[str]:
     except (KeyError, RuntimeError):
         return []
     return list(schema.column_names())
+
+
+def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
+    if table_key is None:
+        return ()
+    schema = get_schema_service().get_table_schema(table_key)
+    return resolve_join_safe_columns(schema)
 
 
 def _select_for_table(table: pa.Table, table_key: str) -> pa.Table:
@@ -141,6 +156,15 @@ class _JoinSpec:
     right_keys: Sequence[str]
     left_table_key: str | None = None
     right_table_key: str | None = None
+
+
+def _resolve_ingest_execution_ctx(env: BuildEnv | None) -> ExecutionContext:
+    if env is not None:
+        resolved = resolve_columnar_context(env.execution_context)
+        if resolved is not None:
+            return resolved
+    fallback: ExecutionContext | None = None
+    return resolve_execution_context(fallback)
 
 
 def _join_casts(keys: Sequence[str]) -> dict[str, str]:
@@ -226,6 +250,7 @@ def _hash_join_tables(
     *,
     spec: _JoinSpec,
     how: JoinType = "left outer",
+    execution_ctx: ExecutionContext,
 ) -> pa.Table:
     left_checked = _precheck_join_table(
         left,
@@ -237,8 +262,14 @@ def _hash_join_tables(
         table_key=spec.right_table_key,
         join_keys=spec.right_keys,
     )
-    left_checked = normalize_table_for_join(left_checked)
-    right_checked = normalize_table_for_join(right_checked)
+    left_checked = normalize_table_for_join(
+        left_checked,
+        allowed_columns=_join_safe_allowlist(spec.left_table_key),
+    )
+    right_checked = normalize_table_for_join(
+        right_checked,
+        allowed_columns=_join_safe_allowlist(spec.right_table_key),
+    )
     left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
     right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
     left_plan = build_table_plan(table=left_checked).project(left_exprs)
@@ -255,7 +286,7 @@ def _hash_join_tables(
         ),
     )
     joined = joined.order_by(sort_keys=[(key, "ascending") for key in spec.left_keys])
-    return _plan_to_table(joined)
+    return _plan_to_table(joined, execution_ctx=execution_ctx)
 
 
 def _rename_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
@@ -288,6 +319,8 @@ def _drop_occurrence_bytes(table: pa.Table) -> pa.Table:
 def _occurrence_resolution_table(
     q__core__scip_occurrence_span_xref: InferableTabularInput,
     q__core__scip_occurrence_syntax_xref: InferableTabularInput,
+    *,
+    execution_ctx: ExecutionContext,
 ) -> pa.Table:
     span = scoped_table_for_ingest(
         q__core__scip_occurrence_span_xref,
@@ -373,6 +406,7 @@ def _occurrence_resolution_table(
             left_table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
             right_table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
         ),
+        execution_ctx=execution_ctx,
     )
 
 
@@ -386,11 +420,13 @@ def _resolve_facts(
     fact_columns = list(facts.column_names)
     if not fact_columns:
         return empty_table_for_table(table_key)
+    execution_ctx = _resolve_ingest_execution_ctx(env)
     resolved_columns = _ordered_columns(table_key)
     matched_bytes, fallback_join, line_join = _resolve_occurrence_joins(
         facts,
         occurrences,
         fact_columns,
+        execution_ctx=execution_ctx,
     )
     if resolved_columns:
         aligned = [
@@ -419,28 +455,35 @@ def _resolve_occurrence_joins(
     facts: pa.Table,
     occurrences: pa.Table,
     fact_columns: Sequence[str],
+    *,
+    execution_ctx: ExecutionContext,
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
     bytes_expr = _valid_pair_expr("start_byte", "end_byte")
-    facts_with_bytes = _filter_table_expr(facts, bytes_expr)
-    facts_without_bytes = _filter_table_expr(facts, ~bytes_expr)
+    facts_with_bytes = _filter_table_expr(facts, bytes_expr, execution_ctx=execution_ctx)
+    facts_without_bytes = _filter_table_expr(facts, ~bytes_expr, execution_ctx=execution_ctx)
     facts_with_bytes, extras_bytes = _detach_column(facts_with_bytes, "extras")
     facts_without_bytes, extras_no_bytes = _detach_column(facts_without_bytes, "extras")
 
     occ_bytes_expr = _valid_pair_expr("occ_start_byte", "occ_end_byte")
-    occ_bytes = _filter_table_expr(occurrences, occ_bytes_expr)
+    occ_bytes = _filter_table_expr(occurrences, occ_bytes_expr, execution_ctx=execution_ctx)
     byte_left, byte_right = _occurrence_byte_join_keys()
     bytes_join = _hash_join_tables(
         facts_with_bytes,
         occ_bytes,
         spec=_JoinSpec(left_keys=byte_left, right_keys=byte_right),
+        execution_ctx=execution_ctx,
     )
     bytes_join = _attach_column(bytes_join, "extras", extras_bytes)
-    fallback = _filter_table_expr(bytes_join, E.is_null("scip_symbol"))
+    fallback = _filter_table_expr(bytes_join, E.is_null("scip_symbol"), execution_ctx=execution_ctx)
     fallback = fallback.select(fact_columns)
-    line_join = _line_join_occurrences(facts_without_bytes, occurrences)
+    line_join = _line_join_occurrences(
+        facts_without_bytes,
+        occurrences,
+        execution_ctx=execution_ctx,
+    )
     line_join = _attach_column(line_join, "extras", extras_no_bytes)
-    fallback_join = _line_join_occurrences(fallback, occurrences)
-    matched_bytes = _filter_table_expr(bytes_join, E.is_valid("scip_symbol"))
+    fallback_join = _line_join_occurrences(fallback, occurrences, execution_ctx=execution_ctx)
+    matched_bytes = _filter_table_expr(bytes_join, E.is_valid("scip_symbol"), execution_ctx=execution_ctx)
     return matched_bytes, fallback_join, line_join
 
 
@@ -448,29 +491,44 @@ def _valid_pair_expr(start_col: str, end_col: str) -> Expression:
     return E.and_(E.is_valid(start_col), E.is_valid(end_col))
 
 
-def _filter_table_expr(table: pa.Table, expr: Expression) -> pa.Table:
+def _filter_table_expr(
+    table: pa.Table,
+    expr: Expression,
+    *,
+    execution_ctx: ExecutionContext,
+) -> pa.Table:
     if table.num_rows == 0:
         return table
     plan = build_table_plan(
         table=table,
         options=TablePlanOptions(filter_expr=expr),
     )
-    return _plan_to_table(plan)
+    return _plan_to_table(plan, execution_ctx=execution_ctx)
 
 
-def _plan_to_table(plan: Plan) -> pa.Table:
-    execution_ctx = resolve_execution_context(None)
-    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+def _plan_to_table(plan: Plan, *, execution_ctx: ExecutionContext) -> pa.Table:
+    resolved_ctx = resolve_execution_context(execution_ctx)
+    result = run_pipeline(
+        plan=ExecutionPlan.from_plan(plan),
+        finalize=columnar_finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
+        options=PipelineRunOptions(ctx=resolved_ctx),
+    )
+    return result.good
 
 
-def _line_join_occurrences(left: pa.Table, occurrences: pa.Table) -> pa.Table:
+def _line_join_occurrences(
+    left: pa.Table,
+    occurrences: pa.Table,
+    *,
+    execution_ctx: ExecutionContext,
+) -> pa.Table:
     stripped_left, extras = _detach_column(left, "extras")
     line_left, line_right = _occurrence_line_join_keys()
     joined = _hash_join_tables(
         stripped_left,
         occurrences,
         spec=_JoinSpec(left_keys=line_left, right_keys=line_right),
+        execution_ctx=execution_ctx,
     )
     return _attach_column(joined, "extras", extras)
 
@@ -536,19 +594,31 @@ def _occurrence_line_join_keys() -> tuple[list[str], list[str]]:
 
 
 def syntax_enrich__occurrence_resolution(
+    env: BuildEnv,
     q__core__scip_occurrence_span_xref: InferableTabularInput,
     q__core__scip_occurrence_syntax_xref: InferableTabularInput,
 ) -> pa.Table:
     """Return occurrence rows merged with SCIP roles and GOID metadata.
+
+    Parameters
+    ----------
+    env
+        Build environment providing execution context defaults.
+    q__core__scip_occurrence_span_xref
+        Occurrence span xref rows for scip matches.
+    q__core__scip_occurrence_syntax_xref
+        Occurrence syntax xref rows for scip matches.
 
     Returns
     -------
     pa.Table
         Arrow table containing merged occurrence metadata for resolution joins.
     """
+    execution_ctx = _resolve_ingest_execution_ctx(env)
     return _occurrence_resolution_table(
         q__core__scip_occurrence_span_xref,
         q__core__scip_occurrence_syntax_xref,
+        execution_ctx=execution_ctx,
     )
 
 

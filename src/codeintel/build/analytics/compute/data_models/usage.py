@@ -21,6 +21,7 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.analytics.utilities.list_semantics import normalize_list_semantics
 from codeintel.build.analytics.utilities.snapshot import (
     SnapshotContext,
     require_columns,
@@ -42,6 +43,10 @@ if TYPE_CHECKING:
     from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 
 DATA_MODEL_USAGE_TABLE_KEY = "analytics.data_model_usage"
+DATA_MODELS_TABLE_KEY = "analytics.data_models"
+FUNCTION_TYPES_TABLE_KEY = "analytics.function_types"
+SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
+SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
 
 
 def _columns_for_table(table_key: str) -> list[str]:
@@ -186,7 +191,13 @@ def _param_types_from_frame(
     if frame is None or frame.num_rows == 0:
         return {}
     param_types: dict[int, dict[str, str]] = {}
-    for row in _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx):
+    for row in _rows_for_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+        table_key=FUNCTION_TYPES_TABLE_KEY,
+    ):
         goid_int = normalize_decimal_id(row.get("function_goid_h128"))
         if goid_int is None:
             continue
@@ -475,7 +486,13 @@ def _load_models_from_frame(
     if frame is None or frame.num_rows == 0:
         return []
     models: list[ModelInfo] = []
-    for row in _rows_for_snapshot(frame, repo=repo, commit=commit, ctx=ctx):
+    for row in _rows_for_snapshot(
+        frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+        table_key=DATA_MODELS_TABLE_KEY,
+    ):
         model_id = row.get("model_id")
         model_name = row.get("model_name")
         module = row.get("module")
@@ -501,9 +518,16 @@ def _subsystem_by_module_from_frames(
         repo=repo,
         commit=commit,
         ctx=ctx,
+        table_key=SUBSYSTEM_MODULES_TABLE_KEY,
     )
     subsystems_filtered = (
-        _rows_for_snapshot(subsystems_frame, repo=repo, commit=commit, ctx=ctx)
+        _rows_for_snapshot(
+            subsystems_frame,
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=SUBSYSTEMS_TABLE_KEY,
+        )
         if subsystems_frame is not None and subsystems_frame.num_rows > 0
         else None
     )
@@ -635,11 +659,17 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
     ctx: ExecutionContext | RuntimeExecutionContext | None,
+    table_key: str | None = None,
 ) -> list[dict[str, object]]:
     require_columns(frame, ("repo", "commit"))
     filtered = snapshot_table(
         frame,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=table_key,
+        ),
     )
     return list(iter_rows(filtered))
 
@@ -677,7 +707,7 @@ def _build_usage_rows(
                     "model_id": model_id,
                     "function_goid_h128": goid,
                     "extras": {
-                        "usage_kinds": sorted(kinds),
+                        "usage_kinds": normalize_list_semantics(kinds),
                         "evidence": dict(evidence_map),
                         "context": dict(context) if context else None,
                     },

@@ -16,6 +16,7 @@ from codeintel.core.columnar.execution_context import (
     resolve_execution_context,
 )
 from codeintel.core.columnar.expr_vocab import E, Expression
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.finalize_ops import (
     FinalizeResult,
     FinalizeSpec,
@@ -209,7 +210,7 @@ class ExecutionPlan:
             table = self.table_thunk()
         else:
             reader = self.to_reader(ctx=ctx)
-            table = reader.read_all()
+            table = reader_to_table(reader)
         return normalize_table_for_compute(table, combine_chunks=ctx.combine_chunks)
 
 

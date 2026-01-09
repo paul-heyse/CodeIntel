@@ -7,10 +7,16 @@ from typing import TYPE_CHECKING, Literal
 
 import polars as pl
 import pyarrow as pa
-import pyarrow.dataset as pa_ds
 
 from codeintel.core.columnar.readers import record_batch_reader_from_batches
-from codeintel.core.columnar.stream import LazyFrameStream, coerce_arrow_reader
+from codeintel.core.columnar.stream import (
+    ColumnarStream,
+    LazyFrameStream,
+    coerce_arrow_reader,
+    stream_from_reader,
+    stream_from_relation,
+    stream_from_table,
+)
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBRelation
 
@@ -53,16 +59,8 @@ def table_to_reader(
     pa.RecordBatchReader
         Reader over record batches from the table.
     """
-    to_reader = getattr(table, "to_reader", None)
-    if callable(to_reader):
-        if batch_size is None:
-            return to_reader()
-        try:
-            return to_reader(max_chunksize=batch_size)
-        except TypeError:
-            return to_reader()
-    batches = table.to_batches(max_chunksize=batch_size) if batch_size else table.to_batches()
-    return record_batch_reader_from_batches(table.schema, batches)
+    stream = stream_from_table(table, batch_size=batch_size)
+    return stream.to_reader(batch_size=batch_size or DEFAULT_ARROW_BATCH_SIZE)
 
 
 def reader_to_table(reader: pa.RecordBatchReader | pa.Table) -> pa.Table:
@@ -75,7 +73,7 @@ def reader_to_table(reader: pa.RecordBatchReader | pa.Table) -> pa.Table:
     """
     if isinstance(reader, pa.Table):
         return reader
-    return pa.Table.from_batches(reader, schema=reader.schema)
+    return stream_from_reader(reader).to_table()
 
 
 def lazyframe_to_reader(frame: pl.LazyFrame) -> pa.RecordBatchReader:
@@ -86,13 +84,7 @@ def lazyframe_to_reader(frame: pl.LazyFrame) -> pa.RecordBatchReader:
     pa.RecordBatchReader
         Reader over streamed record batches.
     """
-    stream = LazyFrameStream(
-        frame,
-        query_opt_flags=None,
-        streaming=True,
-        streaming_fallback=True,
-        inspect=False,
-    )
+    stream = _lazyframe_stream(_coerce_goid_columns(frame))
     return stream.to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
 
 
@@ -104,23 +96,8 @@ def arrow_reader_to_lazyframe(reader: pa.RecordBatchReader) -> pl.LazyFrame:
     pl.LazyFrame
         LazyFrame constructed from the Arrow reader.
 
-    Raises
-    ------
-    ValueError
-        If the Arrow reader fails to materialize and provides no schema.
-    ArrowInvalid
-        If the Arrow reader cannot be materialized and provides no schema.
     """
-    try:
-        dataset = pa_ds.dataset(reader)
-    except (ValueError, pa.ArrowInvalid) as exc:
-        schema = getattr(reader, "schema", None)
-        if schema is None:
-            raise
-        empty = pa.Table.from_batches([], schema=schema)
-        _ = exc
-        return table_to_lazyframe(empty)
-    return _coerce_goid_columns(pl.scan_pyarrow_dataset(dataset))
+    return _coerce_goid_columns(stream_from_reader(reader).to_lazyframe())
 
 
 def table_to_lazyframe(table: pa.Table) -> pl.LazyFrame:
@@ -131,10 +108,7 @@ def table_to_lazyframe(table: pa.Table) -> pl.LazyFrame:
     pl.LazyFrame
         LazyFrame constructed from the Arrow table.
     """
-    frame = pl.from_arrow(table)
-    if isinstance(frame, pl.Series):
-        return _coerce_goid_columns(frame.to_frame().lazy())
-    return _coerce_goid_columns(frame.lazy())
+    return _coerce_goid_columns(stream_from_table(table, batch_size=None).to_lazyframe())
 
 
 def table_to_frame(table: pa.Table) -> pl.DataFrame:
@@ -145,10 +119,7 @@ def table_to_frame(table: pa.Table) -> pl.DataFrame:
     pl.DataFrame
         DataFrame constructed from the Arrow table.
     """
-    frame = pl.from_arrow(table)
-    if isinstance(frame, pl.Series):
-        frame = frame.to_frame()
-    return _coerce_goid_columns_frame(frame)
+    return _coerce_goid_columns_frame(table_to_lazyframe(table).collect())
 
 
 def tabular_to_frame(value: InferableTabularInput) -> pl.DataFrame:
@@ -164,31 +135,23 @@ def tabular_to_frame(value: InferableTabularInput) -> pl.DataFrame:
     pl.DataFrame
         DataFrame representation of the input.
 
-    Raises
-    ------
-    TypeError
-        If the input type cannot be coerced into a DataFrame.
     """
     if isinstance(value, pl.DataFrame):
-        result = _coerce_goid_columns_frame(value)
-    elif isinstance(value, pl.LazyFrame):
-        result = _coerce_goid_columns(value).collect()
-    elif isinstance(value, pa.Table):
-        result = table_to_frame(value)
-    elif isinstance(value, pa.RecordBatchReader):
-        result = arrow_reader_to_lazyframe(value).collect()
-    elif isinstance(value, DuckDBRelation):
-        result = arrow_reader_to_lazyframe(value.fetch_arrow_reader()).collect()
-    elif isinstance(value, Iterable):
+        return _coerce_goid_columns_frame(value)
+    if isinstance(value, Iterable):
         reader = record_batch_reader_from_iterable(value, empty_policy="none")
-        result = pl.DataFrame() if reader is None else arrow_reader_to_lazyframe(reader).collect()
-    else:
-        msg = f"Unsupported tabular input type: {type(value).__name__}"
-        raise TypeError(msg)
-    return result
+        if reader is None:
+            return pl.DataFrame()
+        return table_to_frame(reader_to_table(reader))
+    table = tabular_to_arrow_table(value)
+    return table_to_frame(table)
 
 
-def tabular_to_arrow_reader(value: InferableTabularInput) -> pa.RecordBatchReader:
+def tabular_to_arrow_reader(
+    value: InferableTabularInput,
+    *,
+    batch_size: int | None = DEFAULT_ARROW_BATCH_SIZE,
+) -> pa.RecordBatchReader:
     """Convert an inferable tabular input to a RecordBatchReader.
 
     Parameters
@@ -201,41 +164,20 @@ def tabular_to_arrow_reader(value: InferableTabularInput) -> pa.RecordBatchReade
     pa.RecordBatchReader
         RecordBatchReader representation of the input.
 
-    Raises
-    ------
-    TypeError
-        If the input type cannot be coerced into a RecordBatchReader.
-
     Notes
     -----
     RecordBatchReader inputs are single-consume; materialize to a table or
     LazyFrame if reuse is required.
     """
-    reader: pa.RecordBatchReader | None = None
-    if isinstance(value, pa.RecordBatchReader):
-        reader = value
-    elif isinstance(value, pa.Table):
-        reader = table_to_reader(value)
-    elif isinstance(value, DuckDBRelation):
-        reader = value.fetch_arrow_reader()
-    elif isinstance(value, pl.LazyFrame):
-        reader = lazyframe_to_reader(value)
-    elif isinstance(value, pl.DataFrame):
-        reader = table_to_reader(value.to_arrow())
-    else:
-        reader = coerce_arrow_reader(value, batch_size=DEFAULT_ARROW_BATCH_SIZE)
-        if reader is None and isinstance(value, Iterable):
-            reader = _record_batch_reader_from_iterable(value)
-            if reader is None:
-                msg = "Unsupported tabular input type: empty iterable"
-                raise TypeError(msg)
-    if reader is not None:
-        return reader
-    msg = f"Unsupported tabular input type: {type(value).__name__}"
-    raise TypeError(msg)
+    stream = _coerce_stream(value, batch_size=batch_size)
+    return stream.to_reader(batch_size=batch_size or DEFAULT_ARROW_BATCH_SIZE)
 
 
-def tabular_to_arrow_table(value: InferableTabularInput) -> pa.Table:
+def tabular_to_arrow_table(
+    value: InferableTabularInput,
+    *,
+    batch_size: int | None = DEFAULT_ARROW_BATCH_SIZE,
+) -> pa.Table:
     """Convert an inferable tabular input to an Arrow Table.
 
     Parameters
@@ -253,10 +195,49 @@ def tabular_to_arrow_table(value: InferableTabularInput) -> pa.Table:
     RecordBatchReader inputs are single-consume; avoid reusing them after
     calling this helper.
     """
-    if isinstance(value, pa.Table):
-        return value
-    reader = tabular_to_arrow_reader(value)
-    return reader_to_table(reader)
+    stream = _coerce_stream(value, batch_size=batch_size)
+    return stream.to_table()
+
+
+def reader_from_batches(
+    schema: pa.Schema,
+    batches: Iterable[pa.RecordBatch],
+) -> pa.RecordBatchReader:
+    """Return a RecordBatchReader for the provided schema and batches."""
+    return record_batch_reader_from_batches(schema, batches)
+
+
+def empty_table_from_schema(schema: pa.Schema) -> pa.Table:
+    """Return an empty Arrow table with the provided schema."""
+    return pa.Table.from_batches([], schema=schema)
+
+
+def table_from_batches(
+    batches: Iterable[pa.RecordBatch],
+    *,
+    schema: pa.Schema | None = None,
+) -> pa.Table:
+    """Return a table built from record batches with optional schema enforcement."""
+    reader = record_batch_reader_from_iterable(batches, empty_policy="none")
+    if reader is None:
+        if schema is None:
+            msg = "Record batch iterable is empty; schema must be provided"
+            raise ValueError(msg)
+        return empty_table_from_schema(schema)
+    table = reader_to_table(reader)
+    if schema is None or table.schema == schema:
+        return table
+    return table.cast(schema)
+
+
+def relation_to_reader(
+    relation: DuckDBRelation,
+    *,
+    batch_size: int | None = DEFAULT_ARROW_BATCH_SIZE,
+) -> pa.RecordBatchReader:
+    """Return a RecordBatchReader for a DuckDB relation."""
+    stream = stream_from_relation(relation, batch_size=batch_size)
+    return stream.to_reader(batch_size=batch_size or DEFAULT_ARROW_BATCH_SIZE)
 
 
 def _record_batch_reader_from_iterable(
@@ -280,6 +261,47 @@ def _record_batch_reader_from_iterable(
             yield batch
 
     return record_batch_reader_from_batches(first.schema, batch_iter())
+
+
+def _lazyframe_stream(frame: pl.LazyFrame) -> LazyFrameStream:
+    return LazyFrameStream(
+        frame,
+        query_opt_flags=None,
+        streaming=True,
+        streaming_fallback=True,
+        inspect=False,
+    )
+
+
+def _coerce_stream(
+    value: InferableTabularInput,
+    *,
+    batch_size: int | None,
+) -> ColumnarStream:
+    stream: ColumnarStream | None = None
+    if isinstance(value, pa.RecordBatchReader):
+        stream = stream_from_reader(value)
+    elif isinstance(value, pa.Table):
+        stream = stream_from_table(value, batch_size=batch_size)
+    elif isinstance(value, DuckDBRelation):
+        stream = stream_from_relation(value, batch_size=batch_size)
+    elif isinstance(value, pl.LazyFrame):
+        stream = _lazyframe_stream(_coerce_goid_columns(value))
+    elif isinstance(value, pl.DataFrame):
+        stream = stream_from_table(value.to_arrow(), batch_size=batch_size)
+    reader = coerce_arrow_reader(value, batch_size=batch_size)
+    if stream is None and reader is not None:
+        stream = stream_from_reader(reader)
+    if stream is None and isinstance(value, Iterable):
+        reader = _record_batch_reader_from_iterable(value)
+        if reader is None:
+            msg = "Unsupported tabular input type: empty iterable"
+            raise TypeError(msg)
+        stream = stream_from_reader(reader)
+    if stream is None:
+        msg = f"Unsupported tabular input type: {type(value).__name__}"
+        raise TypeError(msg)
+    return stream
 
 
 def record_batch_reader_from_iterable(
@@ -334,11 +356,15 @@ def _coerce_goid_columns_frame(frame: pl.DataFrame) -> pl.DataFrame:
 
 __all__ = [
     "arrow_reader_to_lazyframe",
+    "empty_table_from_schema",
     "lazyframe_to_reader",
+    "reader_from_batches",
     "reader_to_table",
+    "relation_to_reader",
     "record_batch_reader_from_iterable",
     "table_to_frame",
     "table_to_lazyframe",
+    "table_from_batches",
     "table_to_reader",
     "tabular_to_arrow_reader",
     "tabular_to_arrow_table",

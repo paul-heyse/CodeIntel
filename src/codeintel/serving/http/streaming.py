@@ -7,6 +7,7 @@ JSON (JSONL) or Arrow IPC streams to support efficient export of large datasets.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -19,8 +20,13 @@ from codeintel.core.columnar.arrowdsl import (
     PipelineRunOptions,
     run_pipeline,
 )
-from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.conversion import (
+    record_batch_reader_from_iterable,
+    table_from_batches,
+)
 from codeintel.core.columnar.readers import empty_reader_from_schema
+from codeintel.core.columnar.run_manifest import RunManifestOptions
+from codeintel.core.columnar.streaming import ScanTelemetry
 from codeintel.core.exports import ARROW_IPC_STREAM_MIME, iter_ipc_stream
 from codeintel.serving.export.formats import mime_type_for_export_format
 from codeintel.serving.export.ndjson import (
@@ -124,6 +130,9 @@ def ndjson_response_from_batches(
             finalize_spec=resolved.finalize_spec,
             finalize_hook=resolved.finalize_hook,
             execution_ctx=resolved.execution_context,
+            manifest_dir=resolved.manifest_dir,
+            manifest_options=resolved.manifest_options,
+            scan_telemetry=resolved.scan_telemetry,
         ),
     )
     return StreamingResponse(
@@ -175,6 +184,9 @@ class ArrowIpcResponseOptions:
     finalize_spec: FinalizeSpec | None = None
     finalize_hook: Callable[[FinalizeResult], None] | None = None
     execution_context: ExecutionContext | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
+    scan_telemetry: ScanTelemetry | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +201,9 @@ class NdjsonBatchResponseOptions:
     finalize_spec: FinalizeSpec | None = None
     finalize_hook: Callable[[FinalizeResult], None] | None = None
     execution_context: ExecutionContext | None = None
+    manifest_dir: Path | None = None
+    manifest_options: RunManifestOptions | None = None
+    scan_telemetry: ScanTelemetry | None = None
 
 
 def arrow_ipc_response(
@@ -239,10 +254,15 @@ def arrow_ipc_response(
         if resolved.finalize_spec is not None:
             reader = _finalized_reader(
                 reader,
-                finalize_spec=resolved.finalize_spec,
-                finalize_hook=resolved.finalize_hook,
-                cancel_check=resolved.cancel_check,
-                execution_ctx=resolved.execution_context,
+                request=_FinalizeReaderRequest(
+                    finalize_spec=resolved.finalize_spec,
+                    finalize_hook=resolved.finalize_hook,
+                    cancel_check=resolved.cancel_check,
+                    execution_ctx=resolved.execution_context,
+                    manifest_dir=resolved.manifest_dir,
+                    manifest_options=resolved.manifest_options,
+                    scan_telemetry=resolved.scan_telemetry,
+                ),
             )
         payload = iter_ipc_stream(
             reader,
@@ -261,30 +281,43 @@ def arrow_ipc_response(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _FinalizeReaderRequest:
+    finalize_spec: FinalizeSpec
+    finalize_hook: Callable[[FinalizeResult], None] | None
+    cancel_check: Callable[[], None] | None
+    execution_ctx: ExecutionContext | None
+    manifest_dir: Path | None
+    manifest_options: RunManifestOptions | None
+    scan_telemetry: ScanTelemetry | None
+
+
 def _finalized_reader(
     reader: pa.RecordBatchReader,
     *,
-    finalize_spec: FinalizeSpec,
-    finalize_hook: Callable[[FinalizeResult], None] | None,
-    cancel_check: Callable[[], None] | None,
-    execution_ctx: ExecutionContext | None,
+    request: _FinalizeReaderRequest,
 ) -> pa.RecordBatchReader:
-    resolved_ctx = execution_ctx or ExecutionContext()
+    resolved_ctx = request.execution_ctx or ExecutionContext()
 
     def _iter_batches() -> Iterator[RecordBatch]:
         for batch in reader:
-            if cancel_check is not None:
-                cancel_check()
+            if request.cancel_check is not None:
+                request.cancel_check()
             if batch.num_rows == 0:
                 continue
-            table = pa.Table.from_batches([batch], schema=batch.schema)
+            table = table_from_batches([batch], schema=batch.schema)
             result = run_pipeline(
                 plan=ExecutionPlan.from_table(table),
-                finalize=finalize_spec,
-                options=PipelineRunOptions(ctx=resolved_ctx),
+                finalize=request.finalize_spec,
+                options=PipelineRunOptions(
+                    ctx=resolved_ctx,
+                    manifest_dir=request.manifest_dir,
+                    manifest_options=request.manifest_options,
+                    scan_telemetry=request.scan_telemetry,
+                ),
             )
-            if finalize_hook is not None:
-                finalize_hook(result)
+            if request.finalize_hook is not None:
+                request.finalize_hook(result)
             yield from result.good.to_batches(max_chunksize=batch.num_rows)
 
     finalized = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")

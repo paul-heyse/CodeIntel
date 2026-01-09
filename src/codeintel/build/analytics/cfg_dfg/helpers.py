@@ -7,6 +7,7 @@ and dfg_core.py to eliminate code duplication.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
@@ -18,9 +19,9 @@ from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import equal_expr, is_in_expr, is_valid_expr
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.conversion import empty_table_from_schema
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
@@ -63,6 +64,13 @@ def degree_dict(
     return degree_map
 
 
+CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
+CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
+DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
+CORE_GOIDS_TABLE_KEY = "core.goids"
+CORE_MODULES_TABLE_KEY = "core.modules"
+
+
 def parse_block_idx(block_id: str | int | None) -> int | None:
     """Extract the integer block index from a block identifier.
 
@@ -96,13 +104,21 @@ def _combine_expr(
     return cast("Expression", current & next_expr)
 
 
+@dataclass(frozen=True, slots=True)
+class PrefilterRequest:
+    """Prefilter settings for table expressions."""
+
+    repo: str | None = None
+    commit: str | None = None
+    kinds: Sequence[str] | None = None
+    require_valid: Sequence[str] = ()
+
+
 def prefilter_table(
     table: pa.Table,
     *,
-    repo: str | None = None,
-    commit: str | None = None,
-    kinds: Sequence[str] | None = None,
-    require_valid: Sequence[str] = (),
+    table_key: str,
+    request: PrefilterRequest,
 ) -> pa.Table:
     """Prefilter a table using compute expressions when columns exist.
 
@@ -113,13 +129,13 @@ def prefilter_table(
     """
     column_names = set(table.column_names)
     expr: Expression | None = None
-    if repo is not None and "repo" in column_names:
-        expr = _combine_expr(expr, equal_expr("repo", repo))
-    if commit is not None and "commit" in column_names:
-        expr = _combine_expr(expr, equal_expr("commit", commit))
-    if kinds and "kind" in column_names:
-        expr = _combine_expr(expr, is_in_expr("kind", value_set=kinds))
-    for name in require_valid:
+    if request.repo is not None and "repo" in column_names:
+        expr = _combine_expr(expr, equal_expr("repo", request.repo))
+    if request.commit is not None and "commit" in column_names:
+        expr = _combine_expr(expr, equal_expr("commit", request.commit))
+    if request.kinds and "kind" in column_names:
+        expr = _combine_expr(expr, is_in_expr("kind", value_set=request.kinds))
+    for name in request.require_valid:
         if name in column_names:
             expr = _combine_expr(expr, is_valid_expr(name))
     if expr is None:
@@ -130,6 +146,7 @@ def prefilter_table(
                 table=table,
                 options=TablePlanOptions(filter_expr=expr),
             ),
+            table_key=table_key,
             ctx=None,
         )
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
@@ -162,7 +179,12 @@ def cfg_blocks_rowset(
     plan = snapshot_plan(
         table,
         columns=required,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CFG_BLOCKS_TABLE_KEY,
+        ),
     )
     plan = plan.filter(
         E.and_(
@@ -170,7 +192,7 @@ def cfg_blocks_rowset(
             E.is_valid("block_idx"),
         )
     )
-    filtered = _materialize_plan(plan, ctx=ctx)
+    filtered = _materialize_plan(plan, table_key=CFG_BLOCKS_TABLE_KEY, ctx=ctx)
     return grouped_rollup_table(
         filtered,
         spec=GroupedRollupSpec(
@@ -207,7 +229,12 @@ def cfg_edges_rowset(
     plan = snapshot_plan(
         table,
         columns=required,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CFG_EDGES_TABLE_KEY,
+        ),
     )
     plan = plan.filter(
         E.and_(
@@ -216,7 +243,7 @@ def cfg_edges_rowset(
             E.is_valid("dst_block_id"),
         )
     )
-    filtered = _materialize_plan(plan, ctx=ctx)
+    filtered = _materialize_plan(plan, table_key=CFG_EDGES_TABLE_KEY, ctx=ctx)
     return grouped_rollup_table(
         filtered,
         spec=GroupedRollupSpec(
@@ -265,7 +292,12 @@ def dfg_edges_rowset(
     plan = snapshot_plan(
         table,
         columns=required,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=DFG_EDGES_TABLE_KEY,
+        ),
     )
     plan = plan.filter(
         E.and_(
@@ -276,7 +308,7 @@ def dfg_edges_rowset(
             E.is_valid("dst_var"),
         )
     )
-    filtered = _materialize_plan(plan, ctx=ctx)
+    filtered = _materialize_plan(plan, table_key=DFG_EDGES_TABLE_KEY, ctx=ctx)
     return grouped_rollup_table(
         filtered,
         spec=GroupedRollupSpec(
@@ -371,14 +403,19 @@ def _module_metadata_table(
     ctx: ExecutionContext | None,
 ) -> pa.Table:
     if "path" not in table.column_names or "module" not in table.column_names:
-        return pa.Table.from_batches([], schema=table.schema)
+        return empty_table_from_schema(table.schema)
     plan = snapshot_plan(
         table,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CORE_MODULES_TABLE_KEY,
+        ),
     )
     plan = plan.filter(E.and_(E.is_valid("path"), E.is_valid("module")))
     plan = plan.project({"path": E.field("path"), "module": E.field("module")})
-    filtered = _materialize_plan(plan, ctx=ctx)
+    filtered = _materialize_plan(plan, table_key=CORE_MODULES_TABLE_KEY, ctx=ctx)
     return grouped_rollup_table(
         filtered,
         spec=GroupedRollupSpec(
@@ -398,10 +435,15 @@ def _goid_metadata_table(
 ) -> pa.Table:
     required = {"goid_h128", "rel_path"}
     if not required.issubset(table.column_names):
-        return pa.Table.from_batches([], schema=table.schema)
+        return empty_table_from_schema(table.schema)
     plan = snapshot_plan(
         table,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=CORE_GOIDS_TABLE_KEY,
+        ),
     )
     filters: list[Expression] = []
     if "kind" in table.column_names:
@@ -418,7 +460,7 @@ def _goid_metadata_table(
     else:
         project["qualname"] = E.scalar(None)
     plan = plan.project(project)
-    filtered = _materialize_plan(plan, ctx=ctx)
+    filtered = _materialize_plan(plan, table_key=CORE_GOIDS_TABLE_KEY, ctx=ctx)
     return grouped_rollup_table(
         filtered,
         spec=GroupedRollupSpec(
@@ -435,11 +477,15 @@ def _goid_metadata_table(
 def _materialize_plan(
     plan: Plan,
     *,
+    table_key: str,
     ctx: ExecutionContext | None,
 ) -> pa.Table:
-    execution_ctx = resolve_execution_context(ctx)
-    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = run_pipeline(
+        plan=ExecutionPlan.from_plan(plan),
+        finalize=finalize_spec_for_table(table_key, mode="tolerant"),
+        options=PipelineRunOptions(ctx=ctx),
+    )
+    return result.good
 
 
 __all__ = [

@@ -18,10 +18,8 @@ from codeintel.build.analytics.graphs.config_graph_metrics import build_config_m
 from codeintel.build.analytics.graphs.graph_metrics import (
     GraphMetricsInputs,
     SymbolModuleEdges,
-    build_call_graph_from_rows,
     build_graph_metric_filters_from_sets,
     build_graph_metrics_rows,
-    build_import_graph_from_rows,
 )
 from codeintel.build.analytics.graphs.graph_metrics_ext import (
     build_graph_metrics_functions_ext_rows,
@@ -33,12 +31,14 @@ from codeintel.build.analytics.graphs.graph_stats import (
 from codeintel.build.analytics.graphs.module_graph_metrics_ext import (
     build_graph_metrics_modules_ext_rows,
 )
-from codeintel.build.analytics.graphs.symbol_graph_metrics import (
-    build_symbol_function_graph,
-    build_symbol_module_graph,
-)
 from codeintel.build.config import BuildConfig
-from codeintel.build.graphs.builders import build_symbol_module_edges
+from codeintel.build.graphs.builders import (
+    build_call_graph_from_tables,
+    build_import_graph_from_tables,
+    build_symbol_function_graph_from_tables,
+    build_symbol_module_edges,
+    build_symbol_module_graph_from_tables,
+)
 from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
 from codeintel.build.graphs.rx.algos import ensure_store
 from codeintel.build.graphs.rx.store import RxGraphStore
@@ -55,6 +55,7 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.assertions import assert_target_ok
 from tests._helpers.assertions.modules import ModulesAssertions, compute_file_state_hash_from_table
+from tests._helpers.columnar_streams import table_for_rows
 from tests._helpers.configs import (
     DEFAULT_VARIANT,
     CallgraphFixtureOptions,
@@ -289,7 +290,9 @@ def _call_graph_for_graph_metrics(
         ("goid_h128", "kind"),
         [],
     )
-    return ensure_store(build_call_graph_from_rows(call_edge_rows, call_node_rows))
+    edge_table = table_for_rows("graph.call_graph_edges", call_edge_rows)
+    node_table = table_for_rows("graph.call_graph_nodes", call_node_rows)
+    return ensure_store(build_call_graph_from_tables(edge_table, node_table))
 
 
 def _import_graph_for_graph_metrics(
@@ -310,7 +313,9 @@ def _import_graph_for_graph_metrics(
         ("module", "scc_id", "component_size", "layer"),
         [snapshot.repo, snapshot.commit],
     )
-    import_graph = ensure_store(build_import_graph_from_rows(import_edge_rows, import_module_rows))
+    edge_table = table_for_rows("graph.import_graph_edges", import_edge_rows)
+    module_table = table_for_rows("graph.import_modules", import_module_rows)
+    import_graph = ensure_store(build_import_graph_from_tables(edge_table, module_table))
     component_meta = component_metadata_from_import_rows(import_module_rows)
     return import_graph, component_meta
 
@@ -327,8 +332,20 @@ def _symbol_graph_inputs_for_graph_metrics(
     )
     return (
         build_symbol_module_edges(symbol_rows, module_by_path),
-        ensure_store(build_symbol_module_graph(symbol_rows, module_by_path)),
-        ensure_store(build_symbol_function_graph(symbol_rows)),
+        ensure_store(
+            build_symbol_module_graph_from_tables(
+                table_for_rows("graph.symbol_use_edges", symbol_rows),
+                table_for_rows(
+                    "core.modules",
+                    [{"path": path, "module": module} for path, module in module_by_path.items()],
+                ),
+            )
+        ),
+        ensure_store(
+            build_symbol_function_graph_from_tables(
+                table_for_rows("graph.symbol_use_edges", symbol_rows),
+            )
+        ),
     )
 
 

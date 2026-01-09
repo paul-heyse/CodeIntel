@@ -31,7 +31,11 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import TagKey, TagValue
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.observation_provider import observation_provider_for_env
-from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.conversion import (
+    empty_table_from_schema,
+    tabular_to_arrow_table,
+    table_from_batches,
+)
 from codeintel.build.tabular.types import TabularInput
 from codeintel.core.columnar.type_normalization import (
     normalize_binary_view_table,
@@ -442,8 +446,8 @@ def _ensure_table(value: object, *, param_name: str) -> pa.Table:
         reader = cast("pa.RecordBatchReader", value)
         batches = list(normalize_reader(reader))
         if not batches:
-            return pa.Table.from_batches([], schema=reader.schema)
-        return pa.Table.from_batches(batches, schema=batches[0].schema)
+            return empty_table_from_schema(reader.schema)
+        return table_from_batches(batches, schema=batches[0].schema)
     try:
         return tabular_to_arrow_table(value)
     except TypeError as exc:

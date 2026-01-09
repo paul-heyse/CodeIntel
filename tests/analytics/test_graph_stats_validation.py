@@ -8,10 +8,6 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.analytics.graphs.config_graph_metrics import build_config_module_bipartite
-from codeintel.build.analytics.graphs.graph_metrics import (
-    build_call_graph_from_rows,
-    build_import_graph_from_rows,
-)
 from codeintel.build.analytics.graphs.graph_stats import (
     GraphStatsInputs,
     build_graph_stats_rows,
@@ -20,13 +16,16 @@ from codeintel.build.analytics.graphs.subsystem_agreement import (
     SubsystemAgreementInputs,
     build_subsystem_agreement_rows,
 )
-from codeintel.build.analytics.graphs.symbol_graph_metrics import (
-    build_symbol_function_graph,
-    build_symbol_module_graph,
+from codeintel.build.graphs.builders import (
+    build_call_graph_from_tables,
+    build_import_graph_from_tables,
+    build_symbol_function_graph_from_tables,
+    build_symbol_module_graph_from_tables,
 )
 from codeintel.build.graphs.engine import NxGraphEngine
 from codeintel.build.graphs.validation import warn_graph_structure
 from codeintel.storage.query_results import records_from_arrow_table, records_from_relation
+from tests._helpers.columnar_streams import table_for_rows
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -137,8 +136,16 @@ def test_graph_stats_include_symbol_and_config_graphs(graph_ctx: TestContext) ->
         "graph.symbol_use_edges",
         ["def_path", "use_path", "def_goid_h128", "use_goid_h128"],
     )
-    symbol_module_graph = build_symbol_module_graph(symbol_rows, module_by_path)
-    symbol_function_graph = build_symbol_function_graph(symbol_rows)
+    symbol_use_table = table_for_rows("graph.symbol_use_edges", symbol_rows)
+    module_map_table = table_for_rows(
+        "core.modules",
+        [{"path": path, "module": module} for path, module in module_by_path.items()],
+    )
+    symbol_module_graph = build_symbol_module_graph_from_tables(
+        symbol_use_table,
+        module_map_table,
+    )
+    symbol_function_graph = build_symbol_function_graph_from_tables(symbol_use_table)
     config_rows = _records_for_table(
         graph_ctx,
         "analytics.config_values",
@@ -150,8 +157,14 @@ def test_graph_stats_include_symbol_and_config_graphs(graph_ctx: TestContext) ->
         repo=graph_ctx.repo,
         commit=graph_ctx.commit,
     )
-    call_graph = build_call_graph_from_rows([], [])
-    import_graph = build_import_graph_from_rows([], [])
+    call_graph = build_call_graph_from_tables(
+        table_for_rows("graph.call_graph_edges", []),
+        table_for_rows("graph.call_graph_nodes", []),
+    )
+    import_graph = build_import_graph_from_tables(
+        table_for_rows("graph.import_graph_edges", []),
+        table_for_rows("graph.import_modules", []),
+    )
     stats_rows = build_graph_stats_rows(
         GraphStatsInputs(
             repo=graph_ctx.repo,

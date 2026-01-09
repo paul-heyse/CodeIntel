@@ -18,10 +18,11 @@ from codeintel.build.analytics.graphs.subsystem_agreement import (
 )
 from codeintel.build.analytics.graphs.symbol_graph_metrics import (
     build_symbol_graph_metrics_module_rows,
-    build_symbol_module_graph,
 )
+from codeintel.build.graphs.builders import build_symbol_module_graph_from_tables
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.storage.query_results import records_from_arrow_table, records_from_relation
+from tests._helpers.columnar_streams import table_for_rows
 from tests._helpers.docs_views import materialize_view_plans
 from tests._helpers.fixtures.rows import (
     ConfigValueRow,
@@ -160,7 +161,12 @@ def _write_symbol_graph_metrics(
         "graph.symbol_use_edges",
         ["def_path", "use_path", "def_goid_h128", "use_goid_h128"],
     )
-    symbol_graph = build_symbol_module_graph(symbol_use_rows, module_by_path)
+    symbol_use_table = table_for_rows("graph.symbol_use_edges", symbol_use_rows)
+    module_map_table = table_for_rows(
+        "core.modules",
+        [{"path": path, "module": module} for path, module in module_by_path.items()],
+    )
+    symbol_graph = build_symbol_module_graph_from_tables(symbol_use_table, module_map_table)
     symbol_rows = build_symbol_graph_metrics_module_rows(
         repo=ctx.repo,
         commit=ctx.commit,

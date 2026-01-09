@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.conversion import reader_to_table, tabular_to_arrow_reader
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.streaming import sample_reader
 from codeintel.serving.semantic.arrow_plan_builder import ArrowPlanSpec
@@ -38,13 +38,7 @@ def _fetch_arrow_reader(
     *,
     batch_size: int,
 ) -> pa.RecordBatchReader:
-    fetcher = getattr(relation, "fetch_arrow_reader", None)
-    if callable(fetcher):
-        try:
-            return fetcher(batch_size)
-        except TypeError:
-            return fetcher()
-    return relation.fetch_record_batch(batch_size)
+    return tabular_to_arrow_reader(relation, batch_size=batch_size)
 
 
 def _contract_schema_for_table(
@@ -174,7 +168,7 @@ class ArrowQueryEngine:
                     contract_schema=contract_schema,
                 ),
                 options=RelationPlanOptions(
-                    plan_spec=query.plan_spec,
+                    query_spec=query.query_spec,
                     apply_ast=False,
                 ),
             )

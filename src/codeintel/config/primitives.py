@@ -14,6 +14,7 @@ Design Principles
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Self
 
@@ -486,12 +487,84 @@ class GraphBackendConfig:
 
 
 @dataclass(frozen=True)
+class GraphOutputToggles:
+    """Toggle flags for graph output surfaces."""
+
+    core_metadata: bool = True
+    graph_stats: bool = True
+    node_payloads: bool = True
+    edge_payloads: bool = True
+    algorithms_basic: bool = True
+    algorithms_advanced: bool = False
+    serialization_exports: bool = False
+    materialized_tables: bool = True
+
+    @classmethod
+    def from_env(cls) -> GraphOutputToggles | None:
+        """Construct GraphOutputToggles from CODEINTEL_GRAPH_OUTPUT_* variables.
+
+        Returns
+        -------
+        GraphOutputToggles | None
+            Parsed toggles when any output env vars are set.
+        """
+        keys = (
+            "CODEINTEL_GRAPH_OUTPUT_CORE_METADATA",
+            "CODEINTEL_GRAPH_OUTPUT_GRAPH_STATS",
+            "CODEINTEL_GRAPH_OUTPUT_NODE_PAYLOADS",
+            "CODEINTEL_GRAPH_OUTPUT_EDGE_PAYLOADS",
+            "CODEINTEL_GRAPH_OUTPUT_ALGORITHMS_BASIC",
+            "CODEINTEL_GRAPH_OUTPUT_ALGORITHMS_ADVANCED",
+            "CODEINTEL_GRAPH_OUTPUT_SERIALIZATION_EXPORTS",
+            "CODEINTEL_GRAPH_OUTPUT_MATERIALIZED_TABLES",
+        )
+        if not any(is_set(key) for key in keys):
+            return None
+
+        defaults = cls()
+
+        def _resolve_flag(key: str, *, default: bool) -> bool:
+            value = get_bool(key, default=default)
+            return default if value is None else value
+
+        return cls(
+            core_metadata=_resolve_flag(keys[0], default=defaults.core_metadata),
+            graph_stats=_resolve_flag(keys[1], default=defaults.graph_stats),
+            node_payloads=_resolve_flag(keys[2], default=defaults.node_payloads),
+            edge_payloads=_resolve_flag(keys[3], default=defaults.edge_payloads),
+            algorithms_basic=_resolve_flag(keys[4], default=defaults.algorithms_basic),
+            algorithms_advanced=_resolve_flag(keys[5], default=defaults.algorithms_advanced),
+            serialization_exports=_resolve_flag(keys[6], default=defaults.serialization_exports),
+            materialized_tables=_resolve_flag(keys[7], default=defaults.materialized_tables),
+        )
+
+
+@dataclass(frozen=True)
 class GraphFeatureFlags:
     """Optional feature toggles for graph runtime behaviors."""
 
     eager_hydration: bool | None = None
     community_detection_limit: int | None = None
     validation_strict: bool | None = None
+    cfg_normalization: bool | None = None
+    dfg_normalization: bool | None = None
+    graph_outputs: GraphOutputToggles | None = None
+
+    def __post_init__(self) -> None:
+        """Normalize nested graph output toggles from mappings.
+
+        Raises
+        ------
+        TypeError
+            If a provided graph_outputs mapping is invalid.
+        """
+        if isinstance(self.graph_outputs, Mapping):
+            try:
+                resolved = GraphOutputToggles(**self.graph_outputs)
+            except TypeError as exc:
+                message = "Invalid graph_outputs mapping for GraphOutputToggles"
+                raise TypeError(message) from exc
+            object.__setattr__(self, "graph_outputs", resolved)
 
     @classmethod
     def from_env(cls) -> Self:
@@ -523,6 +596,17 @@ class GraphFeatureFlags:
                 if is_set("CODEINTEL_GRAPH_VALIDATION_STRICT")
                 else None
             )
+            cfg_normalization = (
+                get_bool("CODEINTEL_GRAPH_CFG_NORMALIZE", default=None)
+                if is_set("CODEINTEL_GRAPH_CFG_NORMALIZE")
+                else None
+            )
+            dfg_normalization = (
+                get_bool("CODEINTEL_GRAPH_DFG_NORMALIZE", default=None)
+                if is_set("CODEINTEL_GRAPH_DFG_NORMALIZE")
+                else None
+            )
+            graph_outputs = GraphOutputToggles.from_env()
         except ValueError as exc:
             message = "Invalid graph feature flag environment configuration"
             raise ValueError(message) from exc
@@ -531,6 +615,9 @@ class GraphFeatureFlags:
             eager_hydration=eager,
             community_detection_limit=community_limit,
             validation_strict=validation_strict,
+            cfg_normalization=cfg_normalization,
+            dfg_normalization=dfg_normalization,
+            graph_outputs=graph_outputs,
         )
 
     def validate(self) -> None:
@@ -544,6 +631,12 @@ class GraphFeatureFlags:
         """
         if self.community_detection_limit is not None and self.community_detection_limit <= 0:
             message = "community_detection_limit must be positive when provided"
+            raise ValueError(message)
+        if self.graph_outputs is not None and not isinstance(
+            self.graph_outputs,
+            GraphOutputToggles,
+        ):
+            message = "graph_outputs must be GraphOutputToggles when provided"
             raise ValueError(message)
 
 
@@ -569,6 +662,7 @@ __all__ = [
     "EntryPointToggles",
     "GraphBackendConfig",
     "GraphFeatureFlags",
+    "GraphOutputToggles",
     "ScanProfiles",
     "SnapshotInit",
     "SnapshotRef",

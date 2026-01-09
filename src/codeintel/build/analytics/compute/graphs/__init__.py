@@ -38,6 +38,7 @@ from codeintel.build.analytics.compute.graphs.cfg import (
     cfg_dominance_metrics,
     cfg_longest_path_length,
     cfg_reachable_nodes,
+    normalize_cfg_graph,
 )
 from codeintel.build.analytics.compute.graphs.components import (
     component_ids_undirected,
@@ -54,6 +55,7 @@ from codeintel.build.analytics.compute.graphs.dfg import (
     dfg_centralities,
     dfg_component_stats,
     dfg_path_lengths,
+    normalize_dfg_graph,
 )
 from codeintel.build.analytics.compute.graphs.projections import (
     bipartite_degrees,
@@ -107,6 +109,8 @@ __all__ = [
     "log_empty_graph",
     "log_projection_skipped",
     "neighbor_stats",
+    "normalize_cfg_graph",
+    "normalize_dfg_graph",
     "projection_metrics",
     "safe_float",
     "structural_metrics",

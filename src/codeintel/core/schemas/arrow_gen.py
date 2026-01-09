@@ -21,7 +21,7 @@ from codeintel.core.schemas.primitives import (
     TableSchema,
     column_type_base,
     normalize_column_type,
-    resolve_stable_sort_keys,
+    resolve_canonical_sort_keys,
 )
 
 _DECIMAL_PATTERN = re.compile(r"^DECIMAL\\((\\d+),(\\d+)\\)$")
@@ -595,10 +595,7 @@ def _provenance_payload(provenance: ArrowSchemaProvenance | None) -> dict[str, s
 
 
 def _ordering_keys_for_schema(table_schema: TableSchema) -> tuple[str, ...] | None:
-    policy = table_schema.finalize_policy
-    if policy is not None and policy.canonical_sort_keys is not None:
-        return policy.canonical_sort_keys
-    return resolve_stable_sort_keys(table_schema)
+    return resolve_canonical_sort_keys(table_schema)
 
 
 def _determinism_for_ordering_keys(

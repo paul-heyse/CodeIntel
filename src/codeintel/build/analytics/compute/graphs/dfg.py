@@ -7,6 +7,7 @@ from codeintel.build.graphs.compute.metrics.dfg import (
     dfg_centralities,
     dfg_component_stats,
     dfg_path_lengths,
+    normalize_dfg_graph,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "dfg_centralities",
     "dfg_component_stats",
     "dfg_path_lengths",
+    "normalize_dfg_graph",
 ]

@@ -15,7 +15,11 @@ from typing import TYPE_CHECKING, Any, Literal
 import pyarrow as pa
 from sqlglot import exp
 
-from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.conversion import (
+    reader_to_table,
+    table_to_reader,
+    tabular_to_arrow_reader,
+)
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import SortKey
@@ -678,10 +682,13 @@ class PipelineRunTracking:
                 exp.Ordered(this=exp.Column(this=exp.to_identifier("name"))),
             )
         )
-        reader = self.con.execute(
-            render_sql_duckdb(query),
-            [run_id],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self.con.execute(
+                render_sql_duckdb(query),
+                [run_id],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         results: list[PipelineStepRecord] = []
         for (
             run_id_val,
@@ -870,10 +877,13 @@ class PipelineRunTracking:
             .order_by(exp.Ordered(this=exp.Column(this=exp.to_identifier("started_at")), desc=True))
             .limit(exp.Placeholder())
         )
-        reader = self.con.execute(
-            render_sql_duckdb(query),
-            [limit],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(
+            self.con.execute(
+                render_sql_duckdb(query),
+                [limit],
+            ),
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
         results: list[PipelineRunRecord] = []
         for (
             run_id_val,

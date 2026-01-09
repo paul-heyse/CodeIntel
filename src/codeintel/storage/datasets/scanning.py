@@ -2,7 +2,6 @@
 
 from codeintel.core.columnar.streaming import (
     DatasetScanOptions,
-    QueryPlanSpec,
     build_scanner,
     dataset_for_manifest,
     resolve_partitioning,
@@ -21,7 +20,6 @@ __all__ = [
     "DatasetScanOptions",
     "ParquetScanOptions",
     "ParquetScanTelemetry",
-    "QueryPlanSpec",
     "build_scanner",
     "collect_parquet_scan_telemetry",
     "dataset_for_manifest",

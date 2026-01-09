@@ -515,6 +515,8 @@ def _resolve_provenance_enabled(
     profile = ctx.runtime_profile
     if profile is not None:
         provenance = profile.resolve_provenance(default=provenance)
+    if ctx.resolve_determinism() == "canonical":
+        provenance = True
     return provenance
 
 

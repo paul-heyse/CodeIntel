@@ -24,6 +24,17 @@ def iter_edge_payloads(store: RxGraphStore) -> Iterable[tuple[int, int, object]]
         yield src_idx, dst_idx, payload
 
 
+def iter_edge_index_pairs(store: RxGraphStore) -> Iterable[tuple[int, int]]:
+    """Yield edge endpoints by index.
+
+    Yields
+    ------
+    tuple[int, int]
+        Edge endpoints by index.
+    """
+    yield from store.graph.edge_list()
+
+
 def iter_edge_index_payloads(store: RxGraphStore) -> Iterable[tuple[int, int, int, object]]:
     """Yield edge index, endpoints, and payloads from a rustworkx store.
 
@@ -136,6 +147,22 @@ def iter_incident_edge_id_weights(
         yield src_id, dst_id, weight
 
 
+def iter_incident_edges(
+    store: RxGraphStore,
+    node_id: Hashable,
+    *,
+    nan_policy: NanPolicy | None = None,
+) -> Iterable[tuple[Hashable, Hashable, float]]:
+    """Yield incident edge endpoints (node ids) and normalized weights.
+
+    Yields
+    ------
+    tuple[Hashable, Hashable, float]
+        Node id endpoints and normalized weights for incident edges.
+    """
+    yield from iter_incident_edge_id_weights(store, node_id, nan_policy=nan_policy)
+
+
 def iter_weighted_edge_ids(
     store: RxGraphStore,
     *,
@@ -234,6 +261,7 @@ __all__ = [
     "edge_weight_map",
     "iter_edge_id_payloads",
     "iter_edge_id_weights",
+    "iter_edge_index_pairs",
     "iter_edge_index_payloads",
     "iter_edge_payloads",
     "iter_edge_weights",

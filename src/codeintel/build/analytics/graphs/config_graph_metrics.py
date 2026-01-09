@@ -28,6 +28,7 @@ from codeintel.build.graphs.rx.build_from_edges import (
     build_store_from_edge_tuples,
 )
 from codeintel.build.graphs.rx.iterators import iter_edge_id_payloads
+from codeintel.build.graphs.rx.metadata import GraphMetadata, apply_graph_metadata
 from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, DEFAULT_WEIGHT_POLICY
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.schemas import get_contract_for_table_key
@@ -42,10 +43,13 @@ from codeintel.core.columnar.execution_context import (
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable
@@ -75,6 +79,39 @@ CONFIG_PROJECTION_KEY_EDGES_COLS = _columns_for_table(CONFIG_PROJECTION_KEY_EDGE
 CONFIG_PROJECTION_MODULE_EDGES_COLS = _columns_for_table(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY)
 
 NODE_ID_INDEX = 2
+
+
+def _ordering_keys_for_table(table_key: str) -> tuple[str, ...] | None:
+    schema = get_schema_service().get_table_schema(table_key)
+    keys = resolve_canonical_sort_keys(schema)
+    if not keys:
+        return None
+    return tuple(keys)
+
+
+def _determinism_for_table(table_key: str) -> str:
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is not None:
+        policy = schema.finalize_policy
+        if policy is not None and policy.dedupe is not None and policy.dedupe.tier is not None:
+            return policy.dedupe.tier
+    keys = resolve_canonical_sort_keys(schema)
+    if keys == ():
+        return "throughput"
+    if keys:
+        return "canonical"
+    return "stable_set"
+
+
+def _apply_config_graph_metadata(store: RxGraphStore) -> None:
+    ordering_keys = _ordering_keys_for_table(CONFIG_REFERENCES_TABLE_KEY)
+    metadata = GraphMetadata(
+        weight_policy=store.weight_policy.name,
+        graph_kind="CONFIG_MODULE_BIPARTITE",
+        ordering_keys=ordering_keys,
+        determinism_tier=_determinism_for_table(CONFIG_REFERENCES_TABLE_KEY),
+    )
+    apply_graph_metadata(store.graph, metadata)
 
 
 @dataclass(frozen=True)
@@ -308,8 +345,6 @@ def _config_bipartite_from_rows(
     commit: str | None,
 ) -> RxGraphStore:
     edge_rows: list[tuple[Hashable, Hashable, float]] = []
-    node_ids: set[Hashable] = set()
-    node_attrs: dict[Hashable, dict[str, object]] = {}
     for row in config_value_rows:
         if not _row_matches_scope(row, repo=repo, commit=commit):
             continue
@@ -327,29 +362,36 @@ def _config_bipartite_from_rows(
         for module_name in modules:
             key_node = ("c", key_value)
             module_node = ("m", str(module_name))
-            node_ids.add(key_node)
-            node_ids.add(module_node)
-            node_attrs.setdefault(key_node, {"bipartite": 0})
-            node_attrs.setdefault(module_node, {"bipartite": 1})
             edge_rows.append((key_node, module_node, 1.0))
     if not edge_rows and not node_ids:
-        return RxGraphStore.undirected(
+        store = RxGraphStore.undirected(
             weight_policy=DEFAULT_WEIGHT_POLICY,
             numeric_policy=DEFAULT_NUMERIC_POLICY,
         )
+        _apply_config_graph_metadata(store)
+        return store
     spec = EdgeBuildSpec(
         directed=False,
         weight_policy=DEFAULT_WEIGHT_POLICY,
         numeric_policy=DEFAULT_NUMERIC_POLICY,
+        node_attrs_fn=_bipartite_node_attrs,
     )
+    node_ids = {edge[0] for edge in edge_rows} | {edge[1] for edge in edge_rows}
     options = BuildStoreOptions(
         stable_nodes=True,
         node_ids=node_ids or None,
-        node_attrs=node_attrs or None,
         node_hint=len(node_ids) if node_ids else None,
         edge_hint=len(edge_rows),
     )
-    return build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
+    store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
+    _apply_config_graph_metadata(store)
+    return store
+
+
+def _bipartite_node_attrs(node_id: Hashable, side: str) -> Mapping[str, object]:
+    _ = node_id
+    bipartite = 0 if side == "src" else 1
+    return {"bipartite": bipartite}
 
 
 def _rows_from_tabular(
@@ -604,6 +646,42 @@ def compute_config_graph_metrics_result(
         key_edge_rows=_finalize_rows(key_edges),
         module_edge_rows=_finalize_rows(module_edges),
     )
+
+
+def build_config_graph_metrics_keys_table(request: ConfigGraphMetricsRequest) -> pa.Table:
+    """Build the config graph key metrics table."""
+    result = compute_config_graph_metrics_result(request)
+    if result.key_rows is None:
+        return empty_table_for_table(CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY)
+    table, _ = table_for_rows(CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY, result.key_rows)
+    return table
+
+
+def build_config_graph_metrics_modules_table(request: ConfigGraphMetricsRequest) -> pa.Table:
+    """Build the config graph module metrics table."""
+    result = compute_config_graph_metrics_result(request)
+    if result.module_rows is None:
+        return empty_table_for_table(CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY)
+    table, _ = table_for_rows(CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY, result.module_rows)
+    return table
+
+
+def build_config_projection_key_edges_table(request: ConfigGraphMetricsRequest) -> pa.Table:
+    """Build the config projection key edges table."""
+    result = compute_config_graph_metrics_result(request)
+    if result.key_edge_rows is None:
+        return empty_table_for_table(CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY)
+    table, _ = table_for_rows(CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY, result.key_edge_rows)
+    return table
+
+
+def build_config_projection_module_edges_table(request: ConfigGraphMetricsRequest) -> pa.Table:
+    """Build the config projection module edges table."""
+    result = compute_config_graph_metrics_result(request)
+    if result.module_edge_rows is None:
+        return empty_table_for_table(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY)
+    table, _ = table_for_rows(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY, result.module_edge_rows)
+    return table
 
 
 def _materialize_plan(

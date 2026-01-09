@@ -56,6 +56,8 @@ class ChangeSet:
         Stable hash of the current file state for caching.
     state_rows
         Columnar rows for persisting current file state.
+    scan_telemetry
+        Scan telemetry keyed by table name (fragment and row estimates).
     """
 
     added: list[ModuleRecord] = field(default_factory=list)
@@ -63,6 +65,7 @@ class ChangeSet:
     deleted: list[ModuleRecord] = field(default_factory=list)
     state_hash: str | None = None
     state_rows: ColumnarRows = field(default_factory=dict)
+    scan_telemetry: dict[str, dict[str, int | None]] = field(default_factory=dict)
 
     @property
     def has_changes(self) -> bool:

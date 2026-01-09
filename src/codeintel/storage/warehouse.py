@@ -35,7 +35,11 @@ from codeintel.core.columnar import (
     extras_policy_from_schema,
 )
 from codeintel.core.columnar.compute_helpers import combine_table_chunks
-from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.conversion import (
+    reader_to_table,
+    table_to_reader,
+    tabular_to_arrow_reader,
+)
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import SortKey, hash_struct_ordinal, stable_sort_indices
 from codeintel.core.filters import FilterSpecInput
@@ -953,7 +957,7 @@ def _write_relation_inner(
         select_expr = _relation_select_expr(relation, columns=columns)
         _apply_select(select_expr)
     except ParseError:
-        reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        reader = tabular_to_arrow_reader(relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
         with registered_temp_relation(gateway.con, reader, prefix="ci_rel_") as name:
             select_expr = exp.Select(
                 expressions=[exp.Column(this=exp.to_identifier(column)) for column in columns],
@@ -979,7 +983,7 @@ def _materialize_relation_for_validation(
     if isinstance(relation, DuckDBRelation) and (
         contract_schema is not None or validation_mode != "skip"
     ):
-        return relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        return tabular_to_arrow_reader(relation, batch_size=DEFAULT_ARROW_BATCH_SIZE)
     return relation
 
 

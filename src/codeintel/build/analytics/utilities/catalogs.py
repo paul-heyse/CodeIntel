@@ -47,6 +47,17 @@ class CatalogProviderRequest:
     scope: CatalogScope | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class SnapshotSourceRequest:
+    """Inputs for snapshotting an in-memory table source."""
+
+    repo: str | None
+    commit: str | None
+    columns: Sequence[str]
+    table_key: str | None
+    ctx: ExecutionContext | RuntimeExecutionContext | None
+
+
 def module_map_from_frame(
     modules_frame: RowSource,
     scope: CatalogScope | None = None,
@@ -62,10 +73,13 @@ def module_map_from_frame(
     resolved_scope = scope or CatalogScope()
     source = _snapshot_source(
         modules_frame,
-        repo=resolved_scope.repo,
-        commit=resolved_scope.commit,
-        columns=("path", "module"),
-        ctx=resolved_scope.ctx,
+        request=SnapshotSourceRequest(
+            repo=resolved_scope.repo,
+            commit=resolved_scope.commit,
+            columns=("path", "module"),
+            table_key="core.modules",
+            ctx=resolved_scope.ctx,
+        ),
     )
     for row in _iter_rows_from_source(source):
         path = row.get("path")
@@ -126,19 +140,21 @@ def _iter_rows_from_source(source: RowSource) -> Iterable[dict[str, object]]:
 def _snapshot_source(
     source: RowSource,
     *,
-    repo: str | None,
-    commit: str | None,
-    columns: Sequence[str],
-    ctx: ExecutionContext | RuntimeExecutionContext | None,
+    request: SnapshotSourceRequest,
 ) -> RowSource:
     if not isinstance(source, pa.Table):
         return source
-    if not set(columns).issubset(source.column_names):
+    if not set(request.columns).issubset(source.column_names):
         return source
     return snapshot_table(
         source,
-        columns=columns,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        columns=request.columns,
+        context=SnapshotContext(
+            repo=request.repo,
+            commit=request.commit,
+            ctx=request.ctx,
+            table_key=request.table_key,
+        ),
     )
 
 
@@ -165,9 +181,14 @@ def _goids_source(
     plan = snapshot_plan(
         source,
         columns=required,
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key="core.goids",
+        ),
     )
-    plan = plan.filter(E.in_("kind", sorted(_FUNCTION_KINDS)))
+    plan = plan.filter(E.in_("kind", tuple(_FUNCTION_KINDS)))
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
     return reader_to_table(reader)

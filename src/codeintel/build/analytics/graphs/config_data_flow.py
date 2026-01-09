@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import ast
-import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
@@ -21,7 +20,6 @@ from codeintel.build.graphs.rx.algos import (
     ensure_directed_store,
     simple_paths_by_id,
 )
-from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
@@ -30,6 +28,7 @@ from codeintel.core.columnar.execution_context import (
     resolve_columnar_context,
     resolve_execution_context,
 )
+from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges_for_join
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
@@ -48,6 +47,7 @@ if TYPE_CHECKING:
 
 CONFIG_DATA_FLOW_TABLE_KEY = "analytics.config_data_flow"
 CONFIG_REFERENCES_TABLE_KEY = "analytics.config_references"
+ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
 
 
 def _columns_for_table(table_key: str) -> tuple[str, ...]:
@@ -248,31 +248,6 @@ class ConfigUsageVisitor(ast.NodeVisitor):
         )
 
 
-def _coerce_paths(raw: object) -> list[str]:
-    if raw is None:
-        return []
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            return []
-    elif isinstance(raw, (list, tuple)):
-        parsed = raw
-    else:
-        return []
-    if not isinstance(parsed, (list, tuple)):
-        return []
-    return [normalize_path(path) for path in parsed if isinstance(path, str)]
-
-
-def _matches_optional_scope(value: object, expected: str) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str) and not value.strip():
-        return True
-    return str(value) == expected
-
-
 def _config_reference_rowset(
     table: pa.Table,
     *,
@@ -327,7 +302,12 @@ def _entrypoint_rowset(
     plan = snapshot_plan(
         table,
         columns=("handler_goid_h128",),
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+        context=SnapshotContext(
+            repo=repo,
+            commit=commit,
+            ctx=ctx,
+            table_key=ENTRYPOINTS_TABLE_KEY,
+        ),
     )
     plan = plan.filter(E.is_valid("handler_goid_h128"))
     filtered = _materialize_plan(plan, ctx=ctx)
@@ -341,43 +321,117 @@ def _entrypoint_rowset(
     )
 
 
-def _config_references_from_rows(
-    rows: Sequence[Mapping[str, object]],
+def _list_values(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _table_from_rows(
+    rows: Sequence[Mapping[str, object]] | pa.Table,
+) -> pa.Table:
+    if isinstance(rows, pa.Table):
+        return rows
+    rows_list = list(rows)
+    if not rows_list:
+        return pa.Table.from_pylist([])
+    return pa.Table.from_pylist(rows_list)
+
+
+def _config_reference_edges_table(
+    rows: Sequence[Mapping[str, object]] | pa.Table,
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> pa.Table:
+    table = _table_from_rows(rows)
+    if table.num_rows == 0:
+        return pa.Table.from_pylist([])
+    rowset = _config_reference_rowset(table, repo=repo, commit=commit, ctx=ctx)
+    if rowset.num_rows == 0:
+        return rowset
+    exploded = explode_edges_for_join(
+        rowset,
+        spec=ExplodeSpec(
+            src_col="reference_paths",
+            dst_list_col="reference_path",
+            repeat_cols=("config_path", "key"),
+            null_list_policy="empty",
+            null_child_policy="drop",
+            error_context_cols=("config_path", "key"),
+        ),
+        allowed_columns=("config_path", "key", "reference_path"),
+    )
+    return exploded.good
+
+
+def _config_references_by_path(
+    rows: Sequence[Mapping[str, object]] | pa.Table,
+    *,
+    repo: str,
+    commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> dict[str, list[tuple[str, str]]]:
+    edges = _config_reference_edges_table(rows, repo=repo, commit=commit, ctx=ctx)
+    if edges.num_rows == 0:
+        return {}
+    grouped = grouped_rollup_table(
+        edges,
+        spec=GroupedRollupSpec(
+            keys=("reference_path",),
+            aggregates=[
+                ("config_path", "list", None, "config_paths"),
+                ("key", "list", None, "keys"),
+            ],
+            pre_sort_keys=(
+                ("reference_path", "ascending"),
+                ("config_path", "ascending"),
+                ("key", "ascending"),
+            ),
+        ),
+        ctx=resolve_columnar_context(ctx),
+    )
     refs: dict[str, list[tuple[str, str]]] = {}
-    for row in rows:
-        if not _matches_optional_scope(row.get("repo"), repo):
+    for reference_path, config_paths, keys in iter_tuples(
+        grouped.to_reader(),
+        columns=("reference_path", "config_paths", "keys"),
+    ):
+        if not isinstance(reference_path, str) or not reference_path.strip():
             continue
-        if not _matches_optional_scope(row.get("commit"), commit):
-            continue
-        config_path = row.get("config_path")
-        key = row.get("key")
-        if config_path is None or key is None:
-            continue
-        reference_paths = _reference_paths_from_row(row)
-        for rel_path in reference_paths:
+        rel_path = normalize_path(reference_path)
+        for config_path, key in zip(
+            _list_values(config_paths),
+            _list_values(keys),
+            strict=False,
+        ):
+            if config_path is None or key is None:
+                continue
             refs.setdefault(rel_path, []).append((str(key), str(config_path)))
     return refs
 
 
-def _entrypoints_from_rows(
-    rows: Sequence[Mapping[str, object]],
+def _entrypoint_ids_from_tabular(
+    rows: Sequence[Mapping[str, object]] | pa.Table,
     *,
     repo: str,
     commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> set[int]:
+    table = _table_from_rows(rows)
+    if table.num_rows == 0:
+        return set()
+    rowset = _entrypoint_rowset(table, repo=repo, commit=commit, ctx=ctx)
     entrypoints: set[int] = set()
-    for row in rows:
-        if not _matches_optional_scope(row.get("repo"), repo):
-            continue
-        if not _matches_optional_scope(row.get("commit"), commit):
-            continue
-        handler_goid = normalize_decimal_id(row.get("handler_goid_h128"))
-        if handler_goid is not None:
-            entrypoints.add(handler_goid)
+    for (handler_goid,) in iter_tuples(
+        rowset.to_reader(),
+        columns=("handler_goid_h128",),
+    ):
+        goid = normalize_decimal_id(handler_goid)
+        if goid is not None:
+            entrypoints.add(goid)
     return entrypoints
 
 
@@ -394,7 +448,14 @@ def _call_chains(
     if target_idx is None:
         return [[target]]
     paths: list[list[int]] = []
-    for entry in sorted(entrypoints):
+    ordered_entrypoints: list[int] = []
+    for node_id in store.node_ids():
+        entry_id = normalize_decimal_id(node_id)
+        if entry_id is None:
+            continue
+        if entry_id in entrypoints:
+            ordered_entrypoints.append(int(entry_id))
+    for entry in ordered_entrypoints:
         entry_idx = store.id_to_index.get(entry)
         if entry_idx is None:
             continue
@@ -411,7 +472,6 @@ def _call_chains(
                 break
     if not paths:
         return [[target]]
-    paths.sort(key=lambda path: stable_key(tuple(path)))
     return paths[:max_paths]
 
 
@@ -464,16 +524,11 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
     ConfigDataFlowResult
         Container with config data flow rows.
     """
-    config_rows = _config_reference_rows_from_tabular(
+    refs_by_path = _config_references_by_path(
         inputs.config_value_rows,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
         ctx=inputs.ctx,
-    )
-    refs_by_path = _config_references_from_rows(
-        config_rows,
-        repo=inputs.snapshot.repo,
-        commit=inputs.snapshot.commit,
     )
     if not refs_by_path:
         log.info(
@@ -483,16 +538,11 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
         )
         return ConfigDataFlowResult(rows=None)
 
-    entrypoint_rows = _entrypoint_rows_from_tabular(
+    entrypoints = _entrypoint_ids_from_tabular(
         inputs.entrypoint_rows,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
         ctx=inputs.ctx,
-    )
-    entrypoints = _entrypoints_from_rows(
-        entrypoint_rows,
-        repo=inputs.snapshot.repo,
-        commit=inputs.snapshot.commit,
     )
     missing = inputs.missing_goids or set()
     if missing:
@@ -549,7 +599,7 @@ def _build_config_flow_rows(
                 max_paths=max_paths_per_usage,
                 max_length=max_path_length,
             )
-            for usage_kind in sorted(visitor.result.kinds):
+            for usage_kind in visitor.result.kinds:
                 collector = visitor.result.evidence.get(usage_kind)
                 evidence = collector.to_dicts() if collector is not None else []
                 for chain in chains:
@@ -573,67 +623,6 @@ def _build_config_flow_rows(
                         }
                     )
     return rows_to_tuples_for_table(CONFIG_DATA_FLOW_TABLE_KEY, row_dicts)
-
-
-def _config_reference_rows_from_tabular(
-    rows: Sequence[Mapping[str, object]] | pa.Table,
-    *,
-    repo: str,
-    commit: str,
-    ctx: ExecutionContext | RuntimeExecutionContext | None,
-) -> list[dict[str, object]]:
-    if isinstance(rows, pa.Table):
-        table = _config_reference_rowset(
-            cast("pa.Table", rows),
-            repo=repo,
-            commit=commit,
-            ctx=ctx,
-        )
-        columns = list(table.column_names)
-        return [
-            dict(zip(columns, values, strict=False))
-            for values in iter_tuples(table.to_reader(), columns=columns)
-        ]
-    return [dict(row) for row in rows]
-
-
-def _entrypoint_rows_from_tabular(
-    rows: Sequence[Mapping[str, object]] | pa.Table,
-    *,
-    repo: str,
-    commit: str,
-    ctx: ExecutionContext | RuntimeExecutionContext | None,
-) -> list[dict[str, object]]:
-    if isinstance(rows, pa.Table):
-        table = _entrypoint_rowset(
-            cast("pa.Table", rows),
-            repo=repo,
-            commit=commit,
-            ctx=ctx,
-        )
-        columns = list(table.column_names)
-        return [
-            dict(zip(columns, values, strict=False))
-            for values in iter_tuples(table.to_reader(), columns=columns)
-        ]
-    return [dict(row) for row in rows]
-
-
-def _reference_paths_from_row(row: Mapping[str, object]) -> list[str]:
-    if "reference_paths" in row:
-        return _flatten_paths(row.get("reference_paths"))
-    extras = row.get("extras")
-    reference_paths = extras.get("reference_paths") if isinstance(extras, Mapping) else None
-    return _coerce_paths(reference_paths)
-
-
-def _flatten_paths(raw: object) -> list[str]:
-    if isinstance(raw, list):
-        paths: list[str] = []
-        for item in raw:
-            paths.extend(_coerce_paths(item))
-        return paths
-    return _coerce_paths(raw)
 
 
 def _materialize_plan(

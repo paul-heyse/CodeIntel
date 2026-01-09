@@ -76,6 +76,7 @@ from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.tabular.arrow_ops import emit_alignment_report
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.execution_context import resolve_columnar_context
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
@@ -471,12 +472,14 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
     try:
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
         dataset_root = env.paths.dataset_root_dir
+        execution_ctx = resolve_columnar_context(env.execution_context)
         if dataset_root is None:
             change_detection = _NoopChangeDetectionAdapter()
         else:
             change_detection = HashChangeDetectionAdapter(
                 dataset_root=dataset_root,
                 snapshot_id=env.snapshot.commit,
+                execution_ctx=execution_ctx,
             )
 
         opts = load_target_options(
@@ -547,23 +550,40 @@ def t__modules__ingest(
             )
         )
 
+    scan_telemetry = None
+    change_set = t__modules__run.change_set
+    if change_set is not None and change_set.scan_telemetry:
+        scan_telemetry = change_set.scan_telemetry
+    manifest_extras = _tool_manifest_extras(
+        result,
+        table_counts={
+            MODULES_TABLE_KEY: t__modules__run.module_row_count,
+            FILE_STATE_TABLE_KEY: t__modules__run.file_state_row_count,
+            REPO_MAP_TABLE_KEY: t__modules__run.repo_map_row_count,
+        },
+        scan_telemetry=scan_telemetry,
+    )
+    manifest_details = IngestManifestDetails(manifest_extras=manifest_extras)
     module_table = finalize_ingest_reader_with_manifest(
         env=env,
         table_key=MODULES_TABLE_KEY,
         reader=t__modules__run.module_rows,
         target_name=MODULES_TARGET_NAME,
+        details=manifest_details,
     )
     file_state_table = finalize_ingest_reader_with_manifest(
         env=env,
         table_key=FILE_STATE_TABLE_KEY,
         reader=t__modules__run.file_state_rows,
         target_name=MODULES_TARGET_NAME,
+        details=manifest_details,
     )
     repo_map_table = finalize_ingest_reader_with_manifest(
         env=env,
         table_key=REPO_MAP_TABLE_KEY,
         reader=t__modules__run.repo_map_rows,
         target_name=MODULES_TARGET_NAME,
+        details=manifest_details,
     )
     payload = {
         MODULES_TABLE_KEY: module_table,
@@ -794,6 +814,7 @@ def _tool_manifest_extras(
     result: ExecutionResult,
     *,
     table_counts: Mapping[str, int],
+    scan_telemetry: Mapping[str, Mapping[str, int | None]] | None = None,
 ) -> dict[str, object]:
     status = "failed"
     if result.skipped:
@@ -810,6 +831,10 @@ def _tool_manifest_extras(
         extras["skip_reason"] = result.skip_reason
     if result.warnings:
         extras["warnings"] = list(result.warnings)
+    if scan_telemetry:
+        extras["scan_telemetry"] = {
+            table_key: dict(payload) for table_key, payload in scan_telemetry.items()
+        }
     return extras
 
 

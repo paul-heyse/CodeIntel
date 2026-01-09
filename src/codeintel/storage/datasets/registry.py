@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 from sqlglot import exp
 
+from codeintel.core.columnar.conversion import tabular_to_arrow_reader
 from codeintel.core.datasets.manifests import dataset_manifest_path, load_dataset_manifest
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.sqlglot_tools import render_sql_duckdb, table_expr_from_ref
@@ -285,7 +286,10 @@ def load_dataset_registry(
         .from_(table_expr)
         .order_by(exp.Ordered(this=exp.column("table_key")))
     )
-    reader = con.execute(render_sql_duckdb(query)).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    reader = tabular_to_arrow_reader(
+        con.execute(render_sql_duckdb(query)),
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+    )
 
     return _registry_from_rows(
         iter_tuples_from_arrow_reader(reader),

@@ -14,9 +14,14 @@ from typing import TYPE_CHECKING, SupportsInt, cast
 
 import pyarrow as pa
 
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
-from codeintel.core.datasets.scanning import ParquetScanOptions, scan_parquet_dataset
+from codeintel.core.datasets.scanning import (
+    ParquetScanOptions,
+    ParquetScanTelemetry,
+    scan_parquet_dataset_with_telemetry,
+)
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.context import IngestionContext
@@ -51,6 +56,21 @@ def _coerce_int(value: object) -> int | None:
     return None
 
 
+def _scan_telemetry_payload(telemetry: ParquetScanTelemetry) -> dict[str, int | None]:
+    return {
+        "fragment_count": telemetry.fragment_count,
+        "estimated_rows": telemetry.row_count,
+    }
+
+
+def _scan_telemetry_mapping(
+    telemetry: ParquetScanTelemetry | None,
+) -> dict[str, dict[str, int | None]]:
+    if telemetry is None:
+        return {}
+    return {FILE_STATE_TABLE_KEY: _scan_telemetry_payload(telemetry)}
+
+
 class HashChangeDetectionAdapter:
     """Hash-based change detection adapter implementing ChangeDetectionPort.
 
@@ -64,6 +84,8 @@ class HashChangeDetectionAdapter:
         Optional dataset root directory for reading prior file_state snapshots.
     snapshot_id
         Optional snapshot identifier used for parquet dataset lookups.
+    execution_ctx
+        Optional execution context for scan defaults and thread pools.
     """
 
     def __init__(
@@ -71,9 +93,11 @@ class HashChangeDetectionAdapter:
         *,
         dataset_root: Path | None = None,
         snapshot_id: str | None = None,
+        execution_ctx: ExecutionContext | None = None,
     ) -> None:
         self._dataset_root = dataset_root
         self._snapshot_id = snapshot_id
+        self._execution_ctx = execution_ctx
 
     def compute_changes(
         self,
@@ -98,10 +122,14 @@ class HashChangeDetectionAdapter:
         state_hash = self.compute_state_hash(current_state)
 
         previous_state: Mapping[str, FileDigest]
+        scan_telemetry: dict[str, dict[str, int | None]] = {}
         if request.full_rebuild:
             previous_state = {}
         else:
-            previous_state = self._safe_previous_state(request.repo, request.language)
+            previous_state, scan_telemetry = self._safe_previous_state_with_telemetry(
+                request.repo,
+                request.language,
+            )
 
         added: list[ModuleRecord] = []
         modified: list[ModuleRecord] = []
@@ -155,6 +183,7 @@ class HashChangeDetectionAdapter:
             deleted=deleted,
             state_hash=state_hash,
             state_rows=state_rows,
+            scan_telemetry=scan_telemetry,
         )
 
     def compute_changes_for_context(
@@ -200,15 +229,23 @@ class HashChangeDetectionAdapter:
         Mapping[str, FileDigest]
             Mapping from relative path to file digest.
         """
-        rows_iter = self._rows_iter_for_previous_state(repo, language)
+        state, _ = self._load_previous_state_with_telemetry(repo, language)
+        return state
+
+    def _load_previous_state_with_telemetry(
+        self,
+        repo: str,
+        language: str,
+    ) -> tuple[Mapping[str, FileDigest], dict[str, dict[str, int | None]]]:
+        rows_iter, scan_telemetry = self._rows_iter_for_previous_state(repo, language)
         if rows_iter is None:
-            return {}
+            return {}, scan_telemetry
 
         state, completed = self._build_state_from_rows(rows_iter, repo=repo, language=language)
         if completed and not state:
             log.info("No previous file_state rows found for %s", repo)
 
-        return state
+        return state, scan_telemetry
 
     @staticmethod
     def save_current_state(
@@ -271,9 +308,13 @@ class HashChangeDetectionAdapter:
             payload = f"{payload}|"
         return sha256_short(payload, length=16, used_for_security=False)
 
-    def _safe_previous_state(self, repo: str, language: str) -> Mapping[str, FileDigest]:
+    def _safe_previous_state_with_telemetry(
+        self,
+        repo: str,
+        language: str,
+    ) -> tuple[Mapping[str, FileDigest], dict[str, dict[str, int | None]]]:
         try:
-            return self.load_previous_state(repo, language)
+            return self._load_previous_state_with_telemetry(repo, language)
         except _READ_EXCEPTIONS as exc:
             log.warning(
                 "file_state previous state load failed for repo=%s language=%s: %s",
@@ -281,24 +322,28 @@ class HashChangeDetectionAdapter:
                 language,
                 exc,
             )
-            return {}
+            return {}, {}
 
     def _rows_iter_for_previous_state(
         self,
         repo: str,
         language: str,
-    ) -> Iterable[tuple[object, object, object, object]] | None:
+    ) -> tuple[
+        Iterable[tuple[object, object, object, object]] | None,
+        dict[str, dict[str, int | None]],
+    ]:
         dataset_root = self._dataset_root
         snapshot_id = self._snapshot_id
         if dataset_root is None or snapshot_id is None:
-            return None
+            return None, {}
 
         options = ParquetScanOptions(
             repo=repo,
             commit=snapshot_id,
+            execution_ctx=self._execution_ctx,
         )
         try:
-            reader = scan_parquet_dataset(
+            reader, telemetry = scan_parquet_dataset_with_telemetry(
                 dataset_root=dataset_root,
                 table_key=FILE_STATE_TABLE_KEY,
                 snapshot_id=snapshot_id,
@@ -311,15 +356,16 @@ class HashChangeDetectionAdapter:
                 snapshot_id,
                 exc,
             )
-            return None
+            return None, {}
+        scan_telemetry = _scan_telemetry_mapping(telemetry)
         if reader is None:
-            return None
+            return None, scan_telemetry
 
         available = set(reader.schema.names)
         missing = [name for name in _REQUIRED_STATE_COLUMNS if name not in available]
         if missing:
             log.warning("file_state dataset missing columns: %s", missing)
-            return None
+            return None, scan_telemetry
 
         columns = list(_REQUIRED_STATE_COLUMNS)
         include_language = "language" in available
@@ -327,9 +373,9 @@ class HashChangeDetectionAdapter:
             columns.append("language")
         rows = iter_tuples(reader, columns=columns)
         if not include_language:
-            return cast("Iterable[tuple[object, object, object, object]]", rows)
-        filtered = cast("Iterable[tuple[object, object, object, object, object]]", rows)
-        return self._filter_language(filtered, language=language)
+            return cast("Iterable[tuple[object, object, object, object]]", rows), scan_telemetry
+        rows_with_language = cast("Iterable[tuple[object, object, object, object, object]]", rows)
+        return self._filter_language(rows_with_language, language=language), scan_telemetry
 
     @staticmethod
     def _filter_language(

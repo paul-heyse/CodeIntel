@@ -239,6 +239,7 @@ def _worklist_table(
             repo=snapshot.repo,
             commit=snapshot.commit,
             ctx=ctx,
+            table_key="core.goids",
         ),
     )
     plan = plan.filter(E.in_("kind", ["function", "method"]))

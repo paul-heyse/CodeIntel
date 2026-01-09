@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.graphs.rx.weights import WeightSemantics
-from codeintel.config.primitives import SnapshotRef
+from codeintel.config.primitives import GraphFeatureFlags, GraphOutputToggles, SnapshotRef
 from codeintel.core.columnar.execution_context import (
     resolve_runtime_profile,
     runtime_profile_from_settings,
@@ -52,6 +52,12 @@ class GraphMetricsOptions:
         Optional thread count override for rustworkx rayon execution.
     weight_semantics
         Whether weights represent strength or cost semantics.
+    enable_cfg_normalization
+        Whether CFG normalization passes should run for analytics metrics.
+    enable_dfg_normalization
+        Whether DFG normalization passes should run for analytics metrics.
+    output_toggles
+        Optional graph output toggles for metadata and analytics surfaces.
     """
 
     max_betweenness_sample: int | None = 200
@@ -62,6 +68,9 @@ class GraphMetricsOptions:
     parallel_threshold: int | None = DEFAULT_PARALLEL_THRESHOLD
     rayon_threads: int | None = None
     weight_semantics: WeightSemantics = WeightSemantics.STRENGTH
+    enable_cfg_normalization: bool = True
+    enable_dfg_normalization: bool = True
+    output_toggles: GraphOutputToggles = GraphOutputToggles()
 
 
 @dataclass(frozen=True)
@@ -88,6 +97,9 @@ class GraphContext:
     runtime_profile: str | None = None
     scan_profile: str | None = None
     determinism_tier: DedupeTier | None = None
+    enable_cfg_normalization: bool = True
+    enable_dfg_normalization: bool = True
+    output_toggles: GraphOutputToggles = GraphOutputToggles()
 
     def resolved_now(self) -> datetime:
         """Return a concrete timestamp, defaulting to current UTC time.
@@ -120,6 +132,9 @@ class GraphContextSpec:
     rayon_threads: int | None = None
     weight_semantics: WeightSemantics | None = None
     runtime_profile: str | None = None
+    enable_cfg_normalization: bool | None = None
+    enable_dfg_normalization: bool | None = None
+    output_toggles: GraphOutputToggles | None = None
 
 
 @dataclass(frozen=True)
@@ -189,6 +204,9 @@ def build_graph_context(
         parallel_threshold=parallel_threshold,
         rayon_threads=opts.rayon_threads,
         weight_semantics=opts.weight_semantics,
+        enable_cfg_normalization=opts.enable_cfg_normalization,
+        enable_dfg_normalization=opts.enable_dfg_normalization,
+        output_toggles=opts.output_toggles,
     )
 
 
@@ -257,6 +275,9 @@ def _base_context(spec: GraphContextSpec, base_now: datetime) -> GraphContext:
         parallel_threshold=parallel_threshold,
         rayon_threads=spec.rayon_threads,
         weight_semantics=spec.weight_semantics or WeightSemantics.STRENGTH,
+        enable_cfg_normalization=True,
+        enable_dfg_normalization=True,
+        output_toggles=spec.output_toggles or GraphOutputToggles(),
     )
 
 
@@ -275,6 +296,9 @@ def _normalize_context(
     normalized = _apply_rayon_threads(spec, normalized)
     normalized = _apply_weight_semantics(spec, normalized)
     normalized = _apply_now(normalized, base_now)
+    normalized = _apply_cfg_normalization(spec, normalized)
+    normalized = _apply_dfg_normalization(spec, normalized)
+    normalized = _apply_output_toggles(spec, normalized)
     return _apply_community_limit(spec, normalized)
 
 
@@ -315,6 +339,30 @@ def _apply_seed(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
     if spec.seed is None or ctx.seed == spec.seed:
         return ctx
     return replace(ctx, seed=spec.seed)
+
+
+def _apply_cfg_normalization(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    if spec.enable_cfg_normalization is None:
+        return ctx
+    if ctx.enable_cfg_normalization == spec.enable_cfg_normalization:
+        return ctx
+    return replace(ctx, enable_cfg_normalization=spec.enable_cfg_normalization)
+
+
+def _apply_dfg_normalization(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    if spec.enable_dfg_normalization is None:
+        return ctx
+    if ctx.enable_dfg_normalization == spec.enable_dfg_normalization:
+        return ctx
+    return replace(ctx, enable_dfg_normalization=spec.enable_dfg_normalization)
+
+
+def _apply_output_toggles(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    if spec.output_toggles is None:
+        return ctx
+    if ctx.output_toggles == spec.output_toggles:
+        return ctx
+    return replace(ctx, output_toggles=spec.output_toggles)
 
 
 def _apply_parallel_threshold(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
@@ -362,6 +410,37 @@ def _apply_runtime_profile(spec: GraphContextSpec, ctx: GraphContext) -> GraphCo
         runtime_profile=runtime_name,
         scan_profile=scan_profile,
         determinism_tier=determinism_tier,
+    )
+
+
+def graph_metrics_options_from_features(
+    features: GraphFeatureFlags | None,
+) -> GraphMetricsOptions:
+    """Build GraphMetricsOptions derived from graph runtime feature flags.
+
+    Returns
+    -------
+    GraphMetricsOptions
+        Metrics options populated from feature flags when provided.
+    """
+    defaults = GraphMetricsOptions()
+    if features is None:
+        return defaults
+    cfg_norm = (
+        defaults.enable_cfg_normalization
+        if features.cfg_normalization is None
+        else features.cfg_normalization
+    )
+    dfg_norm = (
+        defaults.enable_dfg_normalization
+        if features.dfg_normalization is None
+        else features.dfg_normalization
+    )
+    output_toggles = features.graph_outputs or defaults.output_toggles
+    return GraphMetricsOptions(
+        enable_cfg_normalization=cfg_norm,
+        enable_dfg_normalization=dfg_norm,
+        output_toggles=output_toggles,
     )
 
 
@@ -480,6 +559,7 @@ __all__ = [
     "GraphContextSpec",
     "GraphMetricsOptions",
     "build_graph_context",
+    "graph_metrics_options_from_features",
     "load_prior_manifest",
     "resolve_graph_context",
 ]
