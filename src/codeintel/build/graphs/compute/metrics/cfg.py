@@ -6,12 +6,9 @@ metrics without any database or file I/O.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Hashable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar, cast
-
-import rustworkx as rx
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from codeintel.build.graphs.compute.metrics.centrality import centrality_directed
 from codeintel.build.graphs.compute.metrics.paths import (
@@ -24,8 +21,16 @@ from codeintel.build.graphs.compute.metrics.types import (
 from codeintel.build.graphs.compute.metrics.types import (
     DominanceMetrics as DominanceSummary,
 )
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
-from codeintel.build.graphs.rx.iterators import iter_edge_weights
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    dag_longest_path_length,
+    descendants_by_id,
+    dominance_frontiers_by_id,
+    ensure_directed_store,
+    immediate_dominators_by_id,
+    is_directed_acyclic,
+)
+from codeintel.build.graphs.rx.iterators import iter_edge_id_payloads
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -33,8 +38,6 @@ if TYPE_CHECKING:
     from codeintel.build.graphs.runtime.context import GraphContext
 
 NodeT = TypeVar("NodeT", bound=Hashable)
-
-log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -56,30 +59,6 @@ class DominanceMetrics:
     is_loop_header: bool
 
 
-def _ensure_directed_store(graph: GraphInput) -> RxGraphStore:
-    store = ensure_store(graph)
-    if store.is_directed:
-        return store
-    directed = RxGraphStore.directed(
-        node_hint=store.graph.num_nodes(),
-        edge_hint=store.graph.num_edges() * 2,
-    )
-    for node_id in store.node_ids():
-        directed.set_node_attrs(node_id, store.get_node_attrs(node_id))
-    for src_idx, dst_idx, weight in iter_edge_weights(store):
-        src_id = store.index_to_id[src_idx]
-        dst_id = store.index_to_id[dst_idx]
-        directed.add_weighted_edge(src_id, dst_id, weight=weight)
-        if src_id != dst_id:
-            directed.add_weighted_edge(dst_id, src_id, weight=weight)
-    return directed
-
-
-def _directed_graph(store: RxGraphStore) -> rx.PyDiGraph:
-    if not store.is_directed:
-        message = "Expected a directed graph store"
-        raise ValueError(message)
-    return cast("rx.PyDiGraph", store.graph)
 
 
 def compute_dominator_tree(
@@ -100,27 +79,10 @@ def compute_dominator_tree(
     dict[Hashable, Hashable | None]
         Node to immediate dominator mapping. Entry node maps to None.
     """
-    store = _ensure_directed_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return {}
-    entry_idx = store.id_to_index.get(entry)
-    if entry_idx is None:
-        return {}
-    directed_graph = _directed_graph(store)
-    try:
-        idoms = rx.immediate_dominators(directed_graph, entry_idx)
-    except (rx.InvalidNode, rx.NullGraph) as exc:
-        log.warning("Dominator computation failed: %s", exc)
-        return {}
-
-    result: dict[Hashable, Hashable | None] = {}
-    for node_idx, idom_idx in idoms.items():
-        node_id = store.index_to_id[node_idx]
-        if node_idx == entry_idx:
-            result[node_id] = None
-        else:
-            result[node_id] = store.index_to_id[idom_idx]
-    return {node: result[node] for node in sorted(result, key=stable_key)}
+    return immediate_dominators_by_id(store, entry)
 
 
 def compute_dominance_frontier(
@@ -144,23 +106,10 @@ def compute_dominance_frontier(
     dict[Hashable, frozenset[Hashable]]
         Node to dominance frontier mapping.
     """
-    store = _ensure_directed_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return {}
-    entry_idx = store.id_to_index.get(entry)
-    if entry_idx is None:
-        return {}
-    directed_graph = _directed_graph(store)
-    try:
-        frontiers = rx.dominance_frontiers(directed_graph, entry_idx)
-    except (rx.InvalidNode, rx.NullGraph) as exc:
-        log.warning("Dominance frontier computation failed: %s", exc)
-        return {}
-    mapped = {
-        store.index_to_id[node_idx]: frozenset(store.index_to_id[idx] for idx in frontier)
-        for node_idx, frontier in frontiers.items()
-    }
-    return {node: mapped[node] for node in sorted(mapped, key=stable_key)}
+    return dominance_frontiers_by_id(store, entry)
 
 
 def compute_dominator_depths(
@@ -220,7 +169,7 @@ def find_natural_loop_headers(
     set[Hashable]
         Set of loop header nodes.
     """
-    store = _ensure_directed_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return set()
     if entry not in store.id_to_index:
@@ -239,9 +188,7 @@ def find_natural_loop_headers(
                 break
 
     headers: set[Hashable] = set()
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_id = store.index_to_id[src_idx]
-        dst_id = store.index_to_id[dst_idx]
+    for src_id, dst_id, _payload in iter_edge_id_payloads(store):
         if src_id in dominates.get(dst_id, set()):
             headers.add(dst_id)
 
@@ -265,24 +212,10 @@ def compute_cfg_longest_path(
     int
         Longest path length (number of edges).
     """
-    store = _ensure_directed_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return 0
-
-    directed_graph = _directed_graph(store)
-    try:
-        if rx.is_directed_acyclic_graph(directed_graph):
-            return int(rx.dag_longest_path_length(directed_graph))
-    except rx.NullGraph:
-        return 0
-
-    condensed_graph = cast("rx.PyDiGraph", rx.condensation(directed_graph))
-    if condensed_graph.num_nodes() == 0:
-        return 0
-    try:
-        return int(rx.dag_longest_path_length(condensed_graph))
-    except (rx.DAGHasCycle, rx.NullGraph):
-        return 0
+    return dag_longest_path_length(store)
 
 
 def compute_all_dominance(
@@ -303,7 +236,7 @@ def compute_all_dominance(
     dict[Hashable, DominanceMetrics]
         Node to dominance metrics mapping.
     """
-    store = _ensure_directed_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return {}
 
@@ -330,7 +263,7 @@ def cfg_dominance_metrics(graph: GraphInput, entry_idx: int) -> DominanceSummary
     DominanceSummary
         Dominance depth and frontier sizes for CFG nodes.
     """
-    store = _ensure_directed_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return DominanceSummary(depth={}, frontier_sizes={}, tree_height=None)
 
@@ -383,38 +316,30 @@ def cfg_longest_path_length(
     int
         Longest path length from the entry node.
     """
-    store = _ensure_directed_store(graph)
+    store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return 0
     entry_node = store.id_to_index.get(entry_idx)
     if entry_node is None:
         return 0
 
-    directed_graph = _directed_graph(store)
     if is_dag is None:
-        try:
-            is_dag = rx.is_directed_acyclic_graph(directed_graph)
-        except rx.NullGraph:
-            return 0
+        is_dag = is_directed_acyclic(store)
 
     if not is_dag:
         return compute_cfg_longest_path(store)
 
-    try:
-        reachable = set(rx.descendants(directed_graph, entry_node))
-    except (rx.InvalidNode, rx.NullGraph):
-        return 0
-    reachable.add(entry_node)
+    reachable_ids = descendants_by_id(store, entry_idx, include_source=True)
     ordered = sorted(
-        reachable,
+        (
+            store.id_to_index[node_id]
+            for node_id in reachable_ids
+            if node_id in store.id_to_index
+        ),
         key=lambda idx: stable_key(store.index_to_id[idx]),
     )
-    subgraph, _node_map = directed_graph.subgraph_with_nodemap(ordered, preserve_attrs=True)
-    try:
-        longest = int(rx.dag_longest_path_length(subgraph))
-    except (rx.DAGHasCycle, rx.NullGraph):
-        longest = 0
-    return longest
+    subgraph, _node_map = store.graph.subgraph_with_nodemap(ordered, preserve_attrs=True)
+    return dag_longest_path_length(subgraph, allow_condensation=False)
 
 
 def cfg_avg_shortest_path_length(graph: GraphInput, entry_idx: int) -> float:

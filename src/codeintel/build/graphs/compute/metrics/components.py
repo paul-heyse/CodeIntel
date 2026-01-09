@@ -8,9 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, TypedDict, cast
-
-import rustworkx as rx
+from typing import Any, TypedDict
 
 from codeintel.build.graphs.compute.metrics.statistics import (
     compute_avg_shortest_path_length,
@@ -21,15 +19,18 @@ from codeintel.build.graphs.compute.metrics.structural import compute_clustering
 from codeintel.build.graphs.compute.metrics.types import ComponentBundle, GlobalGraphStats
 from codeintel.build.graphs.rx.algos import (
     GraphInput,
+    articulation_points_by_id,
+    bridges_by_id,
+    connected_components_by_id,
     ensure_directed_store,
     ensure_store,
-    to_undirected_store,
+    simple_cycles_by_id,
+    strongly_connected_components_by_id,
+    topological_layers_by_id,
+    weakly_connected_components_by_id,
 )
-from codeintel.build.graphs.rx.components import (
-    component_membership_by_id,
-    sort_components,
-)
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, sorted_mapping, stable_key
+from codeintel.build.graphs.rx.components import invert_membership_map
+from codeintel.build.graphs.rx.condensation import condensation_store
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 
@@ -81,75 +82,20 @@ class ComponentStats(TypedDict):
     singleton_count: int
 
 
-def _directed_graph(store: RxGraphStore) -> rx.PyDiGraph:
-    if not store.is_directed:
-        message = "Expected a directed graph store"
-        raise ValueError(message)
-    return cast("rx.PyDiGraph", store.graph)
+def _component_infos(components: Sequence[Sequence[Any]]) -> list[ComponentInfo]:
+    infos: list[ComponentInfo] = []
+    for comp_id, component in enumerate(components):
+        nodes = frozenset(component)
+        infos.append(ComponentInfo(component_id=comp_id, size=len(nodes), nodes=nodes))
+    return infos
 
 
-def _undirected_graph(store: RxGraphStore) -> rx.PyGraph:
-    if store.is_directed:
-        message = "Expected an undirected graph store"
-        raise ValueError(message)
-    return cast("rx.PyGraph", store.graph)
-
-
-def _condensation_components(
-    store: RxGraphStore,
-) -> tuple[rx.PyDiGraph, list[set[int]], dict[int, int]] | None:
-    condensed = cast("rx.PyDiGraph", rx.condensation(_directed_graph(store)))
-    node_map = condensed.attrs.get("node_map")
-    if not isinstance(node_map, Sequence) or isinstance(
-        node_map, (str, bytes, bytearray, memoryview)
-    ):
-        return None
-    components_by_id: dict[int, set[int]] = {}
-    for node_idx, comp_id in enumerate(node_map):
-        if isinstance(comp_id, int):
-            components_by_id.setdefault(comp_id, set()).add(node_idx)
-    if not components_by_id:
-        return condensed, [], {}
-    sorted_components = sort_components(store, components_by_id.values())
-    component_lookup = {
-        frozenset(component): old_id for old_id, component in components_by_id.items()
-    }
-    old_to_new: dict[int, int] = {}
-    for new_id, component in enumerate(sorted_components):
-        old_id = component_lookup.get(frozenset(component))
-        if old_id is not None:
-            old_to_new[old_id] = new_id
-    return condensed, sorted_components, old_to_new
-
-
-def _condensation_store(
-    store: RxGraphStore,
-    *,
-    condensed_graph: rx.PyDiGraph,
-    old_to_new: dict[int, int],
-    component_count: int,
-) -> RxGraphStore:
-    if component_count == 0:
-        return RxGraphStore.directed(
-            weight_policy=store.weight_policy,
-            numeric_policy=store.numeric_policy,
-        )
-    condensed_store = RxGraphStore.directed(
-        node_hint=component_count,
-        weight_policy=store.weight_policy,
-        numeric_policy=store.numeric_policy,
-    )
-    for comp_id in range(component_count):
-        condensed_store.ensure_node(comp_id)
-    for src_idx, dst_idx in condensed_graph.edge_list():
-        src_new = old_to_new.get(src_idx)
-        dst_new = old_to_new.get(dst_idx)
-        if src_new is None or dst_new is None or src_new == dst_new:
-            continue
-        payload = condensed_graph.get_edge_data(src_idx, dst_idx)
-        weight = edge_weight_from_payload(payload)
-        condensed_store.add_weighted_edge(src_new, dst_new, weight=weight)
-    return condensed_store
+def _membership_from_components(components: Sequence[Sequence[Any]]) -> dict[Any, int]:
+    membership: dict[Any, int] = {}
+    for comp_id, component in enumerate(components):
+        for node in component:
+            membership[node] = comp_id
+    return membership
 
 
 def find_strongly_connected(
@@ -182,37 +128,23 @@ def find_strongly_connected(
     store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return SCCResult(components=(), node_to_component={})
-
-    condensation_data = _condensation_components(store)
-    if condensation_data is None:
-        return SCCResult(components=(), node_to_component={})
-    condensed_graph, sorted_sccs, old_to_new = condensation_data
-    if not sorted_sccs:
-        return SCCResult(components=(), node_to_component={})
-    components: list[ComponentInfo] = []
-    node_to_component = component_membership_by_id(store, sorted_sccs)
-    for comp_id, comp in enumerate(sorted_sccs):
-        nodes_frozen = frozenset(store.index_to_id[idx] for idx in comp)
-        components.append(
-            ComponentInfo(
-                component_id=comp_id,
-                size=len(comp),
-                nodes=nodes_frozen,
-            )
-        )
-    condensation = None
     if compute_condensation:
-        condensation = _condensation_store(
-            store,
-            condensed_graph=condensed_graph,
-            old_to_new=old_to_new,
-            component_count=len(sorted_sccs),
+        condensed, membership_by_id = condensation_store(store)
+        components = invert_membership_map(membership_by_id)
+        if not components:
+            return SCCResult(components=(), node_to_component={})
+        return SCCResult(
+            components=tuple(_component_infos(components)),
+            node_to_component=membership_by_id,
+            condensation=condensed,
         )
-
+    components = strongly_connected_components_by_id(store)
+    if not components:
+        return SCCResult(components=(), node_to_component={})
     return SCCResult(
-        components=tuple(components),
-        node_to_component=node_to_component,
-        condensation=condensation,
+        components=tuple(_component_infos(components)),
+        node_to_component=_membership_from_components(components),
+        condensation=None,
     )
 
 
@@ -229,25 +161,8 @@ def find_weakly_connected(graph: GraphInput) -> list[ComponentInfo]:
     list[ComponentInfo]
         Weakly connected components.
     """
-    store = ensure_store(graph)
-    if store.graph.num_nodes() == 0:
-        return []
-
-    if store.is_directed:
-        directed_graph = _directed_graph(store)
-        components = [set(comp) for comp in rx.weakly_connected_components(directed_graph)]
-    else:
-        undirected_graph = _undirected_graph(store)
-        components = [set(comp) for comp in rx.connected_components(undirected_graph)]
-    sorted_components = sort_components(store, components)
-    return [
-        ComponentInfo(
-            component_id=idx,
-            size=len(comp),
-            nodes=frozenset(store.index_to_id[node_idx] for node_idx in comp),
-        )
-        for idx, comp in enumerate(sorted_components)
-    ]
+    components = weakly_connected_components_by_id(graph)
+    return _component_infos(components)
 
 
 def find_connected(graph: GraphInput) -> list[ComponentInfo]:
@@ -263,22 +178,8 @@ def find_connected(graph: GraphInput) -> list[ComponentInfo]:
     list[ComponentInfo]
         Connected components.
     """
-    store = ensure_store(graph)
-    work_store = to_undirected_store(store)
-    if work_store.graph.num_nodes() == 0:
-        return []
-
-    undirected_graph = _undirected_graph(work_store)
-    components = [set(comp) for comp in rx.connected_components(undirected_graph)]
-    sorted_components = sort_components(work_store, components)
-    return [
-        ComponentInfo(
-            component_id=idx,
-            size=len(comp),
-            nodes=frozenset(work_store.index_to_id[node_idx] for node_idx in comp),
-        )
-        for idx, comp in enumerate(sorted_components)
-    ]
+    components = connected_components_by_id(graph)
+    return _component_infos(components)
 
 
 def find_bridges(graph: GraphInput) -> list[tuple[Any, Any]]:
@@ -294,16 +195,7 @@ def find_bridges(graph: GraphInput) -> list[tuple[Any, Any]]:
     list[tuple[Any, Any]]
         Bridge edges.
     """
-    store = ensure_store(graph)
-    work_store = to_undirected_store(store)
-    if work_store.graph.num_nodes() == 0:
-        return []
-    undirected_graph = _undirected_graph(work_store)
-    bridges = []
-    for edge in rx.bridges(undirected_graph):
-        src_idx, dst_idx = cast("tuple[int, int]", edge)
-        bridges.append((work_store.index_to_id[src_idx], work_store.index_to_id[dst_idx]))
-    return sorted(bridges, key=stable_key)
+    return bridges_by_id(graph)
 
 
 def find_articulation_points(graph: GraphInput) -> list[Any]:
@@ -319,13 +211,7 @@ def find_articulation_points(graph: GraphInput) -> list[Any]:
     list[Any]
         Articulation point nodes.
     """
-    store = ensure_store(graph)
-    work_store = to_undirected_store(store)
-    if work_store.graph.num_nodes() == 0:
-        return []
-    undirected_graph = _undirected_graph(work_store)
-    points = [work_store.index_to_id[idx] for idx in rx.articulation_points(undirected_graph)]
-    return sorted(points, key=stable_key)
+    return articulation_points_by_id(graph)
 
 
 def compute_component_stats(
@@ -377,17 +263,7 @@ def find_cycles(graph: GraphInput, limit: int | None = 100) -> list[list[Any]]:
     list[list[Any]]
         List of cycles as node lists.
     """
-    store = ensure_directed_store(graph)
-    if store.graph.num_nodes() == 0:
-        return []
-
-    directed_graph = _directed_graph(store)
-    cycles: list[list[Any]] = []
-    for cycle in rx.simple_cycles(directed_graph):
-        cycles.append([store.index_to_id[idx] for idx in cycle])
-        if limit is not None and len(cycles) >= limit:
-            break
-    return cycles
+    return simple_cycles_by_id(graph, limit=limit)
 
 
 def topological_layers(graph: GraphInput) -> dict[Any, int]:
@@ -407,19 +283,7 @@ def topological_layers(graph: GraphInput) -> dict[Any, int]:
     -----
     If the graph contains cycles, rustworkx raises ``DAGHasCycle``.
     """
-    store = ensure_directed_store(graph)
-    if store.graph.num_nodes() == 0:
-        return {}
-    directed_graph = _directed_graph(store)
-    layer_map: dict[Any, int] = {}
-    for layer, generation in enumerate(rx.topological_generations(directed_graph)):
-        ordered = sorted(
-            generation,
-            key=lambda idx: stable_key(store.index_to_id[idx]),
-        )
-        for node_idx in ordered:
-            layer_map[store.index_to_id[node_idx]] = layer
-    return sorted_mapping(layer_map)
+    return topological_layers_by_id(graph)
 
 
 def condensation_layers(

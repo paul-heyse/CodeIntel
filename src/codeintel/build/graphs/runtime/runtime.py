@@ -91,6 +91,7 @@ def _graph_metadata_for_cache(
             existing.determinism_tier if existing is not None else DEFAULT_GRAPH_DETERMINISM_TIER
         ),
         scan_profile=existing.scan_profile if existing is not None else None,
+        ordering_keys=existing.ordering_keys if existing is not None else None,
     )
 
 

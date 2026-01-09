@@ -13,14 +13,16 @@ import pyarrow as pa
 
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import equal_expr, is_in_expr, is_valid_expr
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -52,15 +54,12 @@ def degree_dict(
     """
     store = ensure_store(graph, weight=weight)
     degree_map: dict[int, int] = {int(str(node)): 0 for node in store.node_ids()}
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_id = store.index_to_id[src_idx]
-        dst_id = store.index_to_id[dst_idx]
-        payload = store.graph.get_edge_data(src_idx, dst_idx)
-        weight_val = int(edge_weight_from_payload(payload))
+    for src_id, dst_id, weight_val in iter_edge_id_weights(store):
+        weight_int = int(weight_val)
         if direction == "in":
-            degree_map[int(str(dst_id))] = degree_map.get(int(str(dst_id)), 0) + weight_val
+            degree_map[int(str(dst_id))] = degree_map.get(int(str(dst_id)), 0) + weight_int
         else:
-            degree_map[int(str(src_id))] = degree_map.get(int(str(src_id)), 0) + weight_val
+            degree_map[int(str(src_id))] = degree_map.get(int(str(src_id)), 0) + weight_int
     return degree_map
 
 
@@ -171,22 +170,21 @@ def cfg_blocks_rowset(
             E.is_valid("block_idx"),
         )
     )
-    plan = plan.order_by(
-        sort_keys=[
-            ("function_goid_h128", "ascending"),
-            ("block_idx", "ascending"),
-        ]
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("function_goid_h128",),
+            aggregates=[
+                ("block_idx", "list", None, "block_idx"),
+                ("kind", "list", None, "kind"),
+                ("in_degree", "list", None, "in_degree"),
+                ("out_degree", "list", None, "out_degree"),
+            ],
+            pre_sort_keys=(("function_goid_h128", "ascending"), ("block_idx", "ascending")),
+        ),
+        ctx=ctx,
     )
-    plan = plan.aggregate(
-        keys=[E.field("function_goid_h128")],
-        aggregates=[
-            ("block_idx", "list", None, "block_idx"),
-            ("kind", "list", None, "kind"),
-            ("in_degree", "list", None, "in_degree"),
-            ("out_degree", "list", None, "out_degree"),
-        ],
-    )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def cfg_edges_rowset(
@@ -218,23 +216,25 @@ def cfg_edges_rowset(
             E.is_valid("dst_block_id"),
         )
     )
-    plan = plan.order_by(
-        sort_keys=[
-            ("function_goid_h128", "ascending"),
-            ("src_block_id", "ascending"),
-            ("dst_block_id", "ascending"),
-            ("edge_kind", "ascending"),
-        ]
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("function_goid_h128",),
+            aggregates=[
+                ("src_block_id", "list", None, "src_block_id"),
+                ("dst_block_id", "list", None, "dst_block_id"),
+                ("edge_kind", "list", None, "edge_kind"),
+            ],
+            pre_sort_keys=(
+                ("function_goid_h128", "ascending"),
+                ("src_block_id", "ascending"),
+                ("dst_block_id", "ascending"),
+                ("edge_kind", "ascending"),
+            ),
+        ),
+        ctx=ctx,
     )
-    plan = plan.aggregate(
-        keys=[E.field("function_goid_h128")],
-        aggregates=[
-            ("src_block_id", "list", None, "src_block_id"),
-            ("dst_block_id", "list", None, "dst_block_id"),
-            ("edge_kind", "list", None, "edge_kind"),
-        ],
-    )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def dfg_edges_rowset(
@@ -276,29 +276,31 @@ def dfg_edges_rowset(
             E.is_valid("dst_var"),
         )
     )
-    plan = plan.order_by(
-        sort_keys=[
-            ("function_goid_h128", "ascending"),
-            ("src_block_id", "ascending"),
-            ("dst_block_id", "ascending"),
-            ("src_var", "ascending"),
-            ("dst_var", "ascending"),
-            ("use_kind", "ascending"),
-            ("via_phi", "ascending"),
-        ]
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("function_goid_h128",),
+            aggregates=[
+                ("src_block_id", "list", None, "src_block_id"),
+                ("dst_block_id", "list", None, "dst_block_id"),
+                ("src_var", "list", None, "src_var"),
+                ("dst_var", "list", None, "dst_var"),
+                ("via_phi", "list", None, "via_phi"),
+                ("use_kind", "list", None, "use_kind"),
+            ],
+            pre_sort_keys=(
+                ("function_goid_h128", "ascending"),
+                ("src_block_id", "ascending"),
+                ("dst_block_id", "ascending"),
+                ("src_var", "ascending"),
+                ("dst_var", "ascending"),
+                ("use_kind", "ascending"),
+                ("via_phi", "ascending"),
+            ),
+        ),
+        ctx=ctx,
     )
-    plan = plan.aggregate(
-        keys=[E.field("function_goid_h128")],
-        aggregates=[
-            ("src_block_id", "list", None, "src_block_id"),
-            ("dst_block_id", "list", None, "dst_block_id"),
-            ("src_var", "list", None, "src_var"),
-            ("dst_var", "list", None, "dst_var"),
-            ("via_phi", "list", None, "via_phi"),
-            ("use_kind", "list", None, "use_kind"),
-        ],
-    )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def load_function_metadata(
@@ -376,11 +378,15 @@ def _module_metadata_table(
     )
     plan = plan.filter(E.and_(E.is_valid("path"), E.is_valid("module")))
     plan = plan.project({"path": E.field("path"), "module": E.field("module")})
-    plan = plan.aggregate(
-        keys=[E.field("path")],
-        aggregates=[("module", "min", None, "module")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("path",),
+            aggregates=(("module", "min", None, "module"),),
+        ),
+        ctx=ctx,
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _goid_metadata_table(
@@ -412,14 +418,18 @@ def _goid_metadata_table(
     else:
         project["qualname"] = E.scalar(None)
     plan = plan.project(project)
-    plan = plan.aggregate(
-        keys=[E.field("goid_h128")],
-        aggregates=[
-            ("rel_path", "min", None, "rel_path"),
-            ("qualname", "min", None, "qualname"),
-        ],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("goid_h128",),
+            aggregates=(
+                ("rel_path", "min", None, "rel_path"),
+                ("qualname", "min", None, "qualname"),
+            ),
+        ),
+        ctx=ctx,
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _materialize_plan(
@@ -428,7 +438,8 @@ def _materialize_plan(
     ctx: ExecutionContext | None,
 ) -> pa.Table:
     execution_ctx = resolve_execution_context(ctx)
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 __all__ = [

@@ -104,16 +104,6 @@ def _list_values(value: object) -> list[object]:
     return []
 
 
-def _sort_cfg_groups(
-    blocks_by_fn: dict[int, list[tuple[int, str, int, int]]],
-    edges_by_fn: dict[int, list[tuple[int, int, str]]],
-) -> None:
-    for blocks in blocks_by_fn.values():
-        blocks.sort(key=lambda item: item[0])
-    for edges in edges_by_fn.values():
-        edges.sort(key=lambda item: (item[0], item[1], item[2]))
-
-
 def load_cfg_blocks(
     cfg_blocks_frame: pa.Table,
     cfg_edges_frame: pa.Table,
@@ -186,8 +176,6 @@ def load_cfg_blocks(
                     str(kind_raw) if kind_raw is not None else "unknown",
                 )
             )
-    _sort_cfg_groups(blocks_by_fn, edges_by_fn)
-
     return blocks_by_fn, edges_by_fn
 
 

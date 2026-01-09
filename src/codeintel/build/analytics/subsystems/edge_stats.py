@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.iterators import iter_edge_id_payloads
 
 
 @dataclass(frozen=True)
@@ -38,14 +39,13 @@ def compute_subsystem_edge_stats(
     fan_out: set[str] = set()
 
     store = ensure_store(import_graph)
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_key = str(store.index_to_id[src_idx])
-        dst_key = str(store.index_to_id[dst_idx])
+    for src_id, dst_id, payload in iter_edge_id_payloads(store):
+        src_key = str(src_id)
+        dst_key = str(dst_id)
         src_label = labels.get(src_key)
         dst_label = labels.get(dst_key)
         if src_label is None or dst_label is None:
             continue
-        payload = store.graph.get_edge_data(src_idx, dst_idx)
         weight = _coerce_edge_weight(payload)
         if src_key in member_set and dst_key in member_set:
             internal_edges += weight

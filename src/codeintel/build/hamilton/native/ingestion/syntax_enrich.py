@@ -11,6 +11,9 @@ import pyarrow as pa
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.ingestion.manifesting import (
+    finalize_ingest_reader_with_manifest,
+)
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     RelationTableSaveSpec,
@@ -19,16 +22,11 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import (
-    IngestFinalizeOptions,
-    finalize_ingest_reader,
-    scoped_table_for_ingest,
-)
+from codeintel.build.hamilton.transforms.ingestion_normalize import scoped_table_for_ingest
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_helpers import cast_array
 from codeintel.build.tabular.conversion import table_to_reader
-from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -40,8 +38,12 @@ from codeintel.build.tabular.finalize_ops import (
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.table_ops import ensure_table_columns
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
-from codeintel.core.columnar.plan_ops import materialize_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 
@@ -253,7 +255,7 @@ def _hash_join_tables(
         ),
     )
     joined = joined.order_by(sort_keys=[(key, "ascending") for key in spec.left_keys])
-    return materialize_plan(joined, use_threads=True)
+    return _plan_to_table(joined)
 
 
 def _rename_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Table:
@@ -375,6 +377,7 @@ def _occurrence_resolution_table(
 
 
 def _resolve_facts(
+    env: BuildEnv,
     facts: pa.Table,
     occurrences: pa.Table,
     *,
@@ -404,10 +407,11 @@ def _resolve_facts(
     if resolved_columns:
         combined = combined.select(resolved_columns)
     reader = table_to_reader(combined, batch_size=None)
-    return finalize_ingest_reader(
-        table_key,
-        reader,
-        options=IngestFinalizeOptions(target_name=SYNTAX_ENRICH_TARGET_NAME),
+    return finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=table_key,
+        reader=reader,
+        target_name=SYNTAX_ENRICH_TARGET_NAME,
     )
 
 
@@ -451,7 +455,13 @@ def _filter_table_expr(table: pa.Table, expr: Expression) -> pa.Table:
         table=table,
         options=TablePlanOptions(filter_expr=expr),
     )
-    return materialize_plan(plan, use_threads=True)
+    return _plan_to_table(plan)
+
+
+def _plan_to_table(plan: Plan) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def _line_join_occurrences(left: pa.Table, occurrences: pa.Table) -> pa.Table:
@@ -543,10 +553,20 @@ def syntax_enrich__occurrence_resolution(
 
 
 def syntax_enrich__defs_resolved__base(
+    env: BuildEnv,
     q__core__syntax_defs: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
 ) -> pa.Table:
     """Build core.syntax_defs_resolved from syntax defs and SCIP welds.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    q__core__syntax_defs
+        Syntax definition rows.
+    syntax_enrich__occurrence_resolution
+        Occurrence resolution rows for SCIP welds.
 
     Returns
     -------
@@ -568,6 +588,7 @@ def syntax_enrich__defs_resolved__base(
         require_scope_columns=False,
     )
     return _resolve_facts(
+        env,
         facts,
         occurrences,
         table_key=SYNTAX_DEFS_RESOLVED_TABLE_KEY,
@@ -575,10 +596,20 @@ def syntax_enrich__defs_resolved__base(
 
 
 def syntax_enrich__refs_resolved__base(
+    env: BuildEnv,
     q__core__syntax_refs: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
 ) -> pa.Table:
     """Build core.syntax_refs_resolved from syntax refs and SCIP welds.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    q__core__syntax_refs
+        Syntax reference rows.
+    syntax_enrich__occurrence_resolution
+        Occurrence resolution rows for SCIP welds.
 
     Returns
     -------
@@ -600,6 +631,7 @@ def syntax_enrich__refs_resolved__base(
         require_scope_columns=False,
     )
     return _resolve_facts(
+        env,
         facts,
         occurrences,
         table_key=SYNTAX_REFS_RESOLVED_TABLE_KEY,
@@ -607,10 +639,20 @@ def syntax_enrich__refs_resolved__base(
 
 
 def syntax_enrich__calls_resolved__base(
+    env: BuildEnv,
     q__core__syntax_calls: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
 ) -> pa.Table:
     """Build core.syntax_calls_resolved from syntax calls and SCIP welds.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    q__core__syntax_calls
+        Syntax call rows.
+    syntax_enrich__occurrence_resolution
+        Occurrence resolution rows for SCIP welds.
 
     Returns
     -------
@@ -632,6 +674,7 @@ def syntax_enrich__calls_resolved__base(
         require_scope_columns=False,
     )
     return _resolve_facts(
+        env,
         facts,
         occurrences,
         table_key=SYNTAX_CALLS_RESOLVED_TABLE_KEY,
@@ -639,10 +682,20 @@ def syntax_enrich__calls_resolved__base(
 
 
 def syntax_enrich__imports_resolved__base(
+    env: BuildEnv,
     q__core__syntax_imports: InferableTabularInput,
     syntax_enrich__occurrence_resolution: InferableTabularInput,
 ) -> pa.Table:
     """Build core.syntax_imports_resolved from syntax imports and SCIP welds.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    q__core__syntax_imports
+        Syntax import rows.
+    syntax_enrich__occurrence_resolution
+        Occurrence resolution rows for SCIP welds.
 
     Returns
     -------
@@ -664,6 +717,7 @@ def syntax_enrich__imports_resolved__base(
         require_scope_columns=False,
     )
     return _resolve_facts(
+        env,
         facts,
         occurrences,
         table_key=SYNTAX_IMPORTS_RESOLVED_TABLE_KEY,

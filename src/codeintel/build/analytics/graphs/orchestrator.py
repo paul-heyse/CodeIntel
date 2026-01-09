@@ -52,7 +52,7 @@ from codeintel.build.graphs.rx.algos import (
     ensure_store,
     to_undirected_store,
 )
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
@@ -249,13 +249,9 @@ def _copy_without_self_loops(store: RxGraphStore) -> RxGraphStore:
         )
     for node_id in store.node_ids():
         filtered.set_node_attrs(node_id, store.get_node_attrs(node_id))
-    for src_idx, dst_idx in store.graph.edge_list():
-        if src_idx == dst_idx:
+    for src_id, dst_id, weight in iter_edge_id_weights(store):
+        if src_id == dst_id:
             continue
-        src_id = store.index_to_id[src_idx]
-        dst_id = store.index_to_id[dst_idx]
-        payload = store.graph.get_edge_data(src_idx, dst_idx)
-        weight = edge_weight_from_payload(payload)
         filtered.add_weighted_edge(src_id, dst_id, weight=weight)
     return filtered
 

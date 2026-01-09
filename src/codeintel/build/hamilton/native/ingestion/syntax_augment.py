@@ -54,7 +54,6 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
 )
 from codeintel.build.tabular.conversion import table_to_reader
-from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -66,10 +65,13 @@ from codeintel.build.tabular.finalize_ops import (
 from codeintel.build.tabular.nested_ops import deep_cast_table_to_contract, make_extras_struct
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.plan_builder import build_table_plan
-from codeintel.core.columnar.plan_kernels import grouped_rollup_table
-from codeintel.core.columnar.plan_ops import materialize_plan
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import (
     columnar_batch_collector_for_table_key,
     empty_table_for_table,
@@ -423,10 +425,12 @@ def _producer_table(nodes_table: pa.Table) -> pa.Table:
     if selected.num_rows == 0:
         return pa.table({"rel_path": [], "producer": []})
     grouped = grouped_rollup_table(
-        table=normalize_table_for_compute(selected),
-        keys=("rel_path",),
-        aggregates=(("producer", "min", None, "producer_min"),),
-        order_by=(("rel_path", "ascending"),),
+        normalize_table_for_compute(selected),
+        spec=GroupedRollupSpec(
+            keys=("rel_path",),
+            aggregates=(("producer", "min", None, "producer_min"),),
+            order_by=(("rel_path", "ascending"),),
+        ),
     )
     rename: dict[str, str] = {}
     for name in grouped.column_names:
@@ -570,7 +574,13 @@ def _hash_join_tables(
     if filter_expr is not None:
         joined = joined.filter(filter_expr)
     joined = joined.order_by(sort_keys=[(key, "ascending") for key in spec.left_keys])
-    return materialize_plan(joined, use_threads=True)
+    return _plan_to_table(joined)
+
+
+def _plan_to_table(plan: Plan) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def _xref_exact(ts_nodes: pa.Table, syntax_nodes: pa.Table) -> pa.Table:
@@ -1036,14 +1046,16 @@ def _weld_coverage_table(
             empty[name] = []
             return pa.table(empty)
         grouped = grouped_rollup_table(
-            table=normalize_table_for_compute(table),
-            keys=tuple(key_cols),
-            aggregates=((count_col, "count", None, name),),
-            order_by=(
-                ("repo", "ascending"),
-                ("commit", "ascending"),
-                ("rel_path", "ascending"),
-                ("language", "ascending"),
+            normalize_table_for_compute(table),
+            spec=GroupedRollupSpec(
+                keys=tuple(key_cols),
+                aggregates=((count_col, "count", None, name),),
+                order_by=(
+                    ("repo", "ascending"),
+                    ("commit", "ascending"),
+                    ("rel_path", "ascending"),
+                    ("language", "ascending"),
+                ),
             ),
         )
         return grouped.select([*key_cols, name])

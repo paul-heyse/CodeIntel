@@ -14,10 +14,20 @@ import rustworkx as rx
 
 from codeintel.build.graphs.rx.algos import (
     GraphInput,
-    ensure_directed_store,
+    connected_components_by_id,
+    degree_by_id,
     ensure_store,
+    graph_distance_matrix,
+    graph_unweighted_average_shortest_path_length,
+    in_degree_by_id,
+    is_directed_acyclic,
+    out_degree_by_id,
+    strongly_connected_components_by_id,
     to_undirected_store,
+    topological_generations_by_id,
+    weakly_connected_components_by_id,
 )
+from codeintel.build.graphs.rx.condensation import condensation_store
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -56,13 +66,6 @@ class GraphStatistics:
     is_dag: bool
 
 
-def _directed_graph(store: RxGraphStore) -> rx.PyDiGraph:
-    if not store.is_directed:
-        message = "Expected a directed graph store"
-        raise ValueError(message)
-    return cast("rx.PyDiGraph", store.graph)
-
-
 def _undirected_graph(store: RxGraphStore) -> rx.PyGraph:
     if store.is_directed:
         message = "Expected an undirected graph store"
@@ -92,12 +95,7 @@ def get_in_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
     >>> get_in_degrees(g)
     [(1, 0), (2, 1), (3, 2)]
     """
-    store = ensure_directed_store(graph)
-    directed_graph = _directed_graph(store)
-    return [
-        (node_id, directed_graph.in_degree(store.id_to_index[node_id]))
-        for node_id in store.node_ids()
-    ]
+    return list(in_degree_by_id(graph).items())
 
 
 def get_out_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
@@ -122,12 +120,7 @@ def get_out_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
     >>> get_out_degrees(g)
     [(1, 2), (2, 1), (3, 0)]
     """
-    store = ensure_directed_store(graph)
-    directed_graph = _directed_graph(store)
-    return [
-        (node_id, directed_graph.out_degree(store.id_to_index[node_id]))
-        for node_id in store.node_ids()
-    ]
+    return list(out_degree_by_id(graph).items())
 
 
 def get_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
@@ -152,13 +145,7 @@ def get_degrees(graph: GraphInput) -> list[tuple[Any, int]]:
     >>> get_degrees(g)
     [(1, 2), (2, 2), (3, 2)]
     """
-    store = ensure_store(graph)
-    work_store = to_undirected_store(store)
-    undirected_graph = _undirected_graph(work_store)
-    return [
-        (node_id, undirected_graph.degree(work_store.id_to_index[node_id]))
-        for node_id in work_store.node_ids()
-    ]
+    return list(degree_by_id(graph).items())
 
 
 def get_in_degree_values(graph: GraphInput) -> list[int]:
@@ -209,22 +196,18 @@ def get_degree_values(graph: GraphInput) -> list[int]:
     return [degree for _, degree in get_degrees(graph)]
 
 
-def _component_sort_key(store: RxGraphStore, component: set[int]) -> tuple[int, tuple[str, str]]:
+def _component_sort_key(component: set[Any]) -> tuple[int, tuple[str, str]]:
     if not component:
         return (0, ("", ""))
-    smallest = min(
-        (store.index_to_id[idx] for idx in component),
-        key=stable_key,
-    )
+    smallest = min(component, key=stable_key)
     return (len(component), stable_key(smallest))
 
 
-def _largest_component(store: RxGraphStore) -> set[int] | None:
-    undirected_graph = _undirected_graph(store)
-    components = [set(comp) for comp in rx.connected_components(undirected_graph)]
+def _largest_component(store: RxGraphStore) -> set[Any] | None:
+    components = connected_components_by_id(store)
     if not components:
         return None
-    return max(components, key=lambda comp: _component_sort_key(store, comp))
+    return max(components, key=_component_sort_key)
 
 
 def compute_diameter_estimate(graph: GraphInput) -> float | None:
@@ -260,17 +243,18 @@ def compute_diameter_estimate(graph: GraphInput) -> float | None:
     if len(largest) <= 1:
         return 0.0
     undirected_graph = _undirected_graph(work_store)
-    ordered = sorted(
-        largest,
-        key=lambda idx: stable_key(work_store.index_to_id[idx]),
-    )
+    ordered_indices = [
+        work_store.id_to_index[node_id]
+        for node_id in largest
+        if node_id in work_store.id_to_index
+    ]
+    ordered_indices.sort(key=lambda idx: stable_key(work_store.index_to_id[idx]))
     subgraph, _node_map = undirected_graph.subgraph_with_nodemap(
-        ordered,
+        ordered_indices,
         preserve_attrs=True,
     )
-    try:
-        distances = rx.graph_distance_matrix(subgraph)
-    except rx.NullGraph:
+    distances = graph_distance_matrix(subgraph)
+    if not distances:
         return None
     diameter = 0.0
     for row in distances:
@@ -312,18 +296,17 @@ def compute_avg_shortest_path_length(graph: GraphInput) -> float | None:
     if len(largest) <= 1:
         return 0.0
     undirected_graph = _undirected_graph(work_store)
-    ordered = sorted(
-        largest,
-        key=lambda idx: stable_key(work_store.index_to_id[idx]),
-    )
+    ordered_indices = [
+        work_store.id_to_index[node_id]
+        for node_id in largest
+        if node_id in work_store.id_to_index
+    ]
+    ordered_indices.sort(key=lambda idx: stable_key(work_store.index_to_id[idx]))
     subgraph, _node_map = undirected_graph.subgraph_with_nodemap(
-        ordered,
+        ordered_indices,
         preserve_attrs=True,
     )
-    try:
-        return float(rx.graph_unweighted_average_shortest_path_length(subgraph))
-    except rx.NullGraph:
-        return None
+    return graph_unweighted_average_shortest_path_length(subgraph)
 
 
 def compute_condensation_layer_count(graph: GraphInput) -> int | None:
@@ -355,14 +338,9 @@ def compute_condensation_layer_count(graph: GraphInput) -> int | None:
     store = ensure_store(graph)
     if store.graph.num_nodes() == 0 or not store.is_directed:
         return None
-    condensed_graph = cast("rx.PyDiGraph", rx.condensation(_directed_graph(store)))
-    return _layer_count(condensed_graph)
-
-
-def _layer_count(graph: rx.PyDiGraph) -> int:
-    if graph.num_nodes() == 0:
-        return 0
-    return sum(1 for _ in rx.topological_generations(graph))
+    condensed, _membership = condensation_store(store)
+    generations = topological_generations_by_id(condensed)
+    return len(generations)
 
 
 def compute_graph_statistics(graph: GraphInput) -> GraphStatistics:
@@ -415,13 +393,11 @@ def compute_graph_statistics(graph: GraphInput) -> GraphStatistics:
     avg_out_degree = sum(out_degrees) / node_count if node_count else 0.0
 
     if store.is_directed:
-        directed_graph = _directed_graph(store)
-        strongly_connected = len(list(rx.strongly_connected_components(directed_graph)))
-        weakly_connected = len(list(rx.weakly_connected_components(directed_graph)))
-        is_dag = rx.is_directed_acyclic_graph(directed_graph)
+        strongly_connected = len(strongly_connected_components_by_id(store))
+        weakly_connected = len(weakly_connected_components_by_id(store))
+        is_dag = is_directed_acyclic(store)
     else:
-        undirected_graph = _undirected_graph(store)
-        strongly_connected = len(list(rx.connected_components(undirected_graph)))
+        strongly_connected = len(connected_components_by_id(store))
         weakly_connected = strongly_connected
         is_dag = True
 

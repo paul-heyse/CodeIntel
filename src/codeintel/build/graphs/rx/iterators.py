@@ -24,6 +24,44 @@ def iter_edge_payloads(store: RxGraphStore) -> Iterable[tuple[int, int, object]]
         yield src_idx, dst_idx, payload
 
 
+def iter_edge_index_payloads(store: RxGraphStore) -> Iterable[tuple[int, int, int, object]]:
+    """Yield edge index, endpoints, and payloads from a rustworkx store.
+
+    Yields
+    ------
+    tuple[int, int, int, object]
+        Edge index, endpoints, and payloads.
+    """
+    for edge_idx, (src_idx, dst_idx, payload) in enumerate(iter_edge_payloads(store)):
+        yield edge_idx, src_idx, dst_idx, payload
+
+
+def edge_index_map(store: RxGraphStore) -> dict[tuple[int, int], int]:
+    """Return a mapping of edge endpoints to edge indices.
+
+    Returns
+    -------
+    dict[tuple[int, int], int]
+        Mapping of edge endpoints to edge index in edge_list ordering.
+    """
+    indices: dict[tuple[int, int], int] = {}
+    for edge_idx, src_idx, dst_idx, _payload in iter_edge_index_payloads(store):
+        indices[src_idx, dst_idx] = edge_idx
+    return indices
+
+
+def iter_edge_id_payloads(store: RxGraphStore) -> Iterable[tuple[Hashable, Hashable, object]]:
+    """Yield edge endpoints (node ids) and payloads.
+
+    Yields
+    ------
+    tuple[Hashable, Hashable, object]
+        Node id endpoints and payloads.
+    """
+    for src_idx, dst_idx, payload in iter_edge_payloads(store):
+        yield store.index_to_id[src_idx], store.index_to_id[dst_idx], payload
+
+
 def iter_edge_weights(
     store: RxGraphStore,
     *,
@@ -40,6 +78,22 @@ def iter_edge_weights(
     for src_idx, dst_idx, payload in iter_edge_payloads(store):
         weight = edge_weight_from_payload(payload, nan_policy=resolved_nan_policy)
         yield src_idx, dst_idx, weight
+
+
+def iter_edge_id_weights(
+    store: RxGraphStore,
+    *,
+    nan_policy: NanPolicy | None = None,
+) -> Iterable[tuple[Hashable, Hashable, float]]:
+    """Yield edge endpoints (node ids) and normalized weights.
+
+    Yields
+    ------
+    tuple[Hashable, Hashable, float]
+        Node id endpoints and normalized weight.
+    """
+    for src_idx, dst_idx, weight in iter_edge_weights(store, nan_policy=nan_policy):
+        yield store.index_to_id[src_idx], store.index_to_id[dst_idx], weight
 
 
 def iter_weighted_edge_ids(
@@ -136,7 +190,11 @@ def weighted_neighbors_by_index(
 
 
 __all__ = [
+    "edge_index_map",
     "edge_weight_map",
+    "iter_edge_id_payloads",
+    "iter_edge_id_weights",
+    "iter_edge_index_payloads",
     "iter_edge_payloads",
     "iter_edge_weights",
     "iter_weighted_edge_ids",

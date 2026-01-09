@@ -19,7 +19,7 @@ from codeintel.build.analytics.graphs.graph_metrics import (
     GraphMetricsRows,
     SymbolModuleEdges,
     build_graph_metric_filters_from_sets,
-    build_graph_metrics_rows,
+    build_graph_metrics_readers,
 )
 from codeintel.build.analytics.graphs.graph_metrics_ext import (
     build_graph_metrics_functions_ext_rows,
@@ -43,11 +43,16 @@ from codeintel.build.graphs.builders import (
     build_symbol_module_edges,
     build_symbol_module_graph,
 )
+from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
 from codeintel.build.graphs.rx.algos import GraphInput
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
+from codeintel.build.hamilton.native.analytics.finalize_helpers import (
+    finalize_analytics_reader,
+    finalize_analytics_result,
+    finalize_analytics_rows,
+)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     MultiTableTargetContext,
@@ -63,7 +68,7 @@ from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table
+from codeintel.core.columnar.rows import ColumnarRowBuffer, empty_table_for_table
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.query_results import coerce_optional_int
 
@@ -123,6 +128,18 @@ SYMBOL_GRAPH_MODULES_CONTRACT = contract_ref_for_table(
     required_cols=(),
     clip_column=None,
 )
+
+
+def _finalize_graph_rows(
+    table_key: str,
+    rows: ColumnarRowBuffer | pa.RecordBatchReader | pa.Table,
+) -> pa.Table:
+    if isinstance(rows, pa.RecordBatchReader):
+        return finalize_analytics_reader(table_key, rows)
+    if isinstance(rows, pa.Table):
+        return finalize_analytics_result(table_key, rows).good
+    return finalize_analytics_rows(table_key, rows)
+
 
 GRAPH_STATS_TARGET_NAME = "graph_stats"
 GRAPH_STATS_TABLE_KEY = "analytics.graph_stats"
@@ -490,7 +507,7 @@ def graph_metrics_result(
     GraphMetricsRows
         Container with function and module graph metric rows.
     """
-    return build_graph_metrics_rows(
+    return build_graph_metrics_readers(
         GraphMetricsInputs(
             snapshot=env.snapshot,
             call_graph=graph_metric_inputs.call_graph,
@@ -503,7 +520,7 @@ def graph_metrics_result(
                 graph_metric_inputs.runtime_options.features.community_detection_limit
             ),
             use_gpu=graph_metric_inputs.runtime_options.use_gpu,
-        )
+        ),
     )
 
 
@@ -517,12 +534,10 @@ def graph_metrics_functions__base(
     pyarrow.Table
         Table containing function graph metrics rows.
     """
-    if not graph_metrics_result.function_rows:
+    rows = graph_metrics_result.function_rows
+    if isinstance(rows, ColumnarRowBuffer) and not rows:
         return empty_table_for_table(GRAPH_METRICS_FUNCTIONS_TABLE_KEY)
-    return finalize_analytics_rows(
-        GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
-        graph_metrics_result.function_rows,
-    )
+    return _finalize_graph_rows(GRAPH_METRICS_FUNCTIONS_TABLE_KEY, rows)
 
 
 def graph_metrics_modules__base(
@@ -535,12 +550,10 @@ def graph_metrics_modules__base(
     pyarrow.Table
         Table containing module graph metrics rows.
     """
-    if not graph_metrics_result.module_rows:
+    rows = graph_metrics_result.module_rows
+    if isinstance(rows, ColumnarRowBuffer) and not rows:
         return empty_table_for_table(GRAPH_METRICS_MODULES_TABLE_KEY)
-    return finalize_analytics_rows(
-        GRAPH_METRICS_MODULES_TABLE_KEY,
-        graph_metrics_result.module_rows,
-    )
+    return _finalize_graph_rows(GRAPH_METRICS_MODULES_TABLE_KEY, rows)
 
 
 def graph_metrics_functions_ext__base(
@@ -554,16 +567,18 @@ def graph_metrics_functions_ext__base(
     pyarrow.Table
         Table containing extended function metrics rows.
     """
-    rows = build_graph_metrics_functions_ext_rows(
-        repo=env.repo,
-        commit=env.commit,
-        call_graph=graph_metric_inputs.call_graph,
-        runtime=graph_metric_inputs.runtime_options,
-        filters=graph_metric_inputs.filters,
+    reader = run_rustworkx_external_plan(
+        builder=build_graph_metrics_functions_ext_rows,
+        args=(),
+        kwargs={
+            "repo": env.repo,
+            "commit": env.commit,
+            "call_graph": graph_metric_inputs.call_graph,
+            "runtime": graph_metric_inputs.runtime_options,
+            "filters": graph_metric_inputs.filters,
+        },
     )
-    if not rows:
-        return empty_table_for_table(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY)
-    return finalize_analytics_rows(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, rows)
+    return _finalize_graph_rows(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, reader)
 
 
 def graph_metrics_modules_ext__base(
@@ -577,16 +592,18 @@ def graph_metrics_modules_ext__base(
     pyarrow.Table
         Table containing extended module metrics rows.
     """
-    rows = build_graph_metrics_modules_ext_rows(
-        repo=env.repo,
-        commit=env.commit,
-        import_graph=graph_metric_inputs.import_graph,
-        runtime=graph_metric_inputs.runtime_options,
-        filters=graph_metric_inputs.filters,
+    reader = run_rustworkx_external_plan(
+        builder=build_graph_metrics_modules_ext_rows,
+        args=(),
+        kwargs={
+            "repo": env.repo,
+            "commit": env.commit,
+            "import_graph": graph_metric_inputs.import_graph,
+            "runtime": graph_metric_inputs.runtime_options,
+            "filters": graph_metric_inputs.filters,
+        },
     )
-    if not rows:
-        return empty_table_for_table(GRAPH_METRICS_MODULES_EXT_TABLE_KEY)
-    return finalize_analytics_rows(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, rows)
+    return _finalize_graph_rows(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, reader)
 
 
 def symbol_graph_metrics_functions__base(
@@ -600,16 +617,18 @@ def symbol_graph_metrics_functions__base(
     pyarrow.Table
         Table containing symbol function metrics rows.
     """
-    rows = build_symbol_graph_metrics_function_rows(
-        repo=env.repo,
-        commit=env.commit,
-        graph=graph_metric_inputs.symbol_function_graph,
-        known_functions=graph_metric_inputs.function_goids or None,
-        runtime=graph_metric_inputs.runtime_options,
+    reader = run_rustworkx_external_plan(
+        builder=build_symbol_graph_metrics_function_rows,
+        args=(),
+        kwargs={
+            "repo": env.repo,
+            "commit": env.commit,
+            "graph": graph_metric_inputs.symbol_function_graph,
+            "known_functions": graph_metric_inputs.function_goids or None,
+            "runtime": graph_metric_inputs.runtime_options,
+        },
     )
-    if not rows:
-        return empty_table_for_table(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY)
-    return finalize_analytics_rows(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY, rows)
+    return _finalize_graph_rows(SYMBOL_GRAPH_FUNCTIONS_TABLE_KEY, reader)
 
 
 def symbol_graph_metrics_modules__base(
@@ -623,16 +642,18 @@ def symbol_graph_metrics_modules__base(
     pyarrow.Table
         Table containing symbol module metrics rows.
     """
-    rows = build_symbol_graph_metrics_module_rows(
-        repo=env.repo,
-        commit=env.commit,
-        graph=graph_metric_inputs.symbol_module_graph,
-        known_modules=graph_metric_inputs.module_names or None,
-        runtime=graph_metric_inputs.runtime_options,
+    reader = run_rustworkx_external_plan(
+        builder=build_symbol_graph_metrics_module_rows,
+        args=(),
+        kwargs={
+            "repo": env.repo,
+            "commit": env.commit,
+            "graph": graph_metric_inputs.symbol_module_graph,
+            "known_modules": graph_metric_inputs.module_names or None,
+            "runtime": graph_metric_inputs.runtime_options,
+        },
     )
-    if not rows:
-        return empty_table_for_table(SYMBOL_GRAPH_MODULES_TABLE_KEY)
-    return finalize_analytics_rows(SYMBOL_GRAPH_MODULES_TABLE_KEY, rows)
+    return _finalize_graph_rows(SYMBOL_GRAPH_MODULES_TABLE_KEY, reader)
 
 
 def graph_stats__base(
@@ -669,21 +690,22 @@ def graph_stats__base(
         repo=env.repo,
         commit=env.commit,
     )
-    rows = build_graph_stats_rows(
-        GraphStatsInputs(
-            repo=env.repo,
-            commit=env.commit,
-            call_graph=graph_metric_inputs.call_graph,
-            import_graph=graph_metric_inputs.import_graph,
-            symbol_module_graph=graph_metric_inputs.symbol_module_graph,
-            symbol_function_graph=graph_metric_inputs.symbol_function_graph,
-            config_module_bipartite=config_bipartite,
-            use_gpu=graph_metric_inputs.runtime_options.use_gpu,
-        )
+    reader = run_rustworkx_external_plan(
+        builder=build_graph_stats_rows,
+        args=(
+            GraphStatsInputs(
+                repo=env.repo,
+                commit=env.commit,
+                call_graph=graph_metric_inputs.call_graph,
+                import_graph=graph_metric_inputs.import_graph,
+                symbol_module_graph=graph_metric_inputs.symbol_module_graph,
+                symbol_function_graph=graph_metric_inputs.symbol_function_graph,
+                config_module_bipartite=config_bipartite,
+                use_gpu=graph_metric_inputs.runtime_options.use_gpu,
+            ),
+        ),
     )
-    if not rows:
-        return empty_table_for_table(GRAPH_STATS_TABLE_KEY)
-    return finalize_analytics_rows(GRAPH_STATS_TABLE_KEY, rows)
+    return _finalize_graph_rows(GRAPH_STATS_TABLE_KEY, reader)
 
 
 def _graph_metrics_save_spec(table_key: str) -> DatasetSaveSpec:

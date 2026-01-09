@@ -6,21 +6,23 @@ metrics without any database or file I/O.
 
 from __future__ import annotations
 
-import contextlib
-import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
-
-import rustworkx as rx
-from rustworkx import visit
+from typing import TYPE_CHECKING, Any
 
 from codeintel.build.graphs.compute.metrics.centrality import centrality_directed
 from codeintel.build.graphs.compute.metrics.components import (
     find_strongly_connected,
     find_weakly_connected,
 )
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
-from codeintel.build.graphs.rx.normalize import stable_key
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    bfs_distances_by_id,
+    digraph_all_pairs_shortest_path_lengths_by_id,
+    ensure_directed_store,
+    predecessors_by_id,
+    simple_cycles_by_id,
+    successors_by_id,
+)
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
@@ -28,8 +30,6 @@ if TYPE_CHECKING:
         ComponentInfo,
     )
     from codeintel.build.graphs.runtime.context import GraphContext
-
-log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -49,22 +49,6 @@ class DFGPathStats:
     max_def_use_distance: int
     avg_def_use_distance: float
     reach_count: int
-
-
-@dataclass
-class DepthVisitor(visit.BFSVisitor):
-    """BFS visitor that records distances with a bounded max depth."""
-
-    distances: dict[int, int]
-    max_depth: int
-
-    def tree_edge(self, e: tuple[int, int, object]) -> None:
-        src_idx, dst_idx, _payload = e
-        parent_distance = self.distances.get(src_idx, 0)
-        distance = parent_distance + 1
-        if distance > self.max_depth + 1:
-            raise visit.PruneSearch
-        self.distances[dst_idx] = distance
 
 
 def compute_dfg_path_lengths(
@@ -90,19 +74,14 @@ def compute_dfg_path_lengths(
     if store.graph.num_nodes() == 0:
         return {}
 
-    directed_graph = cast("rx.PyDiGraph", store.graph)
     result: dict[Any, DFGPathStats] = {}
     for node_id in store.node_ids():
-        node_idx = store.id_to_index[node_id]
-        distances: dict[int, int] = {node_idx: 0}
-        visitor = DepthVisitor(distances=distances, max_depth=max_depth)
-        with contextlib.suppress(visit.PruneSearch):
-            rx.bfs_search(directed_graph, [node_idx], visitor)
+        distances = bfs_distances_by_id(store, node_id, max_depth=max_depth + 1)
         limit = max_depth + 1
         bounded = [
             distance
-            for idx, distance in distances.items()
-            if idx != node_idx and 0 < distance <= limit
+            for node, distance in distances.items()
+            if node != node_id and 0 < distance <= limit
         ]
         if bounded:
             result[node_id] = DFGPathStats(
@@ -167,14 +146,8 @@ def compute_def_use_chains(
     if store.graph.num_nodes() == 0:
         return {}
     result: dict[Any, list[Any]] = {}
-    directed_graph = cast("rx.PyDiGraph", store.graph)
     for node_id in store.node_ids():
-        node_idx = store.id_to_index[node_id]
-        successors = directed_graph.successor_indices(node_idx)
-        result[node_id] = [
-            store.index_to_id[idx]
-            for idx in sorted(successors, key=lambda idx: stable_key(store.index_to_id[idx]))
-        ]
+        result[node_id] = successors_by_id(store, node_id)
     return result
 
 
@@ -199,14 +172,8 @@ def compute_use_def_chains(
     if store.graph.num_nodes() == 0:
         return {}
     result: dict[Any, list[Any]] = {}
-    directed_graph = cast("rx.PyDiGraph", store.graph)
     for node_id in store.node_ids():
-        node_idx = store.id_to_index[node_id]
-        predecessors = directed_graph.predecessor_indices(node_idx)
-        result[node_id] = [
-            store.index_to_id[idx]
-            for idx in sorted(predecessors, key=lambda idx: stable_key(store.index_to_id[idx]))
-        ]
+        result[node_id] = predecessors_by_id(store, node_id)
     return result
 
 
@@ -250,17 +217,7 @@ def find_dfg_cycles(
     list[list[Any]]
         List of cycles as node sequences.
     """
-    store = ensure_directed_store(graph)
-    if store.graph.num_nodes() == 0:
-        return []
-
-    directed_graph = cast("rx.PyDiGraph", store.graph)
-    cycles: list[list[Any]] = []
-    for cycle in rx.simple_cycles(directed_graph):
-        cycles.append([store.index_to_id[idx] for idx in cycle])
-        if len(cycles) >= limit:
-            break
-    return cycles
+    return simple_cycles_by_id(graph, limit=limit)
 
 
 def dfg_component_stats(graph: GraphInput) -> tuple[int, list[set[Any]], bool]:
@@ -288,17 +245,10 @@ def dfg_path_lengths(graph: GraphInput) -> tuple[int, float]:
     store = ensure_directed_store(graph)
     if store.graph.num_nodes() == 0:
         return 0, 0.0
-    directed_graph = cast("rx.PyDiGraph", store.graph)
+    lengths = digraph_all_pairs_shortest_path_lengths_by_id(store)
     longest = 0.0
     total = 0.0
     count = 0
-    try:
-        lengths = rx.digraph_all_pairs_dijkstra_path_lengths(
-            directed_graph,
-            lambda _payload: 1.0,
-        )
-    except rx.NullGraph:
-        return 0, 0.0
     for targets in lengths.values():
         if targets:
             longest = max(longest, float(max(targets.values(), default=0)))

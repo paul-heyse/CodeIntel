@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pyarrow as pa
 
@@ -20,6 +20,7 @@ from codeintel.build.hamilton.native.graphs.cpg2.edge_helpers import (
 )
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
 from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_masks import is_valid_expr
@@ -33,11 +34,15 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_table,
     record_join_precheck_errors,
 )
-from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
-from codeintel.core.columnar.arrowdsl import join_safe_projection
+from codeintel.build.tabular.plan_ops import HashJoinSpec
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, join_safe_projection
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
+from codeintel.core.schemas.primitives import resolve_join_safe_columns
 
 LOG = logging.getLogger(__name__)
 
@@ -88,7 +93,11 @@ def _scip_symbol_joined_table(
     left_output: Sequence[str],
 ) -> pa.Table:
     normalized = canonicalize_for_table(symbols, table_key=table_key)
-    normalized = join_safe_projection(normalize_table_for_join(normalized))
+    allowlist = _join_safe_allowlist(table_key)
+    normalized = join_safe_projection(
+        normalize_table_for_join(normalized, allowed_columns=allowlist),
+        allowed_columns=allowlist,
+    )
     normalized = _precheck_join_table(
         normalized,
         table_key=table_key,
@@ -100,7 +109,10 @@ def _scip_symbol_joined_table(
         pk_columns=identity_keys(table_key),
         include_source_pk_json=True,
     )
-    anchors = join_safe_projection(normalize_table_for_join(anchors))
+    anchors = join_safe_projection(
+        normalize_table_for_join(anchors, allowed_columns=allowlist),
+        allowed_columns=allowlist,
+    )
     anchors = _precheck_join_table(
         anchors,
         table_key=None,
@@ -141,7 +153,7 @@ def _scip_symbol_joined_table(
             ("symbol", "ascending"),
         ],
     )
-    return materialize_plan(joined, use_threads=True)
+    return _plan_to_table(joined, use_threads=True)
 
 
 def _join_key_exprs() -> dict[str, Expression]:
@@ -654,6 +666,24 @@ def _upsert_column(
     if index == -1:
         return table.append_column(name, values)
     return table.set_column(index, name, values)
+
+
+def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
+    if table_key is None:
+        return ()
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        return ()
+    return resolve_join_safe_columns(schema)
+
+
+def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    if not use_threads:
+        execution_ctx = replace(execution_ctx, use_threads=False)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def _coerce_bool(value: object) -> bool | None:

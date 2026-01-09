@@ -1814,31 +1814,19 @@ def _flush_cst_collectors(collectors: _CstCollectors) -> None:
 
 
 def _build_cst_readers(collectors: _CstCollectors) -> _CstReaderBundle:
-    cst_table = collectors.cst.to_table()
-    parse_manifest_table = collectors.parse_manifest.to_table()
-    spans_table = collectors.spans.to_table()
-    syntax_nodes_table = collectors.syntax_nodes.to_table()
-    syntax_edges_table = collectors.syntax_edges.to_table()
-    scopes_table = collectors.scopes.to_table()
-    defs_table = collectors.defs.to_table()
-    refs_table = collectors.refs.to_table()
-    calls_table = collectors.calls.to_table()
-    call_args_table = collectors.call_args.to_table()
-    func_params_table = collectors.func_params.to_table()
-    imports_table = collectors.imports.to_table()
     return _CstReaderBundle(
-        cst=cst_table,
-        parse_manifest=parse_manifest_table,
-        spans=spans_table,
-        syntax_nodes=syntax_nodes_table,
-        syntax_edges=syntax_edges_table,
-        scopes=scopes_table,
-        defs=defs_table,
-        refs=refs_table,
-        calls=calls_table,
-        call_args=call_args_table,
-        func_params=func_params_table,
-        imports=imports_table,
+        cst=collectors.cst.to_reader(),
+        parse_manifest=collectors.parse_manifest.to_reader(),
+        spans=collectors.spans.to_reader(),
+        syntax_nodes=collectors.syntax_nodes.to_reader(),
+        syntax_edges=collectors.syntax_edges.to_reader(),
+        scopes=collectors.scopes.to_reader(),
+        defs=collectors.defs.to_reader(),
+        refs=collectors.refs.to_reader(),
+        calls=collectors.calls.to_reader(),
+        call_args=collectors.call_args.to_reader(),
+        func_params=collectors.func_params.to_reader(),
+        imports=collectors.imports.to_reader(),
     )
 
 

@@ -22,16 +22,19 @@ from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapsh
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
+from codeintel.build.graphs.rx.iterators import iter_edge_id_payloads
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
     resolve_execution_context,
 )
 from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.schemas.contract_primitives import DatasetContract
@@ -133,10 +136,7 @@ def _projection_rows(
         for node in proj_store.node_ids()
     ]
     edge_dicts = []
-    for src_idx, dst_idx in proj_store.graph.edge_list():
-        src_id = proj_store.index_to_id[src_idx]
-        dst_id = proj_store.index_to_id[dst_idx]
-        payload = proj_store.graph.get_edge_data(src_idx, dst_idx)
+    for src_id, dst_id, payload in iter_edge_id_payloads(proj_store):
         edge_dicts.append(
             {
                 "repo": context.repo,
@@ -283,11 +283,15 @@ def _config_reference_rowset(
             "reference_modules": E.field(("extras", "reference_modules")),
         }
     )
-    plan = plan.aggregate(
-        keys=[E.field("key")],
-        aggregates=[("reference_modules", "list", None, "reference_modules")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("key",),
+            aggregates=[("reference_modules", "list", None, "reference_modules")],
+        ),
+        ctx=ctx,
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _add_bipartite_edge(graph: RxGraphStore, *, key: str, module: str) -> None:
@@ -585,4 +589,5 @@ def _materialize_plan(
     ctx: ExecutionContext | None,
 ) -> pa.Table:
     execution_ctx = resolve_execution_context(ctx)
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)

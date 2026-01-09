@@ -25,10 +25,10 @@ from codeintel.build.tabular.finalize_ops import (
 )
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.ordering import OrderingSpec
-from codeintel.core.columnar.plan_ops import materialize_plan
 from codeintel.core.columnar.run_manifest import RunManifestOptions
 from codeintel.core.columnar.streaming import ScanTelemetry
 from codeintel.ingestion.compute.plan_surface import IngestQuery, ingest_plan_for_table
@@ -304,7 +304,8 @@ def scoped_table_for_ingest(
     )
     resolved_ctx = resolve_execution_context(None)
     plan = ingest_plan_for_table(table, query=query, ctx=resolved_ctx)
-    return materialize_plan(plan, ctx=resolved_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=resolved_ctx)
+    return reader_to_table(reader)
 
 
 def normalize_ingest_frame(

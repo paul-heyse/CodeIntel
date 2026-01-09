@@ -14,6 +14,8 @@ from codeintel.core.columnar.compute_helpers import (
     require_array,
     sort_options,
 )
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.kernels import (
     SortKey,
@@ -21,7 +23,7 @@ from codeintel.core.columnar.kernels import (
     stable_sort_indices,
     stable_sort_table,
 )
-from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
 from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 
@@ -75,6 +77,13 @@ def _row_index_name(table: pa.Table, *, base: str) -> str:
         name = f"{base}_{suffix}"
         suffix += 1
     return name
+
+
+def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    execution_ctx = replace(execution_ctx, use_threads=use_threads)
+    reader = columnar.ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def _sort_table_for_preference(table: pa.Table, prefer_columns: Sequence[str]) -> pa.Table:
@@ -227,7 +236,7 @@ def _winner_indices_for_best_by_score(
         right=Plan.table(join_right),
         spec=join_spec,
     )
-    selected = materialize_plan(selected_plan, use_threads=True)
+    selected = _plan_to_table(selected_plan, use_threads=True)
     if row_id_name not in selected.column_names:
         msg = "Order-independent dedupe failed to retain row identifiers."
         raise RuntimeError(msg)

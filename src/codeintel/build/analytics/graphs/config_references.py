@@ -17,12 +17,14 @@ from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
     resolve_execution_context,
 )
 from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.paths import normalize_path, safe_relpath
@@ -168,11 +170,15 @@ def _config_entry_rowset(
         ),
     )
     plan = plan.filter(E.and_(E.is_valid("config_path"), E.is_valid("key")))
-    plan = plan.aggregate(
-        keys=[E.field("config_path")],
-        aggregates=[("key", "list", None, "keys")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("config_path",),
+            aggregates=(("key", "list", None, "keys"),),
+        ),
+        ctx=resolve_columnar_context(ctx),
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _config_entries(
@@ -297,11 +303,15 @@ def _module_rowset(
     if "language" in table.column_names:
         filters.append(E.or_(E.is_null("language"), E.field("language") == E.scalar("python")))
     plan = plan.filter(E.and_(*filters))
-    plan = plan.aggregate(
-        keys=[E.field("path")],
-        aggregates=[("module", "list", None, "modules")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("path",),
+            aggregates=(("module", "list", None, "modules"),),
+        ),
+        ctx=resolve_columnar_context(ctx),
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _modules_by_path_from_table(
@@ -405,7 +415,8 @@ def _materialize_plan(
     ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 __all__ = [

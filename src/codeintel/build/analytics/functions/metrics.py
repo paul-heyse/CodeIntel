@@ -28,6 +28,7 @@ from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
@@ -330,7 +331,8 @@ def _load_goids_from_frame(
         aggregates.append((name, agg_fn, None, name))
     plan = plan.aggregate(keys=[E.field("goid_h128")], aggregates=aggregates)
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
-    selected = ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    selected = reader_to_table(reader)
     rows = list(iter_rows(selected))
     if not rows:
         log.info("No function GOIDs found for repo=%s commit=%s", snapshot.repo, snapshot.commit)

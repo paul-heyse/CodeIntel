@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
-
-import rustworkx as rx
+from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.compute.graphs import (
     centrality_directed,
@@ -32,7 +30,13 @@ from codeintel.build.graphs.compute.metrics.components import (
     find_bridges,
 )
 from codeintel.build.graphs.runtime.context import GraphContext
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store, graph_to_store
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    ancestors_by_id,
+    descendants_by_id,
+    ensure_directed_store,
+    graph_to_store,
+)
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 if TYPE_CHECKING:
@@ -156,7 +160,6 @@ def _function_metric_rows(
     graph_store = ensure_directed_store(views.graph)
     simple_store = ensure_directed_store(views.simple_graph)
     node_count = graph_store.graph.num_nodes()
-    directed_graph = cast("rx.PyDiGraph", graph_store.graph)
     ancestor_count: dict[int, int] = {}
     descendant_count: dict[int, int] = {}
     for node_id in simple_store.node_ids():
@@ -168,14 +171,8 @@ def _function_metric_rows(
             ancestor_count[node_key] = 0
             descendant_count[node_key] = 0
             continue
-        try:
-            ancestors = rx.ancestors(directed_graph, node_idx)
-        except (rx.InvalidNode, rx.NullGraph):
-            ancestors = set()
-        try:
-            descendants = rx.descendants(directed_graph, node_idx)
-        except (rx.InvalidNode, rx.NullGraph):
-            descendants = set()
+        ancestors = ancestors_by_id(graph_store, node_id)
+        descendants = descendants_by_id(graph_store, node_id)
         ancestor_count[node_key] = len(ancestors)
         descendant_count[node_key] = len(descendants)
     centralities = {

@@ -29,19 +29,24 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.kernels import hash_struct_goid
-from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import join_safe_projection
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, join_safe_projection
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.iter import iter_array_values, iter_tuples
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.data_models.rows import GoidCrosswalkRow, GoidRow
+from codeintel.core.schemas.primitives import resolve_join_safe_columns
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.spans import normalize_line_span
 
@@ -126,7 +131,25 @@ def _module_frame(modules_table: pa.Table) -> pa.Table:
             ),
         ),
     )
-    return materialize_plan(plan, use_threads=True)
+    return _plan_to_table(plan, use_threads=True)
+
+
+def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    if not use_threads:
+        execution_ctx = dataclasses.replace(execution_ctx, use_threads=False)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
+
+
+def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
+    if table_key is None:
+        return ()
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        return ()
+    return resolve_join_safe_columns(schema)
 
 
 def _resolve_qualname(
@@ -260,11 +283,15 @@ def _joined_ast_nodes(
             ),
         ),
     )
-    filtered_ast = materialize_plan(ast_plan, use_threads=True)
+    filtered_ast = _plan_to_table(ast_plan, use_threads=True)
     if filtered_ast.num_rows == 0:
         return pa.Table.from_pydict({})
-    filtered_ast = join_safe_projection(filtered_ast)
-    filtered_ast = normalize_table_for_join(filtered_ast)
+    ast_allowlist = _join_safe_allowlist(AST_NODES_TABLE_KEY)
+    filtered_ast = join_safe_projection(
+        filtered_ast,
+        allowed_columns=ast_allowlist,
+    )
+    filtered_ast = normalize_table_for_join(filtered_ast, allowed_columns=ast_allowlist)
     left_precheck = finalize_join_keys(
         filtered_ast,
         required_non_null=["path"],
@@ -280,8 +307,12 @@ def _joined_ast_nodes(
     filtered_ast = left_precheck.good
     if filtered_ast.num_rows == 0:
         return pa.Table.from_pydict({})
-    modules_table = join_safe_projection(modules_table)
-    modules_table = normalize_table_for_join(modules_table)
+    modules_allowlist = _join_safe_allowlist(MODULES_TABLE_KEY)
+    modules_table = join_safe_projection(
+        modules_table,
+        allowed_columns=modules_allowlist,
+    )
+    modules_table = normalize_table_for_join(modules_table, allowed_columns=modules_allowlist)
     right_precheck = finalize_join_keys(
         modules_table,
         required_non_null=["path"],
@@ -322,7 +353,7 @@ def _joined_ast_nodes(
             right_output=["module_name", "language"],
         ),
     )
-    joined_table = materialize_plan(joined, use_threads=True)
+    joined_table = _plan_to_table(joined, use_threads=True)
     total = filtered_ast.num_rows
     matched = sum(
         1

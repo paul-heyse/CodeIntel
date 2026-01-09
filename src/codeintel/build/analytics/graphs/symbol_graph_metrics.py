@@ -38,7 +38,7 @@ from codeintel.build.graphs.builders import (
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 
@@ -113,13 +113,9 @@ def _filter_nodes(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphSt
     for node_id in store.node_ids():
         if node_id in allowed:
             filtered.set_node_attrs(node_id, store.get_node_attrs(node_id))
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_id = store.index_to_id[src_idx]
-        dst_id = store.index_to_id[dst_idx]
+    for src_id, dst_id, weight in iter_edge_id_weights(store):
         if src_id not in allowed or dst_id not in allowed:
             continue
-        payload = store.graph.get_edge_data(src_idx, dst_idx)
-        weight = edge_weight_from_payload(payload)
         filtered.add_weighted_edge(src_id, dst_id, weight=weight)
     return filtered
 

@@ -12,6 +12,7 @@ from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.plan_builder import build_table_plan
 from codeintel.core.columnar.plan_ops import Plan
@@ -540,7 +541,8 @@ def _count_from_table(table: pa.Table, *, column: str) -> int:
 
 def _materialize_plan(plan: Plan) -> pa.Table:
     execution_ctx = resolve_execution_context(None)
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 __all__ = [

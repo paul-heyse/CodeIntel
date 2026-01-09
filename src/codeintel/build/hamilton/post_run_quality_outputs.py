@@ -23,6 +23,7 @@ from codeintel.build.analytics.scip_diagnostics_rollups import (
     build_scip_diagnostics_rollups,
 )
 from codeintel.build.analytics.utilities.finalize import (
+    finalize_analytics_reader,
     finalize_analytics_result,
     finalize_artifact_counts,
     finalize_artifact_table_key,
@@ -48,7 +49,6 @@ from codeintel.build.hamilton.native.graphs.cpg.constants import (
     PY_SYM_SCOPES_TABLE_KEY,
 )
 from codeintel.build.tabular.finalize_ops import FinalizeResult
-from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
@@ -57,7 +57,11 @@ from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.ordering import OrderingSpec, SortDirection, SortKey
 from codeintel.core.columnar.plan_ops import QueryPlanOptions
 from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
-from codeintel.core.columnar.rows import ColumnarRowBuffer, table_for_rows
+from codeintel.core.columnar.rows import (
+    ColumnarRowBuffer,
+    columnar_batch_collector_for_table_key,
+    table_for_rows,
+)
 from codeintel.core.columnar.run_manifest import (
     RunManifestOptions,
     run_manifest_options_for_context,
@@ -448,7 +452,6 @@ def _emit_run_manifest(
         sort_keys=sort_keys,
         implicit_ordering=implicit_ordering,
     )
-    determinism = _determinism_for_sort_keys(sort_keys)
     filename = f"run_manifest_{table_key.replace('.', '_')}.json"
     resolved_ctx = resolve_columnar_context(env.execution_context)
     options = run_manifest_options_for_context(
@@ -456,23 +459,11 @@ def _emit_run_manifest(
         ordering=ordering,
         scan_telemetry=telemetry,
         options=RunManifestOptions(
-            determinism=determinism,
-            profile_name=env.profile,
             extras={"table_key": table_key, "snapshot_id": env.commit},
             filename=filename,
         ),
     )
     write_run_manifest(_post_run_output_dir(env), options=options)
-
-
-def _determinism_for_sort_keys(
-    sort_keys: tuple[str, ...] | None,
-) -> DedupeTier | None:
-    if sort_keys == ():
-        return "throughput"
-    if sort_keys:
-        return "canonical"
-    return None
 
 
 def _scan_ordering(
@@ -555,12 +546,14 @@ def _write_dataset_table(
         return False
 
     if isinstance(rows, ColumnarRowBuffer):
-        table = rows.to_table()
+        collector = columnar_batch_collector_for_table_key(table_key)
+        collector.extend(rows)
+        result = finalize_analytics_reader(table_key, collector.to_reader())
     else:
         table, _ = table_for_rows(table_key, rows)
+        result = finalize_analytics_result(table_key, table)
     schema_service = get_schema_service()
     table_schema = schema_service.require_table_schema(table_key)
-    result = finalize_analytics_result(table_key, table)
     finalize_counts = finalize_artifact_counts(result)
     _emit_finalize_artifacts(env=env, table_key=table_key, result=result)
     _write_finalize_artifact_datasets(

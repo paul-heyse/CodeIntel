@@ -9,7 +9,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.duckdb_types import DuckDBError
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
@@ -17,7 +16,6 @@ from codeintel.ingestion.ports.discovery import ModuleRecord
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
-    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
     from codeintel.core.gateway import BuildGateway
 
@@ -26,7 +24,6 @@ __all__ = [
     "filter_mapping",
     "filter_modules",
     "filter_paths",
-    "get_module_paths_from_env",
     "get_source_root",
     "is_test_path",
     "paths_to_modules",
@@ -226,43 +223,6 @@ def get_source_root(
     except DuckDBError as exc:
         log.debug("get_source_root: Could not get source root: %s", exc)
     return fallback or Path.cwd()
-
-
-def get_module_paths_from_env(env: BuildEnv) -> list[str]:
-    """Fetch module paths from BuildEnv gateway.
-
-    Query the core.modules table to retrieve module paths for the current
-    repository and commit.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-
-    Returns
-    -------
-    list[str]
-        Module paths from storage; empty when unavailable.
-    """
-    if env.gateway is None:
-        return []
-    try:
-        reader = env.gateway.execute(
-            "SELECT path FROM core.modules WHERE repo = ? AND commit = ?",
-            [env.snapshot.repo, env.snapshot.commit],
-        ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-        paths: list[str] = []
-        for batch in reader:
-            for value in batch.column(0):
-                raw = value.as_py()
-                if raw is None:
-                    continue
-                paths.append(str(raw))
-    except (RuntimeError, OSError, DuckDBError) as exc:
-        log.warning("gateway error fetching module paths: %s", exc)
-        return []
-    else:
-        return paths
 
 
 # -----------------------------------------------------------------------------

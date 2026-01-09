@@ -389,3 +389,287 @@ options = PipelineRunOptions(
 ## Validation Gates (Guardrails Deferred)
 - `uv run python -m tools.quality_report --output build/quality-results/quality_report.json`
 - Targeted pytest subsets for modified modules (columnar, queries, build pipelines)
+
+---
+
+## Remaining Scope Items (Delta vs Implemented)
+
+### Scope 01A - Replace remaining materialize_plan/.to_table boundaries
+**Code patterns**
+```python
+plan = build_table_plan(
+    table=table,
+    options=TablePlanOptions(filter_expr=filter_expr, projection=projection),
+)
+result = run_pipeline(
+    plan=ExecutionPlan.from_plan(plan),
+    finalize=finalize_spec_for_table(table_key, mode="tolerant"),
+    options=PipelineRunOptions(ctx=execution_ctx),
+)
+table = result.good
+```
+
+**Target files**
+- `src/codeintel/build/hamilton/native/ingestion/pipelines.py`
+- `src/codeintel/build/hamilton/native/ingestion/scip.py`
+- `src/codeintel/build/hamilton/native/ingestion/scip_resolution.py`
+- `src/codeintel/build/hamilton/native/ingestion/syntax_enrich.py`
+- `src/codeintel/build/hamilton/native/ingestion/syntax_augment.py`
+- `src/codeintel/build/hamilton/native/ingestion/file_line_index.py`
+- `src/codeintel/build/hamilton/transforms/ingestion_normalize.py`
+- `src/codeintel/build/hamilton/native/graphs/call_wiring.py`
+- `src/codeintel/build/hamilton/native/graphs/call_graph.py`
+- `src/codeintel/build/hamilton/native/graphs/import_graph.py`
+- `src/codeintel/build/hamilton/native/graphs/symbol_use.py`
+- `src/codeintel/build/hamilton/native/graphs/goids.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/assemble.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/flow.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/syntax.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/link.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/symbol.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/goids.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/scip.py`
+- `src/codeintel/build/graphs/engine/views.py`
+- `src/codeintel/build/graphs/builders.py`
+- `src/codeintel/build/analytics/graphs/config_references.py`
+- `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
+- `src/codeintel/build/analytics/graphs/config_data_flow.py`
+- `src/codeintel/build/analytics/py_cpg_quality_report.py`
+- `src/codeintel/build/analytics/functions/function_effects.py`
+- `src/codeintel/build/analytics/subsystems/affinity.py`
+- `src/codeintel/build/analytics/cfg_dfg/helpers.py`
+- `src/codeintel/build/analytics/scip_diagnostics_rollups.py`
+- `src/codeintel/storage/queries/parquet.py`
+
+**Checklist**
+- [ ] Replace `materialize_plan(...)` and `.to_table(...)` with `ExecutionPlan` + `run_pipeline`.
+- [ ] Ensure finalize specs come from `finalize_spec_for_table(...)` for all materialization.
+- [ ] Preserve ordering metadata by avoiding raw reader/table materialization outside finalize.
+
+### Scope 01B - Route scan entrypoints through QuerySpec + schema defaults
+**Code patterns**
+```python
+plan = plan_from_schema_defaults(
+    schema_service=get_schema_service(),
+    request=SchemaPlanDefaultsRequest(
+        table_key=table_key,
+        dataset=dataset,
+        predicate=spec.predicate,
+        columns=spec.projection.columns(),
+        ctx=execution_ctx,
+    ),
+)
+```
+
+**Target files**
+- `src/codeintel/build/graphs/validation/runner.py`
+- `src/codeintel/build/analytics/utilities/pipeline.py`
+
+**Checklist**
+- [ ] Use `QuerySpec` as the sole source of predicate/projection.
+- [ ] Replace ad-hoc default projection logic with `plan_from_schema_defaults(...)`.
+
+---
+
+### Scope 02A - Replace remaining ad-hoc group_by rollups
+**Code patterns**
+```python
+rollup = grouped_rollup_table(
+    table=table,
+    keys=("repo", "commit"),
+    aggregates=(("severity", "count", None, "diagnostic_count"),),
+    order_by=(("repo", "ascending"), ("commit", "ascending")),
+)
+```
+
+**Target files**
+- `src/codeintel/build/tabular/arrow_ops.py`
+- `src/codeintel/build/analytics/graphs/config_references.py`
+- `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
+- `src/codeintel/build/analytics/graphs/config_data_flow.py`
+- `src/codeintel/build/analytics/functions/function_effects.py`
+- `src/codeintel/build/analytics/subsystems/affinity.py`
+- `src/codeintel/build/analytics/cfg_dfg/helpers.py`
+
+**Checklist**
+- [ ] Replace `table.group_by().aggregate(...)` with `grouped_rollup_table(...)`.
+- [ ] Ensure rollups include explicit `order_by` when determinism is required.
+
+### Scope 02B - Retire legacy explode wrappers and enforce join-safe allowlists
+**Code patterns**
+```python
+exploded = explode_edges_for_join(
+    table=edges,
+    spec=ExplodeSpec(src_col="src_id", dst_list_col="dst_ids"),
+    allowed_columns=plan_policy.join_safe_columns,
+    schema_allowlist=table_schema,
+)
+```
+
+**Target files**
+- `src/codeintel/build/tabular/explode_ops.py`
+- `src/codeintel/core/columnar/kernels.py`
+- `src/codeintel/build/graphs/assembly/kernels.py`
+
+**Checklist**
+- [ ] Remove or deprecate legacy `explode_edges` re-exports.
+- [ ] Route all explode operations through `explode_edges_for_join(...)`.
+- [ ] Pass schema-derived allowlists to `join_safe_projection(...)`.
+
+### Scope 02C - Pass schema allowlists into join_safe_projection
+**Code patterns**
+```python
+schema = get_schema_service().get_table_schema(table_key)
+allowed = () if schema is None or schema.plan_policy is None else schema.plan_policy.join_safe_columns
+safe = join_safe_projection(table, allowed_columns=allowed)
+```
+
+**Target files**
+- `src/codeintel/build/hamilton/native/graphs/call_wiring.py`
+- `src/codeintel/build/hamilton/native/graphs/goids.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/flow.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/syntax.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/link.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/symbol.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/goids.py`
+- `src/codeintel/build/hamilton/native/graphs/cpg2/planes/scip.py`
+- `src/codeintel/build/tabular/arrow_ops.py`
+
+**Checklist**
+- [ ] Derive allowlists from `TableSchema.plan_policy.join_safe_columns`.
+- [ ] Stop implicit list-column dropping in join paths.
+
+---
+
+### Scope 03A - Ordering propagation in Plan operations
+**Code patterns**
+```python
+ordering = _merge_join_ordering(left.ordering, right.ordering, keys=spec.left_keys)
+return Plan(decl, ordering=ordering)
+```
+
+**Target files**
+- `src/codeintel/core/columnar/plan_ops.py`
+- `src/codeintel/core/columnar/ordering.py`
+
+**Checklist**
+- [ ] Propagate ordering through joins and aggregates when possible.
+- [ ] Mark pipeline breakers explicitly when ordering cannot be preserved.
+
+---
+
+### Scope 04A - External plan runner unification
+**Code patterns**
+```python
+plan = ExecutionPlan.from_external_plan(request)
+result = run_pipeline(plan=plan, finalize=finalize_spec)
+```
+
+**Target files**
+- `src/codeintel/build/tabular/plan_ops.py`
+- `src/codeintel/core/columnar/plan_ops.py`
+- `src/codeintel/build/tabular/substrait_ops.py`
+- `src/codeintel/build/tabular/datafusion_ops.py`
+
+**Checklist**
+- [ ] Remove `run_external_plan` re-exports from build surfaces.
+- [ ] Enforce external runners return ReaderThunk or ExecutionPlan only.
+
+---
+
+### Scope 05A - PlanPolicy join-safe allowlists for list columns
+**Code patterns**
+```python
+TableSchema(
+    ...,
+    plan_policy=PlanPolicy(
+        default_projection=("repo", "commit", "path"),
+        join_safe_columns=("repo", "commit", "path"),
+    ),
+)
+```
+
+**Target files**
+- `src/codeintel/core/schemas/output_registry.py`
+- `src/codeintel/core/schemas/view_registry.py`
+
+**Checklist**
+- [ ] Populate `plan_policy.join_safe_columns` for tables with list payloads.
+- [ ] Ensure views preserve join-safe allowlists when list columns are present.
+
+### Scope 05B - Replace ad-hoc projection defaults
+**Code patterns**
+```python
+plan = plan_from_schema_defaults(
+    schema_service=get_schema_service(),
+    request=SchemaPlanDefaultsRequest(
+        table_key=table_key,
+        dataset=dataset,
+        predicate=predicate,
+        columns=columns,
+        ctx=execution_ctx,
+    ),
+)
+```
+
+**Target files**
+- `src/codeintel/build/graphs/validation/runner.py`
+- `src/codeintel/build/analytics/utilities/pipeline.py`
+
+**Checklist**
+- [ ] Remove manual projection defaults in scan helpers.
+- [ ] Use schema-driven defaults consistently for dataset scans.
+
+---
+
+### Scope 06A - Structured plan timings in run manifests
+**Code patterns**
+```python
+class RunManifest(ManifestStruct, frozen=True):
+    plan_seconds: float | None = None
+    post_seconds: float | None = None
+    finalize_seconds: float | None = None
+```
+
+**Target files**
+- `src/codeintel/core/columnar/run_manifest.py`
+- `src/codeintel/core/columnar/arrowdsl.py`
+
+**Checklist**
+- [ ] Add explicit timing fields to `RunManifest`.
+- [ ] Populate timing fields from `run_pipeline` execution.
+
+### Scope 06B - Standardize manual manifest emission
+**Code patterns**
+```python
+options = run_manifest_options_for_context(
+    ctx=execution_ctx,
+    ordering=plan.ordering,
+    scan_telemetry=telemetry,
+)
+write_run_manifest(output_dir, options=options)
+```
+
+**Target files**
+- `src/codeintel/build/graphs/validation/runner.py`
+- `src/codeintel/build/hamilton/post_run_quality_outputs.py`
+
+**Checklist**
+- [ ] Remove ad-hoc ordering/determinism payload construction.
+- [ ] Use `run_manifest_options_for_context(...)` everywhere.
+
+### Scope 06C - Propagate scan telemetry into pipeline options
+**Code patterns**
+```python
+telemetry = scan_telemetry_for_queryspec(dataset, spec=query_spec)
+options = PipelineRunOptions(ctx=execution_ctx, scan_telemetry=telemetry)
+```
+
+**Target files**
+- `src/codeintel/build/analytics/utilities/pipeline.py`
+- `src/codeintel/build/graphs/engine/views.py`
+- `src/codeintel/build/hamilton/transforms/ingestion_normalize.py`
+
+**Checklist**
+- [ ] Collect telemetry at scan entrypoints.
+- [ ] Thread telemetry through `PipelineRunOptions` for manifest emission.

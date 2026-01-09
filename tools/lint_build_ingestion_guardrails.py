@@ -20,8 +20,6 @@ _ALLOWLIST_RAW_COMPUTE: frozenset[str] = frozenset(
 )
 _ALLOWLIST_MATERIALIZE: frozenset[str] = frozenset(
     {
-        "src/codeintel/ingestion/compute/cst_extract.py",
-        "src/codeintel/ingestion/compute/tree_sitter_index.py",
     }
 )
 

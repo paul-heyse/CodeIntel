@@ -20,7 +20,11 @@ from codeintel.build.graphs.rx.convert import RxGraph as RxRawGraph
 from codeintel.build.graphs.rx.convert import store_from_rx
 from codeintel.build.graphs.rx.errors import RxGraphError, run_rx
 from codeintel.build.graphs.rx.iterators import (
+    edge_index_map,
     edge_weight_map,
+    iter_edge_id_payloads,
+    iter_edge_id_weights,
+    iter_edge_index_payloads,
     iter_edge_payloads,
     iter_edge_weights,
     iter_weighted_edge_ids,
@@ -81,12 +85,16 @@ __all__ = [
     "decode_node_payload",
     "dumps_node_link_json",
     "edge_cost_from_payload",
+    "edge_index_map",
     "edge_strength_from_payload",
     "edge_weight_from_payload",
     "edge_weight_map",
     "encode_node_id",
     "encode_node_payload",
     "invert_membership_map",
+    "iter_edge_id_payloads",
+    "iter_edge_id_weights",
+    "iter_edge_index_payloads",
     "iter_edge_payloads",
     "iter_edge_weights",
     "iter_weighted_edge_ids",

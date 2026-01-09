@@ -7,6 +7,8 @@ from codeintel.core.columnar.explode_ops import (
     ExplodeSpec,
     NullChildPolicy,
     NullListPolicy,
+)
+from codeintel.core.columnar.kernels import (
     explode_edges,
     explode_edges_with_aligned_lists,
     explode_list_struct,

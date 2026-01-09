@@ -89,9 +89,32 @@ class OrderingSpec:
         return self.level == "explicit"
 
 
+def ordering_keys_present(ordering: OrderingSpec, columns: Sequence[str] | None) -> bool:
+    """Return True when ordering keys are present in the provided columns.
+
+    Parameters
+    ----------
+    ordering
+        Ordering spec to validate.
+    columns
+        Output column names, or None when unknown.
+
+    Returns
+    -------
+    bool
+        True when ordering keys are known to be present.
+    """
+    if ordering.level == "unordered" or not ordering.keys:
+        return False
+    if columns is None:
+        return True
+    return all(name in columns for name, _ in ordering.keys)
+
+
 __all__ = [
     "OrderingLevel",
     "OrderingSpec",
     "SortDirection",
     "SortKey",
+    "ordering_keys_present",
 ]

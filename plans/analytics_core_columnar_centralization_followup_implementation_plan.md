@@ -42,6 +42,31 @@ result = run_pipeline(
 )
 ```
 
+```python
+from codeintel.build.analytics.utilities.pipeline import (
+    AnalyticsPipelineRunRequest,
+    run_analytics_pipeline,
+)
+from codeintel.build.analytics.utilities.snapshot import (
+    SnapshotContext,
+    build_snapshot_query_spec,
+)
+
+spec = build_snapshot_query_spec(
+    base_cols=("repo", "commit", "function_goid_h128"),
+    context=SnapshotContext(repo=repo, commit=commit, ctx=ctx, table_key=table_key),
+)
+result = run_analytics_pipeline(
+    AnalyticsPipelineRunRequest(
+        source=dataset,
+        spec=spec,
+        table_key=table_key,
+        ctx=ctx,
+    )
+)
+table = result.good
+```
+
 **Target files**
 - `src/codeintel/build/analytics/utilities/snapshot.py`
 - `src/codeintel/build/analytics/utilities/pipeline.py`
@@ -57,12 +82,17 @@ result = run_pipeline(
 - `src/codeintel/build/analytics/compute/data_models/usage.py`
 - `src/codeintel/build/analytics/compute/dependencies/compute.py`
 - `src/codeintel/build/analytics/py_cpg_quality_report.py`
+- `src/codeintel/build/analytics/cfg_dfg/helpers.py`
+- `src/codeintel/build/analytics/subsystems/affinity.py`
 
 **Implementation checklist**
 - [ ] Replace ad-hoc plan construction with `build_snapshot_plan` or
       `plan_from_schema_defaults` when scanning datasets.
 - [ ] Ensure `QuerySpec` is the sole source of predicate/projection.
 - [ ] Remove direct `Plan.table(...)` or `Plan.scan(...)` usage in analytics modules.
+- [ ] Replace local `_materialize_plan` helpers with `run_analytics_pipeline` or
+      `ExecutionPlan.from_plan(...).to_reader(...)` when the output is persisted or reused.
+- [ ] Migrate `py_cpg_quality_report` plan assembly to the shared QuerySpec path.
 
 ---
 
@@ -94,6 +124,23 @@ rollup = grouped_rollup_table(
 )
 ```
 
+```python
+from codeintel.core.columnar.explode_ops import ExplodeSpec
+from codeintel.core.columnar.plan_kernels import explode_edges_for_join
+from codeintel.core.schemas.service import get_schema_service
+
+result = explode_edges_for_join(
+    table=table,
+    spec=ExplodeSpec(
+        list_column="extras.reference_paths",
+        output_column="reference_path",
+    ),
+    table_key="analytics.config_references",
+    schema_service=get_schema_service(),
+)
+exploded = result.table
+```
+
 **Target files**
 - `src/codeintel/build/analytics/graphs/config_data_flow.py`
 - `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
@@ -106,6 +153,7 @@ rollup = grouped_rollup_table(
 - [ ] Replace analytics-local dedupe with `stable_dedupe_with_ties`.
 - [ ] Replace analytics-local rollups with `grouped_rollup_table`.
 - [ ] Apply schema allowlists or join-safe projections in kernel wrappers.
+- [ ] Use `explode_edges_for_join` for list payloads that feed join/aggregate stages.
 
 ---
 
@@ -122,6 +170,19 @@ result = finalize_analytics_result(table_key, table)
 return result.good
 ```
 
+```python
+plan = plan.order_by(
+    sort_keys=[
+        ("function_goid_h128", "ascending"),
+        ("block_idx", "ascending"),
+    ]
+)
+plan = plan.aggregate(
+    keys=[E.field("function_goid_h128")],
+    aggregates=[("block_idx", "list", None, "block_idx")],
+)
+```
+
 **Target files**
 - `src/codeintel/build/analytics/cfg_dfg/helpers.py`
 - `src/codeintel/build/analytics/cfg_dfg/cfg_core.py`
@@ -130,11 +191,15 @@ return result.good
 - `src/codeintel/build/analytics/graphs/config_data_flow.py`
 - `src/codeintel/build/analytics/functions/function_effects.py`
 - `src/codeintel/build/analytics/functions/metrics.py`
+- `src/codeintel/build/analytics/graphs/graph_metrics.py`
+- `src/codeintel/build/analytics/graphs/module_graph_metrics_ext.py`
+- `src/codeintel/build/analytics/subsystems/affinity.py`
 
 **Implementation checklist**
 - [ ] Remove manual sorting used only for output determinism.
 - [ ] Keep `order_by` only where list ordering is semantically required.
 - [ ] Ensure outputs are finalized via schema policy (`finalize_analytics_result`).
+- [ ] Audit Python-level sorting and keep only where required for correctness.
 
 ---
 
@@ -180,11 +245,20 @@ TableSchema(
 - `src/codeintel/build/analytics/utilities/snapshot.py`
 - `src/codeintel/build/analytics/utilities/pipeline.py`
 - `src/codeintel/build/analytics/utilities/catalogs.py`
+- `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
+- `src/codeintel/build/analytics/graphs/config_data_flow.py`
+- `src/codeintel/build/analytics/graphs/config_references.py`
+- `src/codeintel/build/analytics/functions/function_effects.py`
+- `src/codeintel/build/analytics/functions/function_contracts.py`
+- `src/codeintel/build/analytics/functions/metrics.py`
+- `src/codeintel/build/analytics/cfg_dfg/helpers.py`
 
 **Implementation checklist**
 - [ ] Expand `PlanPolicy` coverage for analytics tables with list payloads or joins.
 - [ ] Use schema-driven default projection in snapshot helpers.
 - [ ] Ensure schema serialization preserves plan policy fields.
+- [ ] Add plan_policy defaults for remaining analytics tables (function_*,
+      cfg/dfg metrics, graph_metrics, config_* tables where missing).
 
 ---
 
@@ -248,11 +322,19 @@ result = run_pipeline(plan=ExecutionPlan.from_plan(plan), finalize=finalize, opt
 - `src/codeintel/build/analytics/utilities/pipeline.py`
 - `src/codeintel/build/analytics/utilities/datasets.py`
 - `src/codeintel/build/hamilton/post_run_quality_outputs.py`
+- `src/codeintel/build/analytics/py_cpg_quality_report.py`
+- `src/codeintel/build/analytics/graphs/config_graph_metrics.py`
+- `src/codeintel/build/analytics/graphs/config_data_flow.py`
+- `src/codeintel/build/analytics/graphs/config_references.py`
+- `src/codeintel/build/analytics/functions/function_effects.py`
+- `src/codeintel/build/analytics/cfg_dfg/helpers.py`
 
 **Implementation checklist**
 - [ ] Attach scan telemetry to `PipelineRunOptions`.
 - [ ] Include ordering/determinism metadata in run manifests.
 - [ ] Persist finalize artifacts alongside analytics outputs.
+- [ ] Replace local materialization paths that bypass `run_pipeline` when output
+      artifacts/manifests are expected.
 
 ---
 

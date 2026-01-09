@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Literal
 
 import pyarrow as pa
@@ -12,10 +13,12 @@ from codeintel.build.hamilton.native.graphs.cpg.constants import (
     CPG_TARGET_NAME,
 )
 from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
-from codeintel.core.columnar.arrowdsl import project_struct_fields
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, project_struct_fields
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.plan_kernels import ExplodeSpec, explode_edges_for_join
-from codeintel.core.columnar.plan_ops import materialize_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
 
 SortDirection = Literal["ascending", "descending"]
@@ -97,7 +100,7 @@ def finalize_cpg_edge_rows(
         table=exploded.good,
         options=TablePlanOptions(projection=projection),
     )
-    edges = materialize_plan(plan, use_threads=True)
+    edges = _plan_to_table(plan, use_threads=True)
     resolved_sort_keys = sort_keys if sort_keys is not None else _DEFAULT_SORT_KEYS
 
     result = finalize_table(
@@ -110,6 +113,14 @@ def finalize_cpg_edge_rows(
         ),
     )
     return result.good
+
+
+def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    if not use_threads:
+        execution_ctx = replace(execution_ctx, use_threads=False)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 __all__ = ["finalize_cpg_edge_rows"]

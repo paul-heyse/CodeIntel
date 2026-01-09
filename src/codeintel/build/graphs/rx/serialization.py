@@ -130,12 +130,20 @@ def dumps_node_link_json(graph: RxGraph, *, require_metadata: bool = False) -> s
     if require_metadata and metadata_from_graph(graph) is None:
         message = "Graph metadata missing; refusing to serialize cache payload"
         raise ValueError(message)
-    payload = rx.node_link_json(
-        graph,
-        graph_attrs=_graph_attrs_in,
-        node_attrs=_pack_payload,
-        edge_attrs=_pack_payload,
-    )
+    if isinstance(graph, rx.PyDiGraph):
+        payload = rx.digraph_node_link_json(
+            graph,
+            graph_attrs=_graph_attrs_in,
+            node_attrs=_pack_payload,
+            edge_attrs=_pack_payload,
+        )
+    else:
+        payload = rx.graph_node_link_json(
+            graph,
+            graph_attrs=_graph_attrs_in,
+            node_attrs=_pack_payload,
+            edge_attrs=_pack_payload,
+        )
     if payload is None:
         message = "rustworkx node_link_json returned None"
         raise ValueError(message)

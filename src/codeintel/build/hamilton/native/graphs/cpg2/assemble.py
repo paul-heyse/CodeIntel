@@ -112,9 +112,12 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
 )
 from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
-from codeintel.build.tabular.plan_ops import materialize_plan
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -198,7 +201,13 @@ def _order_table(table: pa.Table, *, sort_keys: Sequence[SortKey]) -> pa.Table:
         table=table,
         options=TablePlanOptions(order_by=sort_keys),
     )
-    return materialize_plan(plan, use_threads=True)
+    return _plan_to_table(plan)
+
+
+def _plan_to_table(plan: Plan) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def assemble_cpg_nodes(tables: Sequence[pa.Table]) -> pa.Table:

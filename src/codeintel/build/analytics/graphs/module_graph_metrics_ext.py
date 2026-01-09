@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
-
-import rustworkx as rx
+from typing import TYPE_CHECKING
 
 from codeintel.build.analytics.compute.graphs import (
     centrality_directed,
@@ -28,8 +26,7 @@ from codeintel.build.analytics.graphs.orchestrator import (
     build_extended_metrics_rows,
 )
 from codeintel.build.graphs.runtime.context import GraphContext
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
-from codeintel.build.graphs.rx.store import RxGraphStore
+from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, total_degree_by_id
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 
 if TYPE_CHECKING:
@@ -54,14 +51,6 @@ class ModuleGraphSlices:
     components: ComponentBundle
     degree_map: dict[str, int]
     degree_cutoff: int
-
-
-def _node_degree(store: RxGraphStore, node_idx: int) -> int:
-    if store.is_directed:
-        directed = cast("rx.PyDiGraph[object, float]", store.graph)
-        return int(directed.in_degree(node_idx) + directed.out_degree(node_idx))
-    undirected = cast("rx.PyGraph[object, float]", store.graph)
-    return int(undirected.degree(node_idx))
 
 
 def _rich_club_cutoff(degree_map: dict[str, int]) -> int:
@@ -117,9 +106,8 @@ def _module_metric_slices(views: GraphViews, ctx: GraphContext) -> ModuleGraphSl
         community_limit=ctx.community_detection_limit,
     )
     components = component_metadata(views.simple_graph)
-    store = ensure_store(views.simple_graph)
-    degree_map: dict[str, int] = {
-        str(node): _node_degree(store, store.id_to_index[node]) for node in store.node_ids()
+    degree_map = {
+        str(node_id): degree for node_id, degree in total_degree_by_id(views.simple_graph).items()
     }
     return ModuleGraphSlices(
         centralities=centralities,

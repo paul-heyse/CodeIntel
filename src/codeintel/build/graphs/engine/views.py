@@ -41,6 +41,9 @@ from codeintel.build.graphs.rx.policies import (
     weight_policy_for_kind,
 )
 from codeintel.build.graphs.rx.store import RxGraphStore
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.iter import iter_array_values, iter_tuples
 from codeintel.core.columnar.kernels import SortKey
@@ -55,7 +58,7 @@ from codeintel.core.columnar.plan_kernels import (
     group_by_max_join_back,
     stable_dedupe_with_ties,
 )
-from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
 from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
@@ -112,6 +115,16 @@ def _determinism_for_table(table_key: str) -> DedupeTier:
     if canonical_keys:
         return "canonical"
     return "stable_set"
+
+
+def _ordering_keys_for_table(table_key: str) -> tuple[str, ...] | None:
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is None:
+        return None
+    keys = resolve_canonical_sort_keys(schema)
+    if not keys:
+        return None
+    return tuple(keys)
 
 
 def _scan_options_for_table(
@@ -171,6 +184,7 @@ def _apply_graph_run_metadata(
     *,
     kind: GraphKind,
     run_metadata: GraphRunMetadata | None,
+    ordering_keys: Sequence[str] | None = None,
 ) -> None:
     if run_metadata is None:
         return
@@ -181,6 +195,7 @@ def _apply_graph_run_metadata(
             graph_kind=_graph_kind_name(kind),
             determinism_tier=run_metadata.determinism_tier,
             scan_profile=run_metadata.scan_profile,
+            ordering_keys=tuple(ordering_keys) if ordering_keys else None,
         ),
     )
 
@@ -207,7 +222,7 @@ def _aggregate_edge_counts(
         aggregates=[(src, "count", None, "weight")],
         order_by=order_by,
     )
-    return materialize_plan(plan, use_threads=True)
+    return _plan_to_table(plan)
 
 
 def _filter_edge_table(
@@ -230,7 +245,7 @@ def _filter_edge_table(
             order_by=order_by,
         ),
     )
-    return materialize_plan(plan, use_threads=True)
+    return _plan_to_table(plan)
 
 
 def _rename_weight_column(table: pa.Table, *, count_col: str) -> pa.Table:
@@ -730,7 +745,7 @@ def _module_lookup_table(
             projection=projection,
         ),
     )
-    filtered = materialize_plan(plan, use_threads=True)
+    filtered = _plan_to_table(plan)
     if filtered.num_rows == 0:
         return filtered.select(["path", "module"])
     winners = group_by_max_join_back(
@@ -833,7 +848,7 @@ def _symbol_module_edge_counts(
         aggregates=[("use_module", "count", None, "weight")],
         order_by=order_by,
     )
-    return materialize_plan(use_join, use_threads=True)
+    return _plan_to_table(use_join)
 
 
 def _maybe_to_gpu_graph(store: RxGraphStore, *, use_gpu: bool) -> RxGraphStore:
@@ -940,7 +955,7 @@ def _fallback_layer_by_module(table: pa.Table) -> dict[str, int]:
         aggregates=[("module_layer", "max", None, "module_layer_max")],
         order_by=(("src_module", "ascending"),),
     )
-    grouped = materialize_plan(plan, use_threads=True)
+    grouped = _plan_to_table(plan)
     result: dict[str, int] = {}
     for src_module, layer in _iter_table_tuples(
         grouped,
@@ -1006,6 +1021,7 @@ def load_call_graph(
         store,
         kind=GraphKind.CALL_GRAPH,
         run_metadata=inputs.run_metadata,
+        ordering_keys=_ordering_keys_for_table("graph.call_graph_edges"),
     )
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
@@ -1063,6 +1079,7 @@ def load_import_graph(
         store,
         kind=GraphKind.IMPORT_GRAPH,
         run_metadata=edge_inputs.run_metadata,
+        ordering_keys=_ordering_keys_for_table("graph.import_graph_edges"),
     )
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
@@ -1128,7 +1145,7 @@ def _allowed_modules_from_table(
         aggregates=[("module", "count", None, "module_count")],
         order_by=order_by,
     )
-    filtered = materialize_plan(plan, use_threads=True)
+    filtered = _plan_to_table(plan)
     module_reader = table_to_reader(filtered)
     return {str(module) for (module,) in iter_tuples(module_reader, columns=["module"]) if module}
 
@@ -1193,7 +1210,7 @@ def _config_bipartite_edges(
             order_by=order_by,
         ),
     )
-    filtered = materialize_plan(plan, use_threads=True)
+    filtered = _plan_to_table(plan)
     edges: list[tuple[Hashable, Hashable, float]] = []
     node_attrs: dict[Hashable, dict[str, object]] = {}
     for key, ref_modules in iter_tuples(
@@ -1289,6 +1306,7 @@ def load_config_module_bipartite(
         store,
         kind=GraphKind.CONFIG_MODULE_BIPARTITE,
         run_metadata=inputs.run_metadata,
+        ordering_keys=_ordering_keys_for_table("analytics.config_values"),
     )
     graph = store.graph
     log.info(
@@ -1370,6 +1388,7 @@ def load_symbol_module_graph(
         store,
         kind=GraphKind.SYMBOL_MODULE_GRAPH,
         run_metadata=inputs.run_metadata,
+        ordering_keys=_ordering_keys_for_table("graph.symbol_use_edges"),
     )
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
@@ -1442,7 +1461,7 @@ def load_symbol_function_graph(
                 filter_expr=E.field("use_goid_h128") != E.field("def_goid_h128"),
             ),
         )
-        edge_table = materialize_plan(plan, use_threads=True)
+        edge_table = _plan_to_table(plan)
     node_ids = _node_ids_from_table(
         edge_table,
         columns=("use_goid_h128", "def_goid_h128"),
@@ -1464,8 +1483,15 @@ def load_symbol_function_graph(
         store,
         kind=GraphKind.SYMBOL_FUNCTION_GRAPH,
         run_metadata=edge_artifacts.run_metadata,
+        ordering_keys=_ordering_keys_for_table(edge_table_key),
     )
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
+
+
+def _plan_to_table(plan: Plan) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 __all__ = [

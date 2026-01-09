@@ -48,20 +48,25 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_table,
     record_join_precheck_errors,
 )
-from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
+from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import join_safe_projection
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, join_safe_projection
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.plan_kernels import (
     ExplodeSpec,
+    GroupedRollupSpec,
     StableDedupeSpec,
     explode_edges_for_join,
     grouped_rollup_table,
     stable_dedupe_with_ties,
 )
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.intervals.span_resolver import MatchKind, SpanResolver
+from codeintel.core.schemas.primitives import resolve_join_safe_columns
 from codeintel.core.serialization.payload import PayloadValue, decode_payload, encode_payload
 
 if TYPE_CHECKING:
@@ -1334,8 +1339,10 @@ def _dedupe_block_table(
     try:
         grouped = grouped_rollup_table(
             table,
-            keys=("function_goid_h128",),
-            aggregates=[("block_id", "min", None, "block_id_min")],
+            spec=GroupedRollupSpec(
+                keys=("function_goid_h128",),
+                aggregates=[("block_id", "min", None, "block_id_min")],
+            ),
         )
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _dedupe_block_rows(table, output_column=output_column)
@@ -1384,7 +1391,7 @@ def _entry_blocks(cfg_blocks: pa.Table) -> pa.Table:
             table=cfg_blocks,
             options=TablePlanOptions(filter_expr=E.field("kind") == E.scalar("entry")),
         )
-        filtered = materialize_plan(filtered_plan, use_threads=True)
+        filtered = _plan_to_table(filtered_plan)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _empty_table(["function_goid_h128", "entry_block_id"])
     if filtered.num_rows == 0:
@@ -1402,7 +1409,7 @@ def _exit_blocks(cfg_blocks: pa.Table) -> pa.Table:
             table=cfg_blocks,
             options=TablePlanOptions(filter_expr=E.field("kind") == E.scalar("exit")),
         )
-        filtered = materialize_plan(filtered_plan, use_threads=True)
+        filtered = _plan_to_table(filtered_plan)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _empty_table(["function_goid_h128", "exit_block_id"])
     if filtered.num_rows == 0:
@@ -1419,6 +1426,16 @@ def _project_with_goid_cast(table: pa.Table, *, key: str) -> dict[str, Expressio
         else:
             exprs[name] = E.field(name)
     return exprs
+
+
+def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
+    if table_key is None:
+        return ()
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        return ()
+    return resolve_join_safe_columns(schema)
 
 
 def _hash_join_block_targets(
@@ -1441,10 +1458,14 @@ def _hash_join_block_targets(
     resolved_columns = [name for name in resolved_columns if name in targets.column_names]
     if not resolved_columns:
         return targets
-    targets = join_safe_projection(targets, allowed_columns=resolved_columns)
-    blocks = join_safe_projection(blocks, allowed_columns=[right_key, output_column])
-    targets = normalize_table_for_join(targets)
-    blocks = normalize_table_for_join(blocks)
+    target_allowlist = _join_safe_allowlist(CPG_CALL_TARGETS_TABLE_KEY)
+    block_allowlist = _join_safe_allowlist(CFG_BLOCKS_TABLE_KEY)
+    target_columns = (*resolved_columns, *target_allowlist)
+    block_columns = (right_key, output_column, *block_allowlist)
+    targets = join_safe_projection(targets, allowed_columns=target_columns)
+    blocks = join_safe_projection(blocks, allowed_columns=block_columns)
+    targets = normalize_table_for_join(targets, allowed_columns=target_columns)
+    blocks = normalize_table_for_join(blocks, allowed_columns=block_columns)
     left_precheck = finalize_join_keys(
         targets,
         required_non_null=["callee_goid_h128"],
@@ -1504,7 +1525,13 @@ def _hash_join_block_targets(
     sort_keys = [key for key in sort_base if key in left_exprs]
     if sort_keys:
         joined = joined.order_by(sort_keys=[(key, "ascending") for key in sort_keys])
-    return materialize_plan(joined, use_threads=True)
+    return _plan_to_table(joined)
+
+
+def _plan_to_table(plan: Plan) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def _call_target_record(context: _CallTargetRecordContext) -> dict[str, object]:
@@ -2430,8 +2457,15 @@ def cpg_edges_calls(
         return empty_reader(CPG_CALL_EDGES_TABLE_KEY)
     entry_blocks = _cast_table_column(entry_blocks, "function_goid_h128", _GOID_ARROW_TYPE)
     entry_blocks = _cast_table_column(entry_blocks, "entry_block_id", _BLOCK_ID_ARROW_TYPE)
-    exploded_good = normalize_table_for_join(exploded.good)
-    entry_blocks = normalize_table_for_join(entry_blocks)
+    candidate_allowlist = _join_safe_allowlist(CPG_CALL_CANDIDATES_TABLE_KEY)
+    exploded_good = normalize_table_for_join(
+        exploded.good,
+        allowed_columns=candidate_allowlist,
+    )
+    entry_blocks = normalize_table_for_join(
+        entry_blocks,
+        allowed_columns=_join_safe_allowlist(CFG_BLOCKS_TABLE_KEY),
+    )
 
     left_plan = build_table_plan(
         table=exploded_good,

@@ -65,6 +65,7 @@ from codeintel.core.columnar.normalization import (
 from codeintel.core.columnar.normalization import (
     normalize_table_for_compute as _normalize_table_for_compute,
 )
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.schema_alignment import align_reader_to_contract as _align_reader
 from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.columnar.schema_ops import concat_tables_unified as _concat_tables_unified
@@ -666,6 +667,7 @@ def normalize_table_for_join(
     *,
     combine_chunks: bool = True,
     enforce_join_safe: bool = True,
+    allowed_columns: Sequence[str] = (),
 ) -> pa.Table:
     """Normalize string/binary view types ahead of Arrow joins.
 
@@ -678,7 +680,7 @@ def normalize_table_for_join(
     normalized = _normalize_table_binary_views(_normalize_table_string_views(table))
     normalized = _normalize_table_for_compute(normalized, combine_chunks=combine_chunks)
     if enforce_join_safe:
-        require_join_safe_schema(normalized)
+        require_join_safe_schema(normalized, allowed_columns=allowed_columns)
     return normalized
 
 
@@ -757,8 +759,12 @@ def _require_non_null_keys(table: pa.Table, keys: Sequence[str], *, label: str) 
 
 def _max_duplicate_count(table: pa.Table, keys: Sequence[str]) -> float | int | None:
     count_source = keys[0]
-    grouped = (
-        _group_by_table_keys(table, keys).group_by(list(keys)).aggregate([(count_source, "count")])
+    grouped = grouped_rollup_table(
+        _group_by_table_keys(table, keys),
+        spec=GroupedRollupSpec(
+            keys=tuple(keys),
+            aggregates=((count_source, "count", None, f"{count_source}_count"),),
+        ),
     )
     count_name = f"{count_source}_count"
     if grouped.num_rows == 0 or count_name not in grouped.column_names:
@@ -1494,14 +1500,21 @@ def group_list_or_polars(
     pa.Table
         Grouped table with list aggregates.
     """
+    list_name = f"{value_col}_list"
     try:
-        return table.group_by(list(keys)).aggregate([(value_col, "list")])
+        return grouped_rollup_table(
+            table,
+            spec=GroupedRollupSpec(
+                keys=tuple(keys),
+                aggregates=((value_col, "list", None, list_name),),
+            ),
+        )
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         frame = cast("pl.DataFrame", pl.from_arrow(table))
         aggregated = (
             frame.lazy()
             .group_by(list(keys), maintain_order=maintain_order)
-            .agg(pl.col(value_col).implode().alias(value_col))
+            .agg(pl.col(value_col).implode().alias(list_name))
             .collect()
         )
         return aggregated.to_arrow()

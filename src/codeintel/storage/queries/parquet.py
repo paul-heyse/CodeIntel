@@ -23,6 +23,7 @@ from codeintel.core.columnar.compute_config import (
     DEFAULT_SCALAR_AGG_ALLOW_NULL,
 )
 from codeintel.core.columnar.compute_helpers import call_compute
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges
 from codeintel.core.columnar.expr_vocab import E
@@ -53,7 +54,8 @@ LOG = logging.getLogger(__name__)
 def _materialize_plan(plan: Plan, *, use_threads: bool) -> pa.Table:
     execution_ctx = resolve_execution_context(None)
     execution_ctx = replace(execution_ctx, use_threads=use_threads)
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 @dataclass(frozen=True, slots=True)

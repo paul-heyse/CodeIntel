@@ -68,11 +68,15 @@ def build_view_schema_overrides(
         )
         schema_name, table_name = _split_table_key(table_key)
         list_policies = _list_policies_for_columns(columns)
+        join_safe_columns = _join_safe_columns_for_columns(columns)
         finalize_policy = (
             FinalizePolicy(list_policies=list_policies) if list_policies else None
         )
         plan_policy = (
-            PlanPolicy(default_projection=tuple(column.name for column in columns))
+            PlanPolicy(
+                default_projection=tuple(column.name for column in columns),
+                join_safe_columns=join_safe_columns,
+            )
             if columns
             else None
         )
@@ -109,6 +113,17 @@ def _list_paths(dtype: pa.DataType, prefix: str) -> Iterable[str]:
     if pa.types.is_struct(dtype):
         for field in dtype:
             yield from _list_paths(field.type, f"{prefix}.{field.name}")
+
+
+def _join_safe_columns_for_columns(
+    columns: Sequence[Column],
+) -> tuple[str, ...]:
+    allowlist: list[str] = []
+    for column in columns:
+        dtype = arrow_type_for_column_type(column.type)
+        if _is_list_type(dtype):
+            allowlist.append(column.name)
+    return tuple(allowlist)
 
 
 def _list_policies_for_columns(

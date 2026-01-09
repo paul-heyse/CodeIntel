@@ -30,7 +30,7 @@ from codeintel.core.columnar.execution_context import (
     resolve_columnar_context,
 )
 from codeintel.core.columnar.iter import iter_tuples
-from codeintel.core.columnar.plan_kernels import grouped_rollup_table
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.paths import normalize_path
@@ -283,13 +283,15 @@ def _function_worklist_table(
         return scoped
     return grouped_rollup_table(
         scoped,
-        keys=(goid_column,),
-        aggregates=[
-            ("rel_path", "min", None, "rel_path"),
-            ("qualname", "min", None, "qualname"),
-            ("start_line", "min", None, "start_line"),
-            ("end_line", "max", None, "end_line"),
-        ],
+        spec=GroupedRollupSpec(
+            keys=(goid_column,),
+            aggregates=[
+                ("rel_path", "min", None, "rel_path"),
+                ("qualname", "min", None, "qualname"),
+                ("start_line", "min", None, "start_line"),
+                ("end_line", "max", None, "end_line"),
+            ],
+        ),
         ctx=resolve_columnar_context(ctx),
     )
 
@@ -323,16 +325,18 @@ def _effects_from_frame(
         return {}
     filtered = grouped_rollup_table(
         scoped,
-        keys=("function_goid_h128",),
-        aggregates=[
-            ("touches_db", "max", None, "touches_db"),
-            ("uses_io", "max", None, "uses_io"),
-            ("uses_time", "max", None, "uses_time"),
-            ("uses_randomness", "max", None, "uses_randomness"),
-            ("modifies_globals", "max", None, "modifies_globals"),
-            ("modifies_closure", "max", None, "modifies_closure"),
-            ("spawns_threads_or_tasks", "max", None, "spawns_threads_or_tasks"),
-        ],
+        spec=GroupedRollupSpec(
+            keys=("function_goid_h128",),
+            aggregates=[
+                ("touches_db", "max", None, "touches_db"),
+                ("uses_io", "max", None, "uses_io"),
+                ("uses_time", "max", None, "uses_time"),
+                ("uses_randomness", "max", None, "uses_randomness"),
+                ("modifies_globals", "max", None, "modifies_globals"),
+                ("modifies_closure", "max", None, "modifies_closure"),
+                ("spawns_threads_or_tasks", "max", None, "spawns_threads_or_tasks"),
+            ],
+        ),
         ctx=resolve_columnar_context(ctx),
     )
     if filtered.num_rows == 0:
@@ -436,11 +440,13 @@ def _graph_metrics_from_frame(
         return {}
     filtered = grouped_rollup_table(
         scoped,
-        keys=("function_goid_h128",),
-        aggregates=[
-            ("call_fan_in", "max", None, "call_fan_in"),
-            ("call_fan_out", "max", None, "call_fan_out"),
-        ],
+        spec=GroupedRollupSpec(
+            keys=("function_goid_h128",),
+            aggregates=[
+                ("call_fan_in", "max", None, "call_fan_in"),
+                ("call_fan_out", "max", None, "call_fan_out"),
+            ],
+        ),
         ctx=resolve_columnar_context(ctx),
     )
     if filtered.num_rows == 0:

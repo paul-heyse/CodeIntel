@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pyarrow as pa
 
@@ -13,16 +13,21 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     identity_keys,
 )
 from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_masks import is_valid_expr
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.kernels import stable_sort_indices
-from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
-from codeintel.core.columnar.arrowdsl import join_safe_projection
+from codeintel.build.tabular.plan_ops import HashJoinSpec
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, join_safe_projection
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
+from codeintel.core.schemas.primitives import resolve_join_safe_columns
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 GOIDS_TABLE_KEY = "core.goids"
@@ -53,7 +58,11 @@ def cpg2_nodes__goids(
     if not required.issubset(set(goids.column_names)):
         return empty_table_for_table(CPG_NODES_TABLE_KEY)
     normalized = canonicalize_for_table(goids, table_key=GOIDS_TABLE_KEY)
-    normalized = join_safe_projection(normalize_table_for_join(normalized))
+    allowlist = _join_safe_allowlist(GOIDS_TABLE_KEY)
+    normalized = join_safe_projection(
+        normalize_table_for_join(normalized, allowed_columns=allowlist),
+        allowed_columns=allowlist,
+    )
     join_keys = ["goid_h128"]
     left_precheck = finalize_join_keys(
         normalized,
@@ -74,7 +83,10 @@ def cpg2_nodes__goids(
         pk_columns=identity_keys(GOIDS_TABLE_KEY),
         include_source_pk_json=True,
     )
-    anchors = join_safe_projection(normalize_table_for_join(anchors))
+    anchors = join_safe_projection(
+        normalize_table_for_join(anchors, allowed_columns=allowlist),
+        allowed_columns=allowlist,
+    )
     right_precheck = finalize_join_keys(
         anchors,
         required_non_null=join_keys,
@@ -121,7 +133,7 @@ def cpg2_nodes__goids(
             right_output=["cpg_node_id", "source_pk_json"],
         ),
     )
-    joined = materialize_plan(joined_plan, use_threads=True)
+    joined = _plan_to_table(joined_plan, use_threads=True)
     if joined.num_rows != 0:
         joined = joined.take(
             stable_sort_indices(
@@ -173,6 +185,24 @@ def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     if "cpg_node_id" not in table.column_names:
         return table
     return plan_filter_or_fallback(table, is_valid_expr("cpg_node_id"))
+
+
+def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
+    if table_key is None:
+        return ()
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        return ()
+    return resolve_join_safe_columns(schema)
+
+
+def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    if not use_threads:
+        execution_ctx = replace(execution_ctx, use_threads=False)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 __all__ = ["GoidNodeDiagnostics", "cpg2_nodes__goids"]

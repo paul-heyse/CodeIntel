@@ -253,13 +253,23 @@ def run_pipeline(
         manifest_options = resolved_options.manifest_options
         extras = {
             "duration_seconds": duration_seconds,
-            **timings,
         }
         if manifest_options is None:
-            manifest_options = RunManifestOptions(extras=extras)
+            manifest_options = RunManifestOptions(
+                plan_seconds=timings["plan_seconds"],
+                post_seconds=timings["post_seconds"],
+                finalize_seconds=timings["finalize_seconds"],
+                extras=extras,
+            )
         else:
-            merged_extras = {**extras, **(manifest_options.extras or {})}
-            manifest_options = replace(manifest_options, extras=merged_extras)
+            merged_extras = {**(manifest_options.extras or {}), **extras}
+            manifest_options = replace(
+                manifest_options,
+                extras=merged_extras,
+                plan_seconds=timings["plan_seconds"],
+                post_seconds=timings["post_seconds"],
+                finalize_seconds=timings["finalize_seconds"],
+            )
         resolved_manifest_options = run_manifest_options_for_context(
             ctx=resolved_ctx,
             ordering=finalize_spec.ordering or plan.ordering,

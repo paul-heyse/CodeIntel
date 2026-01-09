@@ -274,17 +274,17 @@ def _build_buffers() -> _TreeSitterBuffers:
 
 def _materialize_tree_sitter_tables(
     buffers: _TreeSitterBuffers,
-) -> dict[str, pa.Table]:
+) -> dict[str, pa.RecordBatchReader]:
     return {
-        TS_PARSE_MANIFEST_TABLE_KEY: buffers.parse_manifest.to_table(),
-        TS_CAPTURES_TABLE_KEY: buffers.captures.to_table(),
-        TS_NODES_TABLE_KEY: buffers.nodes.to_table(),
-        TS_EDGES_TABLE_KEY: buffers.edges.to_table(),
-        TS_PARSE_ERRORS_TABLE_KEY: buffers.parse_errors.to_table(),
-        TS_CHANGED_RANGES_TABLE_KEY: buffers.changed_ranges.to_table(),
-        TS_TOKENS_TABLE_KEY: buffers.tokens.to_table(),
-        TS_TRIVIA_TABLE_KEY: buffers.trivia.to_table(),
-        TS_LANGUAGE_METADATA_TABLE_KEY: buffers.language_metadata.to_table(),
+        TS_PARSE_MANIFEST_TABLE_KEY: buffers.parse_manifest.to_reader(),
+        TS_CAPTURES_TABLE_KEY: buffers.captures.to_reader(),
+        TS_NODES_TABLE_KEY: buffers.nodes.to_reader(),
+        TS_EDGES_TABLE_KEY: buffers.edges.to_reader(),
+        TS_PARSE_ERRORS_TABLE_KEY: buffers.parse_errors.to_reader(),
+        TS_CHANGED_RANGES_TABLE_KEY: buffers.changed_ranges.to_reader(),
+        TS_TOKENS_TABLE_KEY: buffers.tokens.to_reader(),
+        TS_TRIVIA_TABLE_KEY: buffers.trivia.to_reader(),
+        TS_LANGUAGE_METADATA_TABLE_KEY: buffers.language_metadata.to_reader(),
     }
 
 

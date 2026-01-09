@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
+import pyarrow.dataset as ds
 from hamilton.function_modifiers import cache
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
@@ -29,6 +30,9 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleToolOutput
+from codeintel.build.hamilton.native.ingestion.manifesting import (
+    finalize_ingest_reader_with_manifest,
+)
 from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
 from codeintel.build.hamilton.native.patterns import (
     ArtifactSaveSpec,
@@ -54,10 +58,6 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hamilton.transforms.ingestion_normalize import (
-    IngestFinalizeOptions,
-    finalize_ingest_reader,
-)
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.tabular.arrow_ops import (
@@ -70,7 +70,6 @@ from codeintel.build.tabular.conversion import (
     table_to_reader,
     tabular_to_arrow_table,
 )
-from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -81,8 +80,12 @@ from codeintel.build.tabular.finalize_ops import (
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.plan_builder import build_table_plan
-from codeintel.core.columnar.plan_ops import materialize_plan
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.expr_vocab import E, Expression
+from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
+from codeintel.core.columnar.plan_ops import build_query_plan_for_context
+from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
 from codeintel.core.columnar.rows import (
     columnar_row_count,
     empty_table_for_table,
@@ -91,8 +94,7 @@ from codeintel.core.columnar.rows import (
 )
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.config.settings import ObservabilitySettings
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
-from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
+from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.query_results import records_from_arrow_reader
 from codeintel.core.spans import normalize_byte_span
@@ -470,6 +472,36 @@ def _chunked(values: Iterable[str], size: int) -> Iterable[list[str]]:
         yield batch
 
 
+def _dataset_for_snapshot(env: BuildEnv, *, table_key: str) -> ds.Dataset | None:
+    dataset_root = env.paths.dataset_root_dir
+    if dataset_root is None:
+        return None
+    try:
+        return scan_dataset(
+            dataset_root=dataset_root,
+            table_key=table_key,
+            snapshot_id=env.snapshot.commit,
+        )
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, pa.ArrowInvalid) as exc:
+        log.warning("Dataset scan failed for %s: %s", table_key, exc)
+        return None
+
+
+def _snapshot_predicate(env: BuildEnv, *, available: set[str]) -> Expression | None:
+    exprs: list[Expression] = []
+    if "repo" in available:
+        exprs.append(E.field("repo") == E.scalar(env.snapshot.repo))
+    if "commit" in available:
+        exprs.append(E.field("commit") == E.scalar(env.snapshot.commit))
+    if not exprs:
+        return None
+    if len(exprs) == 1:
+        return exprs[0]
+    return E.and_(*exprs)
+
+
 def _load_file_line_index(
     env: BuildEnv,
     rel_paths: Iterable[str],
@@ -477,21 +509,33 @@ def _load_file_line_index(
     rel_path_list = sorted({path for path in rel_paths if path})
     if not rel_path_list:
         return {}
-    if env.gateway is None:
+    dataset = _dataset_for_snapshot(env, table_key=FILE_LINE_INDEX_TABLE_KEY)
+    if dataset is None:
         return {}
-
+    available = set(dataset.schema.names)
+    required = {"rel_path", "line", "start_byte", "end_byte"}
+    if not required.issubset(available):
+        return {}
+    columns = list(required)
+    if "encoding" in available:
+        columns.append("encoding")
+    base_predicate = _snapshot_predicate(env, available=available)
+    execution_ctx = resolve_execution_context(None)
     results: dict[str, _FileLineIndex] = {}
     try:
         for chunk in _chunked(rel_path_list, 500):
-            placeholders = ", ".join(["?"] * len(chunk))
-            query = (
-                "SELECT rel_path, line, start_byte, end_byte, encoding "
-                f"FROM {FILE_LINE_INDEX_TABLE_KEY} "
-                "WHERE repo = ? AND commit = ? "
-                f"AND rel_path IN ({placeholders})"
+            rel_path_expr = E.in_("rel_path", chunk)
+            if base_predicate is None:
+                predicate = rel_path_expr
+            else:
+                predicate = E.and_(base_predicate, rel_path_expr)
+            spec = QuerySpec(
+                predicate=predicate,
+                pushdown_predicate=predicate,
+                projection=ProjectionSpec(base_cols=tuple(columns)),
             )
-            params: list[object] = [env.snapshot.repo, env.snapshot.commit, *chunk]
-            reader = env.gateway.execute(query, params).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+            plan = build_query_plan_for_context(dataset, spec=spec, ctx=execution_ctx)
+            reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
             for row in records_from_arrow_reader(reader):
                 rel_path = row.get("rel_path")
                 if not isinstance(rel_path, str):
@@ -510,7 +554,7 @@ def _load_file_line_index(
                     )
                     results[rel_path] = file_index
                 file_index.lines[line] = (start_byte, end_byte)
-    except (CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError, RuntimeError):
+    except (OSError, RuntimeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
         log.warning("File line index unavailable; skipping SCIP byte span normalization")
         return {}
     return results
@@ -801,12 +845,35 @@ def _resolve_change_set(scan: ModuleToolOutput) -> tuple[ChangeSet, bool]:
 
 
 def _load_module_state_rows(env: BuildEnv) -> list[dict[str, object]]:
-    if env.gateway is None:
+    dataset = _dataset_for_snapshot(env, table_key=SCIP_MODULE_STATE_TABLE_KEY)
+    if dataset is None:
         return []
-    reader = env.gateway.execute(
-        "SELECT * FROM core.scip_module_state WHERE repo = ? AND commit = ?",
-        [env.snapshot.repo, env.snapshot.commit],
-    ).fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    available = set(dataset.schema.names)
+    required = {"rel_path", "content_hash", "shard_path", "updated_at"}
+    if not required.issubset(available):
+        return []
+    columns = [
+        name
+        for name in (
+            "rel_path",
+            "content_hash",
+            "options_hash",
+            "tool_version",
+            "environment_source",
+            "shard_path",
+            "updated_at",
+        )
+        if name in available
+    ]
+    predicate = _snapshot_predicate(env, available=available)
+    execution_ctx = resolve_execution_context(None)
+    spec = QuerySpec(
+        predicate=predicate,
+        pushdown_predicate=predicate,
+        projection=ProjectionSpec(base_cols=tuple(columns)),
+    )
+    plan = build_query_plan_for_context(dataset, spec=spec, ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
     return records_from_arrow_reader(reader)
 
 
@@ -857,13 +924,11 @@ def _ensure_manifest_from_module_state(env: BuildEnv, scip_dir: Path) -> None:
     try:
         rows = _load_module_state_rows(env)
     except (
-        CodeIntelStorageError,
-        ColumnNotFoundError,
-        TableNotFoundError,
         KeyError,
         OSError,
         RuntimeError,
         ValueError,
+        pa.ArrowInvalid,
     ) as exc:
         log.warning("Unable to restore SCIP shard manifest from module state: %s", exc)
         return
@@ -1431,19 +1496,28 @@ def _scip_payload_table(
     return tabular_to_arrow_table(_scip_payload_frame(t__scip__ingest, table_key))
 
 
-def _finalize_scip_table(table_key: str, table: pa.Table) -> pa.Table:
+def _finalize_scip_table(env: BuildEnv, table_key: str, table: pa.Table) -> pa.Table:
     reader = table_to_reader(table, batch_size=None)
-    return finalize_ingest_reader(
-        table_key,
-        reader,
-        options=IngestFinalizeOptions(target_name=SCIP_TARGET_NAME),
+    return finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=table_key,
+        reader=reader,
+        target_name=SCIP_TARGET_NAME,
     )
 
 
 def scip__symbol_rows__base(
+    env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput:
     """Return rows for core.scip_symbols.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__scip__ingest
+        Ingest payload containing SCIP tables.
 
     Returns
     -------
@@ -1451,13 +1525,21 @@ def scip__symbol_rows__base(
         Tabular input for core.scip_symbols.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_SYMBOLS_TABLE_KEY)
-    return _finalize_scip_table(SCIP_SYMBOLS_TABLE_KEY, table)
+    return _finalize_scip_table(env, SCIP_SYMBOLS_TABLE_KEY, table)
 
 
 def scip__occurrence_rows__base(
+    env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput:
     """Return rows for core.scip_occurrences.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__scip__ingest
+        Ingest payload containing SCIP tables.
 
     Returns
     -------
@@ -1465,13 +1547,21 @@ def scip__occurrence_rows__base(
         Tabular input for core.scip_occurrences.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_OCCURRENCES_TABLE_KEY)
-    return _finalize_scip_table(SCIP_OCCURRENCES_TABLE_KEY, table)
+    return _finalize_scip_table(env, SCIP_OCCURRENCES_TABLE_KEY, table)
 
 
 def scip__symbol_info_rows__base(
+    env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput:
     """Return rows for core.scip_symbol_information.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__scip__ingest
+        Ingest payload containing SCIP tables.
 
     Returns
     -------
@@ -1479,13 +1569,21 @@ def scip__symbol_info_rows__base(
         Tabular input for core.scip_symbol_information.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_SYMBOL_INFO_TABLE_KEY)
-    return _finalize_scip_table(SCIP_SYMBOL_INFO_TABLE_KEY, table)
+    return _finalize_scip_table(env, SCIP_SYMBOL_INFO_TABLE_KEY, table)
 
 
 def scip__relationship_rows__base(
+    env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput:
     """Return rows for core.scip_symbol_relationships.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__scip__ingest
+        Ingest payload containing SCIP tables.
 
     Returns
     -------
@@ -1493,13 +1591,21 @@ def scip__relationship_rows__base(
         Tabular input for core.scip_symbol_relationships.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_RELATIONSHIPS_TABLE_KEY)
-    return _finalize_scip_table(SCIP_RELATIONSHIPS_TABLE_KEY, table)
+    return _finalize_scip_table(env, SCIP_RELATIONSHIPS_TABLE_KEY, table)
 
 
 def scip__diagnostic_rows__base(
+    env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput:
     """Return rows for core.scip_diagnostics.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__scip__ingest
+        Ingest payload containing SCIP tables.
 
     Returns
     -------
@@ -1507,7 +1613,7 @@ def scip__diagnostic_rows__base(
         Tabular input for core.scip_diagnostics.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
-    return _finalize_scip_table(SCIP_DIAGNOSTICS_TABLE_KEY, table)
+    return _finalize_scip_table(env, SCIP_DIAGNOSTICS_TABLE_KEY, table)
 
 
 def _derive_external_symbol_rows(
@@ -1614,12 +1720,15 @@ def _distinct_external_symbol_rows(symbols: pa.Table) -> pa.Table:
     )
     project = {name: E.field(name) for name in join_keys}
     plan = build_table_plan(table=checked).project(project)
-    plan = plan.aggregate(
-        keys=[E.field(key) for key in join_keys],
-        aggregates=[],
+    plan = build_grouped_rollup_plan(
+        plan,
+        keys=join_keys,
+        aggregates=(),
+        order_by=tuple((key, "ascending") for key in join_keys),
     )
-    plan = plan.order_by(sort_keys=[(key, "ascending") for key in join_keys])
-    return materialize_plan(plan, use_threads=True)
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def _left_anti_external_symbols(left: pa.Table, right: pa.Table) -> pa.Table:
@@ -1652,16 +1761,32 @@ def _left_anti_external_symbols(left: pa.Table, right: pa.Table) -> pa.Table:
         ),
     )
     ordered = joined.order_by(sort_keys=[(key, "ascending") for key in join_keys])
-    return materialize_plan(ordered, use_threads=True)
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(ordered).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def scip__external_symbol_rows__base(
+    env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
     scip__occurrence_rows__base: InferableTabularInput,
     scip__relationship_rows__base: InferableTabularInput,
     scip__symbol_info_rows__base: InferableTabularInput,
 ) -> InferableTabularInput:
     """Return rows for core.scip_external_symbols.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__scip__ingest
+        Ingest payload containing SCIP tables.
+    scip__occurrence_rows__base
+        Occurrence rows used for external symbol derivation.
+    scip__relationship_rows__base
+        Relationship rows used for external symbol derivation.
+    scip__symbol_info_rows__base
+        Symbol info rows used for external symbol derivation.
 
     Returns
     -------
@@ -1675,15 +1800,23 @@ def scip__external_symbol_rows__base(
         tabular_to_arrow_table(scip__symbol_info_rows__base),
     )
     if derived.num_rows == 0:
-        return _finalize_scip_table(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY, base_table)
+        return _finalize_scip_table(env, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY, base_table)
     combined = concat_tables_unified([base_table, derived])
-    return _finalize_scip_table(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY, combined)
+    return _finalize_scip_table(env, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY, combined)
 
 
 def scip__index_metadata_rows__base(
+    env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput:
     """Return rows for core.scip_index_metadata.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__scip__ingest
+        Ingest payload containing SCIP tables.
 
     Returns
     -------
@@ -1691,13 +1824,21 @@ def scip__index_metadata_rows__base(
         Tabular input for core.scip_index_metadata.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_INDEX_METADATA_TABLE_KEY)
-    return _finalize_scip_table(SCIP_INDEX_METADATA_TABLE_KEY, table)
+    return _finalize_scip_table(env, SCIP_INDEX_METADATA_TABLE_KEY, table)
 
 
 def scip__module_state_rows__base(
+    env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> InferableTabularInput:
     """Return rows for core.scip_module_state.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__scip__ingest
+        Ingest payload containing SCIP tables.
 
     Returns
     -------
@@ -1705,7 +1846,7 @@ def scip__module_state_rows__base(
         Tabular input for core.scip_module_state.
     """
     table = _scip_payload_table(t__scip__ingest, SCIP_MODULE_STATE_TABLE_KEY)
-    return _finalize_scip_table(SCIP_MODULE_STATE_TABLE_KEY, table)
+    return _finalize_scip_table(env, SCIP_MODULE_STATE_TABLE_KEY, table)
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)

@@ -16,10 +16,11 @@ from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
     build_subsystem_graph_metrics_rows,
 )
 from codeintel.build.contracts.ref import contract_ref_for_table
+from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
+from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_reader
 from codeintel.build.hamilton.native.patterns import (
     TableTargetContext,
     attach_table_target_template,
@@ -30,7 +31,6 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.rows import empty_table_for_table
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularInput)
 
@@ -91,19 +91,20 @@ def subsystem_graph_metrics__base(
         subsystems=subsystem_ids,
     )
     runtime_options = _graph_runtime_options(env)
-    rows = build_subsystem_graph_metrics_rows(
-        SubsystemGraphMetricInputs(
-            repo=env.repo,
-            commit=env.commit,
-            import_graph=import_graph,
-            membership_rows=membership_rows,
-            runtime=runtime_options,
-            filters=filters,
-        )
+    reader = run_rustworkx_external_plan(
+        builder=build_subsystem_graph_metrics_rows,
+        args=(
+            SubsystemGraphMetricInputs(
+                repo=env.repo,
+                commit=env.commit,
+                import_graph=import_graph,
+                membership_rows=membership_rows,
+                runtime=runtime_options,
+                filters=filters,
+            ),
+        ),
     )
-    if not rows:
-        return empty_table_for_table(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY)
-    return finalize_analytics_rows(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY, rows)
+    return finalize_analytics_reader(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY, reader)
 
 
 _MODULE = sys.modules[__name__]

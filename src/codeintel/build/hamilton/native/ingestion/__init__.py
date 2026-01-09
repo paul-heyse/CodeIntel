@@ -1,7 +1,7 @@
 """Native ingestion targets with tool execution subgraphs.
 
 Phase 2: All ingestion domain targets migrated from legacy wrappers to native
-Hamilton modules with boundary validation handled at storage I/O.
+Hamilton modules with boundary validation handled at finalize boundaries.
 """
 
 from __future__ import annotations

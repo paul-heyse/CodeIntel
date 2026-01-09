@@ -9,9 +9,7 @@ Check classes implement CheckProtocol from core/validation.
 from __future__ import annotations
 
 from collections.abc import Hashable
-from typing import TYPE_CHECKING, ClassVar, cast
-
-import rustworkx as rx
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.build.graphs.compute.metrics.components import find_strongly_connected
 from codeintel.build.graphs.engine.datasets import dataset_snapshot_exists
@@ -20,9 +18,10 @@ from codeintel.build.graphs.rx.algos import (
     GraphInput,
     ensure_directed_store,
     graph_to_store,
+    total_degree_by_id,
 )
+from codeintel.build.graphs.rx.iterators import iter_edge_id_payloads
 from codeintel.build.graphs.rx.normalize import stable_key
-from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.graphs.validation.findings import (
     CALL_SCC_MIN,
@@ -314,14 +313,6 @@ class ConfigKeyCheck(GraphCheckBase):
 # =============================================================================
 
 
-def _node_degree(store: RxGraphStore, node_idx: int) -> int:
-    if store.is_directed:
-        directed = cast("rx.PyDiGraph[object, float]", store.graph)
-        return int(directed.in_degree(node_idx) + directed.out_degree(node_idx))
-    undirected = cast("rx.PyGraph[object, float]", store.graph)
-    return int(undirected.degree(node_idx))
-
-
 def _strongly_connected_sets(graph: GraphInput) -> list[set[Hashable]]:
     result = find_strongly_connected(graph)
     return [set(component.nodes) for component in result.components]
@@ -343,14 +334,12 @@ def _call_graph_findings_impl(
     findings: list[dict[str, object]] = []
     store = graph_to_store(call_graph)
     kinds = {node: store.get_node_attrs(node).get("kind") for node in store.node_ids()}
+    degree_map = total_degree_by_id(store)
     isolated: list[Hashable] = []
     for node_id in store.node_ids():
         if kinds.get(node_id) in {"module", "class"}:
             continue
-        node_idx = store.id_to_index.get(node_id)
-        if node_idx is None:
-            continue
-        if _node_degree(store, node_idx) == 0:
+        if degree_map.get(node_id, 0) == 0:
             isolated.append(node_id)
     if isolated:
         isolated_sample = ", ".join(str(node) for node in isolated[:SAMPLE_LIMIT])
@@ -396,11 +385,7 @@ def _call_graph_findings_impl(
         )
 
     degree_threshold = max(HUB_MIN_DEGREE_FLOOR, int(store.graph.num_nodes() * HUB_DEGREE_RATIO))
-    degree_map = {
-        node: _node_degree(store, store.id_to_index[node])
-        for node in store.node_ids()
-        if node in store.id_to_index
-    }
+    degree_map = total_degree_by_id(store)
     hubs = [node for node, deg in degree_map.items() if deg > degree_threshold]
     if hubs:
         hubs_sorted = sorted(hubs, key=stable_key)
@@ -517,8 +502,7 @@ def _import_hub_findings_impl(
     store = ensure_directed_store(import_graph)
     degree_threshold = hub_threshold(store.graph.num_nodes())
     degree_map = {
-        str(node_id): _node_degree(store, store.id_to_index[node_id])
-        for node_id in store.node_ids()
+        str(node_id): degree for node_id, degree in total_degree_by_id(store).items()
     }
     hubs = [node for node, deg in degree_map.items() if deg > degree_threshold]
     if hubs:
@@ -553,9 +537,7 @@ def _import_upward_findings_impl(
     """
     upward_edges: list[tuple[Hashable, Hashable]] = []
     store = graph_to_store(import_graph)
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_id = store.index_to_id[src_idx]
-        dst_id = store.index_to_id[dst_idx]
+    for src_id, dst_id, _payload in iter_edge_id_payloads(store):
         src_layer = as_int(store.get_node_attrs(src_id).get("layer"))
         dst_layer = as_int(store.get_node_attrs(dst_id).get("layer"))
         if src_layer is None or dst_layer is None:
@@ -651,11 +633,7 @@ def _symbol_graph_findings_impl(
     store = graph_to_store(symbol_graph)
     if store.graph.num_nodes() == 0:
         return []
-    degree_map = {
-        node: _node_degree(store, store.id_to_index[node])
-        for node in store.node_ids()
-        if node in store.id_to_index
-    }
+    degree_map = total_degree_by_id(store)
     threshold = max(HUB_MIN_DEGREE_FLOOR, int(store.graph.num_nodes() * HUB_DEGREE_RATIO))
     high_degree = [node for node, deg in degree_map.items() if deg > threshold]
     if not high_degree:
@@ -697,11 +675,8 @@ def _config_key_findings_impl(
     if store.graph.num_nodes() == 0:
         return []
     keys = [node for node in store.node_ids() if store.get_node_attrs(node).get("bipartite") == 0]
-    degs = {
-        node: _node_degree(store, store.id_to_index[node])
-        for node in keys
-        if node in store.id_to_index
-    }
+    degree_map = total_degree_by_id(store)
+    degs = {node: degree_map.get(node, 0) for node in keys}
     key_threshold = max(CONFIG_KEY_MIN_THRESHOLD, int(len(keys) * 0.05))
     high_keys: list[str] = []
     for node, deg in degs.items():

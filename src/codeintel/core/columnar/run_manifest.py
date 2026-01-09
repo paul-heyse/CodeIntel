@@ -45,6 +45,9 @@ class RunManifest(ManifestStruct, frozen=True):
     scan_profile: str | None = None
     ordering: OrderingManifest | None = None
     scan_telemetry: ScanTelemetryManifest | None = None
+    plan_seconds: float | None = None
+    post_seconds: float | None = None
+    finalize_seconds: float | None = None
     extras: Mapping[str, object] | None = None
 
 
@@ -57,6 +60,9 @@ class RunManifestOptions:
     scan_telemetry: ScanTelemetry | None = None
     profile_name: str | None = None
     scan_profile: str | None = None
+    plan_seconds: float | None = None
+    post_seconds: float | None = None
+    finalize_seconds: float | None = None
     extras: Mapping[str, object] | None = None
     filename: str = "run_manifest.json"
 
@@ -92,6 +98,9 @@ def write_run_manifest(
         scan_profile=resolved.scan_profile,
         ordering=ordering_payload,
         scan_telemetry=telemetry_payload,
+        plan_seconds=resolved.plan_seconds,
+        post_seconds=resolved.post_seconds,
+        finalize_seconds=resolved.finalize_seconds,
         extras=resolved.extras,
     )
     path = output_dir / resolved.filename
@@ -141,6 +150,9 @@ def run_manifest_options_for_context(
         scan_telemetry=resolved.scan_telemetry or scan_telemetry,
         profile_name=profile_name,
         scan_profile=scan_profile,
+        plan_seconds=resolved.plan_seconds,
+        post_seconds=resolved.post_seconds,
+        finalize_seconds=resolved.finalize_seconds,
         extras=resolved.extras,
         filename=resolved.filename,
     )

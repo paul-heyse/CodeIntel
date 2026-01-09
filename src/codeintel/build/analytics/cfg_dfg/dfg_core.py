@@ -5,10 +5,9 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
-import rustworkx as rx
 
 from codeintel.build.analytics.cfg_dfg.helpers import (
     degree_dict,
@@ -26,6 +25,7 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
 )
+from codeintel.build.graphs.rx.algos import in_degree_by_id, out_degree_by_id
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -138,8 +138,6 @@ def load_dfg_edges(
                     str(use_kind) if use_kind is not None else "unknown",
                 )
             )
-    for edges in edges_by_fn.values():
-        edges.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[5], item[4]))
     return edges_by_fn
 
 
@@ -325,17 +323,10 @@ def dfg_ext_row(ctx: DfgFnContext) -> tuple[object, ...]:
         if kind not in {"data-flow", "intra-block", "phi"}
     )
 
-    directed = cast("rx.PyDiGraph[object, float]", ctx.graph.graph)
-    sources = {
-        node_id
-        for node_id in ctx.graph.node_ids()
-        if directed.in_degree(ctx.graph.id_to_index[node_id]) == 0
-    }
-    sinks = {
-        node_id
-        for node_id in ctx.graph.node_ids()
-        if directed.out_degree(ctx.graph.id_to_index[node_id]) == 0
-    }
+    in_degrees = in_degree_by_id(ctx.graph)
+    out_degrees = out_degree_by_id(ctx.graph)
+    sources = {node_id for node_id in ctx.graph.node_ids() if in_degrees.get(node_id, 0) == 0}
+    sinks = {node_id for node_id in ctx.graph.node_ids() if out_degrees.get(node_id, 0) == 0}
     simple_paths = bounded_simple_path_count(
         ctx.graph,
         sources,

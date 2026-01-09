@@ -27,7 +27,7 @@ from codeintel.build.graphs.compute.metrics.components import (
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 
@@ -63,11 +63,7 @@ def _degree_maps(
     store = ensure_store(subsystem_graph, weight=weight)
     in_degree: dict[str, float] = {str(node): 0.0 for node in store.node_ids()}
     out_degree: dict[str, float] = {str(node): 0.0 for node in store.node_ids()}
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_id = store.index_to_id[src_idx]
-        dst_id = store.index_to_id[dst_idx]
-        payload = store.graph.get_edge_data(src_idx, dst_idx)
-        weight_val = edge_weight_from_payload(payload)
+    for src_id, dst_id, weight_val in iter_edge_id_weights(store):
         out_degree[str(src_id)] = out_degree.get(str(src_id), 0.0) + weight_val
         in_degree[str(dst_id)] = in_degree.get(str(dst_id), 0.0) + weight_val
     return in_degree, out_degree
@@ -86,15 +82,11 @@ def _build_subsystem_graph(
         subsystem_graph.ensure_node(str(subsystem_id))
 
     store = ensure_store(import_graph, weight=graph_ctx.betweenness_weight)
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_id = store.index_to_id[src_idx]
-        dst_id = store.index_to_id[dst_idx]
+    for src_id, dst_id, weight in iter_edge_id_weights(store):
         src_sub = module_to_subsystem.get(str(src_id))
         dst_sub = module_to_subsystem.get(str(dst_id))
         if src_sub is None or dst_sub is None or src_sub == dst_sub:
             continue
-        payload = store.graph.get_edge_data(src_idx, dst_idx)
-        weight = edge_weight_from_payload(payload)
         subsystem_graph.add_weighted_edge(src_sub, dst_sub, weight=weight)
     return subsystem_graph
 

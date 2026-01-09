@@ -15,12 +15,17 @@ from codeintel.core.columnar.execution_context import (
     resolve_columnar_context,
 )
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table
-from codeintel.core.columnar.plan_builder import build_plan_from_query_spec
-from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan_for_context
+from codeintel.core.columnar.plan_builder import (
+    SchemaPlanDefaultsRequest,
+    build_plan_from_query_spec,
+    plan_from_schema_defaults,
+)
+from codeintel.core.columnar.plan_ops import QueryPlanOptions
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.run_manifest import RunManifestOptions
 from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from codeintel.build.tabular.finalize_ops import FinalizeResult
@@ -50,19 +55,25 @@ def run_analytics_pipeline(request: AnalyticsPipelineRunRequest) -> FinalizeResu
         Finalize artifacts for the table key.
     """
     scan_telemetry = None
+    resolved_ctx = resolve_columnar_context(request.ctx)
     if isinstance(request.source, ds.Dataset):
-        plan = build_query_plan_for_context(
-            request.source,
-            spec=request.spec,
-            ctx=resolve_columnar_context(request.ctx),
-            options=request.options,
+        plan = plan_from_schema_defaults(
+            schema_service=get_schema_service(),
+            request=SchemaPlanDefaultsRequest(
+                table_key=request.table_key,
+                dataset=request.source,
+                predicate=request.spec.predicate,
+                columns=request.spec.scan_columns(provenance=False),
+                options=request.options,
+                ctx=resolved_ctx,
+            ),
         )
         scan_telemetry = scan_telemetry_for_queryspec(request.source, spec=request.spec)
     else:
         plan = build_plan_from_query_spec(
             table=request.source,
             spec=request.spec,
-            ctx=resolve_columnar_context(request.ctx),
+            ctx=resolved_ctx,
         )
     finalize = finalize_spec_for_table(
         request.table_key,
@@ -70,7 +81,7 @@ def run_analytics_pipeline(request: AnalyticsPipelineRunRequest) -> FinalizeResu
         emit_artifacts=True,
     )
     pipeline_options = PipelineRunOptions(
-        ctx=resolve_columnar_context(request.ctx),
+        ctx=resolved_ctx,
         manifest_dir=request.manifest_dir,
         manifest_options=request.manifest_options,
         scan_telemetry=scan_telemetry,

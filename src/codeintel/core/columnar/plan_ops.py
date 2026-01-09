@@ -17,7 +17,7 @@ from codeintel.core.columnar.execution_context import (
 )
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.normalization import normalize_table_for_compute
-from codeintel.core.columnar.ordering import OrderingSpec, SortKey
+from codeintel.core.columnar.ordering import OrderingSpec, SortKey, ordering_keys_present
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.streaming import configure_arrow_threading_for_context
 
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     import pyarrow.dataset as ds
 
+    from codeintel.core.columnar.arrowdsl import ExecutionPlan
     from codeintel.core.columnar.streaming import DatasetScanOptions
     type ReaderThunk = Callable[[], pa.RecordBatchReader]
 else:
@@ -225,10 +226,7 @@ class Plan:
         """
         options = acero.AggregateNodeOptions(aggregates=list(aggregates), keys=keys)
         decl = acero.Declaration("aggregate", options, inputs=[self.declaration])
-        ordering = OrderingSpec.unordered(
-            reason="aggregate pipeline breaker",
-            pipeline_breaker=True,
-        )
+        ordering = _aggregate_ordering(self._resolved_ordering(), keys=keys)
         return Plan(decl, ordering=ordering)
 
     def hash_join(
@@ -266,9 +264,12 @@ class Plan:
             options,
             inputs=[self.declaration, right.declaration],
         )
-        ordering = OrderingSpec.unordered(
-            reason="hash join output",
-            pipeline_breaker=True,
+        ordering = _merge_join_ordering(
+            left=self._resolved_ordering(),
+            right=right._resolved_ordering(),
+            spec=spec,
+            left_columns=_resolve_join_columns(self, output=spec.left_output),
+            right_columns=_resolve_join_columns(right, output=spec.right_output),
         )
         return Plan(decl, ordering=ordering)
 
@@ -400,6 +401,61 @@ def _project_ordering(
             return OrderingSpec.unordered(reason="project drops ordering")
         new_keys.append((output_name, direction))
     return replace(ordering, keys=tuple(new_keys))
+
+
+def _aggregate_ordering(
+    ordering: OrderingSpec,
+    *,
+    keys: Sequence[pc.Expression] | None,
+) -> OrderingSpec:
+    reason = "aggregate pipeline breaker"
+    if ordering.level != "unordered":
+        reason = "aggregate pipeline breaker (drops ordering)"
+    if not keys:
+        reason = f"{reason} (no keys)"
+    return OrderingSpec.unordered(
+        reason=reason,
+        pipeline_breaker=True,
+    )
+
+
+def _resolve_join_columns(plan: Plan, *, output: Sequence[str] | None) -> Sequence[str] | None:
+    if output is not None:
+        return tuple(output)
+    schema = plan.schema
+    if schema is None:
+        return None
+    return tuple(schema.names)
+
+
+def _merge_join_ordering(
+    *,
+    left: OrderingSpec,
+    right: OrderingSpec,
+    spec: HashJoinSpec,
+    left_columns: Sequence[str] | None,
+    right_columns: Sequence[str] | None,
+) -> OrderingSpec:
+    left_join_types = {"left outer", "left semi", "left anti", "inner"}
+    right_join_types = {"right outer", "right semi", "right anti"}
+    left_ordered = ordering_keys_present(left, left_columns)
+    right_ordered = ordering_keys_present(right, right_columns)
+    if spec.how in left_join_types and left_ordered:
+        return replace(
+            left,
+            pipeline_breaker=True,
+            reason="hash join preserves left ordering",
+        )
+    if spec.how in right_join_types and right_ordered:
+        return replace(
+            right,
+            pipeline_breaker=True,
+            reason="hash join preserves right ordering",
+        )
+    return OrderingSpec.unordered(
+        reason="hash join output",
+        pipeline_breaker=True,
+    )
 
 
 def materialize_plan(
@@ -642,8 +698,8 @@ class ExternalPlanRunner(Protocol):
         self,
         *,
         request: ExternalPlanRequest,
-    ) -> pa.RecordBatchReader | ReaderThunk | Plan:
-        """Execute an external plan and return a reader or reader thunk.
+    ) -> pa.RecordBatchReader | ReaderThunk | ExecutionPlan:
+        """Execute an external plan and return a reader or execution plan.
 
         Parameters
         ----------
@@ -652,8 +708,8 @@ class ExternalPlanRunner(Protocol):
 
         Returns
         -------
-        pyarrow.RecordBatchReader | ReaderThunk | Plan
-            Record batch reader, thunk returning the reader, or an Acero plan.
+        pyarrow.RecordBatchReader | ReaderThunk | ExecutionPlan
+            Record batch reader, thunk returning the reader, or an execution plan.
         """
         ...
 
@@ -712,9 +768,13 @@ def run_external_plan(request: ExternalPlanRequest) -> pa.RecordBatchReader:
     result = runner(request=request)
     if isinstance(result, pa.RecordBatchReader):
         return result
-    if isinstance(result, Plan):
-        use_threads = True if request.use_threads is None else request.use_threads
-        return result.declaration.to_reader(use_threads=use_threads)
+    from codeintel.core.columnar.arrowdsl import ExecutionPlan
+
+    if isinstance(result, ExecutionPlan):
+        execution_ctx = resolve_execution_context(None)
+        if request.use_threads is not None:
+            execution_ctx = replace(execution_ctx, use_threads=request.use_threads)
+        return result.to_reader(ctx=execution_ctx)
     if callable(result):
         reader = result()
         if isinstance(reader, pa.RecordBatchReader):

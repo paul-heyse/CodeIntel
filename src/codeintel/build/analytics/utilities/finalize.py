@@ -12,7 +12,11 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_spec_for_table,
     finalize_table,
 )
-from codeintel.core.columnar.rows import ColumnarRowBuffer, table_for_rows
+from codeintel.core.columnar.rows import (
+    ColumnarRowBuffer,
+    columnar_batch_collector_for_table_key,
+    table_for_rows,
+)
 
 RowInput = ColumnarRowBuffer | Iterable[Mapping[str, object]] | Iterable[Sequence[object]]
 
@@ -73,9 +77,10 @@ def finalize_analytics_rows(table_key: str, rows: RowInput) -> pa.Table:
         Contract-aligned analytics table built from row inputs.
     """
     if isinstance(rows, ColumnarRowBuffer):
-        table = rows.to_table()
-    else:
-        table, _ = table_for_rows(table_key, rows)
+        collector = columnar_batch_collector_for_table_key(table_key)
+        collector.extend(rows)
+        return finalize_analytics_reader(table_key, collector.to_reader()).good
+    table, _ = table_for_rows(table_key, rows)
     return finalize_analytics_table(table_key, table)
 
 

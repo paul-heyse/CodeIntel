@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -14,19 +14,12 @@ from codeintel.core.columnar.compute_helpers import (
     require_array,
     sort_options,
 )
-from codeintel.core.columnar.explode_ops import (
-    ExplodeResult,
-    ExplodeSpec,
-)
-from codeintel.core.columnar.explode_ops import (
-    explode_edges as _explode_edges,
-)
-from codeintel.core.columnar.explode_ops import (
-    explode_edges_with_aligned_lists as _explode_edges_with_aligned_lists,
-)
-from codeintel.core.columnar.explode_ops import (
-    explode_list_struct as _explode_list_struct,
-)
+from codeintel.core.columnar.explode_ops import ExplodeResult, ExplodeSpec
+from codeintel.core.columnar.explode_ops import explode_list_struct as _explode_list_struct
+from codeintel.core.columnar.plan_kernels import explode_edges_for_join as _explode_edges_for_join
+
+if TYPE_CHECKING:
+    from codeintel.core.schemas.service import SchemaService
 
 SortKey = tuple[str, Literal["ascending", "descending"]]
 
@@ -35,6 +28,9 @@ def explode_edges(
     table: pa.Table,
     *,
     spec: ExplodeSpec,
+    allowed_columns: Sequence[str] = (),
+    table_key: str | None = None,
+    schema_service: SchemaService | None = None,
 ) -> ExplodeResult:
     """Explode list payloads into edge rows.
 
@@ -43,13 +39,22 @@ def explode_edges(
     ExplodeResult
         Explode output with good rows and errors.
     """
-    return _explode_edges(table, spec=spec)
+    return _explode_edges_for_join(
+        table,
+        spec=spec,
+        allowed_columns=allowed_columns,
+        table_key=table_key,
+        schema_service=schema_service,
+    )
 
 
 def explode_edges_with_aligned_lists(
     table: pa.Table,
     *,
     spec: ExplodeSpec,
+    allowed_columns: Sequence[str] = (),
+    table_key: str | None = None,
+    schema_service: SchemaService | None = None,
 ) -> ExplodeResult:
     """Explode list payloads with aligned list validation.
 
@@ -58,7 +63,13 @@ def explode_edges_with_aligned_lists(
     ExplodeResult
         Explode output with aligned list validation results.
     """
-    return _explode_edges_with_aligned_lists(table, spec=spec)
+    return _explode_edges_for_join(
+        table,
+        spec=spec,
+        allowed_columns=allowed_columns,
+        table_key=table_key,
+        schema_service=schema_service,
+    )
 
 
 def explode_list_struct(

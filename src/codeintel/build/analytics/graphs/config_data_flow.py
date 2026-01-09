@@ -11,22 +11,27 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
-import rustworkx as rx
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    ensure_directed_store,
+    simple_paths_by_id,
+)
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
     resolve_execution_context,
 )
 from codeintel.core.columnar.iter import iter_tuples
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
@@ -298,11 +303,15 @@ def _config_reference_rowset(
             "reference_paths": E.field(("extras", "reference_paths")),
         }
     )
-    plan = plan.aggregate(
-        keys=[E.field("config_path"), E.field("key")],
-        aggregates=[("reference_paths", "list", None, "reference_paths")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("config_path", "key"),
+            aggregates=[("reference_paths", "list", None, "reference_paths")],
+        ),
+        ctx=resolve_columnar_context(ctx),
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _entrypoint_rowset(
@@ -321,8 +330,15 @@ def _entrypoint_rowset(
         context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
     )
     plan = plan.filter(E.is_valid("handler_goid_h128"))
-    plan = plan.aggregate(keys=[E.field("handler_goid_h128")], aggregates=[])
-    return _materialize_plan(plan, ctx=ctx)
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("handler_goid_h128",),
+            aggregates=(),
+        ),
+        ctx=resolve_columnar_context(ctx),
+    )
 
 
 def _config_references_from_rows(
@@ -378,24 +394,21 @@ def _call_chains(
     if target_idx is None:
         return [[target]]
     paths: list[list[int]] = []
-    directed_graph = cast("rx.PyDiGraph", store.graph)
     for entry in sorted(entrypoints):
         entry_idx = store.id_to_index.get(entry)
         if entry_idx is None:
             continue
-        try:
-            for path in rx.digraph_all_simple_paths(
-                directed_graph,
-                entry_idx,
-                target_idx,
-                cutoff=max_length,
-            ):
-                ids = [int(str(store.index_to_id[idx])) for idx in path]
-                paths.append(ids)
-                if len(paths) >= max_paths:
-                    break
-        except (rx.InvalidNode, rx.NoPathFound, rx.NullGraph):
-            continue
+        for path in simple_paths_by_id(
+            store,
+            entry,
+            target,
+            cutoff=max_length,
+            limit=max_paths - len(paths),
+        ):
+            ids = [int(str(node)) for node in path]
+            paths.append(ids)
+            if len(paths) >= max_paths:
+                break
     if not paths:
         return [[target]]
     paths.sort(key=lambda path: stable_key(tuple(path)))
@@ -629,4 +642,5 @@ def _materialize_plan(
     ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)

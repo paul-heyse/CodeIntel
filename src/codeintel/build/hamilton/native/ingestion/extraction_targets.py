@@ -60,7 +60,6 @@ from codeintel.build.tabular.arrow_ops import (
 )
 from codeintel.build.tabular.compute_helpers import array_from_compute, safe_filter
 from codeintel.build.tabular.compute_masks import equal_mask, or_kleene
-from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -71,6 +70,7 @@ from codeintel.build.tabular.finalize_ops import (
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.plan_builder import build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.execution.ids import RUN_PREFIX_INGEST, new_run_id

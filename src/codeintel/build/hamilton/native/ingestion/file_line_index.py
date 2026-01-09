@@ -12,24 +12,25 @@ import pyarrow as pa
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.ingestion.manifesting import (
+    finalize_ingest_reader_with_manifest,
+)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpecOptions,
     TableTargetContext,
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import (
-    IngestFinalizeOptions,
-    finalize_ingest_reader,
-    scoped_table_for_ingest,
-)
+from codeintel.build.hamilton.transforms.ingestion_normalize import scoped_table_for_ingest
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import table_to_reader
-from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.plan_builder import build_table_plan
-from codeintel.core.columnar.plan_ops import materialize_plan
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
 log = logging.getLogger(__name__)
@@ -50,14 +51,22 @@ def _resolve_module_paths(modules_table: pa.Table) -> dict[str, str | None]:
     plan = build_table_plan(table=modules_table).project(project)
     plan = plan.filter(E.and_(E.is_valid("path"), E.field("path") != E.scalar("")))
     if "language" in columns:
-        plan = plan.aggregate(
-            keys=[E.field("path")],
-            aggregates=[("language", "min", None, "language")],
+        plan = build_grouped_rollup_plan(
+            plan,
+            keys=("path",),
+            aggregates=(("language", "min", None, "language"),),
+            order_by=(("path", "ascending"),),
         )
     else:
-        plan = plan.aggregate(keys=[E.field("path")], aggregates=[])
-    plan = plan.order_by(sort_keys=[("path", "ascending")])
-    table = materialize_plan(plan, use_threads=True)
+        plan = build_grouped_rollup_plan(
+            plan,
+            keys=("path",),
+            aggregates=(),
+            order_by=(("path", "ascending"),),
+        )
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    table = reader_to_table(reader)
     paths: dict[str, str | None] = {}
     for row in iter_rows(table):
         rel_path = row.get("path")
@@ -169,10 +178,11 @@ def file_line_index__base(
 
     table, _ = table_for_rows(FILE_LINE_INDEX_TABLE_KEY, rows)
     reader = table_to_reader(table, batch_size=None)
-    return finalize_ingest_reader(
-        FILE_LINE_INDEX_TABLE_KEY,
-        reader,
-        options=IngestFinalizeOptions(target_name=FILE_LINE_INDEX_TARGET_NAME),
+    return finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=FILE_LINE_INDEX_TABLE_KEY,
+        reader=reader,
+        target_name=FILE_LINE_INDEX_TARGET_NAME,
     )
 
 

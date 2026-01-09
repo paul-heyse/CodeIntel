@@ -13,6 +13,7 @@ from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.schemas.row_models import columns_for_table_key
@@ -103,9 +104,9 @@ def build_subsystem_profile_cache_frame(
             right_output=right_output,
         ),
     )
-    joined = ExecutionPlan.from_plan(joined_plan).to_table(
-        ctx=resolve_execution_context(None),
-    )
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(joined_plan).to_reader(ctx=execution_ctx)
+    joined = reader_to_table(reader)
     columns = _profile_cache_columns()
     return _ensure_columns(joined, columns)
 

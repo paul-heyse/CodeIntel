@@ -24,6 +24,7 @@ class GraphMetadata:
     node_payload_version: str = NODE_PAYLOAD_VERSION
     determinism_tier: str = DEFAULT_GRAPH_DETERMINISM_TIER
     scan_profile: str | None = None
+    ordering_keys: tuple[str, ...] | None = None
 
     def as_attrs(self) -> dict[str, object]:
         """Return metadata as a JSON-compatible attribute mapping.
@@ -43,6 +44,8 @@ class GraphMetadata:
         }
         if self.scan_profile is not None:
             attrs["scan_profile"] = self.scan_profile
+        if self.ordering_keys is not None:
+            attrs["ordering_keys"] = list(self.ordering_keys)
         return attrs
 
     @classmethod
@@ -63,6 +66,7 @@ class GraphMetadata:
         node_payload_version = _get_str(attrs, "node_payload_version") or NODE_PAYLOAD_VERSION
         determinism_tier = _get_str(attrs, "determinism_tier") or DEFAULT_GRAPH_DETERMINISM_TIER
         scan_profile = _get_str(attrs, "scan_profile")
+        ordering_keys = _get_ordering_keys(attrs.get("ordering_keys"))
         if weight_policy is None:
             return None
         return cls(
@@ -73,6 +77,7 @@ class GraphMetadata:
             node_payload_version=node_payload_version,
             determinism_tier=determinism_tier,
             scan_profile=scan_profile,
+            ordering_keys=ordering_keys,
         )
 
 
@@ -100,6 +105,7 @@ def metadata_with_weight_policy(
         node_payload_version=metadata.node_payload_version,
         determinism_tier=metadata.determinism_tier,
         scan_profile=metadata.scan_profile,
+        ordering_keys=metadata.ordering_keys,
     )
 
 
@@ -108,6 +114,19 @@ def _get_str(attrs: dict[str, object], key: str) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _get_ordering_keys(value: object) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, (list, tuple)):
+        keys = [str(item) for item in value if item is not None]
+        if not keys:
+            return None
+        return tuple(keys)
+    return None
 
 
 class GraphAttrs(Protocol):

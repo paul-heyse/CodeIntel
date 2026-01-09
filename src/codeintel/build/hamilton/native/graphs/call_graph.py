@@ -16,11 +16,14 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
-from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
@@ -568,7 +571,7 @@ def _filtered_goids_table(goids_table: pa.Table) -> pa.Table:
             filter_expr=E.and_(*exprs),
         ),
     )
-    return materialize_plan(plan, use_threads=True)
+    return _plan_to_table(plan)
 
 
 def _python_modules_table(modules_table: pa.Table) -> pa.Table:
@@ -591,7 +594,13 @@ def _python_modules_table(modules_table: pa.Table) -> pa.Table:
             filter_expr=E.and_(*exprs),
         ),
     )
-    return materialize_plan(plan, use_threads=True)
+    return _plan_to_table(plan)
+
+
+def _plan_to_table(plan: Plan) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def _python_language_expr() -> Expression:

@@ -18,7 +18,6 @@ from codeintel.core.columnar.plan_ops import (
     materialize_plan,
     query_plan_options_for_context,
     register_external_plan_runner,
-    run_external_plan,
 )
 
 __all__ = [
@@ -37,5 +36,4 @@ __all__ = [
     "query_plan_options_for_context",
     "register_default_external_plan_runners",
     "register_external_plan_runner",
-    "run_external_plan",
 ]

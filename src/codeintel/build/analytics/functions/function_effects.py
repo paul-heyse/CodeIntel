@@ -22,11 +22,13 @@ from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
     resolve_execution_context,
 )
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -559,11 +561,19 @@ def _call_graph_rowset(
             E.field("callee_goid_h128") != E.scalar(-1),
         )
     )
-    plan = plan.aggregate(
-        keys=[E.field("caller_goid_h128")],
-        aggregates=[("callee_goid_h128", "list", None, "callee_goid_h128")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("caller_goid_h128",),
+            aggregates=[("callee_goid_h128", "list", None, "callee_goid_h128")],
+            pre_sort_keys=(
+                ("caller_goid_h128", "ascending"),
+                ("callee_goid_h128", "ascending"),
+            ),
+        ),
+        ctx=resolve_columnar_context(ctx),
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _unresolved_call_rowset(
@@ -592,11 +602,15 @@ def _unresolved_call_rowset(
             ),
         )
     )
-    plan = plan.aggregate(
-        keys=[E.field("caller_goid_h128")],
-        aggregates=[("caller_goid_h128", "count", None, "unresolved_call_count")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("caller_goid_h128",),
+            aggregates=[("caller_goid_h128", "count", None, "unresolved_call_count")],
+        ),
+        ctx=resolve_columnar_context(ctx),
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _ensure_call_graph_nodes(
@@ -783,4 +797,5 @@ def _materialize_plan(
     ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> pa.Table:
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)

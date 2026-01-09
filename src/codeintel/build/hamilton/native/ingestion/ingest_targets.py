@@ -38,7 +38,6 @@ from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import (
     build_scan_profile,
     filter_modules,
-    get_module_paths_from_env,
     paths_to_modules,
 )
 from codeintel.build.hamilton.native.ingestion.manifesting import (
@@ -276,11 +275,15 @@ class TypingToolOutput(ToolStepOutput):
 
 
 @tag_helper(domain="ingestion")
-def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
-    """Load module paths for the current snapshot from storage.
+def module_paths(
+    env: BuildEnv,
+    t__modules: TargetRunRecord,
+    t__modules__run: ModuleToolOutput,
+) -> tuple[str, ...]:
+    """Load module paths for the current snapshot from scanning outputs.
 
-    This node is shared across ingestion targets to avoid repeated queries to
-    ``core.modules`` during a single run.
+    This node is shared across ingestion targets to avoid repeated scans
+    during a single run.
 
     Parameters
     ----------
@@ -288,33 +291,23 @@ def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
         Build environment with gateway and snapshot.
     t__modules
         Upstream modules target result (ensures module scan has run).
+    t__modules__run
+        Module scan output containing module records.
 
     Returns
     -------
     tuple[str, ...]
         Tuple of module paths for the current snapshot.
     """
-    paths = get_module_paths_from_env(env)
+    module_paths = tuple(record.rel_path for record in t__modules__run.modules)
+    if module_paths:
+        return module_paths
     try:
         options = load_target_options(
             env,
             target_name=MODULES_TARGET_NAME,
             options_type=ModuleIngestOptions,
         )
-        if paths:
-            filtered_records = filter_modules(
-                paths_to_modules(paths, env.snapshot.repo_root),
-                options,
-            )
-            filtered_paths = tuple(record.rel_path for record in filtered_records)
-            if filtered_paths:
-                if t__modules.status != "succeeded":
-                    log.warning(
-                        "Using stored module paths despite modules target %s: %s",
-                        t__modules.status,
-                        t__modules.error or "no error recorded",
-                    )
-                return filtered_paths
         profile = build_scan_profile(env.snapshot.repo_root, options)
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
         discovered = discovery.discover_modules(env.snapshot.repo_root, profile)
@@ -328,11 +321,11 @@ def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
                     t__modules.error or "unknown error",
                 )
             else:
-                log.warning("Falling back to filesystem module scan after empty storage query.")
+                log.warning("Falling back to filesystem module scan after empty module scan.")
             return tuple(fallback)
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         log.warning("Module path fallback scan failed: %s", exc)
-    return tuple(paths)
+    return ()
 
 
 @tag_helper(domain="ingestion")
@@ -347,7 +340,7 @@ def module_records_static(
     env
         Build environment with snapshot metadata.
     module_paths
-        Module paths loaded from storage.
+        Module paths loaded from module scans.
 
     Returns
     -------
@@ -368,7 +361,7 @@ def module_record_inputs(
     Parameters
     ----------
     module_paths
-        Module paths loaded from storage.
+        Module paths loaded from module scans.
 
     Yields
     ------
@@ -796,6 +789,29 @@ def _merge_result_warnings(result: ExecutionResult, warnings: tuple[str, ...]) -
     )
 
 
+def _tool_manifest_extras(
+    result: ExecutionResult,
+    *,
+    table_counts: Mapping[str, int],
+) -> dict[str, object]:
+    status = "failed"
+    if result.skipped:
+        status = "skipped"
+    elif result.success:
+        status = "success"
+    extras: dict[str, object] = {
+        "tool_status": status,
+        "input_table_counts": dict(table_counts),
+    }
+    if result.error is not None:
+        extras["error"] = result.error
+    if result.skip_reason is not None:
+        extras["skip_reason"] = result.skip_reason
+    if result.warnings:
+        extras["warnings"] = list(result.warnings)
+    return extras
+
+
 def _state_hash_for_records(records: Sequence[ModuleRecord]) -> str | None:
     state: dict[str, FileDigest] = {}
     for record in records:
@@ -938,9 +954,17 @@ def t__config_ingest__run(
 
 @tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest__ingest(
+    env: BuildEnv,
     t__config_ingest__run: ConfigToolOutput,
 ) -> IngestStep[dict[str, InferableTabularInput]]:
     """Package config ingestion rows for table materialization.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__config_ingest__run
+        Tool output containing config ingest rows.
 
     Returns
     -------
@@ -963,8 +987,17 @@ def t__config_ingest__ingest(
             )
         )
 
-    payload = {CONFIG_VALUES_TABLE_KEY: t__config_ingest__run.rows}
-    table_counts = {CONFIG_VALUES_TABLE_KEY: t__config_ingest__run.row_count}
+    input_counts = {CONFIG_VALUES_TABLE_KEY: t__config_ingest__run.row_count}
+    manifest_extras = _tool_manifest_extras(result, table_counts=input_counts)
+    config_table = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=CONFIG_VALUES_TABLE_KEY,
+        reader=t__config_ingest__run.rows,
+        target_name=CONFIG_INGEST_TARGET_NAME,
+        manifest_extras=manifest_extras,
+    )
+    payload = {CONFIG_VALUES_TABLE_KEY: config_table}
+    table_counts = {CONFIG_VALUES_TABLE_KEY: config_table.num_rows}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
@@ -1221,9 +1254,17 @@ def t__tests_ingest__run(
 
 @tag_compute(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def t__tests_ingest__ingest(
+    env: BuildEnv,
     t__tests_ingest__run: TestsToolOutput,
 ) -> IngestStep[dict[str, InferableTabularInput]]:
     """Package tests ingestion rows for table materialization.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__tests_ingest__run
+        Tool output containing test ingest rows.
 
     Returns
     -------
@@ -1246,8 +1287,17 @@ def t__tests_ingest__ingest(
             )
         )
 
-    payload = {TEST_CATALOG_TABLE_KEY: t__tests_ingest__run.rows}
-    table_counts = {TEST_CATALOG_TABLE_KEY: t__tests_ingest__run.row_count}
+    input_counts = {TEST_CATALOG_TABLE_KEY: t__tests_ingest__run.row_count}
+    manifest_extras = _tool_manifest_extras(result, table_counts=input_counts)
+    test_table = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=TEST_CATALOG_TABLE_KEY,
+        reader=t__tests_ingest__run.rows,
+        target_name=TESTS_INGEST_TARGET_NAME,
+        manifest_extras=manifest_extras,
+    )
+    payload = {TEST_CATALOG_TABLE_KEY: test_table}
+    table_counts = {TEST_CATALOG_TABLE_KEY: test_table.num_rows}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
@@ -1426,9 +1476,17 @@ def t__typing__run(
 
 @tag_compute(domain="ingestion", target=TYPING_TARGET_NAME)
 def t__typing__ingest(
+    env: BuildEnv,
     t__typing__run: TypingToolOutput,
 ) -> IngestStep[dict[str, InferableTabularInput]]:
     """Package typing rows for table materialization.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    t__typing__run
+        Tool output containing diagnostics rows.
 
     Returns
     -------
@@ -1451,12 +1509,17 @@ def t__typing__ingest(
             )
         )
 
-    payload = {
-        STATIC_DIAGNOSTICS_TABLE_KEY: t__typing__run.diagnostic_rows,
-    }
-    table_counts = {
-        STATIC_DIAGNOSTICS_TABLE_KEY: t__typing__run.diagnostic_row_count,
-    }
+    input_counts = {STATIC_DIAGNOSTICS_TABLE_KEY: t__typing__run.diagnostic_row_count}
+    manifest_extras = _tool_manifest_extras(result, table_counts=input_counts)
+    diagnostics_table = finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=STATIC_DIAGNOSTICS_TABLE_KEY,
+        reader=t__typing__run.diagnostic_rows,
+        target_name=TYPING_TARGET_NAME,
+        manifest_extras=manifest_extras,
+    )
+    payload = {STATIC_DIAGNOSTICS_TABLE_KEY: diagnostics_table}
+    table_counts = {STATIC_DIAGNOSTICS_TABLE_KEY: diagnostics_table.num_rows}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,

@@ -15,6 +15,7 @@ from codeintel.build.analytics.utilities.snapshot import (
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
@@ -168,7 +169,8 @@ def _goids_source(
     )
     plan = plan.filter(E.in_("kind", sorted(_FUNCTION_KINDS)))
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 __all__ = [

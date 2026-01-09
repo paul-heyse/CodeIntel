@@ -12,6 +12,8 @@ from collections.abc import Collection, Hashable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
+
 from codeintel.build.analytics.compute.graphs import (
     centrality_directed,
     component_metadata,
@@ -47,6 +49,7 @@ from codeintel.build.graphs.builders import (
 from codeintel.build.graphs.builders import (
     build_import_graph_from_tables as _build_import_graph_from_tables,
 )
+from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
 from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 from codeintel.build.graphs.rx.normalize import stable_key
@@ -58,8 +61,6 @@ from codeintel.core.data_models.ids import normalize_decimal_id
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    import pyarrow as pa
-
     from codeintel.build.analytics.compute.graphs import ComponentBundle, NeighborStats
     from codeintel.build.analytics.graphs.orchestrator import GraphViews
     from codeintel.build.graphs.runtime.context import GraphContext
@@ -69,6 +70,7 @@ log = logging.getLogger(__name__)
 
 SymbolModuleEdges = tuple[set[str], dict[str, set[str]], dict[str, set[str]]]
 ComponentMeta = Mapping[str, Mapping[str, int | bool]]
+GraphMetricRowSource = ColumnarRowBuffer | pa.RecordBatchReader | pa.Table
 
 
 def _filter_store(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphStore:
@@ -168,8 +170,8 @@ class GraphMetricFilters:
 class GraphMetricsRows:
     """Rows for function and module graph metrics."""
 
-    function_rows: ColumnarRowBuffer
-    module_rows: ColumnarRowBuffer
+    function_rows: GraphMetricRowSource
+    module_rows: GraphMetricRowSource
 
 
 @dataclass(frozen=True)
@@ -315,6 +317,132 @@ def build_import_graph_from_tables(
     )
 
 
+@dataclass(frozen=True)
+class _GraphMetricsContextBundle:
+    runtime: GraphRuntimeOptions
+    filters: GraphMetricFilters
+    overrides: GraphContextOverrides
+
+    def build_context(
+        self,
+        runtime_opts: GraphRuntimeOptions,
+        repo: str,
+        commit: str,
+    ) -> GraphContext:
+        return _GRAPH_CONTEXT_FACTORY.build(
+            runtime_opts,
+            repo=repo,
+            commit=commit,
+            overrides=self.overrides,
+        )
+
+
+def _resolve_graph_metrics_context(inputs: GraphMetricsInputs) -> _GraphMetricsContextBundle:
+    opts = inputs.options or GraphMetricsOptions()
+    runtime = GraphRuntimeOptions(
+        snapshot=inputs.snapshot,
+        backend=GraphBackendConfig(use_gpu=inputs.use_gpu),
+        features=GraphFeatureFlags(community_detection_limit=inputs.community_detection_limit),
+    )
+    filters = inputs.filters or GraphMetricFilters()
+    log.info(
+        "graph_metrics.filters repo=%s commit=%s functions=%d modules=%d subsystems=%d",
+        inputs.snapshot.repo,
+        inputs.snapshot.commit,
+        len(filters.function_goids or ()),
+        len(filters.modules or ()),
+        len(filters.subsystems or ()),
+    )
+    overrides = GraphContextOverrides(
+        options=opts,
+        use_gpu=inputs.use_gpu,
+        community_detection_limit=inputs.community_detection_limit,
+    )
+    return _GraphMetricsContextBundle(
+        runtime=runtime,
+        filters=filters,
+        overrides=overrides,
+    )
+
+
+def build_graph_metrics_function_rows(
+    inputs: GraphMetricsInputs,
+) -> ColumnarRowBuffer:
+    """Build function graph metrics rows for analytics outputs.
+
+    Parameters
+    ----------
+    inputs
+        Structured graph metric inputs (graphs, filters, options, and snapshot).
+
+    Returns
+    -------
+    ColumnarRowBuffer
+        Buffer containing function-level graph metrics rows.
+    """
+    context = _resolve_graph_metrics_context(inputs)
+    config = MetricsPipelineConfig(
+        table_key="analytics.graph_metrics_functions",
+        filter_graph=lambda filters, graph: filters.filter_call_graph(graph),
+        build_context=context.build_context,
+        build_views=build_graph_views,
+        build_slices=_function_metric_slices,
+        build_rows=_function_metric_rows,
+    )
+    request = MetricsPipelineRequest(
+        repo=inputs.snapshot.repo,
+        commit=inputs.snapshot.commit,
+        graph=inputs.call_graph,
+        runtime=context.runtime,
+        filters=context.filters,
+    )
+    return build_metrics_pipeline_rows(config, request)
+
+
+def build_graph_metrics_module_rows(
+    inputs: GraphMetricsInputs,
+) -> ColumnarRowBuffer:
+    """Build module graph metrics rows for analytics outputs.
+
+    Parameters
+    ----------
+    inputs
+        Structured graph metric inputs (graphs, filters, options, and snapshot).
+
+    Returns
+    -------
+    ColumnarRowBuffer
+        Buffer containing module-level graph metrics rows.
+    """
+    context = _resolve_graph_metrics_context(inputs)
+    module_slice_inputs = _ModuleMetricSliceInputs(
+        symbol_module_edges=inputs.symbol_module_edges,
+        module_names=inputs.module_names,
+        component_meta_cache=inputs.component_meta,
+        filters=context.filters,
+    )
+
+    def _module_slices(views: GraphViews, ctx: GraphContext) -> ModuleMetricSlices:
+        return _module_metric_slices(views, ctx, module_slice_inputs)
+
+    config = MetricsPipelineConfig(
+        table_key="analytics.graph_metrics_modules",
+        filter_graph=lambda filters, graph: filters.filter_import_graph(graph),
+        build_context=context.build_context,
+        build_views=build_graph_views,
+        build_slices=_module_slices,
+        build_rows=_module_metric_rows,
+    )
+    request = MetricsPipelineRequest(
+        repo=inputs.snapshot.repo,
+        commit=inputs.snapshot.commit,
+        graph=inputs.import_graph,
+        runtime=context.runtime,
+        filters=context.filters,
+    )
+    return build_metrics_pipeline_rows(config, request)
+
+
 def build_graph_metrics_rows(
     inputs: GraphMetricsInputs,
 ) -> GraphMetricsRows:
@@ -331,83 +459,44 @@ def build_graph_metrics_rows(
     GraphMetricsRows
         Row bundles for graph metrics tables.
     """
-    opts = inputs.options or GraphMetricsOptions()
-    runtime = GraphRuntimeOptions(
-        snapshot=inputs.snapshot,
-        backend=GraphBackendConfig(use_gpu=inputs.use_gpu),
-        features=GraphFeatureFlags(community_detection_limit=inputs.community_detection_limit),
-    )
-    active_filters = inputs.filters or GraphMetricFilters()
-    log.info(
-        "graph_metrics.filters repo=%s commit=%s functions=%d modules=%d subsystems=%d",
-        inputs.snapshot.repo,
-        inputs.snapshot.commit,
-        len(active_filters.function_goids or ()),
-        len(active_filters.modules or ()),
-        len(active_filters.subsystems or ()),
-    )
-    overrides = GraphContextOverrides(
-        options=opts,
-        use_gpu=inputs.use_gpu,
-        community_detection_limit=inputs.community_detection_limit,
-    )
-
-    def _build_context(
-        runtime_opts: GraphRuntimeOptions,
-        repo: str,
-        commit: str,
-    ) -> GraphContext:
-        return _GRAPH_CONTEXT_FACTORY.build(
-            runtime_opts,
-            repo=repo,
-            commit=commit,
-            overrides=overrides,
-        )
-
-    function_config = MetricsPipelineConfig(
-        table_key="analytics.graph_metrics_functions",
-        filter_graph=lambda filters, graph: filters.filter_call_graph(graph),
-        build_context=_build_context,
-        build_views=build_graph_views,
-        build_slices=_function_metric_slices,
-        build_rows=_function_metric_rows,
-    )
-    function_request = MetricsPipelineRequest(
-        repo=inputs.snapshot.repo,
-        commit=inputs.snapshot.commit,
-        graph=inputs.call_graph,
-        runtime=runtime,
-        filters=active_filters,
-    )
-    function_rows = build_metrics_pipeline_rows(function_config, function_request)
-
-    module_slice_inputs = _ModuleMetricSliceInputs(
-        symbol_module_edges=inputs.symbol_module_edges,
-        module_names=inputs.module_names,
-        component_meta_cache=inputs.component_meta,
-        filters=active_filters,
-    )
-
-    def _module_slices(views: GraphViews, ctx: GraphContext) -> ModuleMetricSlices:
-        return _module_metric_slices(views, ctx, module_slice_inputs)
-
-    module_config = MetricsPipelineConfig(
-        table_key="analytics.graph_metrics_modules",
-        filter_graph=lambda filters, graph: filters.filter_import_graph(graph),
-        build_context=_build_context,
-        build_views=build_graph_views,
-        build_slices=_module_slices,
-        build_rows=_module_metric_rows,
-    )
-    module_request = MetricsPipelineRequest(
-        repo=inputs.snapshot.repo,
-        commit=inputs.snapshot.commit,
-        graph=inputs.import_graph,
-        runtime=runtime,
-        filters=active_filters,
-    )
-    module_rows = build_metrics_pipeline_rows(module_config, module_request)
+    function_rows = build_graph_metrics_function_rows(inputs)
+    module_rows = build_graph_metrics_module_rows(inputs)
     return GraphMetricsRows(function_rows=function_rows, module_rows=module_rows)
+
+
+def build_graph_metrics_readers(
+    inputs: GraphMetricsInputs,
+    *,
+    use_threads: bool | None = None,
+) -> GraphMetricsRows:
+    """Execute graph metrics via the rustworkx external plan runner.
+
+    Parameters
+    ----------
+    inputs
+        Structured graph metric inputs (graphs, filters, options, and snapshot).
+    use_threads
+        Whether to enable threaded execution for rustworkx plans.
+
+    Returns
+    -------
+    GraphMetricsRows
+        Row sources for graph metrics tables.
+    """
+    function_reader = run_rustworkx_external_plan(
+        builder=build_graph_metrics_function_rows,
+        args=(inputs,),
+        use_threads=use_threads,
+    )
+    module_reader = run_rustworkx_external_plan(
+        builder=build_graph_metrics_module_rows,
+        args=(inputs,),
+        use_threads=use_threads,
+    )
+    return GraphMetricsRows(
+        function_rows=function_reader,
+        module_rows=module_reader,
+    )
 
 
 def _function_metric_slices(

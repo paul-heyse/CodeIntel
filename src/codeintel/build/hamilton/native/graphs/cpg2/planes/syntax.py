@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pyarrow as pa
 
@@ -15,6 +15,7 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     lookup_keys,
 )
 from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import iter_array_values, normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import scalar_from_compute
@@ -22,10 +23,14 @@ from codeintel.build.tabular.compute_masks import is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_payload
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
-from codeintel.build.tabular.plan_ops import HashJoinSpec, materialize_plan
-from codeintel.core.columnar.arrowdsl import join_safe_projection
+from codeintel.build.tabular.plan_ops import HashJoinSpec
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, join_safe_projection
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
+from codeintel.core.schemas.primitives import resolve_join_safe_columns
 
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -58,14 +63,21 @@ def _syntax_anchor_map(syntax_nodes: pa.Table, *, include_source_pk_json: bool =
         Anchor map containing syntax node identifiers.
     """
     normalized = canonicalize_for_table(syntax_nodes, table_key=SYNTAX_NODES_TABLE_KEY)
-    normalized = join_safe_projection(normalize_table_for_join(normalized))
+    allowlist = _join_safe_allowlist(SYNTAX_NODES_TABLE_KEY)
+    normalized = join_safe_projection(
+        normalize_table_for_join(normalized, allowed_columns=allowlist),
+        allowed_columns=allowlist,
+    )
     anchors = build_anchor_map(
         normalized,
         table_key=SYNTAX_NODES_TABLE_KEY,
         pk_columns=identity_keys(SYNTAX_NODES_TABLE_KEY),
         include_source_pk_json=include_source_pk_json,
     )
-    return join_safe_projection(normalize_table_for_join(anchors))
+    return join_safe_projection(
+        normalize_table_for_join(anchors, allowed_columns=allowlist),
+        allowed_columns=allowlist,
+    )
 
 
 def cpg2_nodes__syntax_nodes(
@@ -98,7 +110,11 @@ def cpg2_nodes__syntax_nodes(
             "extras",
         ),
     )
-    normalized = join_safe_projection(normalize_table_for_join(base))
+    allowlist = _join_safe_allowlist(SYNTAX_NODES_TABLE_KEY)
+    normalized = join_safe_projection(
+        normalize_table_for_join(base, allowed_columns=allowlist),
+        allowed_columns=allowlist,
+    )
     if "extras_kv" not in normalized.column_names:
         extras_kv = _extras_kv_column(normalized, column_name="extras")
         normalized = normalized.append_column("extras_kv", extras_kv)
@@ -117,7 +133,11 @@ def cpg2_nodes__syntax_nodes(
     )
     normalized = precheck.good
     anchor_map = join_safe_projection(
-        normalize_table_for_join(_syntax_anchor_map(normalized, include_source_pk_json=True))
+        normalize_table_for_join(
+            _syntax_anchor_map(normalized, include_source_pk_json=True),
+            allowed_columns=allowlist,
+        ),
+        allowed_columns=allowlist,
     )
     left_plan = build_table_plan(
         table=normalized,
@@ -176,7 +196,7 @@ def cpg2_nodes__syntax_nodes(
             ("node_id", "ascending"),
         ]
     )
-    joined = materialize_plan(joined, use_threads=True)
+    joined = _plan_to_table(joined, use_threads=True)
     joined = append_constant_columns(
         joined,
         {
@@ -215,13 +235,21 @@ def cpg2_edges__syntax_edges(
     required = set(join_keys) | {"parent_node_id", "child_node_id"}
     if not required.issubset(set(syntax_edges.column_names)):
         return _empty_edge_table()
+    node_allowlist = _join_safe_allowlist(SYNTAX_NODES_TABLE_KEY)
     anchor_map = join_safe_projection(
-        normalize_table_for_join(_syntax_anchor_map(syntax_nodes, include_source_pk_json=False))
+        normalize_table_for_join(
+            _syntax_anchor_map(syntax_nodes, include_source_pk_json=False),
+            allowed_columns=node_allowlist,
+        ),
+        allowed_columns=node_allowlist,
     )
+    edge_allowlist = _join_safe_allowlist("core.syntax_edges")
     normalized_edges = join_safe_projection(
         normalize_table_for_join(
-            canonicalize_for_table(syntax_edges, table_key="core.syntax_edges")
-        )
+            canonicalize_for_table(syntax_edges, table_key="core.syntax_edges"),
+            allowed_columns=edge_allowlist,
+        ),
+        allowed_columns=edge_allowlist,
     )
     join_keys = ["repo", "commit", "rel_path", "producer", "parent_node_id", "child_node_id"]
     precheck = finalize_join_keys(
@@ -291,7 +319,7 @@ def cpg2_edges__syntax_edges(
             ("child_ordinal", "ascending"),
         ]
     )
-    parent_join = materialize_plan(parent_join, use_threads=True)
+    parent_join = _plan_to_table(parent_join, use_threads=True)
     if parent_join.num_rows == 0:
         return _empty_edge_table()
     child_plan = build_table_plan(
@@ -337,7 +365,7 @@ def cpg2_edges__syntax_edges(
             ("child_ordinal", "ascending"),
         ]
     )
-    child_join = materialize_plan(child_join, use_threads=True)
+    child_join = _plan_to_table(child_join, use_threads=True)
     if child_join.num_rows == 0:
         return _empty_edge_table()
     child_join = rename_table_columns(
@@ -420,6 +448,24 @@ def _extras_kv_column(table: pa.Table, *, column_name: str) -> pa.Array:
         extras_kv_from_payload(value) for value in iter_array_values(table.column(column_name))
     ]
     return pa.array(values, type=map_type)
+
+
+def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    if not use_threads:
+        execution_ctx = replace(execution_ctx, use_threads=False)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
+
+
+def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
+    if table_key is None:
+        return ()
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        return ()
+    return resolve_join_safe_columns(schema)
 
 
 __all__ = [

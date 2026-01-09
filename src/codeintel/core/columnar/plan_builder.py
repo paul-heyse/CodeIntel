@@ -9,7 +9,10 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    resolve_execution_context,
+)
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.plan_ops import (
     Plan,
@@ -213,10 +216,16 @@ def plan_from_schema_defaults(
         Plan compiled with schema defaults for projection and ordering.
     """
     table_schema = schema_service.get_table_schema(request.table_key)
+    available_columns = tuple(request.dataset.schema.names)
+    provenance_columns = _provenance_columns_for_context(
+        ctx=request.ctx,
+        available_columns=available_columns,
+    )
     projection = projection_spec_from_schema_defaults(
         request.columns,
         table_schema=table_schema,
-        available_columns=tuple(request.dataset.schema.names),
+        available_columns=available_columns,
+        provenance_columns=provenance_columns,
     )
     spec = QuerySpec(
         predicate=request.predicate,
@@ -279,6 +288,26 @@ def _include_provenance(table: pa.Table, *, ctx: ExecutionContext | None) -> boo
         return False
     column_names = set(table.column_names)
     return all(output_name in column_names for output_name, _source_name in PROVENANCE_FIELDS)
+
+
+def _provenance_columns_for_context(
+    *,
+    ctx: ExecutionContext | None,
+    available_columns: Sequence[str],
+) -> tuple[str, ...]:
+    resolved_ctx = resolve_execution_context(ctx)
+    provenance = resolved_ctx.provenance
+    profile = resolved_ctx.runtime_profile
+    if profile is not None:
+        provenance = profile.resolve_provenance(default=provenance)
+    if resolved_ctx.resolve_determinism() == "canonical":
+        provenance = True
+    if not provenance:
+        return ()
+    available = set(available_columns)
+    return tuple(
+        output_name for output_name, _source_name in PROVENANCE_FIELDS if output_name in available
+    )
 
 
 __all__ = [

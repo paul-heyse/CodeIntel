@@ -17,15 +17,18 @@ from codeintel.build.graphs.rx.build_from_edges import (
     EdgeBuildSpec,
     build_store_from_edge_tuples,
 )
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, stable_key
+from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
+from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, DEFAULT_WEIGHT_POLICY
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
+from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.data_models.ids import as_int
 
@@ -320,11 +323,15 @@ def _module_rowset(
             "tags": E.field("tags") if "tags" in frame.column_names else E.scalar(None),
         }
     )
-    plan = plan.aggregate(
-        keys=[E.field("module")],
-        aggregates=[("tags", "list", None, "tags")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("module",),
+            aggregates=[("tags", "list", None, "tags")],
+        ),
+        ctx=ctx,
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _module_lookup_table(
@@ -355,11 +362,15 @@ def _module_lookup_table(
         }
     )
     plan = plan.filter(E.and_(E.is_valid("path"), E.is_valid("module")))
-    plan = plan.aggregate(
-        keys=[E.field("path")],
-        aggregates=[("module", "min", None, "module")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("path",),
+            aggregates=[("module", "min", None, "module")],
+        ),
+        ctx=ctx,
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _symbol_module_edge_table(
@@ -457,11 +468,15 @@ def _symbol_edge_rowset(
         context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
     )
     plan = plan.filter(E.and_(E.is_valid("use_path"), E.is_valid("def_path")))
-    plan = plan.aggregate(
-        keys=[E.field("use_path"), E.field("def_path")],
-        aggregates=[("use_path", "count", None, "edge_count")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("use_path", "def_path"),
+            aggregates=[("use_path", "count", None, "edge_count")],
+        ),
+        ctx=ctx,
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _import_edge_rowset(
@@ -482,11 +497,15 @@ def _import_edge_rowset(
         context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
     )
     plan = plan.filter(E.and_(E.is_valid("src_module"), E.is_valid("dst_module")))
-    plan = plan.aggregate(
-        keys=[E.field("src_module"), E.field("dst_module")],
-        aggregates=[("src_module", "count", None, "edge_count")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("src_module", "dst_module"),
+            aggregates=[("src_module", "count", None, "edge_count")],
+        ),
+        ctx=ctx,
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _config_module_rowset(
@@ -519,11 +538,15 @@ def _config_module_rowset(
             "reference_modules": E.field(("extras", "reference_modules")),
         }
     )
-    plan = plan.aggregate(
-        keys=[E.field("config_path"), E.field("key")],
-        aggregates=[("reference_modules", "list", None, "reference_modules")],
+    filtered = _materialize_plan(plan, ctx=ctx)
+    return grouped_rollup_table(
+        filtered,
+        spec=GroupedRollupSpec(
+            keys=("config_path", "key"),
+            aggregates=[("reference_modules", "list", None, "reference_modules")],
+        ),
+        ctx=ctx,
     )
-    return _materialize_plan(plan, ctx=ctx)
 
 
 def _flatten_tags(raw: object) -> list[str]:
@@ -566,11 +589,7 @@ def graph_to_adjacency(graph: GraphInput) -> dict[str, dict[str, float]]:
     """
     store = ensure_store(graph)
     adjacency: dict[str, dict[str, float]] = defaultdict(dict)
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_id = store.index_to_id[src_idx]
-        dst_id = store.index_to_id[dst_idx]
-        payload = store.graph.get_edge_data(src_idx, dst_idx)
-        weight = edge_weight_from_payload(payload)
+    for src_id, dst_id, weight in iter_edge_id_weights(store):
         src_key = str(src_id)
         dst_key = str(dst_id)
         adjacency[src_key][dst_key] = weight
@@ -769,4 +788,5 @@ def _materialize_plan(
     ctx: ExecutionContext | None,
 ) -> pa.Table:
     execution_ctx = resolve_execution_context(ctx)
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)

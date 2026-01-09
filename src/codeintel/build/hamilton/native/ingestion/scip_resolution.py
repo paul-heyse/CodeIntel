@@ -7,11 +7,15 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Literal
 
 import pyarrow as pa
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.ingestion.manifesting import (
+    finalize_ingest_reader_with_manifest,
+)
 from codeintel.build.hamilton.native.patterns import (
     MultiTableTargetContext,
     RelationTableSaveSpec,
@@ -20,15 +24,8 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import (
-    IngestFinalizeOptions,
-    finalize_ingest_reader,
-    scoped_table_for_ingest,
-)
-from codeintel.build.tabular.arrow_ops import (
-    dedupe_table_for_table,
-    normalize_table_for_join,
-)
+from codeintel.build.hamilton.transforms.ingestion_normalize import scoped_table_for_ingest
+from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import constant_array
 from codeintel.build.tabular.compute_helpers import (
     array_from_compute,
@@ -44,7 +41,6 @@ from codeintel.build.tabular.compute_masks import (
     not_equal_mask,
 )
 from codeintel.build.tabular.conversion import table_to_reader
-from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -56,11 +52,20 @@ from codeintel.build.tabular.finalize_ops import (
 from codeintel.build.tabular.kernels import hash_struct_goid
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.iter import iter_array_values
-from codeintel.core.columnar.kernels import SortKey
-from codeintel.core.columnar.plan_builder import build_table_plan
-from codeintel.core.columnar.plan_kernels import grouped_rollup_table
-from codeintel.core.columnar.plan_ops import materialize_plan
+from codeintel.core.columnar.kernels import SortKey, case_when
+from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
+from codeintel.core.columnar.plan_kernels import (
+    GroupedRollupSpec,
+    WinnerSelectionSpec,
+    grouped_rollup_table,
+    select_winner_rows,
+)
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -97,6 +102,22 @@ _MATCH_CONFIDENCE_BYTE_SPAN = 1.0
 _MATCH_CONFIDENCE_LINE_COL = 0.8
 _MATCH_CONFIDENCE_LINE_SPAN = 1.0
 _MATCH_CONFIDENCE_LINE_START = 0.6
+_MATCH_PRIORITY_COLUMN = "match_priority"
+_MATCH_PRIORITY_BY_KIND = {
+    _MATCH_KIND_BYTE_SPAN: 4,
+    _MATCH_KIND_LINE_COL: 3,
+    _MATCH_KIND_LINE_SPAN: 2,
+    _MATCH_KIND_LINE_START: 1,
+}
+_SYMBOL_GOID_XREF_KEY_COLUMNS = ("repo", "commit", "scip_symbol")
+_SYMBOL_GOID_XREF_TIE_BREAKERS = (
+    "goid_h128",
+    "def_rel_path",
+    "def_start_line",
+    "def_start_col",
+    "def_end_line",
+    "def_end_col",
+)
 
 _JOIN_STRING_KEYS = {"repo", "commit", "rel_path", "scip_symbol"}
 _JOIN_INT_KEYS = {
@@ -248,7 +269,7 @@ def _hash_join_tables(
         ),
     )
     joined = joined.order_by(sort_keys=[(key, "ascending") for key in spec.left_keys])
-    return materialize_plan(joined, use_threads=True)
+    return _plan_to_table(joined)
 
 
 @dataclass(frozen=True)
@@ -544,10 +565,12 @@ def _goids_by_start_line(goids: pa.Table) -> pa.Table:
     if goids.num_rows == 0 or not required.issubset(set(goids.column_names)):
         return goids
     grouped = grouped_rollup_table(
-        table=goids,
-        keys=("rel_path", "start_line"),
-        aggregates=(("goid_h128", "min", None, "goid_h128"),),
-        order_by=(("rel_path", "ascending"), ("start_line", "ascending")),
+        goids,
+        spec=GroupedRollupSpec(
+            keys=("rel_path", "start_line"),
+            aggregates=(("goid_h128", "min", None, "goid_h128"),),
+            order_by=(("rel_path", "ascending"), ("start_line", "ascending")),
+        ),
     )
     return grouped.select(["rel_path", "start_line", "goid_h128"])
 
@@ -757,6 +780,71 @@ def _log_symbol_goid_coverage(table: pa.Table) -> None:
     )
 
 
+def _sort_keys_for_columns(
+    table: pa.Table,
+    columns: Sequence[str],
+    *,
+    order: Literal["ascending", "descending"],
+) -> tuple[SortKey, ...]:
+    available = set(table.column_names)
+    return tuple((name, order) for name in columns if name in available)
+
+
+def _match_priority_array(
+    match_kind: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    cases = [
+        (
+            equal_mask(match_kind, pa.scalar(kind, type=match_kind.type)),
+            pa.scalar(priority),
+        )
+        for kind, priority in _MATCH_PRIORITY_BY_KIND.items()
+    ]
+    return case_when(cases, else_=pa.scalar(0))
+
+
+def _append_match_priority(table: pa.Table) -> pa.Table:
+    if table.num_rows == 0 or "match_kind" not in table.column_names:
+        return table
+    match_kind = table["match_kind"]
+    priorities = _match_priority_array(match_kind)
+    return table.append_column(_MATCH_PRIORITY_COLUMN, priorities)
+
+
+def _dedupe_symbol_goid_xref(table: pa.Table) -> pa.Table:
+    if table.num_rows == 0:
+        return table
+    with_priority = _append_match_priority(table)
+    order_by = (
+        *_sort_keys_for_columns(
+            with_priority,
+            (_MATCH_PRIORITY_COLUMN,),
+            order="descending",
+        ),
+        *_sort_keys_for_columns(
+            with_priority,
+            ("match_confidence",),
+            order="descending",
+        ),
+    )
+    tie_breakers = _sort_keys_for_columns(
+        with_priority,
+        _SYMBOL_GOID_XREF_TIE_BREAKERS,
+        order="ascending",
+    )
+    deduped = select_winner_rows(
+        with_priority,
+        spec=WinnerSelectionSpec(
+            key_columns=_SYMBOL_GOID_XREF_KEY_COLUMNS,
+            order_by=order_by,
+            tie_breakers=tie_breakers,
+        ),
+    )
+    if _MATCH_PRIORITY_COLUMN in deduped.column_names:
+        return deduped.drop_columns([_MATCH_PRIORITY_COLUMN])
+    return deduped
+
+
 def _symbol_goid_xref_table(
     *,
     occurrences: pa.Table,
@@ -829,10 +917,7 @@ def _occurrence_span_xref_table(
     symbol_goid_xref: pa.Table,
     created_at: datetime,
 ) -> pa.Table:
-    goid_lookup_source = dedupe_table_for_table(
-        SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
-        symbol_goid_xref,
-    )
+    goid_lookup_source = _dedupe_symbol_goid_xref(symbol_goid_xref)
     goid_lookup = goid_lookup_source.select(
         [
             "repo",
@@ -1041,7 +1126,7 @@ def _occurrence_syntax_occurrences_table(occurrences_table: pa.Table) -> pa.Tabl
         "occ_end_byte": E.field("end_byte"),
     }
     occurrences_plan = build_table_plan(table=occurrences_table).project(project)
-    occurrences = materialize_plan(occurrences_plan, use_threads=True)
+    occurrences = _plan_to_table(occurrences_plan)
     hashed = hash_struct_goid(occurrences, columns=_OCCURRENCE_ID_COLUMNS)
     occurrence_ids = cast_array(hashed, pa.string(), safe=False)
     return occurrences.append_column("scip_occurrence_id", occurrence_ids)
@@ -1056,9 +1141,13 @@ def _occurrence_syntax_producers_table(nodes_table: pa.Table) -> pa.Table:
     )
     project = {name: E.field(name) for name in join_keys}
     plan = build_table_plan(table=checked).project(project)
-    plan = plan.aggregate(keys=[E.field(name) for name in join_keys], aggregates=[])
-    plan = plan.order_by(sort_keys=[(name, "ascending") for name in join_keys])
-    return materialize_plan(plan, use_threads=True)
+    plan = build_grouped_rollup_plan(
+        plan,
+        keys=join_keys,
+        aggregates=(),
+        order_by=tuple((name, "ascending") for name in join_keys),
+    )
+    return _plan_to_table(plan)
 
 
 def _occurrence_syntax_pairs_table(occurrences: pa.Table, producers: pa.Table) -> pa.Table:
@@ -1085,7 +1174,7 @@ def _occurrence_syntax_pairs_table(occurrences: pa.Table, producers: pa.Table) -
             right_output=["producer"],
         ),
     )
-    return materialize_plan(plan, use_threads=True)
+    return _plan_to_table(plan)
 
 
 def _occurrence_syntax_match_table(
@@ -1126,12 +1215,17 @@ def _occurrence_syntax_match_table(
             right_output=["producer", "node_id"],
         ),
     )
-    grouped = joined.aggregate(
-        keys=[E.field(name) for name in (*_OCCURRENCE_MATCH_BASE_COLUMNS, "producer")],
-        aggregates=[
+    grouped = build_grouped_rollup_plan(
+        joined,
+        keys=(*_OCCURRENCE_MATCH_BASE_COLUMNS, "producer"),
+        aggregates=(
             ("node_id", "min", None, "syntax_node_id"),
             ("node_id", "count", None, "candidate_count"),
-        ],
+        ),
+        order_by=tuple(
+            (name, "ascending")
+            for name in (*_OCCURRENCE_MATCH_BASE_COLUMNS, "producer")
+        ),
     )
     project = {
         "repo": E.field("repo"),
@@ -1143,7 +1237,7 @@ def _occurrence_syntax_match_table(
         "match_kind": E.scalar(match_kind),
         "candidate_count": E.field("candidate_count"),
     }
-    return materialize_plan(grouped.project(project), use_threads=True)
+    return _plan_to_table(grouped.project(project))
 
 
 def _occurrence_syntax_left_anti(left: pa.Table, right: pa.Table) -> pa.Table:
@@ -1171,7 +1265,13 @@ def _occurrence_syntax_left_anti(left: pa.Table, right: pa.Table) -> pa.Table:
             right_output=[],
         ),
     )
-    return materialize_plan(plan, use_threads=True)
+    return _plan_to_table(plan)
+
+
+def _plan_to_table(plan: Plan) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def _empty_occurrence_match_table(pairs: pa.Table) -> pa.Table:
@@ -1226,9 +1326,17 @@ def scip_resolution__frames(
 
 
 def scip_resolution__symbol_goid_xref__base(
+    env: BuildEnv,
     scip_resolution__frames: ScipResolutionFrames,
 ) -> pa.Table:
     """Return rows for core.scip_symbol_goid_xref.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    scip_resolution__frames
+        Resolved SCIP frames.
 
     Returns
     -------
@@ -1239,17 +1347,26 @@ def scip_resolution__symbol_goid_xref__base(
     if table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
     reader = table_to_reader(table, batch_size=None)
-    return finalize_ingest_reader(
-        SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
-        reader,
-        options=IngestFinalizeOptions(target_name=SCIP_RESOLUTION_TARGET_NAME),
+    return finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
+        reader=reader,
+        target_name=SCIP_RESOLUTION_TARGET_NAME,
     )
 
 
 def scip_resolution__occurrence_span_xref__base(
+    env: BuildEnv,
     scip_resolution__frames: ScipResolutionFrames,
 ) -> pa.Table:
     """Return rows for core.scip_occurrence_span_xref.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    scip_resolution__frames
+        Resolved SCIP frames.
 
     Returns
     -------
@@ -1260,18 +1377,29 @@ def scip_resolution__occurrence_span_xref__base(
     if table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
     reader = table_to_reader(table, batch_size=None)
-    return finalize_ingest_reader(
-        SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
-        reader,
-        options=IngestFinalizeOptions(target_name=SCIP_RESOLUTION_TARGET_NAME),
+    return finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
+        reader=reader,
+        target_name=SCIP_RESOLUTION_TARGET_NAME,
     )
 
 
 def scip_resolution__occurrence_syntax_xref__base(
+    env: BuildEnv,
     scip_resolution__frames: ScipResolutionFrames,
     q__core__syntax_nodes: InferableTabularInput,
 ) -> pa.Table:
     """Return rows for core.scip_occurrence_syntax_xref.
+
+    Parameters
+    ----------
+    env
+        Build environment with snapshot metadata.
+    scip_resolution__frames
+        Resolved SCIP frames.
+    q__core__syntax_nodes
+        Syntax node inputs for occurrence resolution.
 
     Returns
     -------
@@ -1366,10 +1494,11 @@ def scip_resolution__occurrence_syntax_xref__base(
         .project({name: E.field(name) for name in _OCCURRENCE_SYNTAX_OUTPUT_COLUMNS})
     )
     reader = ordered.to_reader(use_threads=True)
-    return finalize_ingest_reader(
-        SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
-        reader,
-        options=IngestFinalizeOptions(target_name=SCIP_RESOLUTION_TARGET_NAME),
+    return finalize_ingest_reader_with_manifest(
+        env=env,
+        table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
+        reader=reader,
+        target_name=SCIP_RESOLUTION_TARGET_NAME,
     )
 
 

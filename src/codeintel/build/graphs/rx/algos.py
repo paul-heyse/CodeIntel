@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import heapq
 import math
 import os
@@ -12,7 +13,9 @@ from dataclasses import dataclass
 from typing import cast
 
 import rustworkx as rx
+from rustworkx import visit
 
+from codeintel.build.graphs.rx.components import sort_components
 from codeintel.build.graphs.rx.convert import store_from_rx
 from codeintel.build.graphs.rx.iterators import (
     iter_edge_payloads,
@@ -23,6 +26,7 @@ from codeintel.build.graphs.rx.normalize import (
     NanPolicy,
     normalize_mapping,
     sorted_mapping,
+    sorted_nested_mapping,
     stable_key,
 )
 from codeintel.build.graphs.rx.policies import GraphNumericPolicy
@@ -144,6 +148,22 @@ class WeightContext:
     nan_policy: NanPolicy
     semantics: WeightSemantics
     epsilon: float
+
+
+@dataclass
+class _BfsDepthVisitor(visit.BFSVisitor):
+    """BFS visitor that records bounded hop distances."""
+
+    distances: dict[int, int]
+    max_depth: int | None
+
+    def tree_edge(self, e: tuple[int, int, object]) -> None:
+        src_idx, dst_idx, _payload = e
+        parent_distance = self.distances.get(src_idx, 0)
+        distance = parent_distance + 1
+        if self.max_depth is not None and distance > self.max_depth:
+            raise visit.PruneSearch
+        self.distances[dst_idx] = distance
 
 
 def _apply_rayon_threads(config: GraphAlgoConfig | None) -> None:
@@ -458,6 +478,209 @@ def graph_edge_count(graph: GraphInput) -> int:
     if isinstance(graph, (rx.PyGraph, rx.PyDiGraph)):
         return graph.num_edges()
     return 0
+
+
+def in_degree_by_id(graph: GraphInput) -> dict[Hashable, int]:
+    """Return in-degree counts keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, int]
+        Mapping of node ids to in-degree counts.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return {}
+    directed_graph = _directed_graph(store)
+    mapping = {
+        node_id: int(directed_graph.in_degree(store.id_to_index[node_id]))
+        for node_id in store.node_ids()
+    }
+    return sorted_mapping(mapping)
+
+
+def out_degree_by_id(graph: GraphInput) -> dict[Hashable, int]:
+    """Return out-degree counts keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, int]
+        Mapping of node ids to out-degree counts.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return {}
+    directed_graph = _directed_graph(store)
+    mapping = {
+        node_id: int(directed_graph.out_degree(store.id_to_index[node_id]))
+        for node_id in store.node_ids()
+    }
+    return sorted_mapping(mapping)
+
+
+def degree_by_id(graph: GraphInput) -> dict[Hashable, int]:
+    """Return undirected degree counts keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, int]
+        Mapping of node ids to undirected degree counts.
+    """
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
+        return {}
+    work_store = to_undirected_store(store)
+    undirected_graph = _undirected_graph(work_store)
+    mapping = {
+        node_id: int(undirected_graph.degree(work_store.id_to_index[node_id]))
+        for node_id in work_store.node_ids()
+    }
+    return sorted_mapping(mapping)
+
+
+def total_degree_by_id(graph: GraphInput) -> dict[Hashable, int]:
+    """Return total degree counts keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, int]
+        Mapping of node ids to total degree counts.
+    """
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
+        return {}
+    if store.is_directed:
+        directed_graph = _directed_graph(store)
+        mapping = {
+            node_id: int(
+                directed_graph.in_degree(store.id_to_index[node_id])
+                + directed_graph.out_degree(store.id_to_index[node_id])
+            )
+            for node_id in store.node_ids()
+        }
+        return sorted_mapping(mapping)
+    undirected_graph = _undirected_graph(store)
+    mapping = {
+        node_id: int(undirected_graph.degree(store.id_to_index[node_id]))
+        for node_id in store.node_ids()
+    }
+    return sorted_mapping(mapping)
+
+
+def successors_by_id(
+    graph: GraphInput,
+    node_id: Hashable,
+) -> list[Hashable]:
+    """Return successor node ids with stable ordering.
+
+    Returns
+    -------
+    list[Hashable]
+        Successor node ids ordered by stable key.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return []
+    node_idx = store.id_to_index.get(node_id)
+    if node_idx is None:
+        return []
+    directed_graph = _directed_graph(store)
+    successors = [store.index_to_id[idx] for idx in directed_graph.successor_indices(node_idx)]
+    return sorted(successors, key=stable_key)
+
+
+def predecessors_by_id(
+    graph: GraphInput,
+    node_id: Hashable,
+) -> list[Hashable]:
+    """Return predecessor node ids with stable ordering.
+
+    Returns
+    -------
+    list[Hashable]
+        Predecessor node ids ordered by stable key.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return []
+    node_idx = store.id_to_index.get(node_id)
+    if node_idx is None:
+        return []
+    directed_graph = _directed_graph(store)
+    predecessors = [store.index_to_id[idx] for idx in directed_graph.predecessor_indices(node_idx)]
+    return sorted(predecessors, key=stable_key)
+
+
+def insert_node_on_out_edges_by_id(
+    store: RxGraphStore,
+    node_id: Hashable,
+    ref_node_id: Hashable,
+    *,
+    attrs: Mapping[str, object] | None = None,
+) -> int | None:
+    """Insert an existing node between a reference node and its successors.
+
+    Returns
+    -------
+    int | None
+        Node index for the inserted node, or None if the reference node is missing.
+
+    Raises
+    ------
+    ValueError
+        If the store is not directed.
+    """
+    if not store.is_directed:
+        message = "insert_node_on_out_edges_by_id requires a directed graph store"
+        raise ValueError(message)
+    ref_idx = store.id_to_index.get(ref_node_id)
+    if ref_idx is None:
+        return None
+    node_idx = store.ensure_node(node_id)
+    if attrs:
+        store.set_node_attrs(node_id, attrs)
+    directed_graph = _directed_graph(store)
+    directed_graph.insert_node_on_out_edges(node_idx, ref_idx)
+    store.touch()
+    return node_idx
+
+
+def remove_node_retain_edges_by_id(
+    store: RxGraphStore,
+    node_id: Hashable,
+    *,
+    use_outgoing: bool = False,
+    condition: Callable[[object, object], bool] | None = None,
+) -> bool:
+    """Remove a node while retaining predecessor-to-successor edges.
+
+    Returns
+    -------
+    bool
+        True when the node was removed.
+
+    Raises
+    ------
+    ValueError
+        If the store is not directed.
+    """
+    if not store.is_directed:
+        message = "remove_node_retain_edges_by_id requires a directed graph store"
+        raise ValueError(message)
+    node_idx = store.id_to_index.get(node_id)
+    if node_idx is None:
+        return False
+    directed_graph = _directed_graph(store)
+    directed_graph.remove_node_retain_edges(
+        node_idx,
+        use_outgoing=use_outgoing,
+        condition=condition,
+    )
+    store.id_to_index.pop(node_id, None)
+    store.index_to_id.pop(node_idx, None)
+    store.node_attrs.pop(node_id, None)
+    store.touch()
+    return True
 
 
 def pagerank_by_id(
@@ -1545,6 +1768,513 @@ def weighted_projection_store(
     return projected
 
 
+def connected_components_by_id(graph: GraphInput) -> list[set[Hashable]]:
+    """Return connected components keyed by node id (undirected).
+
+    Returns
+    -------
+    list[set[Hashable]]
+        Components as sets of node identifiers.
+    """
+    store = ensure_store(graph)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
+        return []
+    undirected_graph = _undirected_graph(work_store)
+    components = [set(comp) for comp in rx.connected_components(undirected_graph)]
+    sorted_components = sort_components(work_store, components)
+    return [
+        {work_store.index_to_id[idx] for idx in component} for component in sorted_components
+    ]
+
+
+def weakly_connected_components_by_id(graph: GraphInput) -> list[set[Hashable]]:
+    """Return weakly connected components keyed by node id.
+
+    Returns
+    -------
+    list[set[Hashable]]
+        Components as sets of node identifiers.
+    """
+    store = ensure_store(graph)
+    if store.graph.num_nodes() == 0:
+        return []
+    if not store.is_directed:
+        return connected_components_by_id(store)
+    directed_graph = _directed_graph(store)
+    components = [set(comp) for comp in rx.weakly_connected_components(directed_graph)]
+    sorted_components = sort_components(store, components)
+    return [{store.index_to_id[idx] for idx in component} for component in sorted_components]
+
+
+def strongly_connected_components_by_id(graph: GraphInput) -> list[set[Hashable]]:
+    """Return strongly connected components keyed by node id.
+
+    Returns
+    -------
+    list[set[Hashable]]
+        Components as sets of node identifiers.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return []
+    directed_graph = _directed_graph(store)
+    components = [set(comp) for comp in rx.strongly_connected_components(directed_graph)]
+    sorted_components = sort_components(store, components)
+    return [{store.index_to_id[idx] for idx in component} for component in sorted_components]
+
+
+def bridges_by_id(graph: GraphInput) -> list[tuple[Hashable, Hashable]]:
+    """Return bridge edges keyed by node id.
+
+    Returns
+    -------
+    list[tuple[Hashable, Hashable]]
+        Bridge edge endpoints.
+    """
+    store = ensure_store(graph)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
+        return []
+    undirected_graph = _undirected_graph(work_store)
+    bridges: list[tuple[Hashable, Hashable]] = []
+    for edge in rx.bridges(undirected_graph):
+        src_idx, dst_idx = cast("tuple[int, int]", edge)
+        bridges.append((work_store.index_to_id[src_idx], work_store.index_to_id[dst_idx]))
+    return sorted(bridges, key=stable_key)
+
+
+def articulation_points_by_id(graph: GraphInput) -> list[Hashable]:
+    """Return articulation points keyed by node id.
+
+    Returns
+    -------
+    list[Hashable]
+        Articulation point node identifiers.
+    """
+    store = ensure_store(graph)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
+        return []
+    undirected_graph = _undirected_graph(work_store)
+    points = [work_store.index_to_id[idx] for idx in rx.articulation_points(undirected_graph)]
+    return sorted(points, key=stable_key)
+
+
+def simple_cycles_by_id(
+    graph: GraphInput,
+    *,
+    limit: int | None = None,
+) -> list[list[Hashable]]:
+    """Return simple cycles keyed by node id.
+
+    Returns
+    -------
+    list[list[Hashable]]
+        Cycles as ordered node id lists.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return []
+    directed_graph = _directed_graph(store)
+    cycles: list[list[Hashable]] = []
+    for cycle in rx.simple_cycles(directed_graph):
+        cycles.append([store.index_to_id[idx] for idx in cycle])
+        if limit is not None and len(cycles) >= limit:
+            break
+    cycles.sort(key=lambda path: stable_key(tuple(path)))
+    return cycles
+
+
+def topological_generations_by_id(graph: GraphInput) -> list[list[Hashable]]:
+    """Return topological generations keyed by node id.
+
+    Returns
+    -------
+    list[list[Hashable]]
+        Generation lists ordered by stable node identifiers.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return []
+    directed_graph = _directed_graph(store)
+    generations: list[list[Hashable]] = []
+    for generation in rx.topological_generations(directed_graph):
+        ordered = sorted(
+            generation,
+            key=lambda idx: stable_key(store.index_to_id[idx]),
+        )
+        generations.append([store.index_to_id[idx] for idx in ordered])
+    return generations
+
+
+def topological_layers_by_id(graph: GraphInput) -> dict[Hashable, int]:
+    """Return topological layers keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, int]
+        Node id to layer mapping.
+    """
+    layers: dict[Hashable, int] = {}
+    for layer, generation in enumerate(topological_generations_by_id(graph)):
+        for node_id in generation:
+            layers[node_id] = layer
+    return sorted_mapping(layers)
+
+
+def is_directed_acyclic(graph: GraphInput) -> bool:
+    """Return True when the directed graph is acyclic.
+
+    Returns
+    -------
+    bool
+        True when the directed graph has no cycles.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return True
+    directed_graph = _directed_graph(store)
+    try:
+        return rx.is_directed_acyclic_graph(directed_graph)
+    except rx.NullGraph:
+        return False
+
+
+def dag_longest_path_length(
+    graph: GraphInput,
+    *,
+    allow_condensation: bool = True,
+) -> int:
+    """Return longest path length for a DAG (condensing if needed).
+
+    Returns
+    -------
+    int
+        Longest path length, or 0 when unavailable.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return 0
+    directed_graph = _directed_graph(store)
+    try:
+        if rx.is_directed_acyclic_graph(directed_graph):
+            return int(rx.dag_longest_path_length(directed_graph))
+    except rx.NullGraph:
+        return 0
+    if not allow_condensation:
+        return 0
+    condensed = cast("rx.PyDiGraph", rx.condensation(directed_graph))
+    try:
+        return int(rx.dag_longest_path_length(condensed))
+    except (rx.DAGHasCycle, rx.NullGraph):
+        return 0
+
+
+def graph_distance_matrix(graph: GraphInput) -> list[list[float]]:
+    """Return an undirected graph distance matrix.
+
+    Returns
+    -------
+    list[list[float]]
+        Distance matrix for the undirected graph.
+    """
+    store = ensure_store(graph)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
+        return []
+    undirected_graph = _undirected_graph(work_store)
+    try:
+        return list(rx.graph_distance_matrix(undirected_graph))
+    except rx.NullGraph:
+        return []
+
+
+def graph_unweighted_average_shortest_path_length(
+    graph: GraphInput,
+) -> float | None:
+    """Return average shortest path length for an undirected graph.
+
+    Returns
+    -------
+    float | None
+        Average shortest path length, or None when unavailable.
+    """
+    store = ensure_store(graph)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
+        return None
+    undirected_graph = _undirected_graph(work_store)
+    try:
+        return float(rx.graph_unweighted_average_shortest_path_length(undirected_graph))
+    except rx.NullGraph:
+        return None
+
+
+def ancestors_by_id(
+    graph: GraphInput,
+    source: Hashable,
+    *,
+    include_source: bool = False,
+) -> set[Hashable]:
+    """Return ancestor nodes for a source id.
+
+    Returns
+    -------
+    set[Hashable]
+        Ancestor node ids (optionally including the source).
+    """
+    store = ensure_directed_store(graph)
+    source_idx = store.id_to_index.get(source)
+    if source_idx is None:
+        return {source} if include_source else set()
+    directed_graph = _directed_graph(store)
+    try:
+        ancestors = rx.ancestors(directed_graph, source_idx)
+    except (rx.InvalidNode, rx.NullGraph):
+        ancestors = set()
+    result = {store.index_to_id[idx] for idx in ancestors}
+    if include_source:
+        result.add(source)
+    return result
+
+
+def descendants_by_id(
+    graph: GraphInput,
+    source: Hashable,
+    *,
+    include_source: bool = False,
+) -> set[Hashable]:
+    """Return descendant nodes for a source id.
+
+    Returns
+    -------
+    set[Hashable]
+        Descendant node ids (optionally including the source).
+    """
+    store = ensure_directed_store(graph)
+    source_idx = store.id_to_index.get(source)
+    if source_idx is None:
+        return {source} if include_source else set()
+    directed_graph = _directed_graph(store)
+    try:
+        descendants = rx.descendants(directed_graph, source_idx)
+    except (rx.InvalidNode, rx.NullGraph):
+        descendants = set()
+    result = {store.index_to_id[idx] for idx in descendants}
+    if include_source:
+        result.add(source)
+    return result
+
+
+def bfs_distances_by_id(
+    graph: GraphInput,
+    source: Hashable,
+    *,
+    max_depth: int | None = None,
+) -> dict[Hashable, int]:
+    """Return BFS hop distances from a source node id.
+
+    Returns
+    -------
+    dict[Hashable, int]
+        Mapping of node ids to hop distances.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return {}
+    source_idx = store.id_to_index.get(source)
+    if source_idx is None:
+        return {}
+    distances: dict[int, int] = {source_idx: 0}
+    visitor = _BfsDepthVisitor(distances=distances, max_depth=max_depth)
+    with contextlib.suppress(visit.PruneSearch):
+        rx.bfs_search(_directed_graph(store), [source_idx], visitor)
+    return {store.index_to_id[idx]: dist for idx, dist in distances.items()}
+
+
+def digraph_shortest_path_lengths_by_id(
+    graph: GraphInput,
+    source: Hashable,
+    *,
+    weight: str | None = None,
+    nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
+) -> dict[Hashable, float]:
+    """Return shortest path lengths from a source keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, float]
+        Mapping of node ids to shortest path lengths.
+    """
+    store = ensure_directed_store(graph, weight=weight, nan_policy=nan_policy)
+    if store.graph.num_nodes() == 0:
+        return {}
+    source_idx = store.id_to_index.get(source)
+    if source_idx is None:
+        return {}
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    weight_fn = constant_weight_fn()
+    if weight is not None:
+        weight_fn = edge_cost_weight_fn(context=weight_ctx)
+    directed_graph = _directed_graph(store)
+    try:
+        lengths = rx.digraph_dijkstra_shortest_path_lengths(
+            directed_graph,
+            source_idx,
+            weight_fn,
+        )
+    except (rx.InvalidNode, rx.NullGraph):
+        return {}
+    mapped = {store.index_to_id[idx]: float(dist) for idx, dist in lengths.items()}
+    return _normalize_float_mapping(mapped, nan_policy=weight_ctx.nan_policy)
+
+
+def digraph_all_pairs_shortest_path_lengths_by_id(
+    graph: GraphInput,
+    *,
+    weight: str | None = None,
+    nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
+) -> dict[Hashable, dict[Hashable, float]]:
+    """Return all-pairs shortest path lengths keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, dict[Hashable, float]]
+        Nested mapping of source node ids to target distances.
+    """
+    store = ensure_directed_store(graph, weight=weight, nan_policy=nan_policy)
+    if store.graph.num_nodes() == 0:
+        return {}
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    weight_fn = constant_weight_fn()
+    if weight is not None:
+        weight_fn = edge_cost_weight_fn(context=weight_ctx)
+    directed_graph = _directed_graph(store)
+    try:
+        lengths = rx.digraph_all_pairs_dijkstra_path_lengths(
+            directed_graph,
+            weight_fn,
+        )
+    except rx.NullGraph:
+        return {}
+    mapped: dict[Hashable, dict[Hashable, float]] = {}
+    for src_idx, targets in lengths.items():
+        src_id = store.index_to_id[src_idx]
+        mapped[src_id] = {store.index_to_id[idx]: float(dist) for idx, dist in targets.items()}
+    return sorted_nested_mapping(mapped)
+
+
+def immediate_dominators_by_id(
+    graph: GraphInput,
+    entry: Hashable,
+) -> dict[Hashable, Hashable | None]:
+    """Return immediate dominators keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, Hashable | None]
+        Mapping of node ids to immediate dominators.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return {}
+    entry_idx = store.id_to_index.get(entry)
+    if entry_idx is None:
+        return {}
+    directed_graph = _directed_graph(store)
+    try:
+        idoms = rx.immediate_dominators(directed_graph, entry_idx)
+    except (rx.InvalidNode, rx.NullGraph):
+        return {}
+    result: dict[Hashable, Hashable | None] = {}
+    for node_idx, idom_idx in idoms.items():
+        node_id = store.index_to_id[node_idx]
+        if node_idx == entry_idx:
+            result[node_id] = None
+        else:
+            result[node_id] = store.index_to_id[idom_idx]
+    return {node: result[node] for node in sorted(result, key=stable_key)}
+
+
+def dominance_frontiers_by_id(
+    graph: GraphInput,
+    entry: Hashable,
+) -> dict[Hashable, frozenset[Hashable]]:
+    """Return dominance frontiers keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, frozenset[Hashable]]
+        Mapping of node ids to dominance frontiers.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return {}
+    entry_idx = store.id_to_index.get(entry)
+    if entry_idx is None:
+        return {}
+    directed_graph = _directed_graph(store)
+    try:
+        frontiers = rx.dominance_frontiers(directed_graph, entry_idx)
+    except (rx.InvalidNode, rx.NullGraph):
+        return {}
+    mapped = {
+        store.index_to_id[node_idx]: frozenset(store.index_to_id[idx] for idx in frontier)
+        for node_idx, frontier in frontiers.items()
+    }
+    return {node: mapped[node] for node in sorted(mapped, key=stable_key)}
+
+
+def simple_paths_by_id(
+    graph: GraphInput,
+    source: Hashable,
+    target: Hashable,
+    *,
+    cutoff: int,
+    limit: int | None = None,
+) -> list[list[Hashable]]:
+    """Return simple paths between nodes keyed by node id.
+
+    Returns
+    -------
+    list[list[Hashable]]
+        Simple paths from source to target, ordered by discovery.
+    """
+    store = ensure_directed_store(graph)
+    if store.graph.num_nodes() == 0:
+        return []
+    source_idx = store.id_to_index.get(source)
+    target_idx = store.id_to_index.get(target)
+    if source_idx is None or target_idx is None:
+        return []
+    directed_graph = _directed_graph(store)
+    paths: list[list[Hashable]] = []
+    try:
+        for path in rx.digraph_all_simple_paths(
+            directed_graph,
+            source_idx,
+            target_idx,
+            cutoff=cutoff,
+        ):
+            paths.append([store.index_to_id[idx] for idx in path])
+            if limit is not None and len(paths) >= limit:
+                break
+    except (rx.InvalidNode, rx.NoPathFound, rx.NullGraph):
+        return []
+    return paths
+
+
 __all__ = [
     "BetweennessOptions",
     "EigenvectorOptions",
@@ -1553,32 +2283,60 @@ __all__ = [
     "PagerankOptions",
     "RxGraph",
     "WeightContext",
+    "ancestors_by_id",
+    "articulation_points_by_id",
     "betweenness_by_id",
+    "bfs_distances_by_id",
     "bipartite_degree_centrality_by_id",
+    "bridges_by_id",
     "closeness_by_id",
     "clustering_by_id",
+    "connected_components_by_id",
     "constant_weight_fn",
     "constraint_by_id",
     "core_number_by_id",
+    "dag_longest_path_length",
+    "degree_by_id",
     "degree_centrality_by_id",
+    "descendants_by_id",
+    "digraph_all_pairs_shortest_path_lengths_by_id",
+    "digraph_shortest_path_lengths_by_id",
+    "dominance_frontiers_by_id",
     "edge_cost_weight_fn",
     "edge_strength_weight_fn",
     "effective_size_by_id",
     "eigenvector_centrality_by_id",
     "ensure_directed_store",
     "ensure_store",
+    "graph_distance_matrix",
     "graph_edge_count",
     "graph_node_count",
     "graph_to_store",
+    "graph_unweighted_average_shortest_path_length",
     "harmonic_centrality_by_id",
+    "immediate_dominators_by_id",
+    "in_degree_by_id",
     "in_degree_centrality_by_id",
+    "insert_node_on_out_edges_by_id",
+    "is_directed_acyclic",
+    "out_degree_by_id",
     "out_degree_centrality_by_id",
     "pagerank_by_id",
+    "predecessors_by_id",
+    "remove_node_retain_edges_by_id",
     "resolve_weight_context",
     "resolve_weight_epsilon",
     "resolve_weight_semantics",
+    "simple_cycles_by_id",
+    "simple_paths_by_id",
+    "strongly_connected_components_by_id",
+    "successors_by_id",
     "to_directed_store",
     "to_undirected_store",
+    "topological_generations_by_id",
+    "topological_layers_by_id",
+    "total_degree_by_id",
     "triangles_by_id",
+    "weakly_connected_components_by_id",
     "weighted_projection_store",
 ]

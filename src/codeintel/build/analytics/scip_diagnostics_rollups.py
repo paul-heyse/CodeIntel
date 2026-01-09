@@ -20,7 +20,11 @@ from codeintel.core.columnar.execution_context import (
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan
-from codeintel.core.columnar.rows import ColumnarRowBuffer, table_for_rows
+from codeintel.core.columnar.rows import (
+    ColumnarRowBuffer,
+    columnar_batch_collector_for_table_key,
+    table_for_rows,
+)
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.query_results import coerce_int
 
@@ -118,7 +122,9 @@ def _diagnostics_table(rows: RollupSource) -> pa.Table | None:
     if isinstance(rows, pa.Table):
         return rows
     if isinstance(rows, ColumnarRowBuffer):
-        return rows.to_table()
+        collector = columnar_batch_collector_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY)
+        collector.extend(rows)
+        return reader_to_table(collector.to_reader())
     if isinstance(rows, pa.RecordBatchReader):
         return reader_to_table(rows)
     if not rows:
@@ -186,7 +192,8 @@ def _aggregate_rollup_table(
         aggregates=[(group_columns[0], "count", None, "diagnostic_count")],
     )
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    return reader_to_table(reader)
 
 
 def _coerce_text(value: object | None, *, default: str = "unknown") -> str:
