@@ -17,7 +17,7 @@ analytics alignment targets while maximizing performance, modularity, and reuse.
 
 ## Scope 1 — Arrow-first graph assembly via Acero DSL + finalize gates
 
-Status: Completed (finalize gates + determinism ordering enforced in graph views)
+Status: Completed (plan-first scans + finalize gates + deterministic ordering in graph views)
 
 ### Pattern
 ```python
@@ -53,11 +53,13 @@ edge_table = result.good
 - [x] Use `Plan.scan`/`Plan.table` + Acero nodes for graph edge/node assembly.
 - [x] Enforce finalize gates for edge/node tables before rustworkx ingestion.
 - [x] Apply canonical ordering in finalize when determinism is CANONICAL.
-- [ ] Prefer `to_reader` for streaming until finalize boundaries.
+- [x] Prefer `to_reader` for streaming until finalize boundaries.
 
 ---
 
 ## Scope 2 — Unified rustworkx GraphBuilder + bulk edge ingestion
+
+Status: Completed (EdgeBuildSpec-driven ingestion + stable node attrs)
 
 ### Pattern
 ```python
@@ -87,16 +89,16 @@ store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
 - `src/codeintel/build/graphs/builders.py`
 
 ### Checklist
-- [ ] Centralize graph construction through `EdgeBuildSpec` + bulk edge insertion.
-- [ ] Ensure stable node ordering and weight aggregation are the default.
-- [ ] Add hooks for node attrs derived from finalized tables.
-- [ ] Standardize on edge tuple ingestion (`(src, dst, weight)` or inferred weight).
+- [x] Centralize graph construction through `EdgeBuildSpec` + bulk edge insertion.
+- [x] Ensure stable node ordering and weight aggregation are the default.
+- [x] Add hooks for node attrs derived from finalized tables.
+- [x] Standardize on edge tuple ingestion (`(src, dst, weight)` or inferred weight).
 
 ---
 
 ## Scope 3 — Determinism + ordering policy for graph inputs
 
-Status: In progress (ordering metadata propagation still pending)
+Status: Completed (ordering metadata propagation + canonical ordering enforcement)
 
 ### Pattern
 ```python
@@ -121,12 +123,14 @@ spec = FinalizeSpec(
 ### Checklist
 - [x] Canonical determinism enforces explicit ordering (contract sort keys + tie-breakers).
 - [x] Use provenance columns as deterministic tie-breakers when required.
-- [ ] Propagate ordering metadata through plan nodes to finalize.
+- [x] Propagate ordering metadata through plan nodes to finalize.
 - [x] Ensure graph builders only consume finalized (ordered) tables.
 
 ---
 
 ## Scope 4 — Rustworkx algorithm envelope + typed APIs
+
+Status: Completed (weight semantics helpers + centralized weight_fn usage)
 
 ### Pattern
 ```python
@@ -155,14 +159,16 @@ paths = rx.digraph_dijkstra_shortest_paths(
 - `src/codeintel/build/graphs/compute/metrics/statistics.py`
 
 ### Checklist
-- [ ] Route weighted algorithms through `GraphAlgoConfig` + weight semantics helpers.
-- [ ] Prefer typed rustworkx APIs (`graph_*` / `digraph_*`) at call sites.
-- [ ] Normalize outputs with stable ordering before emitting results.
-- [ ] Centralize weight_fn construction and reuse across metrics modules.
+- [x] Route weighted algorithms through `GraphAlgoConfig` + weight semantics helpers.
+- [x] Prefer typed rustworkx APIs (`graph_*` / `digraph_*`) at call sites.
+- [x] Normalize outputs with stable ordering before emitting results.
+- [x] Centralize weight_fn construction and reuse across metrics modules.
 
 ---
 
 ## Scope 5 — Rustworkx primitives for components/condensation/subgraphs
+
+Status: Completed (condensation + subgraph_with_nodemap + union + DAG layers)
 
 ### Pattern
 ```python
@@ -183,14 +189,16 @@ layered = list(rx.layers(store.graph, first_layer=roots, index_output=True))
 - `src/codeintel/build/graphs/compute/metrics/community.py`
 
 ### Checklist
-- [ ] Replace bespoke SCC/condensation logic with `rx.condensation` and friends.
-- [ ] Use `subgraph_with_nodemap` for filtered graph views (stable ordering).
-- [ ] Use `rx.layers` / `rx.topological_generations` for DAG layer logic.
-- [ ] Use `rx.union`/`rx.compose` for graph merges where applicable.
+- [x] Replace bespoke SCC/condensation logic with `rx.condensation` and friends.
+- [x] Use `subgraph_with_nodemap` for filtered graph views (stable ordering).
+- [x] Use `rx.layers` / `rx.topological_generations` for DAG layer logic.
+- [x] Use `rx.union`/`rx.compose` for graph merges where applicable.
 
 ---
 
 ## Scope 6 — Serialization + metadata (node-link JSON)
+
+Status: Completed (metadata normalization + JSON graph attrs)
 
 ### Pattern
 ```python
@@ -215,9 +223,9 @@ json_payload = rx.node_link_json(
 - `src/codeintel/build/graphs/rx/store.py`
 
 ### Checklist
-- [ ] Ensure metadata (weight policy, determinism tier, engine) is embedded in graph attrs.
-- [ ] Use structured node/edge payload encoding for lossless node-link JSON.
-- [ ] Enforce round-trip load/store for graph persistence and cache reuse.
+- [x] Ensure metadata (weight policy, determinism tier, engine) is embedded in graph attrs.
+- [x] Use structured node/edge payload encoding for lossless node-link JSON.
+- [x] Enforce round-trip load/store for graph persistence and cache reuse.
 
 ---
 

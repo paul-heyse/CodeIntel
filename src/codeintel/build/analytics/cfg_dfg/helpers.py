@@ -154,6 +154,12 @@ def cfg_blocks_rowset(
             E.is_valid("block_idx"),
         )
     )
+    plan = plan.order_by(
+        sort_keys=[
+            ("function_goid_h128", "ascending"),
+            ("block_idx", "ascending"),
+        ]
+    )
     plan = plan.aggregate(
         keys=[E.field("function_goid_h128")],
         aggregates=[
@@ -189,6 +195,14 @@ def cfg_edges_rowset(
             E.is_valid("src_block_id"),
             E.is_valid("dst_block_id"),
         )
+    )
+    plan = plan.order_by(
+        sort_keys=[
+            ("function_goid_h128", "ascending"),
+            ("src_block_id", "ascending"),
+            ("dst_block_id", "ascending"),
+            ("edge_kind", "ascending"),
+        ]
     )
     plan = plan.aggregate(
         keys=[E.field("function_goid_h128")],
@@ -234,6 +248,17 @@ def dfg_edges_rowset(
             E.is_valid("src_var"),
             E.is_valid("dst_var"),
         )
+    )
+    plan = plan.order_by(
+        sort_keys=[
+            ("function_goid_h128", "ascending"),
+            ("src_block_id", "ascending"),
+            ("dst_block_id", "ascending"),
+            ("src_var", "ascending"),
+            ("dst_var", "ascending"),
+            ("use_kind", "ascending"),
+            ("via_phi", "ascending"),
+        ]
     )
     plan = plan.aggregate(
         keys=[E.field("function_goid_h128")],

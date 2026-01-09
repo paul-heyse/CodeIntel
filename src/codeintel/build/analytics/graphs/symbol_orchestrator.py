@@ -128,6 +128,7 @@ def build_undirected_symbol_metric_rows[TNode](
             pagerank_weight="weight",
             betweenness_weight="weight",
             community_detection_limit=runtime_opts.features.community_detection_limit,
+            runtime_profile=runtime_opts.runtime_profile,
         )
     )
 

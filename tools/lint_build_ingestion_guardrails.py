@@ -131,17 +131,15 @@ def _scan_materialize(root: SgRoot, *, path: Path, repo_root: Path) -> list[Viol
     rel = _rel_path(path, root=repo_root)
     if rel in _ALLOWLIST_MATERIALIZE:
         return []
-    violations: list[Violation] = []
     tree = root.root()
-    for node in tree.find_all(pattern="$OBJ.to_table($$$ARGS)"):
-        violations.append(
-            Violation(
-                path=path,
-                lineno=node.range().start.line + 1,
-                message=_MATERIALIZE_MESSAGE,
-            )
+    return [
+        Violation(
+            path=path,
+            lineno=node.range().start.line + 1,
+            message=_MATERIALIZE_MESSAGE,
         )
-    return violations
+        for node in tree.find_all(pattern="$OBJ.to_table($$$ARGS)")
+    ]
 
 
 def scan_build_ingestion(repo_root: Path) -> BuildIngestionScan:

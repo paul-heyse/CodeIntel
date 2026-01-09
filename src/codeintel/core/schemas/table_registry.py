@@ -25,7 +25,11 @@ from codeintel.core.schemas.output_registry import (
     SUBSYSTEM_EXTRAS_STRUCT,
     TAGS_INDEX_EXTRAS_STRUCT,
 )
-from codeintel.core.schemas.primitives import FinalizeDedupeSpec, FinalizePolicy
+from codeintel.core.schemas.primitives import (
+    FinalizeDedupeSpec,
+    FinalizeListPolicySpec,
+    FinalizePolicy,
+)
 from codeintel.core.schemas.view_registry import build_view_schema_overrides
 
 if TYPE_CHECKING:
@@ -57,6 +61,11 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("modules_deleted_ratio", "DOUBLE"),
             Column("use_full_rebuild", "BOOLEAN"),
         ],
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="datasets", null_policy="empty"),
+            ),
+        ),
         description="Per-step ingest run telemetry for control plane reporting.",
     ),
     "analytics.tags_index": TableSchema(
@@ -103,6 +112,12 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         ],
         primary_key=("repo", "commit", "subsystem_id"),
         indexes=(Index("idx_subsystem_profile_cache_repo_commit", ("repo", "commit")),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.modules", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.entrypoints", null_policy="empty"),
+            ),
+        ),
         description="Materialized subsystem profile rows for docs views",
     ),
     "docs.v_validation_summary": TableSchema(
@@ -328,6 +343,13 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         ],
         primary_key=("run_id", "target_name", "table_key"),
         indexes=(Index("idx_build_contract_alignment_repo_commit", ("repo", "commit")),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="missing_columns", null_policy="error"),
+                FinalizeListPolicySpec(column="extra_columns", null_policy="error"),
+                FinalizeListPolicySpec(column="coerced_columns", null_policy="error"),
+            ),
+        ),
         description="Contract alignment differences captured during build materialization",
     ),
     "build.join_precheck_issues": TableSchema(
@@ -376,6 +398,11 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         ],
         primary_key=("run_id", "target_name", "table_key", "join_key_signature", "row_id"),
         indexes=(Index("idx_build_join_precheck_repo_commit", ("repo", "commit")),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="join_keys", null_policy="error"),
+            ),
+        ),
         description="Join precheck failures captured during ingestion joins",
     ),
     "build.empty_dataset_issues": TableSchema(
@@ -409,6 +436,11 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         ],
         primary_key=("run_id", "table_key"),
         indexes=(Index("idx_build_empty_dataset_repo_commit", ("repo", "commit")),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="dependency_chain", null_policy="error"),
+            ),
+        ),
         description="Guardrail findings for critical empty datasets per build run",
     ),
     "build.run_environments": TableSchema(

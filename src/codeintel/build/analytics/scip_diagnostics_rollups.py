@@ -9,9 +9,9 @@ from datetime import UTC, datetime
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.rows import table_for_rows

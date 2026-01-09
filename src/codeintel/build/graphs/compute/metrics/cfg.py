@@ -405,7 +405,11 @@ def cfg_longest_path_length(
     except (rx.InvalidNode, rx.NullGraph):
         return 0
     reachable.add(entry_node)
-    subgraph = directed_graph.subgraph(sorted(reachable))
+    ordered = sorted(
+        reachable,
+        key=lambda idx: stable_key(store.index_to_id[idx]),
+    )
+    subgraph, _node_map = directed_graph.subgraph_with_nodemap(ordered, preserve_attrs=True)
     try:
         longest = int(rx.dag_longest_path_length(subgraph))
     except (rx.DAGHasCycle, rx.NullGraph):

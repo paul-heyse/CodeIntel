@@ -78,7 +78,7 @@ def _store_without_edges(
         key=lambda idx: stable_key(store.index_to_id.get(idx, idx)),
     )
     isolate_graph.add_nodes_from([base_graph.get_node_data(idx) for idx in isolate_indices])
-    merged = rx.graph_union(edge_graph, isolate_graph, merge_nodes=True, merge_edges=True)
+    merged = rx.union(edge_graph, isolate_graph, merge_nodes=True, merge_edges=True)
     return RxGraphStore.from_rx_graph(
         merged,
         weight_policy=store.weight_policy,

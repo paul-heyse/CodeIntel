@@ -331,7 +331,7 @@ class Plan:
 
 def _field_name_for_expression(expr: pc.Expression) -> str | None:
     candidate = str(expr)
-    if expr.equals(pc.field(candidate)):
+    if expr.equals(E.field(candidate)):
         return candidate
     return None
 

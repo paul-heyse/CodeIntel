@@ -190,6 +190,7 @@ def _build_symbol_context(
             pagerank_weight="weight",
             betweenness_weight="weight",
             community_detection_limit=runtime.features.community_detection_limit,
+            runtime_profile=runtime.runtime_profile,
         )
     )
 

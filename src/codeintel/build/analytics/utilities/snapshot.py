@@ -11,8 +11,6 @@ from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.queryspec import PROVENANCE_FIELDS, ProjectionSpec, QuerySpec
 
-ORDER_ASC = "ascending"
-
 
 def require_columns(table: pa.Table, columns: Sequence[str]) -> None:
     """Require that the provided columns exist on a table.
@@ -70,7 +68,6 @@ def snapshot_plan(
     repo: str | None = None,
     commit: str | None = None,
     columns: Sequence[str] | None = None,
-    computed: Sequence[tuple[str, Expression]] = (),
     ctx: ExecutionContext | None = None,
 ) -> Plan:
     """Build a Plan scoped to a repo/commit snapshot.
@@ -85,6 +82,8 @@ def snapshot_plan(
         Optional commit identifier to filter on.
     columns
         Optional column projection to apply after filtering.
+    ctx
+        Optional execution context to determine provenance inclusion.
 
     Returns
     -------
@@ -96,7 +95,6 @@ def snapshot_plan(
         base_cols=base_cols,
         repo=repo,
         commit=commit,
-        computed=computed,
         table=table,
     )
     plan = Plan.table(table)
@@ -114,27 +112,22 @@ def snapshot_table(
     repo: str | None = None,
     commit: str | None = None,
     columns: Sequence[str] | None = None,
-    computed: Sequence[tuple[str, Expression]] = (),
-    order_by: Sequence[str] | None = None,
     ctx: ExecutionContext | None = None,
 ) -> pa.Table:
-    """Materialize a snapshot-scoped Plan with optional ordering.
+    """Materialize a snapshot-scoped Plan.
 
     Returns
     -------
     pyarrow.Table
-        Snapshot-scoped table, optionally ordered.
+        Snapshot-scoped table.
     """
     plan = snapshot_plan(
         table,
         repo=repo,
         commit=commit,
         columns=columns,
-        computed=computed,
         ctx=ctx,
     )
-    if order_by:
-        plan = plan.order_by(sort_keys=[(name, ORDER_ASC) for name in order_by])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -144,27 +137,22 @@ def snapshot_reader(
     repo: str | None = None,
     commit: str | None = None,
     columns: Sequence[str] | None = None,
-    computed: Sequence[tuple[str, Expression]] = (),
-    order_by: Sequence[str] | None = None,
     ctx: ExecutionContext | None = None,
 ) -> pa.RecordBatchReader:
-    """Materialize a snapshot-scoped Plan as a reader with optional ordering.
+    """Materialize a snapshot-scoped Plan as a reader.
 
     Returns
     -------
     pyarrow.RecordBatchReader
-        Snapshot-scoped reader, optionally ordered.
+        Snapshot-scoped reader.
     """
     plan = snapshot_plan(
         table,
         repo=repo,
         commit=commit,
         columns=columns,
-        computed=computed,
         ctx=ctx,
     )
-    if order_by:
-        plan = plan.order_by(sort_keys=[(name, ORDER_ASC) for name in order_by])
     use_threads = ctx.resolve_use_threads() if ctx is not None else True
     return plan.to_reader(use_threads=use_threads)
 

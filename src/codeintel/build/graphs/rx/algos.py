@@ -137,6 +137,15 @@ class GraphAlgoConfig:
     weight_epsilon: float = DEFAULT_WEIGHT_EPSILON
 
 
+@dataclass(frozen=True, slots=True)
+class WeightContext:
+    """Resolved weight semantics for algorithm execution."""
+
+    nan_policy: NanPolicy
+    semantics: WeightSemantics
+    epsilon: float
+
+
 def _apply_rayon_threads(config: GraphAlgoConfig | None) -> None:
     if config is None or config.rayon_threads is None:
         return
@@ -186,6 +195,29 @@ def resolve_weight_semantics(
     return _resolve_weight_semantics(store, config)
 
 
+def resolve_weight_context(
+    store: RxGraphStore,
+    *,
+    algo_config: GraphAlgoConfig | None,
+    nan_policy: NanPolicy | None = None,
+) -> WeightContext:
+    """Resolve weight semantics, epsilon, and NaN handling for a store/config pair.
+
+    Returns
+    -------
+    WeightContext
+        Resolved weight semantics bundle for the store/config pair.
+    """
+    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
+    semantics = _resolve_weight_semantics(store, algo_config)
+    epsilon = _resolve_weight_epsilon(algo_config)
+    return WeightContext(
+        nan_policy=resolved_nan_policy,
+        semantics=semantics,
+        epsilon=epsilon,
+    )
+
+
 def resolve_weight_epsilon(config: GraphAlgoConfig | None) -> float:
     """Resolve the effective epsilon used for weight conversions.
 
@@ -195,6 +227,76 @@ def resolve_weight_epsilon(config: GraphAlgoConfig | None) -> float:
         Effective epsilon for weight conversions.
     """
     return _resolve_weight_epsilon(config)
+
+
+def edge_strength_weight_fn(*, context: WeightContext) -> Callable[[object], float]:
+    """Return a weight function that yields edge strengths.
+
+    Returns
+    -------
+    Callable[[object], float]
+        Weight function yielding edge strengths.
+    """
+    return _edge_strength_fn(
+        nan_policy=context.nan_policy,
+        semantics=context.semantics,
+        epsilon=context.epsilon,
+    )
+
+
+def edge_cost_weight_fn(*, context: WeightContext) -> Callable[[object], float]:
+    """Return a weight function that yields edge costs.
+
+    Returns
+    -------
+    Callable[[object], float]
+        Weight function yielding edge costs.
+    """
+    return _edge_cost_fn(
+        nan_policy=context.nan_policy,
+        semantics=context.semantics,
+        epsilon=context.epsilon,
+    )
+
+
+def edge_strength_from_context(
+    payload: object | None,
+    *,
+    context: WeightContext,
+) -> float:
+    """Return an edge strength weight from a payload using a resolved context.
+
+    Returns
+    -------
+    float
+        Edge strength weight for algorithm inputs.
+    """
+    return edge_strength_from_payload(
+        payload,
+        nan_policy=context.nan_policy,
+        semantics=context.semantics,
+        epsilon=context.epsilon,
+    )
+
+
+def edge_cost_from_context(
+    payload: object | None,
+    *,
+    context: WeightContext,
+) -> float:
+    """Return an edge cost weight from a payload using a resolved context.
+
+    Returns
+    -------
+    float
+        Edge cost weight for algorithm inputs.
+    """
+    return edge_cost_from_payload(
+        payload,
+        nan_policy=context.nan_policy,
+        semantics=context.semantics,
+        epsilon=context.epsilon,
+    )
 
 
 def _edge_strength_fn(
@@ -373,21 +475,20 @@ def pagerank_by_id(
     """
     resolved = options or PagerankOptions()
     store = ensure_directed_store(graph, weight=resolved.weight, nan_policy=resolved.nan_policy)
-    resolved_nan_policy = _resolve_nan_policy(store, resolved.nan_policy)
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=resolved.nan_policy,
+    )
+    resolved_nan_policy = weight_ctx.nan_policy
     _apply_rayon_threads(algo_config)
-    semantics = _resolve_weight_semantics(store, algo_config)
-    epsilon = _resolve_weight_epsilon(algo_config)
     node_count = store.graph.num_nodes()
     if node_count == 0:
         return {}
     directed_graph = _directed_graph(store)
     weight_fn: Callable[[object], float] | None = None
     if resolved.weight is not None:
-        weight_fn = _edge_strength_fn(
-            nan_policy=resolved_nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
-        )
+        weight_fn = edge_strength_weight_fn(context=weight_ctx)
     raw = rx.pagerank(
         directed_graph,
         alpha=resolved.alpha,
@@ -414,21 +515,20 @@ def eigenvector_centrality_by_id(
     """
     resolved = options or EigenvectorOptions()
     store = ensure_store(graph, weight=resolved.weight, nan_policy=resolved.nan_policy)
-    resolved_nan_policy = _resolve_nan_policy(store, resolved.nan_policy)
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=resolved.nan_policy,
+    )
+    resolved_nan_policy = weight_ctx.nan_policy
     _apply_rayon_threads(algo_config)
-    semantics = _resolve_weight_semantics(store, algo_config)
-    epsilon = _resolve_weight_epsilon(algo_config)
     work_store = to_undirected_store(store)
     if work_store.graph.num_nodes() == 0:
         return {}
     undirected_graph = _undirected_graph(work_store)
     weight_fn: Callable[[object], float] | None = None
     if resolved.weight is not None:
-        weight_fn = _edge_strength_fn(
-            nan_policy=resolved_nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
-        )
+        weight_fn = edge_strength_weight_fn(context=weight_ctx)
     raw = rx.graph_eigenvector_centrality(
         undirected_graph,
         weight_fn=weight_fn,
@@ -520,10 +620,13 @@ def closeness_by_id(
         Closeness centrality scores keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
-    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    resolved_nan_policy = weight_ctx.nan_policy
     _apply_rayon_threads(algo_config)
-    semantics = _resolve_weight_semantics(store, algo_config)
-    epsilon = _resolve_weight_epsilon(algo_config)
     parallel_threshold = _resolve_parallel_threshold(algo_config)
     if store.graph.num_nodes() == 0:
         return {}
@@ -534,11 +637,7 @@ def closeness_by_id(
             parallel_threshold=parallel_threshold,
         )
     else:
-        weight_fn = _edge_strength_fn(
-            nan_policy=resolved_nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
-        )
+        weight_fn = edge_strength_weight_fn(context=weight_ctx)
         raw = _closeness_weighted(
             store,
             weight_fn=weight_fn,
@@ -552,9 +651,7 @@ def closeness_by_id(
 def _edge_weight_map(
     store: RxGraphStore,
     *,
-    nan_policy: NanPolicy,
-    semantics: WeightSemantics,
-    epsilon: float,
+    context: WeightContext,
 ) -> dict[tuple[int, int], float]:
     edge_map: dict[tuple[int, int], float] = {}
     for src_idx, dst_idx, payload in iter_edge_payloads(store):
@@ -562,21 +659,14 @@ def _edge_weight_map(
             key = (src_idx, dst_idx)
         else:
             key = (min(src_idx, dst_idx), max(src_idx, dst_idx))
-        edge_map[key] = edge_strength_from_payload(
-            payload,
-            nan_policy=nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
-        )
+        edge_map[key] = edge_strength_from_context(payload, context=context)
     return edge_map
 
 
 def _edge_cost_map(
     store: RxGraphStore,
     *,
-    nan_policy: NanPolicy,
-    semantics: WeightSemantics,
-    epsilon: float,
+    context: WeightContext,
 ) -> dict[tuple[int, int], float]:
     edge_map: dict[tuple[int, int], float] = {}
     for src_idx, dst_idx, payload in iter_edge_payloads(store):
@@ -584,12 +674,7 @@ def _edge_cost_map(
             key = (src_idx, dst_idx)
         else:
             key = (min(src_idx, dst_idx), max(src_idx, dst_idx))
-        edge_map[key] = edge_cost_from_payload(
-            payload,
-            nan_policy=nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
-        )
+        edge_map[key] = edge_cost_from_context(payload, context=context)
     return edge_map
 
 
@@ -802,10 +887,13 @@ def betweenness_by_id(
     """
     resolved = options or BetweennessOptions()
     store = ensure_store(graph, weight=resolved.weight, nan_policy=resolved.nan_policy)
-    resolved_nan_policy = _resolve_nan_policy(store, resolved.nan_policy)
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=resolved.nan_policy,
+    )
+    resolved_nan_policy = weight_ctx.nan_policy
     _apply_rayon_threads(algo_config)
-    semantics = _resolve_weight_semantics(store, algo_config)
-    epsilon = _resolve_weight_epsilon(algo_config)
     parallel_threshold = _resolve_parallel_threshold(algo_config)
     numeric_policy = store.numeric_policy
     node_count = store.graph.num_nodes()
@@ -825,12 +913,7 @@ def betweenness_by_id(
         neighbors = _neighbor_map(store, include_self=False)
         betweenness = _brandes_unweighted(neighbors, indices)
     else:
-        edge_weights = _edge_cost_map(
-            store,
-            nan_policy=resolved_nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
-        )
+        edge_weights = _edge_cost_map(store, context=weight_ctx)
         neighbors = _weighted_neighbor_map(store, edge_weights)
         betweenness = _brandes_weighted(neighbors, indices, numeric_policy=numeric_policy)
 
@@ -860,20 +943,19 @@ def harmonic_centrality_by_id(
         Harmonic centrality scores keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
-    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    resolved_nan_policy = weight_ctx.nan_policy
     _apply_rayon_threads(algo_config)
-    semantics = _resolve_weight_semantics(store, algo_config)
-    epsilon = _resolve_weight_epsilon(algo_config)
     numeric_policy = store.numeric_policy
     if store.graph.num_nodes() == 0:
         return {}
     weight_fn: Callable[[object], float] = _constant_weight_fn
     if weight is not None:
-        weight_fn = _edge_cost_fn(
-            nan_policy=resolved_nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
-        )
+        weight_fn = edge_cost_weight_fn(context=weight_ctx)
     result: dict[Hashable, float] = {}
     directed_graph: DirectedRxGraph | None = None
     undirected_graph: UndirectedRxGraph | None = None
@@ -1049,8 +1131,13 @@ def clustering_by_id(
         Clustering coefficients keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
-    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
     work_store = to_undirected_store(store)
+    weight_ctx = resolve_weight_context(
+        work_store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    resolved_nan_policy = weight_ctx.nan_policy
     numeric_policy = work_store.numeric_policy
     if work_store.graph.num_nodes() == 0:
         return {}
@@ -1058,14 +1145,10 @@ def clustering_by_id(
     if weight is None:
         result = _clustering_unweighted(work_store, neighbors)
         return _normalize_float_mapping(result, nan_policy=resolved_nan_policy)
-    semantics = _resolve_weight_semantics(work_store, algo_config)
-    epsilon = _resolve_weight_epsilon(algo_config)
     result = _clustering_weighted(
         work_store,
         neighbors,
-        nan_policy=resolved_nan_policy,
-        semantics=semantics,
-        epsilon=epsilon,
+        context=weight_ctx,
     )
     return _normalize_float_mapping(
         result,
@@ -1095,16 +1178,9 @@ def _clustering_weighted(
     store: RxGraphStore,
     neighbors: Mapping[int, Sequence[int]],
     *,
-    nan_policy: NanPolicy,
-    semantics: WeightSemantics,
-    epsilon: float,
+    context: WeightContext,
 ) -> dict[Hashable, float]:
-    edge_weights = _edge_weight_map(
-        store,
-        nan_policy=nan_policy,
-        semantics=semantics,
-        epsilon=epsilon,
-    )
+    edge_weights = _edge_weight_map(store, context=context)
     max_weight = max(edge_weights.values(), default=1.0)
     result: dict[Hashable, float] = {}
     for node_idx, neighbor_list in neighbors.items():
@@ -1218,19 +1294,20 @@ def constraint_by_id(
         Constraint values keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
-    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
     work_store = to_undirected_store(store)
+    weight_ctx = resolve_weight_context(
+        work_store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    resolved_nan_policy = weight_ctx.nan_policy
     numeric_policy = work_store.numeric_policy
     if work_store.graph.num_nodes() == 0:
         return {}
     neighbors = _neighbor_sets_with_self(work_store)
-    semantics = _resolve_weight_semantics(work_store, algo_config)
-    epsilon = _resolve_weight_epsilon(algo_config)
     edge_weights = _edge_weight_map(
         work_store,
-        nan_policy=resolved_nan_policy,
-        semantics=semantics,
-        epsilon=epsilon,
+        context=weight_ctx,
     )
     scale = _neighbor_scale(edge_weights, neighbors, norm=sum)
 
@@ -1270,16 +1347,9 @@ def _effective_size_unweighted(
     store: RxGraphStore,
     neighbors: Mapping[int, Sequence[int]],
     *,
-    nan_policy: NanPolicy,
-    semantics: WeightSemantics,
-    epsilon: float,
+    context: WeightContext,
 ) -> dict[Hashable, float]:
-    edge_weights = _edge_weight_map(
-        store,
-        nan_policy=nan_policy,
-        semantics=semantics,
-        epsilon=epsilon,
-    )
+    edge_weights = _edge_weight_map(store, context=context)
     result: dict[Hashable, float] = {}
     for node_idx, node_neighbors in neighbors.items():
         node_id = store.index_to_id[node_idx]
@@ -1312,21 +1382,22 @@ def effective_size_by_id(
         Effective size values keyed by node identifier.
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
-    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
     work_store = to_undirected_store(store)
+    weight_ctx = resolve_weight_context(
+        work_store,
+        algo_config=algo_config,
+        nan_policy=nan_policy,
+    )
+    resolved_nan_policy = weight_ctx.nan_policy
     numeric_policy = work_store.numeric_policy
     if work_store.graph.num_nodes() == 0:
         return {}
     neighbors = _neighbor_sets_with_self(work_store)
-    semantics = _resolve_weight_semantics(work_store, algo_config)
-    epsilon = _resolve_weight_epsilon(algo_config)
     if weight is None:
         result = _effective_size_unweighted(
             work_store,
             neighbors,
-            nan_policy=resolved_nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
+            context=weight_ctx,
         )
         return _normalize_float_mapping(
             result,
@@ -1335,12 +1406,7 @@ def effective_size_by_id(
             rel_tol=numeric_policy.effective_rel_tol,
         )
 
-    edge_weights = _edge_weight_map(
-        work_store,
-        nan_policy=resolved_nan_policy,
-        semantics=semantics,
-        epsilon=epsilon,
-    )
+    edge_weights = _edge_weight_map(work_store, context=weight_ctx)
     sum_scale = _neighbor_scale(edge_weights, neighbors, norm=sum)
     max_scale = _neighbor_scale(edge_weights, neighbors, norm=max)
 
@@ -1486,6 +1552,7 @@ __all__ = [
     "GraphInput",
     "PagerankOptions",
     "RxGraph",
+    "WeightContext",
     "betweenness_by_id",
     "bipartite_degree_centrality_by_id",
     "closeness_by_id",
@@ -1494,6 +1561,8 @@ __all__ = [
     "constraint_by_id",
     "core_number_by_id",
     "degree_centrality_by_id",
+    "edge_cost_weight_fn",
+    "edge_strength_weight_fn",
     "effective_size_by_id",
     "eigenvector_centrality_by_id",
     "ensure_directed_store",
@@ -1505,6 +1574,7 @@ __all__ = [
     "in_degree_centrality_by_id",
     "out_degree_centrality_by_id",
     "pagerank_by_id",
+    "resolve_weight_context",
     "resolve_weight_epsilon",
     "resolve_weight_semantics",
     "to_directed_store",

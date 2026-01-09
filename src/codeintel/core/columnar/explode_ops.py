@@ -13,6 +13,9 @@ from codeintel.core.columnar.compute_helpers import call_compute, require_array
 
 NullListPolicy = Literal["error", "empty"]
 NullChildPolicy = Literal["drop", "error"]
+ERROR_CODE_NULL_REQUIRED_LIST = "NULL_REQUIRED_LIST"
+ERROR_CODE_MISALIGNED_LIST_COLUMNS = "MISALIGNED_LIST_COLUMNS"
+ERROR_CODE_NULL_CHILD_VALUE = "NULL_CHILD_VALUE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +179,16 @@ def _empty_explode_good(table: pa.Table, spec: ExplodeSpec) -> pa.Table:
 
 
 def _filter_parents(context: ErrorContext, spec: ExplodeSpec) -> ParentFilterResult:
+    normalized = _normalize_list_columns(
+        context.table,
+        columns=(spec.dst_list_col, *spec.aligned_list_cols),
+        null_list_policy=spec.null_list_policy,
+    )
+    context = ErrorContext(
+        table=normalized,
+        row_id=context.row_id,
+        error_context_cols=context.error_context_cols,
+    )
     dst_lists = context.table[spec.dst_list_col]
     errors: list[pa.Table] = []
 
@@ -187,7 +200,7 @@ def _filter_parents(context: ErrorContext, spec: ExplodeSpec) -> ParentFilterRes
                 context,
                 mask=null_mask,
                 spec=ErrorSpec(
-                    error_code="NULL_LIST",
+                    error_code=ERROR_CODE_NULL_REQUIRED_LIST,
                     column=spec.dst_list_col,
                     detail="null parent list",
                 ),
@@ -201,7 +214,7 @@ def _filter_parents(context: ErrorContext, spec: ExplodeSpec) -> ParentFilterRes
                 context,
                 mask=alignment_mask,
                 spec=ErrorSpec(
-                    error_code="MISALIGNED_LIST_COLUMNS",
+                    error_code=ERROR_CODE_MISALIGNED_LIST_COLUMNS,
                     column=spec.dst_list_col,
                     detail="aligned list lengths differ",
                 ),
@@ -318,7 +331,7 @@ def _child_errors(
             parent_idx=parent_idx,
             mask=child_null_mask,
             spec=ErrorSpec(
-                error_code="NULL_CHILD_VALUE",
+                error_code=ERROR_CODE_NULL_CHILD_VALUE,
                 column=column,
                 detail="null child value",
             ),
@@ -355,9 +368,13 @@ def _list_alignment_mask(
     if not spec.aligned_list_cols:
         return None
     dst_len = _list_value_length(table[spec.dst_list_col])
+    if spec.null_list_policy == "empty":
+        dst_len = _fill_null(dst_len, fill_value=0)
     bad_mask: pa.Array | pa.ChunkedArray | None = None
     for name in spec.aligned_list_cols:
         aligned_len = _list_value_length(table[name])
+        if spec.null_list_policy == "empty":
+            aligned_len = _fill_null(aligned_len, fill_value=0)
         equal_mask = _equal(dst_len, aligned_len)
         equal_mask = _fill_null_false(equal_mask)
         mismatch = _invert(equal_mask)
@@ -568,11 +585,40 @@ def _and(
 
 
 def _fill_null(
-    mask: pa.Array | pa.ChunkedArray,
+    values: pa.Array | pa.ChunkedArray,
     *,
-    fill_value: bool,
+    fill_value: object,
 ) -> pa.Array | pa.ChunkedArray:
-    return _compute_array("fill_null", [mask, fill_value])
+    return _compute_array("fill_null", [values, fill_value])
+
+
+def _fill_null_list(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    empty = pa.scalar([], type=values.type)
+    return _compute_array("fill_null", [values, empty])
+
+
+def _normalize_list_columns(
+    table: pa.Table,
+    *,
+    columns: Sequence[str],
+    null_list_policy: NullListPolicy,
+) -> pa.Table:
+    if null_list_policy != "empty":
+        return table
+    updated = table
+    for name in columns:
+        if name not in updated.column_names:
+            continue
+        values = updated[name]
+        if not _is_list_like(values.type):
+            continue
+        filled = _fill_null_list(values)
+        if filled is values:
+            continue
+        index = updated.schema.get_field_index(name)
+        field = updated.schema.field(index)
+        updated = updated.set_column(index, field, filled)
+    return updated
 
 
 def _is_list_type(data_type: pa.DataType) -> bool:
@@ -590,6 +636,10 @@ def _is_list_view_type(data_type: pa.DataType) -> bool:
         (callable(is_list_view) and is_list_view(data_type))
         or (callable(is_large_list_view) and is_large_list_view(data_type))
     )
+
+
+def _is_list_like(data_type: pa.DataType) -> bool:
+    return _is_list_type(data_type) or _is_list_view_type(data_type)
 
 
 def _list_value_type(data_type: pa.DataType) -> pa.DataType:

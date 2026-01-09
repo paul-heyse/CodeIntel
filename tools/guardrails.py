@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import inspect
 import re
+import subprocess
 import sys
 import traceback
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -419,7 +421,50 @@ def _rule_requires_pcre2(pattern: re.Pattern[str]) -> bool:
     return any(token in pattern.pattern for token in lookarounds)
 
 
+@lru_cache(maxsize=1)
+def _rg_supports_pcre2() -> bool:
+    try:
+        result = subprocess.run(
+            ["rg", "--pcre2", "--version"],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except OSError:
+        return False
+    return result.returncode == 0
+
+
+@lru_cache(maxsize=1)
+def _warn_missing_pcre2() -> None:
+    sys.stderr.write(
+        "Guardrail: ripgrep without PCRE2 detected; "
+        "falling back to Python regex for lookaround rules.\n"
+    )
+
+
+def _scan_guardrail_python(rule: Guardrail, *, repo_root: Path) -> list[str]:
+    violations: list[str] = []
+    for path in iter_candidate_files(repo_root):
+        rel = _rel_path(path, root=repo_root)
+        if rule.include_prefixes and not rel.startswith(rule.include_prefixes):
+            continue
+        if rule.allow_prefixes and rel.startswith(rule.allow_prefixes):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for match in rule.pattern.finditer(text):
+            line = text.count("\n", 0, match.start()) + 1
+            violations.append(f"{rel}:{line}: {rule.name}: {rule.message}")
+    return violations
+
+
 def _scan_guardrail(rule: Guardrail, *, repo_root: Path) -> list[str]:
+    if _rule_requires_pcre2(rule.pattern) and not _rg_supports_pcre2():
+        _warn_missing_pcre2()
+        return _scan_guardrail_python(rule, repo_root=repo_root)
     include_globs = _rule_include_globs(rule)
     search = RipGrepSearch(working_directory=repo_root).add_pattern(rule.pattern.pattern)
     search = search.include_types(["py"]).include_globs(list(include_globs))
@@ -442,8 +487,8 @@ def _scan_guardrail(rule: Guardrail, *, repo_root: Path) -> list[str]:
             line = match.data.line_number
             submatches = match.data.submatches
             count = len(submatches) if submatches else 1
-            for _ in range(count):
-                violations.append(f"{rel}:{line}: {rule.name}: {rule.message}")
+            message = f"{rel}:{line}: {rule.name}: {rule.message}"
+            violations.extend([message for _ in range(count)])
     return violations
 
 

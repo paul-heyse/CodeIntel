@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -15,8 +16,12 @@ import pyarrow.dataset as ds
 from codeintel.build.graphs.assembly import iter_normalized_tuples
 from codeintel.build.scopes.snapshot import SnapshotScanContext
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.execution_context import ExecutionContext
-from codeintel.core.columnar.finalize_ops import finalize_reader, finalize_spec_for_table
+from codeintel.core.columnar.execution_context import ExecutionContext, runtime_profile_from_settings
+from codeintel.core.columnar.finalize_ops import (
+    FinalizeResult,
+    finalize_reader,
+    finalize_spec_for_table,
+)
 from codeintel.core.columnar.ordering import SortDirection, SortKey
 from codeintel.core.columnar.plan_ops import (
     Plan,
@@ -25,14 +30,18 @@ from codeintel.core.columnar.plan_ops import (
 )
 from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
 from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
-from codeintel.core.datasets.arrow_store import scan_dataset
+from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, scan_dataset, write_dataset
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
+from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
+from codeintel.core.schemas.hashing import schema_hash
+from codeintel.core.schemas.primitives import TableSchema, resolve_canonical_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.columnar.dedupe_ops import DedupeTier
+    from codeintel.core.columnar.profiles import RuntimeProfile
 
 LOG = logging.getLogger(__name__)
 
@@ -235,6 +244,24 @@ class GraphViewFactory:
         yield from iter_normalized_tuples(reader, columns=columns)
 
 
+@dataclass(frozen=True, slots=True)
+class GraphRunMetadata:
+    """Run metadata captured for graph inputs and outputs."""
+
+    determinism_tier: DedupeTier
+    runtime_profile: str | None
+    scan_profile: str | None
+
+    def manifest_extras(self) -> dict[str, object]:
+        """Return a manifest extras payload for this run metadata."""
+        extras: dict[str, object] = {"determinism_tier": self.determinism_tier}
+        if self.runtime_profile is not None:
+            extras["runtime_profile"] = self.runtime_profile
+        if self.scan_profile is not None:
+            extras["scan_profile"] = self.scan_profile
+        return extras
+
+
 def resolve_dataset_root(
     _snapshot: SnapshotRef,
     dataset_root_dir: Path | None,
@@ -401,6 +428,36 @@ def scan_snapshot_table(
     return result.good
 
 
+def graph_execution_context(
+    *,
+    determinism: DedupeTier,
+    provenance: bool,
+) -> ExecutionContext:
+    """Return an ExecutionContext configured for graph scans."""
+    runtime_profile = _resolve_graph_runtime_profile(default_name="graph_views")
+    return ExecutionContext(
+        determinism=determinism,
+        provenance=provenance,
+        runtime_profile=runtime_profile,
+    )
+
+
+def graph_run_metadata(
+    *,
+    determinism: DedupeTier,
+    execution_ctx: ExecutionContext | None,
+) -> GraphRunMetadata:
+    """Build graph run metadata from determinism and execution context."""
+    profile = execution_ctx.runtime_profile if execution_ctx is not None else None
+    runtime_name = profile.name if profile is not None else None
+    scan_profile = profile.scan_profile if profile is not None else None
+    return GraphRunMetadata(
+        determinism_tier=determinism,
+        runtime_profile=runtime_name,
+        scan_profile=scan_profile,
+    )
+
+
 def _scan_dataset(dataset_root: Path, table_key: str, snapshot_id: str) -> ds.Dataset | None:
     try:
         return scan_dataset(
@@ -410,7 +467,7 @@ def _scan_dataset(dataset_root: Path, table_key: str, snapshot_id: str) -> ds.Da
         )
     except FileNotFoundError:
         LOG.warning("Dataset snapshot missing for %s@%s", table_key, snapshot_id)
-        return None
+    return None
     except (OSError, ValueError, pa.ArrowInvalid) as exc:
         LOG.warning("Dataset scan failed for %s@%s: %s", table_key, snapshot_id, exc)
         return None
@@ -510,6 +567,148 @@ def _resolve_execution_context(
     if request.use_threads is None:
         return execution_ctx
     return replace(execution_ctx, use_threads=use_threads)
+
+
+def persist_finalize_artifacts(
+    *,
+    dataset_root: Path,
+    snapshot_id: str,
+    base_table_key: str,
+    result: FinalizeResult,
+    run_metadata: GraphRunMetadata | None = None,
+) -> None:
+    """Persist finalize artifacts for a graph input table."""
+    _write_finalize_artifact_dataset(
+        dataset_root=dataset_root,
+        snapshot_id=snapshot_id,
+        base_table_key=base_table_key,
+        artifact="errors",
+        table=result.errors,
+        run_metadata=run_metadata,
+    )
+    _write_finalize_artifact_dataset(
+        dataset_root=dataset_root,
+        snapshot_id=snapshot_id,
+        base_table_key=base_table_key,
+        artifact="alignment",
+        table=result.alignment,
+        run_metadata=run_metadata,
+    )
+    _write_finalize_artifact_dataset(
+        dataset_root=dataset_root,
+        snapshot_id=snapshot_id,
+        base_table_key=base_table_key,
+        artifact="stats",
+        table=result.stats,
+        run_metadata=run_metadata,
+    )
+
+
+def _resolve_graph_runtime_profile(
+    *,
+    default_name: str,
+) -> RuntimeProfile | None:
+    settings = load_runtime_settings()
+    profile = runtime_profile_from_settings(settings.columnar)
+    if profile is None:
+        return None
+    scan_settings = settings.build.arrow_scan
+    scan_profile = profile.scan_profile or scan_settings.profile
+    use_threads = (
+        profile.use_threads if profile.use_threads is not None else scan_settings.use_threads
+    )
+    implicit_ordering = (
+        True if profile.implicit_ordering is None else profile.implicit_ordering
+    )
+    require_sequenced_output = (
+        True
+        if profile.require_sequenced_output is None
+        else profile.require_sequenced_output
+    )
+    return replace(
+        profile,
+        name=profile.name or default_name,
+        scan_profile=scan_profile,
+        implicit_ordering=implicit_ordering,
+        require_sequenced_output=require_sequenced_output,
+        use_threads=use_threads,
+    )
+
+
+def _write_finalize_artifact_dataset(
+    *,
+    dataset_root: Path,
+    snapshot_id: str,
+    base_table_key: str,
+    artifact: str,
+    table: pa.Table,
+    run_metadata: GraphRunMetadata | None,
+) -> None:
+    artifact_table_key = _finalize_artifact_table_key(base_table_key, artifact)
+    try:
+        table_schema = table_schema_from_arrow_schema(
+            arrow_schema=table.schema,
+            table_key=artifact_table_key,
+        )
+        manifest_extras = _artifact_manifest_extras(
+            table_schema,
+            artifact_for=base_table_key,
+            artifact_type=artifact,
+            run_metadata=run_metadata,
+        )
+        options = ArrowDatasetWriteOptions(
+            partition_columns=_partition_columns_for_schema(table_schema),
+            schema_hash=schema_hash(table_schema),
+            manifest_extras=manifest_extras,
+            stable_sort_keys=_resolve_manifest_sort_keys(table_schema),
+        )
+        write_dataset(
+            dataset_root=dataset_root,
+            table_key=artifact_table_key,
+            snapshot_id=snapshot_id,
+            data=table,
+            options=options,
+        )
+    except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError) as exc:
+        LOG.warning(
+            "Finalize artifact write failed; table_key=%s artifact=%s error=%s",
+            base_table_key,
+            artifact,
+            exc,
+        )
+
+
+def _finalize_artifact_table_key(base_table_key: str, artifact: str) -> str:
+    return f"{base_table_key}__{artifact}"
+
+
+def _partition_columns_for_schema(table_schema: TableSchema) -> tuple[str, ...]:
+    column_names = set(table_schema.column_names())
+    if "repo" in column_names and "commit" in column_names:
+        return ("repo", "commit")
+    return ()
+
+
+def _resolve_manifest_sort_keys(table_schema: TableSchema) -> tuple[str, ...] | None:
+    return resolve_canonical_sort_keys(table_schema)
+
+
+def _artifact_manifest_extras(
+    table_schema: TableSchema,
+    *,
+    artifact_for: str,
+    artifact_type: str,
+    run_metadata: GraphRunMetadata | None,
+) -> dict[str, object]:
+    extras: dict[str, object] = {
+        "table_schema": table_schema.to_json_obj(),
+        "artifact_for": artifact_for,
+        "artifact_type": artifact_type,
+        "written_at": datetime.now(tz=UTC).isoformat(),
+    }
+    if run_metadata is not None:
+        extras["graph_run"] = run_metadata.manifest_extras()
+    return extras
 
 
 __all__ = [

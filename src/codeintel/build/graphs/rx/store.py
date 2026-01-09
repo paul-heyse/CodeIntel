@@ -12,6 +12,7 @@ from codeintel.build.graphs.rx.metadata import (
     GraphMetadata,
     apply_graph_metadata,
     metadata_from_graph,
+    metadata_with_weight_policy,
 )
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.payloads import decode_node_payload, encode_node_payload
@@ -48,6 +49,7 @@ class RxGraphStore:
         edge_hint: int | None = None,
         weight_policy: GraphWeightPolicy | None = None,
         numeric_policy: GraphNumericPolicy | None = None,
+        metadata: GraphMetadata | None = None,
     ) -> RxGraphStore:
         """Build a directed store with optional capacity hints.
 
@@ -63,7 +65,13 @@ class RxGraphStore:
             node_count_hint=node_hint,
             edge_count_hint=edge_hint,
         )
-        apply_graph_metadata(graph, GraphMetadata(weight_policy=resolved_weight_policy.name))
+        apply_graph_metadata(
+            graph,
+            metadata_with_weight_policy(
+                metadata,
+                weight_policy=resolved_weight_policy.name,
+            ),
+        )
         return cls(
             graph=graph,
             id_to_index={},
@@ -82,6 +90,7 @@ class RxGraphStore:
         edge_hint: int | None = None,
         weight_policy: GraphWeightPolicy | None = None,
         numeric_policy: GraphNumericPolicy | None = None,
+        metadata: GraphMetadata | None = None,
     ) -> RxGraphStore:
         """Build an undirected store with optional capacity hints.
 
@@ -97,7 +106,13 @@ class RxGraphStore:
             node_count_hint=node_hint,
             edge_count_hint=edge_hint,
         )
-        apply_graph_metadata(graph, GraphMetadata(weight_policy=resolved_weight_policy.name))
+        apply_graph_metadata(
+            graph,
+            metadata_with_weight_policy(
+                metadata,
+                weight_policy=resolved_weight_policy.name,
+            ),
+        )
         return cls(
             graph=graph,
             id_to_index={},
@@ -115,6 +130,7 @@ class RxGraphStore:
         *,
         weight_policy: GraphWeightPolicy | None = None,
         numeric_policy: GraphNumericPolicy | None = None,
+        metadata: GraphMetadata | None = None,
     ) -> RxGraphStore:
         """Build a store from an existing rustworkx graph.
 
@@ -132,23 +148,16 @@ class RxGraphStore:
             index_to_id[node_idx] = node_id
             node_attrs[node_id] = attrs
         resolved_policy = weight_policy
-        metadata = metadata_from_graph(graph)
-        if resolved_policy is None and metadata is not None:
-            resolved_policy = weight_policy_for_name(metadata.weight_policy)
+        resolved_metadata = metadata or metadata_from_graph(graph)
+        if resolved_policy is None and resolved_metadata is not None:
+            resolved_policy = weight_policy_for_name(resolved_metadata.weight_policy)
         if resolved_policy is None:
             resolved_policy = DEFAULT_WEIGHT_POLICY
-        if metadata is None:
-            metadata = GraphMetadata(weight_policy=resolved_policy.name)
-        elif metadata.weight_policy != resolved_policy.name:
-            metadata = GraphMetadata(
-                weight_policy=resolved_policy.name,
-                cache_version=metadata.cache_version,
-                engine=metadata.engine,
-                graph_kind=metadata.graph_kind,
-                node_payload_version=metadata.node_payload_version,
-                determinism_tier=metadata.determinism_tier,
-            )
-        apply_graph_metadata(graph, metadata)
+        resolved_metadata = metadata_with_weight_policy(
+            resolved_metadata,
+            weight_policy=resolved_policy.name,
+        )
+        apply_graph_metadata(graph, resolved_metadata)
         return cls(
             graph=graph,
             id_to_index=id_to_index,

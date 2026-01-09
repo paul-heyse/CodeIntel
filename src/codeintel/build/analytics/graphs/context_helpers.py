@@ -63,6 +63,7 @@ class GraphContextFactory:
                 pagerank_weight=self.pagerank_weight,
                 betweenness_weight=self.betweenness_weight,
                 community_detection_limit=resolved_limit,
+                runtime_profile=runtime.runtime_profile,
             )
         )
 

@@ -327,6 +327,34 @@ def list_value_length(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.Chunk
     )
 
 
+def list_parent_indices(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    """Return parent indices for list elements.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Parent row indices for each list element.
+    """
+    return require_array(
+        call_compute("list_parent_indices", [values]),
+        name="list_parent_indices",
+    )
+
+
+def list_flatten(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    """Flatten list elements into a single array.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Flattened list values.
+    """
+    return require_array(
+        call_compute("list_flatten", [values]),
+        name="list_flatten",
+    )
+
+
 def list_element(
     values: pa.Array | pa.ChunkedArray,
     *,
@@ -572,6 +600,8 @@ __all__ = [
     "hash_struct_ordinal",
     "indices_nonzero",
     "list_element",
+    "list_flatten",
+    "list_parent_indices",
     "list_slice",
     "list_value_length",
     "regex_match",

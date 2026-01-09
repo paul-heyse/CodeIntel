@@ -8,12 +8,20 @@ Parquet-backed snapshots (repo/commit) to ensure graph inputs are dataset-derive
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from codeintel.build.graphs.rx.weights import WeightSemantics
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.columnar.dedupe_ops import DedupeTier
+from codeintel.core.columnar.execution_context import (
+    resolve_runtime_profile,
+    runtime_profile_from_settings,
+)
+from codeintel.core.columnar.profiles import RuntimeProfile
+from codeintel.core.runtime.loader import load_runtime_settings
 
 DEFAULT_BETWEENNESS_SAMPLE = 500
 DEFAULT_PARALLEL_THRESHOLD = 50
@@ -74,6 +82,9 @@ class GraphContext:
     parallel_threshold: int = DEFAULT_PARALLEL_THRESHOLD
     rayon_threads: int | None = None
     weight_semantics: WeightSemantics = WeightSemantics.STRENGTH
+    runtime_profile: str | None = None
+    scan_profile: str | None = None
+    determinism_tier: DedupeTier | None = None
 
     def resolved_now(self) -> datetime:
         """Return a concrete timestamp, defaulting to current UTC time.
@@ -105,6 +116,7 @@ class GraphContextSpec:
     parallel_threshold: int | None = None
     rayon_threads: int | None = None
     weight_semantics: WeightSemantics | None = None
+    runtime_profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -255,6 +267,7 @@ def _normalize_context(
     normalized = _apply_caps(spec, normalized)
     normalized = _apply_weights(spec, normalized)
     normalized = _apply_seed(spec, normalized)
+    normalized = _apply_runtime_profile(spec, normalized)
     normalized = _apply_parallel_threshold(spec, normalized)
     normalized = _apply_rayon_threads(spec, normalized)
     normalized = _apply_weight_semantics(spec, normalized)
@@ -317,6 +330,96 @@ def _apply_weight_semantics(spec: GraphContextSpec, ctx: GraphContext) -> GraphC
     if spec.weight_semantics is None or ctx.weight_semantics == spec.weight_semantics:
         return ctx
     return replace(ctx, weight_semantics=spec.weight_semantics)
+
+
+def _apply_runtime_profile(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    profile = _normalize_runtime_profile(
+        _resolve_runtime_profile(spec.runtime_profile),
+        default_name="graph_metrics",
+    )
+    if profile is None:
+        return ctx
+    parallel_threshold = _resolve_parallel_threshold(profile, ctx.parallel_threshold)
+    rayon_threads = _resolve_rayon_threads(profile, ctx.rayon_threads)
+    determinism_tier = profile.determinism or ctx.determinism_tier
+    runtime_name = profile.name
+    scan_profile = profile.scan_profile
+    if (
+        parallel_threshold == ctx.parallel_threshold
+        and rayon_threads == ctx.rayon_threads
+        and runtime_name == ctx.runtime_profile
+        and scan_profile == ctx.scan_profile
+        and determinism_tier == ctx.determinism_tier
+    ):
+        return ctx
+    return replace(
+        ctx,
+        parallel_threshold=parallel_threshold,
+        rayon_threads=rayon_threads,
+        runtime_profile=runtime_name,
+        scan_profile=scan_profile,
+        determinism_tier=determinism_tier,
+    )
+
+
+def _resolve_runtime_profile(profile_name: str | None) -> RuntimeProfile | None:
+    if profile_name is not None:
+        return resolve_runtime_profile(profile_name)
+    settings = load_runtime_settings()
+    return runtime_profile_from_settings(settings.columnar)
+
+
+def _normalize_runtime_profile(
+    profile: RuntimeProfile | None,
+    *,
+    default_name: str,
+) -> RuntimeProfile | None:
+    if profile is None:
+        return None
+    scan_settings = load_runtime_settings().build.arrow_scan
+    scan_profile = profile.scan_profile or scan_settings.profile
+    use_threads = (
+        profile.use_threads if profile.use_threads is not None else scan_settings.use_threads
+    )
+    implicit_ordering = (
+        True if profile.implicit_ordering is None else profile.implicit_ordering
+    )
+    require_sequenced_output = (
+        True
+        if profile.require_sequenced_output is None
+        else profile.require_sequenced_output
+    )
+    return replace(
+        profile,
+        name=profile.name or default_name,
+        scan_profile=scan_profile,
+        implicit_ordering=implicit_ordering,
+        require_sequenced_output=require_sequenced_output,
+        use_threads=use_threads,
+    )
+
+
+def _resolve_parallel_threshold(
+    profile: RuntimeProfile,
+    current: int | None,
+) -> int | None:
+    use_threads = profile.use_threads
+    if use_threads is False:
+        return sys.maxsize
+    if current is None:
+        return DEFAULT_PARALLEL_THRESHOLD
+    return current
+
+
+def _resolve_rayon_threads(
+    profile: RuntimeProfile,
+    current: int | None,
+) -> int | None:
+    resolved = profile.resolve_cpu_threads(default=current)
+    if profile.use_threads is False:
+        if resolved is None or resolved > 1:
+            return 1
+    return resolved
 
 
 def _apply_now(ctx: GraphContext, base_now: datetime) -> GraphContext:

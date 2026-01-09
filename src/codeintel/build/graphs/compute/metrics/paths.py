@@ -11,10 +11,14 @@ from typing import TYPE_CHECKING, cast
 import rustworkx as rx
 
 from codeintel.build.graphs.rx.algos import (
+    GraphAlgoConfig,
     GraphInput,
     constant_weight_fn,
+    edge_cost_weight_fn,
     ensure_directed_store,
+    resolve_weight_context,
 )
+from codeintel.build.graphs.rx.normalize import NanPolicy
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable
@@ -90,6 +94,10 @@ def count_simple_paths(
 def compute_avg_shortest_path_from_source(
     graph: GraphInput,
     source: Hashable,
+    *,
+    weight: str | None = None,
+    nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> float:
     """Compute average shortest path length from a single source.
 
@@ -99,6 +107,12 @@ def compute_avg_shortest_path_from_source(
         Directed graph to analyze.
     source
         Source node for path computation.
+    weight
+        Optional edge weight attribute for weighted shortest paths.
+    nan_policy
+        Optional NaN handling policy for weights.
+    algo_config
+        Optional algorithm configuration for weight semantics.
 
     Returns
     -------
@@ -114,18 +128,26 @@ def compute_avg_shortest_path_from_source(
     >>> round(compute_avg_shortest_path_from_source(g, 1), 2)
     1.0
     """
-    store = ensure_directed_store(graph)
+    store = ensure_directed_store(graph, weight=weight, nan_policy=nan_policy)
     if store.graph.num_nodes() == 0:
         return 0.0
     source_idx = store.id_to_index.get(source)
     if source_idx is None:
         return 0.0
     directed_graph = cast("rx.PyDiGraph", store.graph)
+    weight_fn = constant_weight_fn()
+    if weight is not None:
+        weight_ctx = resolve_weight_context(
+            store,
+            algo_config=algo_config,
+            nan_policy=nan_policy,
+        )
+        weight_fn = edge_cost_weight_fn(context=weight_ctx)
     try:
         lengths = rx.digraph_dijkstra_shortest_path_lengths(
             directed_graph,
             source_idx,
-            constant_weight_fn(),
+            weight_fn,
         )
     except (rx.InvalidNode, rx.NullGraph):
         return 0.0

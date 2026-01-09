@@ -18,6 +18,7 @@ from codeintel.core.schemas.primitives import (
     ColumnType,
     FinalizeDedupeSpec,
     FinalizeInvariantSpec,
+    FinalizeListPolicySpec,
     FinalizePolicy,
     Index,
     TableSchema,
@@ -314,6 +315,12 @@ AST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("hash", "VARCHAR", nullable=False),
         ],
         primary_key=("hash",),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="decorators", null_policy="empty"),
+                FinalizeListPolicySpec(column="type_ignores", null_policy="empty"),
+            ),
+        ),
         description="Flattened AST nodes",
     ),
     TableSchema(
@@ -435,6 +442,15 @@ PY_SYM_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("frees", "LIST(VARCHAR)"),
         ],
         primary_key=("repo", "commit", "rel_path", "scope_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="parameters", null_policy="empty"),
+                FinalizeListPolicySpec(column="locals", null_policy="empty"),
+                FinalizeListPolicySpec(column="globals", null_policy="empty"),
+                FinalizeListPolicySpec(column="nonlocals", null_policy="empty"),
+                FinalizeListPolicySpec(column="frees", null_policy="empty"),
+            ),
+        ),
         description="Function scope name partitions from symtable.",
     ),
     TableSchema(
@@ -538,6 +554,14 @@ PY_BC_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("dont_inherit", "BOOLEAN"),
         ],
         primary_key=("repo", "commit", "rel_path", "code_unit_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="varnames", null_policy="empty"),
+                FinalizeListPolicySpec(column="names", null_policy="empty"),
+                FinalizeListPolicySpec(column="freevars", null_policy="empty"),
+                FinalizeListPolicySpec(column="cellvars", null_policy="empty"),
+            ),
+        ),
         description="Python bytecode code unit inventory.",
     ),
     TableSchema(
@@ -581,6 +605,11 @@ PY_BC_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("op_bytes", "BLOB"),
         ],
         primary_key=("repo", "commit", "rel_path", "code_unit_id", "instr_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="cache_info", null_policy="empty"),
+            ),
+        ),
         description="Python bytecode instruction facts.",
     ),
     TableSchema(
@@ -860,6 +889,11 @@ PY_INSPECT_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("status", INSPECT_OP_STATUS_STRUCT),
         ],
         primary_key=("repo", "commit", "object_id", "state_kind"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="locals", null_policy="empty"),
+            ),
+        ),
         description="Runtime state snapshots for frames, tracebacks, and generators.",
     ),
 )
@@ -918,6 +952,11 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             mode="upsert",
             conflict_columns=("repo", "commit", "rel_path", "producer"),
         ),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="future_imports", null_policy="empty"),
+            ),
+        ),
         description="Per-file parser outcomes and error diagnostics.",
     ),
     TableSchema(
@@ -941,6 +980,12 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", SYNTAX_NODE_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "node_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.ast_nodes", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.ts_nodes", null_policy="empty"),
+            ),
+        ),
         description="Canonical syntax node inventory for CPG stitching.",
     ),
     TableSchema(
@@ -989,6 +1034,12 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", SYNTAX_NODE_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "node_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.ast_nodes", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.ts_nodes", null_policy="empty"),
+            ),
+        ),
         description="Canonical syntax nodes enriched with tree-sitter weld payloads.",
     ),
     TableSchema(
@@ -1074,6 +1125,14 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", SYNTAX_DEF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "def_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.decorators", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.bases", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.params", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.qnames", null_policy="empty"),
+            ),
+        ),
         description="Definition/binding facts extracted from syntax trees.",
     ),
     TableSchema(
@@ -1097,6 +1156,12 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", SYNTAX_REF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "ref_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.referents", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.qnames", null_policy="empty"),
+            ),
+        ),
         description="Reference/use facts extracted from syntax trees.",
     ),
     TableSchema(
@@ -1124,6 +1189,14 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", SYNTAX_CALL_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "call_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(
+                    column="extras.callee_qnames",
+                    null_policy="empty",
+                ),
+            ),
+        ),
         description="Callsite facts extracted from syntax trees.",
     ),
     TableSchema(
@@ -1239,6 +1312,14 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", SYNTAX_DEF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "def_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.decorators", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.bases", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.params", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.qnames", null_policy="empty"),
+            ),
+        ),
         description="Syntax definitions enriched with SCIP resolution metadata.",
     ),
     TableSchema(
@@ -1276,6 +1357,12 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", SYNTAX_REF_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "ref_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.referents", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.qnames", null_policy="empty"),
+            ),
+        ),
         description="Syntax references enriched with SCIP resolution metadata.",
     ),
     TableSchema(
@@ -1317,6 +1404,14 @@ SYNTAX_RESOLVED_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", SYNTAX_CALL_EXTRAS_STRUCT),
         ],
         primary_key=("repo", "commit", "rel_path", "producer", "call_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(
+                    column="extras.callee_qnames",
+                    null_policy="empty",
+                ),
+            ),
+        ),
         description="Syntax callsites enriched with SCIP resolution metadata.",
     ),
     TableSchema(
@@ -1387,6 +1482,11 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         write_policy=TableWritePolicy(
             mode="upsert",
             conflict_columns=("repo", "commit", "rel_path", "producer"),
+        ),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="future_imports", null_policy="empty"),
+            ),
         ),
         description="Tree-sitter parse outcomes and error diagnostics.",
     ),
@@ -1682,6 +1782,13 @@ DOCSTRINGS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("examples", "LIST(VARCHAR)"),
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="params", null_policy="empty"),
+                FinalizeListPolicySpec(column="raises", null_policy="empty"),
+                FinalizeListPolicySpec(column="examples", null_policy="empty"),
+            ),
+        ),
         description="Structured docstring facts extracted with griffe",
     ),
 )
@@ -1704,6 +1811,12 @@ MODULES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         indexes=(
             Index("idx_core_modules_path", ("path",)),
             Index("idx_core_modules_module", ("module",)),
+        ),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="tags", null_policy="empty"),
+                FinalizeListPolicySpec(column="owners", null_policy="empty"),
+            ),
         ),
         write_policy=TableWritePolicy(
             mode="upsert",
@@ -2231,6 +2344,18 @@ CONFIG_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("reference_count", "INTEGER", nullable=False),
         ],
         primary_key=("repo", "commit", "config_path", "key"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(
+                    column="extras.reference_paths",
+                    null_policy="empty",
+                ),
+                FinalizeListPolicySpec(
+                    column="extras.reference_modules",
+                    null_policy="empty",
+                ),
+            ),
+        ),
         description="Flattened config key/value paths",
     ),
 )
@@ -2275,6 +2400,11 @@ TESTS_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("test_id",),
         indexes=(Index("idx_analytics_test_catalog_id", ("test_id",), unique=True),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.markers", null_policy="empty"),
+            ),
+        ),
         description="Pytest test catalog",
     ),
     TableSchema(
@@ -2321,6 +2451,23 @@ TESTS_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "test_id"),
         indexes=(Index("idx_analytics_test_profile_id", ("test_id",)),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.markers", null_policy="empty"),
+                FinalizeListPolicySpec(
+                    column="extras.functions_covered",
+                    null_policy="empty",
+                ),
+                FinalizeListPolicySpec(
+                    column="extras.primary_function_goids",
+                    null_policy="empty",
+                ),
+                FinalizeListPolicySpec(
+                    column="extras.subsystems_covered",
+                    null_policy="empty",
+                ),
+            ),
+        ),
         description="Test profiling metrics and coverage aggregates.",
     ),
     TableSchema(
@@ -2634,6 +2781,11 @@ CALL_WIRING_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "rel_path", "call_id"),
         indexes=(Index("idx_graph_cpg_call_candidates_call", ("call_id",)),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="candidates", null_policy="error"),
+            ),
+        ),
         description="Per-call candidate target list for wiring joins.",
     ),
     TableSchema(
@@ -2784,6 +2936,16 @@ ENTRYPOINTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "entrypoint_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(
+                    column="extras.status_codes",
+                    null_policy="empty",
+                ),
+                FinalizeListPolicySpec(column="extras.tags", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.owners", null_policy="empty"),
+            ),
+        ),
         description="External entrypoints mapped to handlers, subsystems, and tests",
     ),
     TableSchema(
@@ -2826,6 +2988,13 @@ EXTERNAL_DEPS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "dep_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.modules", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.usage_modes", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.config_keys", null_policy="empty"),
+            ),
+        ),
         description="Aggregated view of external libraries/services used by the repo",
     ),
     TableSchema(
@@ -2852,6 +3021,11 @@ EXTERNAL_DEPS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "dep_id", "function_goid_h128"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.modes", null_policy="empty"),
+            ),
+        ),
         description="Function-level callsites into external dependencies with modes and evidence",
     ),
 )
@@ -2869,6 +3043,18 @@ CONFIG_DATA_FLOW_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL,
         ],
         primary_key=("repo", "commit", "config_path", "key"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(
+                    column="extras.reference_paths",
+                    null_policy="empty",
+                ),
+                FinalizeListPolicySpec(
+                    column="extras.reference_modules",
+                    null_policy="empty",
+                ),
+            ),
+        ),
         description="Config key references derived from module AST scanning.",
     ),
     TableSchema(
@@ -2893,6 +3079,11 @@ CONFIG_DATA_FLOW_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             "function_goid_h128",
             "usage_kind",
             "call_chain_id",
+        ),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.call_chain", null_policy="empty"),
+            ),
         ),
         description="Function-level config key usage and call-chain context from entrypoints.",
     ),
@@ -3286,6 +3477,12 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
         indexes=(Index("idx_analytics_goid_risk_factors_goid", ("function_goid_h128",)),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.tags", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.owners", null_policy="empty"),
+            ),
+        ),
         description="Risk factor components per function GOID.",
     ),
     TableSchema(
@@ -3388,6 +3585,12 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
         indexes=(Index("idx_analytics_function_profile_goid", ("function_goid_h128",)),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.tags", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.owners", null_policy="empty"),
+            ),
+        ),
         description="Enriched per-function profile with risk, coverage, and semantics.",
     ),
     TableSchema(
@@ -3487,6 +3690,12 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "module"),
         indexes=(Index("idx_analytics_module_profile_module", ("module",)),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.tags", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.owners", null_policy="empty"),
+            ),
+        ),
         description="Module-level profile aggregating function and graph metrics.",
     ),
     TableSchema(
@@ -3510,6 +3719,14 @@ PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "test_id"),
         indexes=(Index("idx_analytics_behavioral_coverage_test", ("test_id",)),),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(
+                    column="extras.behavior_tags",
+                    null_policy="empty",
+                ),
+            ),
+        ),
         description="Behavioral coverage tags inferred for tests.",
     ),
 )
@@ -3533,6 +3750,11 @@ DATA_MODELS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "model_id"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.base_classes", null_policy="empty"),
+            ),
+        ),
         description="Extracted data models (dataclasses, Pydantic, TypedDicts, ORMs)",
     ),
     TableSchema(
@@ -3600,6 +3822,11 @@ DATA_MODEL_USAGE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("created_at", "TIMESTAMP", nullable=False),
         ],
         primary_key=("repo", "commit", "model_id", "function_goid_h128"),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.usage_kinds", null_policy="empty"),
+            ),
+        ),
         description="Per function/model usage summary and context (CRUD/validate/serialize).",
     ),
 )
@@ -3632,6 +3859,25 @@ FUNCTION_AST_FEATURES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Index(
                 "idx_analytics_function_ast_features_repo_commit",
                 ("repo", "commit"),
+            ),
+        ),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(
+                    column="extras.http_client_libs",
+                    null_policy="empty",
+                ),
+                FinalizeListPolicySpec(
+                    column="extras.http_server_libs",
+                    null_policy="empty",
+                ),
+                FinalizeListPolicySpec(column="extras.db_libs", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.message_libs", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.decorators", null_policy="empty"),
+                FinalizeListPolicySpec(
+                    column="extras.libraries_used",
+                    null_policy="empty",
+                ),
             ),
         ),
         description=(
@@ -3950,6 +4196,15 @@ SUBSYSTEMS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
                 ("repo", "commit", "subsystem_id"),
             ),
         ),
+        finalize_policy=FinalizePolicy(
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.modules", null_policy="empty"),
+                FinalizeListPolicySpec(
+                    column="extras.entrypoints",
+                    null_policy="empty",
+                ),
+            ),
+        ),
         description="Inferred architectural subsystems with summary metrics",
     ),
     TableSchema(
@@ -3996,6 +4251,10 @@ SUBSYSTEM_CACHE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         primary_key=("repo", "commit", "subsystem_id"),
         finalize_policy=FinalizePolicy(
             required_non_null=("repo", "commit", "subsystem_id"),
+            list_policies=(
+                FinalizeListPolicySpec(column="extras.modules", null_policy="empty"),
+                FinalizeListPolicySpec(column="extras.entrypoints", null_policy="empty"),
+            ),
             dedupe=FinalizeDedupeSpec(
                 keys=("repo", "commit", "subsystem_id"),
                 prefer_columns=("created_at",),

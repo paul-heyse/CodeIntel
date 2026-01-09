@@ -27,6 +27,7 @@ The following surfaces exist or are in-flight and will be extended, not replaced
 Description:
 Make runtime profiles the single control plane for CPU/I/O pools, scan defaults,
 plan threading, and determinism tier defaults.
+Status: Completed (profiles + threading wiring; validation/diagnostics manifests capture threading).
 Pattern:
 ```python
 from codeintel.core.columnar.execution_context import ExecutionContext
@@ -52,14 +53,15 @@ Target files:
 - `src/codeintel/core/columnar/runtime.py`
 - `src/codeintel/core/config/settings.py`
 Implementation checklist:
-- [ ] Define RuntimeProfile and ScanProfile with explicit defaults.
-- [ ] Apply CPU/I/O pools once per process and record in run metadata.
-- [ ] Plumb profile defaults into ExecutionContext and scan helpers.
+- [x] Define RuntimeProfile and ScanProfile with explicit defaults.
+- [x] Apply CPU/I/O pools once per process and record in run metadata.
+- [x] Plumb profile defaults into ExecutionContext and scan helpers.
 
 ### Scope 02 - QuerySpec control plane completion
 Description:
 Ensure all dataset scans use QuerySpec + profile defaults, with provenance and
 pushdown behavior centralized.
+Status: Completed (QuerySpec normalization + scan routing + telemetry propagation).
 Pattern:
 ```python
 from codeintel.core.columnar.expr_vocab import E
@@ -81,9 +83,9 @@ Target files:
 - `src/codeintel/build/graphs/engine/datasets.py`
 - `src/codeintel/build/graphs/validation/runner.py`
 Implementation checklist:
-- [ ] Route all remaining scans through QuerySpec helpers.
-- [ ] Enforce provenance columns via profile defaults.
-- [ ] Record scan telemetry (fragment count, row estimates) for runs.
+- [x] Route all remaining scans through QuerySpec helpers.
+- [x] Enforce provenance columns via profile defaults.
+- [x] Record scan telemetry (fragment count, row estimates) for runs.
 
 ### Scope 03 - Legacy surface retirement (plan-first execution)
 Description:
@@ -111,6 +113,7 @@ Implementation checklist:
 Description:
 Make finalize the universal correctness boundary, including deep casting for
 nested types, deterministic ordering tiers, and structured artifacts.
+Status: Completed (determinism defaults + canonical tie-breakers + artifact emission).
 Pattern:
 ```python
 from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_reader
@@ -129,14 +132,15 @@ Target files:
 - `src/codeintel/core/columnar/nested_ops.py`
 - `src/codeintel/core/columnar/kernels.py`
 Implementation checklist:
-- [ ] Implement deep cast helpers for list/struct/map columns.
-- [ ] Enforce determinism tiers and canonical ordering at finalize boundaries.
-- [ ] Emit good/errors/alignment/stats artifacts in tolerant mode.
+- [x] Implement deep cast helpers for list/struct/map columns.
+- [x] Enforce determinism tiers and canonical ordering at finalize boundaries.
+- [x] Emit good/errors/alignment/stats artifacts in tolerant mode.
 
 ### Scope 05 - Kernel lane consolidation (explode + struct projection)
 Description:
 Centralize all row-count-changing transforms and struct projections in kernel
 helpers, with aligned list validation and null list policies.
+Status: Completed (explode alignment + null list policies + kernel wrappers).
 Pattern:
 ```python
 from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges_with_aligned_lists
@@ -156,9 +160,9 @@ Target files:
 - `src/codeintel/core/columnar/nested_ops.py`
 - `src/codeintel/build/tabular/explode_ops.py`
 Implementation checklist:
-- [ ] Use list_parent_indices + take for repeat columns.
-- [ ] Validate aligned list lengths before explode.
-- [ ] Expose struct projection helpers for relation builders.
+- [x] Use list_parent_indices + take for repeat columns.
+- [x] Validate aligned list lengths before explode.
+- [x] Expose struct projection helpers for relation builders.
 
 ### Scope 06 - Build graph pipelines (plan-first joins and filters)
 Description:
@@ -359,8 +363,8 @@ Implementation checklist:
 - [ ] Emit counts as structured outputs instead of ad hoc prints.
 
 ## Sequencing Recommendation
-1) Runtime profiles + QuerySpec control plane (Scopes 01-02).
-2) Finalize gate + kernel lane consolidation (Scopes 04-05).
+1) Runtime profiles + QuerySpec control plane (Scopes 01-02). ✅
+2) Finalize gate + kernel lane consolidation (Scopes 04-05). ✅
 3) Build graph pipelines + CPG2 assembly (Scopes 06-07).
 4) Ingestion pipelines + ingestion compute (Scopes 08-09).
 5) Analytics alignment + observability artifacts (Scopes 10-11).

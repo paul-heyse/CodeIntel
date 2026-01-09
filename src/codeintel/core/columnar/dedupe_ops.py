@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
@@ -22,6 +22,7 @@ from codeintel.core.columnar.kernels import (
     stable_sort_table,
 )
 from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
@@ -96,14 +97,7 @@ def _stable_sort_for_dedupe(
     sort_table = table
     resolved_sort_keys: list[SortKey] = list(sort_keys)
     if hash_tiebreaker:
-        try:
-            ordinal = hash_struct_ordinal(
-                table,
-                columns=list(table.column_names),
-                modulus=_HASH_ORDINAL_MODULUS,
-            )
-        except (RuntimeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError, TypeError):
-            ordinal = None
+        ordinal = _hash_ordinal_for_ties(table, columns=table.column_names)
         if ordinal is not None:
             temp_name = _row_index_name(table, base="__dedupe_ordinal")
             sort_table = table.append_column(temp_name, ordinal)
@@ -116,17 +110,6 @@ def _stable_sort_for_dedupe(
     return table.take(indices)
 
 
-def _hash_columns_for_ties(sort_keys: Sequence[SortKey]) -> list[str]:
-    seen: set[str] = set()
-    columns: list[str] = []
-    for name, _order in sort_keys:
-        if name in seen:
-            continue
-        seen.add(name)
-        columns.append(name)
-    return columns
-
-
 def _hash_ordinal_for_ties(
     table: pa.Table,
     *,
@@ -136,9 +119,16 @@ def _hash_ordinal_for_ties(
     if not available:
         return None
     try:
+        safe_table = _join_safe_projection(table)
+    except ValueError:
+        return None
+    safe_columns = [name for name in available if name in safe_table.column_names]
+    if not safe_columns:
+        return None
+    try:
         return hash_struct_ordinal(
-            table,
-            columns=available,
+            safe_table,
+            columns=safe_columns,
             modulus=_HASH_ORDINAL_MODULUS,
         )
     except (RuntimeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError, TypeError):
@@ -159,7 +149,7 @@ def _score_for_keep_best_by_score(
     if hash_tiebreaker:
         ordinal = _hash_ordinal_for_ties(
             table,
-            columns=_hash_columns_for_ties(sort_keys),
+            columns=table.column_names,
         )
         if ordinal is not None:
             temp_name = _row_index_name(table, base="__dedupe_score_ordinal")
@@ -179,7 +169,7 @@ def _score_for_keep_best_by_score(
 def _join_safe_projection(
     table: pa.Table,
     *,
-    allowed_columns: Sequence[str],
+    allowed_columns: Sequence[str] = (),
 ) -> pa.Table:
     return columnar.join_safe_projection(table, allowed_columns=allowed_columns)
 
@@ -241,6 +231,39 @@ def _winner_indices_for_best_by_score(
         msg = "Order-independent dedupe failed to retain row identifiers."
         raise RuntimeError(msg)
     return selected[row_id_name]
+
+
+def _has_duplicate_keys(table: pa.Table, *, key_columns: Sequence[str]) -> bool:
+    if table.num_rows <= 1:
+        return False
+    deduped = _drop_duplicates(table, key_columns=key_columns)
+    return deduped.num_rows != table.num_rows
+
+
+def _resolve_best_by_score_ties(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+    tie_breakers: Sequence[SortKey],
+    require_tie_breakers: bool,
+) -> pa.Table:
+    if not _has_duplicate_keys(table, key_columns=key_columns):
+        return table
+    if require_tie_breakers and not tie_breakers:
+        msg = "Deterministic dedupe requires tie_breaker_columns."
+        raise ValueError(msg)
+    sort_keys = _dedupe_sort_keys(
+        table,
+        key_columns=key_columns,
+        prefer_columns=(),
+        tie_breakers=tie_breakers,
+    )
+    ordered = _stable_sort_for_dedupe(
+        table,
+        sort_keys=sort_keys,
+        hash_tiebreaker=True,
+    )
+    return _dedupe_keep_first(ordered, key_columns=key_columns)
 
 
 def dedupe_keep_first_after_sort(
@@ -318,6 +341,13 @@ def _dedupe_keep_best_by_score(
         row_id_name=row_id_name,
     )
     deduped = scored.take(indices)
+    if _has_duplicate_keys(deduped, key_columns=key_columns):
+        deduped = _resolve_best_by_score_ties(
+            deduped,
+            key_columns=key_columns,
+            tie_breakers=tie_breakers,
+            require_tie_breakers=require_tie_breakers,
+        )
     return deduped.drop([score_name, row_id_name])
 
 
@@ -518,6 +548,21 @@ def _dedupe_with_spec(
     return _drop_duplicates(table, key_columns=resolved_keys)
 
 
+def _resolve_canonical_tie_breakers(
+    table_key: str,
+    spec: DedupeSpec,
+) -> DedupeSpec:
+    if normalize_dedupe_tier(spec.tier) != "canonical":
+        return spec
+    if spec.tie_breakers:
+        return spec
+    schema = get_schema_service().get_table_schema(table_key)
+    canonical_keys = resolve_canonical_sort_keys(schema)
+    if not canonical_keys:
+        return spec
+    return replace(spec, tie_breakers=tuple(_ascending_sort_keys(canonical_keys)))
+
+
 def _dedupe_with_legacy(
     table: pa.Table,
     *,
@@ -571,7 +616,8 @@ def dedupe_table_for_table(
         return table
     key_columns = list(schema.primary_key)
     if spec is not None:
-        return _dedupe_with_spec(table, key_columns=key_columns, spec=spec)
+        resolved_spec = _resolve_canonical_tie_breakers(table_key, spec)
+        return _dedupe_with_spec(table, key_columns=key_columns, spec=resolved_spec)
     resolved_legacy = legacy or DedupeLegacy()
     return _dedupe_with_legacy(table, key_columns=key_columns, legacy=resolved_legacy)
 

@@ -24,6 +24,7 @@ from codeintel.build.graphs.engine.datasets import resolve_dataset_root
 from codeintel.build.graphs.engine.factory import EngineBuildOptions, build_graph_engine
 from codeintel.build.graphs.rx.convert import store_from_rx
 from codeintel.build.graphs.rx.metadata import (
+    DEFAULT_GRAPH_DETERMINISM_TIER,
     GraphMetadata,
     apply_graph_metadata,
     metadata_from_graph,
@@ -79,12 +80,17 @@ def _graph_metadata_for_cache(
     *,
     engine: str,
 ) -> GraphMetadata:
+    existing = metadata_from_graph(graph.graph)
     return GraphMetadata(
         cache_version=GRAPH_CACHE_VERSION,
         engine=engine,
         graph_kind=_graph_kind_name(kind),
         weight_policy=graph.weight_policy.name,
         node_payload_version=NODE_PAYLOAD_VERSION,
+        determinism_tier=(
+            existing.determinism_tier if existing is not None else DEFAULT_GRAPH_DETERMINISM_TIER
+        ),
+        scan_profile=existing.scan_profile if existing is not None else None,
     )
 
 
@@ -115,6 +121,7 @@ class GraphRuntimeOptions:
     graph_cache_dir: Path | None = None
     dataset_root_dir: Path | None = None
     features: GraphFeatureFlags = field(default_factory=GraphFeatureFlags)
+    runtime_profile: str | None = None
 
     @classmethod
     def from_parameters(cls, params: Mapping[str, object]) -> GraphRuntimeOptions:
@@ -142,6 +149,7 @@ class GraphRuntimeOptions:
             graph_cache_dir=cls._parse_graph_cache_dir_param(params),
             dataset_root_dir=cls._parse_path_param(params, key="dataset_root_dir"),
             features=cls._parse_graph_features_param(params),
+            runtime_profile=cls._parse_str_param(params, key="runtime_profile"),
         )
 
     @classmethod
@@ -361,6 +369,11 @@ class GraphRuntimeOptions:
                 else defaults.dataset_root_dir
             ),
             features=self.features,
+            runtime_profile=(
+                self.runtime_profile
+                if self.runtime_profile is not None
+                else defaults.runtime_profile
+            ),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -397,6 +410,7 @@ def graph_runtime_options_from_env(env: BuildEnv) -> GraphRuntimeOptions:
         snapshot=env.snapshot,
         backend=env.execution_context.graph_backend,
         features=env.execution_context.graph_features,
+        runtime_profile=env.execution_context.columnar_settings.profile,
     )
 
 
@@ -779,6 +793,7 @@ def resolve_graph_runtime(
         graph_cache_dir=opts.graph_cache_dir,
         dataset_root_dir=opts.dataset_root_dir,
         features=opts.features,
+        runtime_profile=opts.runtime_profile,
     )
     if opts.engine is not None:
         return GraphRuntime(options=normalized_options, engine=opts.engine)

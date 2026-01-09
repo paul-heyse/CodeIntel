@@ -60,7 +60,7 @@ def _pack_payload(value: object | None) -> dict[str, str]:
     return {_PAYLOAD_KEY: encoded}
 
 
-def _unpack_payload(data: Mapping[str, str] | None) -> object | None:
+def _unpack_payload(data: Mapping[str, object] | None) -> object | None:
     if not data:
         return None
     payload = data.get(_PAYLOAD_KEY)
@@ -90,13 +90,28 @@ def _unpack_payload(data: Mapping[str, str] | None) -> object | None:
 def _graph_attrs_in(attrs: Mapping[str, object] | None) -> dict[str, str]:
     if not attrs:
         return {}
-    return {str(key): str(value) for key, value in attrs.items()}
+    encoded: dict[str, str] = {}
+    for key, value in attrs.items():
+        serialized = _encode_payload_json(value)
+        if serialized is not None:
+            encoded[str(key)] = serialized
+    return encoded
 
 
-def _graph_attrs_out(data: Mapping[str, str] | None) -> dict[str, object]:
+def _graph_attrs_out(data: Mapping[str, object] | None) -> dict[str, object]:
     if not data:
         return {}
-    return dict(data)
+    decoded: dict[str, object] = {}
+    for key, value in data.items():
+        if isinstance(value, str):
+            try:
+                decoded_value = json.loads(value)
+            except json.JSONDecodeError:
+                decoded_value = value
+        else:
+            decoded_value = value
+        decoded[str(key)] = decoded_value
+    return decoded
 
 
 def dumps_node_link_json(graph: RxGraph, *, require_metadata: bool = False) -> str:

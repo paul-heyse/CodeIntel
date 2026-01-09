@@ -23,11 +23,11 @@ from codeintel.build.analytics.scip_diagnostics_rollups import (
     build_scip_diagnostics_rollups,
 )
 from codeintel.build.analytics.utilities.finalize import (
-    finalize_analytics_reader,
     finalize_analytics_result,
     finalize_artifact_counts,
     finalize_artifact_table_key,
 )
+from codeintel.build.analytics.utilities.pipeline import run_analytics_pipeline
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.validation.runner import (
     GraphValidationRunRequest,
@@ -46,9 +46,13 @@ from codeintel.build.hamilton.native.graphs.cpg.constants import (
 )
 from codeintel.build.tabular.finalize_ops import FinalizeResult
 from codeintel.core.columnar.dedupe_ops import DedupeTier
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext,
+    runtime_profile_from_settings,
+)
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.ordering import OrderingSpec, SortDirection, SortKey
-from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan_for_context
+from codeintel.core.columnar.plan_ops import QueryPlanOptions
 from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.columnar.run_manifest import RunManifestOptions, write_run_manifest
@@ -161,16 +165,16 @@ def persist_scip_diagnostics_rollups(*, env: BuildEnv) -> bool:
     bool
         True when all rollup datasets are written, otherwise False.
     """
-    reader = _scan_snapshot_reader(
+    table = _scan_snapshot_table(
         env=env,
         table_key=SCIP_DIAGNOSTICS_TABLE_KEY,
         columns=_SCIP_DIAGNOSTICS_COLUMNS,
     )
-    if reader is None:
+    if table is None:
         log.info("SCIP diagnostics rollups skipped; source dataset unavailable.")
         return False
 
-    rollups = build_scip_diagnostics_rollups(repo=env.repo, commit=env.commit, rows=reader)
+    rollups = build_scip_diagnostics_rollups(repo=env.repo, commit=env.commit, rows=table)
 
     summary_written = _write_dataset_table(
         env=env,
@@ -238,24 +242,23 @@ def _scan_snapshot_table(
     table_key: str,
     columns: Sequence[str] | None,
 ) -> pa.Table | None:
-    reader = _scan_snapshot_reader(
+    result = _scan_snapshot_result(
         env=env,
         table_key=table_key,
         columns=columns,
     )
-    if reader is None:
+    if result is None:
         return None
-    result = finalize_analytics_reader(table_key, reader)
     return result.good
 
 
-def _scan_snapshot_reader(
+def _scan_snapshot_result(
     *,
     env: BuildEnv,
     table_key: str,
     columns: Sequence[str] | None,
-) -> pa.RecordBatchReader | None:
-    reader: pa.RecordBatchReader | None = None
+) -> FinalizeResult | None:
+    result: FinalizeResult | None = None
     dataset_root = env.paths.dataset_root_dir
     if dataset_root is None:
         log.info("Post-run scan skipped; dataset_root_dir unavailable.")
@@ -296,14 +299,15 @@ def _scan_snapshot_reader(
                 implicit_ordering=True,
                 require_sequenced_output=True,
             )
+            ctx = _scan_execution_context(env)
             try:
-                plan = build_query_plan_for_context(
-                    dataset,
+                result = run_analytics_pipeline(
+                    source=dataset,
                     spec=query_spec,
-                    ctx=None,
+                    table_key=table_key,
+                    ctx=ctx,
                     options=options,
                 )
-                reader = plan.to_reader(use_threads=True)
             except (
                 pa.ArrowInvalid,
                 pa.ArrowNotImplementedError,
@@ -312,17 +316,27 @@ def _scan_snapshot_reader(
                 ValueError,
             ) as exc:
                 log.warning("Post-run scan failed; table_key=%s error=%s", table_key, exc)
-                reader = None
-            if reader is not None:
-                missing = [name for name in ("repo", "commit") if name not in reader.schema.names]
+                result = None
+            if result is not None:
+                missing = [
+                    name for name in ("repo", "commit") if name not in result.good.schema.names
+                ]
                 if missing:
                     log.warning(
                         "Post-run scan missing scope columns: %s table_key=%s",
                         missing,
                         table_key,
                     )
-                    reader = None
-    return reader
+                    result = None
+    return result
+
+
+def _scan_execution_context(env: BuildEnv) -> ExecutionContext:
+    runtime_ctx = env.execution_context
+    if runtime_ctx is None:
+        return ExecutionContext(use_threads=True)
+    profile = runtime_profile_from_settings(runtime_ctx.columnar_settings)
+    return ExecutionContext(use_threads=True, runtime_profile=profile)
 
 
 def _scan_snapshot_dataset(

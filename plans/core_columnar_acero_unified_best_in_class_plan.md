@@ -148,6 +148,7 @@ def resolve_canonical_sort_keys(schema: TableSchema | None) -> tuple[str, ...] |
 - src/codeintel/core/validation/schema_constraints.py
 - src/codeintel/core/schemas/table_registry.py
 - src/codeintel/core/schemas/output_registry.py
+- src/codeintel/core/schemas/view_registry.py
 - src/codeintel/build/hamilton/transforms/ingestion_normalize.py
 - src/codeintel/core/validation/engine.py
 - src/codeintel/storage/validation/columnar.py
@@ -164,11 +165,13 @@ def resolve_canonical_sort_keys(schema: TableSchema | None) -> tuple[str, ...] |
 - [x] Enforce `stable_sort_keys` precedence for canonical ordering.
 - [x] Require explicit `order_by` when `stable_sort_keys = ()` and determinism is canonical.
 - [x] Move remaining ad-hoc policy maps into schema metadata (e.g., `_DEDUPE_PREFER_COLUMNS`).
-- [ ] Encode list alignment/null list policies in `FinalizePolicy` for ingestion tables.
+- [x] Encode list alignment/null list policies in `FinalizePolicy` for ingestion tables.
+- [x] Enforce list policies for nested list paths (e.g., `extras.*`) in finalize.
+- [x] Auto-derive list policies for view schemas when list columns are present.
 - [x] Delete policy maps and per-table derivations from ingestion normalization.
 - [x] Remove redundant required-non-null/dedupe derivations and rely on `finalize_spec_for_table`.
 - [x] Ensure `stable_sort_keys` in write policy always overrides finalize canonical keys.
-- [ ] Validate serde/registry round-trips for `FinalizePolicy` fields.
+- [x] Validate serde/registry round-trips for `FinalizePolicy` fields.
 - [x] Add a guardrail to flag list columns without list policies/invariants (optional but recommended).
 
 ---
@@ -380,7 +383,7 @@ def queryspec_from_filters(
 
 ## Sequencing Recommendation
 1) Scope 00 (IR v2 + FinalizeResult runner) - completed
-2) Scope 01 (contract-driven finalize) - mostly complete; list policy migration + serde validation remain
+2) Scope 01 (contract-driven finalize) - completed
 3) Scope 02 (order-independent dedupe)
 4) Scope 03 (runtime profiles)
 5) Scope 04 (observability)
@@ -388,7 +391,7 @@ def queryspec_from_filters(
 7) Scope 06 (filter compiler integration)
 
 **Schema-derivation enablement order**
-1) Move policy maps into `FinalizePolicy` metadata (output registry); list policies still pending.
+1) Move policy maps and list policies into `FinalizePolicy` metadata (output registry).
 2) Enforce `stable_sort_keys` precedence and explicit `order_by` when canonical is disabled.
 3) Remove remaining required-non-null/dedupe derivations in callers.
 

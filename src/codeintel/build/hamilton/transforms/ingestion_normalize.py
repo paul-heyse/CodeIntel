@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, TypedDict, Unpack
 
 import pyarrow as pa
 
+from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import (
     AlignmentReport,
     AlignmentReporter,
@@ -22,8 +24,10 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_spec_for_table,
     finalize_table,
 )
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_rows
+from codeintel.ingestion.compute.base import build_ingest_query_spec
 
 if TYPE_CHECKING:
     from codeintel.build.tabular.finalize_ops import FinalizeSpec
@@ -174,6 +178,67 @@ def finalize_ingest_reader(
     return result.good
 
 
+def scoped_table_for_ingest(
+    value: InferableTabularInput,
+    *,
+    table_key: str,
+    scope: SnapshotScope | None,
+    columns: Sequence[str] | None,
+    require_scope_columns: bool,
+) -> pa.Table:
+    """Return a scope-filtered, projected table using QuerySpec plan helpers.
+
+    Parameters
+    ----------
+    value
+        Tabular input to scope and project.
+    table_key
+        Table key used to resolve projection defaults.
+    scope
+        Optional snapshot scope (repo/commit) for filtering.
+    columns
+        Optional columns to project (None keeps all).
+    require_scope_columns
+        Whether missing repo/commit columns should raise.
+
+    Returns
+    -------
+    pyarrow.Table
+        Scoped and projected table.
+
+    Raises
+    ------
+    ValueError
+        If required scope columns are missing from the table.
+    """
+    table = tabular_to_arrow_table(value)
+    if table.num_rows == 0:
+        return table.select(list(columns)) if columns is not None else table
+    if scope is None:
+        return table.select(list(columns)) if columns is not None else table
+    missing = [name for name in ("repo", "commit") if name not in table.column_names]
+    if missing:
+        if require_scope_columns:
+            msg = f"Missing snapshot columns: {missing}"
+            raise ValueError(msg)
+        return table.select(list(columns)) if columns is not None else table
+    projection_columns = tuple(columns) if columns is not None else tuple(table.column_names)
+    spec = build_ingest_query_spec(
+        table_key,
+        columns=projection_columns,
+        repo=scope.repo,
+        commit=scope.commit,
+    )
+    plan = Plan.table(table)
+    predicate = spec.scan_filter_expression()
+    if predicate is not None:
+        plan = plan.filter(predicate)
+    projection = spec.project_expressions(provenance=False)
+    if projection:
+        plan = plan.project(projection)
+    return materialize_plan(plan, use_threads=True)
+
+
 def normalize_ingest_frame(
     frame: InferableTabularInput | None,
     *,
@@ -224,4 +289,9 @@ def normalize_ingest_frame(
     return dedupe_table_for_table(table_key, aligned)
 
 
-__all__ = ["finalize_ingest_reader", "finalize_ingest_table", "normalize_ingest_frame"]
+__all__ = [
+    "finalize_ingest_reader",
+    "finalize_ingest_table",
+    "normalize_ingest_frame",
+    "scoped_table_for_ingest",
+]

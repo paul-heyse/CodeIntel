@@ -1208,9 +1208,9 @@ def _list_policy_errors(
     for policy in spec.list_policies:
         if policy.null_policy == "empty":
             continue
-        if policy.column not in context.table.column_names:
+        values = _resolve_column_path(context.table, policy.column)
+        if values is None:
             continue
-        values = context.table[policy.column]
         if not is_list_like(values.type):
             continue
         null_mask = _list_null_mask(values)
@@ -1309,23 +1309,43 @@ def _filter_good_rows(
 
 
 def _dedupe_spec_from_finalize(spec: FinalizeSpec) -> DedupeSpec | None:
+    tie_breakers = _dedupe_tie_breakers_from_finalize(spec)
+    if spec.dedupe is None:
+        if spec.determinism is None:
+            return None
+        resolved_tier = spec.determinism
+        return DedupeSpec(
+            tie_breakers=tie_breakers,
+            tier=resolved_tier,
+            strategy=_default_dedupe_strategy(resolved_tier),
+        )
     dedupe = spec.dedupe
-    if dedupe is None:
-        return None
-    if (
-        dedupe.keys is None
-        and dedupe.tie_breakers is None
-        and dedupe.tier is None
-        and dedupe.strategy is None
-    ):
-        return None
+    resolved_tier = dedupe.tier or spec.determinism or "stable_set"
+    resolved_tie_breakers = cast(
+        "tuple[SortKey, ...]",
+        tuple(dedupe.tie_breakers or ()),
+    )
+    if not resolved_tie_breakers and tie_breakers:
+        resolved_tie_breakers = tie_breakers
     return DedupeSpec(
         keys=dedupe.keys or (),
         prefer_columns=dedupe.prefer_columns,
-        tie_breakers=dedupe.tie_breakers or (),
-        tier=dedupe.tier or "stable_set",
+        tie_breakers=resolved_tie_breakers,
+        tier=resolved_tier,
         strategy=dedupe.strategy or "order_independent",
     )
+
+
+def _dedupe_tie_breakers_from_finalize(spec: FinalizeSpec) -> tuple[SortKey, ...]:
+    if spec.order_by:
+        return tuple(spec.order_by)
+    return _order_by_from_ordering_spec(spec.ordering)
+
+
+def _default_dedupe_strategy(tier: DedupeTier) -> DedupeStrategy:
+    if tier in {"best_effort", "throughput"}:
+        return "keep_arbitrary"
+    return "order_independent"
 
 
 def _apply_dedupe(

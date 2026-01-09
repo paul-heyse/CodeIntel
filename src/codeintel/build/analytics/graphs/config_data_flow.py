@@ -280,6 +280,12 @@ def _config_reference_rowset(
             "reference_paths": E.field(("extras", "reference_paths")),
         }
     )
+    plan = plan.order_by(
+        sort_keys=[
+            ("config_path", "ascending"),
+            ("key", "ascending"),
+        ]
+    )
     plan = plan.aggregate(
         keys=[E.field("config_path"), E.field("key")],
         aggregates=[("reference_paths", "list", None, "reference_paths")],

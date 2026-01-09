@@ -22,6 +22,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.ingestion_normalize import (
     finalize_ingest_reader,
+    scoped_table_for_ingest,
 )
 from codeintel.build.tabular.arrow_ops import (
     dedupe_table_for_table,
@@ -41,7 +42,7 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
     not_equal_mask,
 )
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
+from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
@@ -415,8 +416,9 @@ def _apply_occurrence_documentation(table: pa.Table) -> pa.Table:
 
 
 def _symbol_info_table(symbol_info: InferableTabularInput) -> pa.Table:
-    table = tabular_to_scoped_table(
+    table = scoped_table_for_ingest(
         symbol_info,
+        table_key=SCIP_SYMBOL_INFO_TABLE_KEY,
         columns=[
             "repo",
             "commit",
@@ -431,8 +433,9 @@ def _symbol_info_table(symbol_info: InferableTabularInput) -> pa.Table:
 
 
 def _goids_table(goids: InferableTabularInput) -> pa.Table:
-    table = tabular_to_scoped_table(
+    table = scoped_table_for_ingest(
         goids,
+        table_key=GOIDS_TABLE_KEY,
         columns=[
             "goid_h128",
             "rel_path",
@@ -456,8 +459,9 @@ def _definition_anchors_table(
     defs: InferableTabularInput,
     goids: InferableTabularInput,
 ) -> pa.Table:
-    defs_table = tabular_to_scoped_table(
+    defs_table = scoped_table_for_ingest(
         defs,
+        table_key=SYNTAX_DEFS_TABLE_KEY,
         columns=[
             "repo",
             "commit",
@@ -472,8 +476,9 @@ def _definition_anchors_table(
         scope=None,
         require_scope_columns=False,
     )
-    goids_table = tabular_to_scoped_table(
+    goids_table = scoped_table_for_ingest(
         goids,
+        table_key=GOIDS_TABLE_KEY,
         columns=[
             "repo",
             "commit",
@@ -507,8 +512,9 @@ def _definition_anchors_table(
 
 
 def _occurrences_table(occurrences: InferableTabularInput) -> pa.Table:
-    table = tabular_to_scoped_table(
+    table = scoped_table_for_ingest(
         occurrences,
+        table_key=SCIP_OCCURRENCES_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,
@@ -1263,8 +1269,9 @@ def scip_resolution__occurrence_syntax_xref__base(
         Arrow reader for core.scip_occurrence_syntax_xref.
     """
     occurrences_table = scip_resolution__frames.occurrence_span_xref
-    nodes_table = tabular_to_scoped_table(
+    nodes_table = scoped_table_for_ingest(
         q__core__syntax_nodes,
+        table_key=SYNTAX_NODES_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,

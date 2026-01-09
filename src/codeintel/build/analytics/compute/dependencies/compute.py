@@ -23,9 +23,8 @@ from codeintel.build.analytics.compute.dependencies.detection import (
 )
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
+from codeintel.build.analytics.utilities.snapshot import require_columns, snapshot_table
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_models import columns_for_table_key
@@ -427,17 +426,8 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    missing = [name for name in ("repo", "commit") if name not in frame.column_names]
-    if missing:
-        msg = f"Missing snapshot columns: {missing}"
-        raise ValueError(msg)
-    plan = Plan.table(frame).filter(
-        E.and_(
-            E.field("repo") == E.scalar(repo),
-            E.field("commit") == E.scalar(commit),
-        )
-    )
-    filtered = materialize_plan(plan, use_threads=True)
+    require_columns(frame, ("repo", "commit"))
+    filtered = snapshot_table(frame, repo=repo, commit=commit)
     return list(iter_rows(filtered))
 
 

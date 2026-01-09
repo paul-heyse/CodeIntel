@@ -8,14 +8,14 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.build.analytics.utilities.finalize import finalize_analytics_reader
-from codeintel.build.tabular.plan_ops import Plan, build_query_plan_for_context
+from codeintel.build.tabular.plan_ops import Plan, QueryPlanOptions, build_query_plan_for_context
 from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.queryspec import PROVENANCE_FIELDS, QuerySpec
 
 if TYPE_CHECKING:
     from codeintel.build.tabular.finalize_ops import FinalizeResult
 
-QuerySource = ds.Dataset | pa.Table
+type QuerySource = ds.Dataset | pa.Table
 
 
 def run_analytics_pipeline(
@@ -24,6 +24,7 @@ def run_analytics_pipeline(
     spec: QuerySpec,
     table_key: str,
     ctx: ExecutionContext,
+    options: QueryPlanOptions | None = None,
 ) -> FinalizeResult:
     """Execute a QuerySpec and finalize results for analytics outputs.
 
@@ -33,7 +34,7 @@ def run_analytics_pipeline(
         Finalize artifacts for the table key.
     """
     if isinstance(source, ds.Dataset):
-        plan = build_query_plan_for_context(source, spec=spec, ctx=ctx)
+        plan = build_query_plan_for_context(source, spec=spec, ctx=ctx, options=options)
     else:
         plan = _plan_for_table(source, spec=spec, ctx=ctx)
     reader = plan.to_reader(use_threads=ctx.resolve_use_threads())

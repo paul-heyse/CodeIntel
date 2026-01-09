@@ -19,11 +19,14 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
+from codeintel.build.hamilton.transforms.ingestion_normalize import (
+    finalize_ingest_reader,
+    scoped_table_for_ingest,
+)
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_helpers import cast_array
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
+from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
@@ -48,6 +51,10 @@ SYNTAX_DEFS_RESOLVED_TABLE_KEY = "core.syntax_defs_resolved"
 SYNTAX_REFS_RESOLVED_TABLE_KEY = "core.syntax_refs_resolved"
 SYNTAX_CALLS_RESOLVED_TABLE_KEY = "core.syntax_calls_resolved"
 SYNTAX_IMPORTS_RESOLVED_TABLE_KEY = "core.syntax_imports_resolved"
+SYNTAX_DEFS_TABLE_KEY = "core.syntax_defs"
+SYNTAX_REFS_TABLE_KEY = "core.syntax_refs"
+SYNTAX_CALLS_TABLE_KEY = "core.syntax_calls"
+SYNTAX_IMPORTS_TABLE_KEY = "core.syntax_imports"
 SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY = "core.scip_occurrence_span_xref"
 SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY = "core.scip_occurrence_syntax_xref"
 _OCCURRENCE_INT_COLUMNS = (
@@ -277,8 +284,9 @@ def _occurrence_resolution_table(
     q__core__scip_occurrence_span_xref: InferableTabularInput,
     q__core__scip_occurrence_syntax_xref: InferableTabularInput,
 ) -> pa.Table:
-    span = tabular_to_scoped_table(
+    span = scoped_table_for_ingest(
         q__core__scip_occurrence_span_xref,
+        table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
         columns=[
             "repo",
             "commit",
@@ -317,8 +325,9 @@ def _occurrence_resolution_table(
     )
     span = _coerce_occurrence_ints(span)
     span = _drop_occurrence_bytes(span)
-    syntax = tabular_to_scoped_table(
+    syntax = scoped_table_for_ingest(
         q__core__scip_occurrence_syntax_xref,
+        table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
         columns=[
             "repo",
             "commit",
@@ -537,14 +546,16 @@ def syntax_enrich__defs_resolved__base(
     pa.Table
         Arrow reader for core.syntax_defs_resolved.
     """
-    facts = tabular_to_scoped_table(
+    facts = scoped_table_for_ingest(
         q__core__syntax_defs,
+        table_key=SYNTAX_DEFS_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,
     )
-    occurrences = tabular_to_scoped_table(
+    occurrences = scoped_table_for_ingest(
         syntax_enrich__occurrence_resolution,
+        table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,
@@ -567,14 +578,16 @@ def syntax_enrich__refs_resolved__base(
     pa.Table
         Arrow reader for core.syntax_refs_resolved.
     """
-    facts = tabular_to_scoped_table(
+    facts = scoped_table_for_ingest(
         q__core__syntax_refs,
+        table_key=SYNTAX_REFS_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,
     )
-    occurrences = tabular_to_scoped_table(
+    occurrences = scoped_table_for_ingest(
         syntax_enrich__occurrence_resolution,
+        table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,
@@ -597,14 +610,16 @@ def syntax_enrich__calls_resolved__base(
     pa.Table
         Arrow reader for core.syntax_calls_resolved.
     """
-    facts = tabular_to_scoped_table(
+    facts = scoped_table_for_ingest(
         q__core__syntax_calls,
+        table_key=SYNTAX_CALLS_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,
     )
-    occurrences = tabular_to_scoped_table(
+    occurrences = scoped_table_for_ingest(
         syntax_enrich__occurrence_resolution,
+        table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,
@@ -627,14 +642,16 @@ def syntax_enrich__imports_resolved__base(
     pa.Table
         Arrow reader for core.syntax_imports_resolved.
     """
-    facts = tabular_to_scoped_table(
+    facts = scoped_table_for_ingest(
         q__core__syntax_imports,
+        table_key=SYNTAX_IMPORTS_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,
     )
-    occurrences = tabular_to_scoped_table(
+    occurrences = scoped_table_for_ingest(
         syntax_enrich__occurrence_resolution,
+        table_key=SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,

@@ -13,14 +13,13 @@ from codeintel.build.graphs.rx.algos import (
     GraphInput,
     PagerankOptions,
     constraint_by_id,
+    edge_strength_weight_fn,
     ensure_store,
     graph_node_count,
-    resolve_weight_epsilon,
-    resolve_weight_semantics,
+    resolve_weight_context,
 )
 from codeintel.build.graphs.rx.iterators import iter_edge_payloads
 from codeintel.build.graphs.rx.normalize import sorted_mapping
-from codeintel.build.graphs.rx.weights import edge_strength_from_payload
 from codeintel.core.compute.centrality import (
     compute_betweenness,
     compute_closeness,
@@ -88,16 +87,10 @@ def neighbor_stats(
     in_counts: dict[Any, int] = {}
     out_counts: dict[Any, int] = {}
 
-    resolved_nan_policy = store.numeric_policy.nan_policy
-    semantics = resolve_weight_semantics(store, algo_config)
-    epsilon = resolve_weight_epsilon(algo_config)
+    weight_ctx = resolve_weight_context(store, algo_config=algo_config)
+    weight_fn = edge_strength_weight_fn(context=weight_ctx)
     for src_idx, dst_idx, payload in iter_edge_payloads(store):
-        edge_weight = edge_strength_from_payload(
-            payload,
-            nan_policy=resolved_nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
-        )
+        edge_weight = weight_fn(payload)
         weight_val = int(edge_weight)
         src_id = store.index_to_id[src_idx]
         dst_id = store.index_to_id[dst_idx]

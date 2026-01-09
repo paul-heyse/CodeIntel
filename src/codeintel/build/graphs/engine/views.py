@@ -17,13 +17,21 @@ from typing import TYPE_CHECKING, cast
 import pyarrow as pa
 
 from codeintel.build.graphs.assembly import table_to_reader
-from codeintel.build.graphs.engine.datasets import GraphViewFactory, GraphViewScanOptions
+from codeintel.build.graphs.engine.datasets import (
+    GraphRunMetadata,
+    GraphViewFactory,
+    GraphViewScanOptions,
+    graph_execution_context,
+    graph_run_metadata,
+    persist_finalize_artifacts,
+)
 from codeintel.build.graphs.engine.protocol import GraphKind
 from codeintel.build.graphs.rx.build_from_edges import (
     BuildStoreOptions,
     EdgeBuildSpec,
     build_store_from_edge_tuples,
 )
+from codeintel.build.graphs.rx.metadata import GraphMetadata, apply_graph_metadata
 from codeintel.build.graphs.rx.policies import (
     DEFAULT_NUMERIC_POLICY,
     GraphWeightPolicy,
@@ -118,7 +126,7 @@ def _scan_options_for_table(
 ) -> GraphViewScanOptions:
     determinism = _determinism_for_table(table_key)
     provenance = determinism == "canonical"
-    execution_ctx = ExecutionContext(determinism=determinism, provenance=provenance)
+    execution_ctx = graph_execution_context(determinism=determinism, provenance=provenance)
     if base is None:
         return GraphViewScanOptions(provenance=provenance, execution_ctx=execution_ctx)
     return replace(
@@ -134,6 +142,7 @@ def _finalize_graph_table(
     table_key: str,
     determinism: DedupeTier,
     ctx: ExecutionContext | None,
+    artifacts: _FinalizeArtifacts | None = None,
 ) -> pa.Table:
     result = run_pipeline(
         plan=ExecutionPlan.from_plan(plan, determinism=determinism),
@@ -144,6 +153,14 @@ def _finalize_graph_table(
         ),
         ctx=ctx,
     )
+    if artifacts is not None:
+        persist_finalize_artifacts(
+            dataset_root=artifacts.dataset_root,
+            snapshot_id=artifacts.snapshot_id,
+            base_table_key=table_key,
+            result=result,
+            run_metadata=artifacts.run_metadata,
+        )
     return result.good
 
 
@@ -155,6 +172,32 @@ def _order_by_if_canonical(
     if determinism != "canonical":
         return ()
     return tuple(cast("SortKey", (key, "ascending")) for key in keys)
+
+
+def _graph_kind_name(kind: GraphKind) -> str:
+    raw = getattr(kind, "name", None)
+    if isinstance(raw, str):
+        return raw
+    return str(kind)
+
+
+def _apply_graph_run_metadata(
+    store: RxGraphStore,
+    *,
+    kind: GraphKind,
+    run_metadata: GraphRunMetadata | None,
+) -> None:
+    if run_metadata is None:
+        return
+    apply_graph_metadata(
+        store.graph,
+        GraphMetadata(
+            weight_policy=store.weight_policy.name,
+            graph_kind=_graph_kind_name(kind),
+            determinism_tier=run_metadata.determinism_tier,
+            scan_profile=run_metadata.scan_profile,
+        ),
+    )
 
 
 def _aggregate_edge_counts(
@@ -247,6 +290,7 @@ class _ImportGraphInputs:
     edge_counts: pa.Table
     node_ids: set[str]
     fallback_layers: dict[str, int]
+    run_metadata: GraphRunMetadata
 
 
 @dataclass(frozen=True)
@@ -254,6 +298,7 @@ class _ConfigBipartiteInputs:
     allowed_modules: set[str]
     config_table: pa.Table
     config_determinism: DedupeTier
+    run_metadata: GraphRunMetadata
 
 
 @dataclass(frozen=True)
@@ -261,6 +306,7 @@ class _SymbolModuleInputs:
     edge_table: pa.Table
     module_lookup: pa.Table
     edge_determinism: DedupeTier
+    run_metadata: GraphRunMetadata
 
 
 @dataclass(frozen=True)
@@ -268,6 +314,30 @@ class _CallGraphInputs:
     edge_table: pa.Table
     node_ids: set[int]
     node_attrs: dict[int, dict[str, object]]
+    run_metadata: GraphRunMetadata
+
+
+@dataclass(frozen=True)
+class _FinalizeArtifacts:
+    dataset_root: Path
+    snapshot_id: str
+    run_metadata: GraphRunMetadata
+
+
+def _artifacts_for_scan(
+    factory: GraphViewFactory,
+    *,
+    determinism: DedupeTier,
+    scan_options: GraphViewScanOptions,
+) -> _FinalizeArtifacts:
+    return _FinalizeArtifacts(
+        dataset_root=factory.dataset_root,
+        snapshot_id=factory.snapshot_id,
+        run_metadata=graph_run_metadata(
+            determinism=determinism,
+            execution_ctx=scan_options.execution_ctx,
+        ),
+    )
 
 
 def _edge_table_to_store[NodeId: Hashable](
@@ -319,6 +389,11 @@ def _load_call_graph_inputs(factory: GraphViewFactory) -> _CallGraphInputs | Non
         ("caller_goid_h128", "callee_goid_h128"),
     )
     edge_scan_options = _scan_options_for_table(edge_table_key)
+    edge_artifacts = _artifacts_for_scan(
+        factory,
+        determinism=edge_determinism,
+        scan_options=edge_scan_options,
+    )
     edge_plan = factory.load_plan(
         table_key=edge_table_key,
         columns=edge_columns,
@@ -331,6 +406,7 @@ def _load_call_graph_inputs(factory: GraphViewFactory) -> _CallGraphInputs | Non
         table_key=edge_table_key,
         determinism=edge_determinism,
         ctx=edge_scan_options.execution_ctx,
+        artifacts=edge_artifacts,
     )
     edge_table = _aggregate_edge_counts(
         edge_table,
@@ -351,6 +427,11 @@ def _load_call_graph_inputs(factory: GraphViewFactory) -> _CallGraphInputs | Non
     node_determinism = _determinism_for_table(node_table_key)
     node_columns = _expand_contract_columns(node_table_key, ("goid_h128", "kind"))
     node_scan_options = _scan_options_for_table(node_table_key)
+    node_artifacts = _artifacts_for_scan(
+        factory,
+        determinism=node_determinism,
+        scan_options=node_scan_options,
+    )
     node_plan = factory.load_plan(
         table_key=node_table_key,
         columns=node_columns,
@@ -365,6 +446,7 @@ def _load_call_graph_inputs(factory: GraphViewFactory) -> _CallGraphInputs | Non
                     table_key=node_table_key,
                     determinism=node_determinism,
                     ctx=node_scan_options.execution_ctx,
+                    artifacts=node_artifacts,
                 )
             ),
         )
@@ -372,6 +454,7 @@ def _load_call_graph_inputs(factory: GraphViewFactory) -> _CallGraphInputs | Non
         edge_table=edge_table,
         node_ids=node_ids,
         node_attrs=node_attrs,
+        run_metadata=edge_artifacts.run_metadata,
     )
 
 
@@ -383,6 +466,11 @@ def _load_import_edge_inputs(factory: GraphViewFactory) -> _ImportGraphInputs | 
         ("src_module", "dst_module", "module_layer"),
     )
     edge_scan_options = _scan_options_for_table(edge_table_key)
+    edge_artifacts = _artifacts_for_scan(
+        factory,
+        determinism=determinism,
+        scan_options=edge_scan_options,
+    )
     edge_plan = factory.load_plan(
         table_key=edge_table_key,
         columns=edge_columns,
@@ -395,6 +483,7 @@ def _load_import_edge_inputs(factory: GraphViewFactory) -> _ImportGraphInputs | 
         table_key=edge_table_key,
         determinism=determinism,
         ctx=edge_scan_options.execution_ctx,
+        artifacts=edge_artifacts,
     )
     edge_counts = _aggregate_edge_counts(
         edge_table,
@@ -415,6 +504,7 @@ def _load_import_edge_inputs(factory: GraphViewFactory) -> _ImportGraphInputs | 
         edge_counts=edge_counts,
         node_ids=node_ids,
         fallback_layers=fallback_layers,
+        run_metadata=edge_artifacts.run_metadata,
     )
 
 
@@ -426,6 +516,11 @@ def _load_import_module_attrs(factory: GraphViewFactory) -> dict[str, dict[str, 
         ("module", "scc_id", "component_size", "layer"),
     )
     module_scan_options = _scan_options_for_table(module_table_key)
+    module_artifacts = _artifacts_for_scan(
+        factory,
+        determinism=determinism,
+        scan_options=module_scan_options,
+    )
     module_plan = factory.load_plan(
         table_key=module_table_key,
         columns=module_columns,
@@ -438,6 +533,7 @@ def _load_import_module_attrs(factory: GraphViewFactory) -> dict[str, dict[str, 
         table_key=module_table_key,
         determinism=determinism,
         ctx=module_scan_options.execution_ctx,
+        artifacts=module_artifacts,
     )
     return _module_attrs_from_reader(factory, table_to_reader(module_table))
 
@@ -455,6 +551,11 @@ def _load_config_bipartite_inputs(
         modules_table_key,
         base=GraphViewScanOptions(apply_filter=False),
     )
+    modules_artifacts = _artifacts_for_scan(
+        factory,
+        determinism=modules_determinism,
+        scan_options=modules_scan_options,
+    )
     modules_plan = factory.load_plan(
         table_key=modules_table_key,
         columns=modules_columns,
@@ -467,6 +568,7 @@ def _load_config_bipartite_inputs(
         table_key=modules_table_key,
         determinism=modules_determinism,
         ctx=modules_scan_options.execution_ctx,
+        artifacts=modules_artifacts,
     )
     allowed_modules = _allowed_modules_from_table(
         modules_table,
@@ -487,6 +589,11 @@ def _load_config_bipartite_inputs(
         config_table_key,
         base=GraphViewScanOptions(apply_filter=False),
     )
+    config_artifacts = _artifacts_for_scan(
+        factory,
+        determinism=config_determinism,
+        scan_options=config_scan_options,
+    )
     config_plan = factory.load_plan(
         table_key=config_table_key,
         columns=config_columns,
@@ -499,11 +606,13 @@ def _load_config_bipartite_inputs(
         table_key=config_table_key,
         determinism=config_determinism,
         ctx=config_scan_options.execution_ctx,
+        artifacts=config_artifacts,
     )
     return _ConfigBipartiteInputs(
         allowed_modules=allowed_modules,
         config_table=config_table,
         config_determinism=config_determinism,
+        run_metadata=config_artifacts.run_metadata,
     )
 
 
@@ -517,6 +626,11 @@ def _load_symbol_module_inputs(
     edge_determinism = _determinism_for_table(edge_table_key)
     edge_columns = _expand_contract_columns(edge_table_key, ("def_path", "use_path"))
     edge_scan_options = _scan_options_for_table(edge_table_key)
+    edge_artifacts = _artifacts_for_scan(
+        factory,
+        determinism=edge_determinism,
+        scan_options=edge_scan_options,
+    )
     edge_plan = factory.load_plan(
         table_key=edge_table_key,
         columns=edge_columns,
@@ -529,6 +643,7 @@ def _load_symbol_module_inputs(
         table_key=edge_table_key,
         determinism=edge_determinism,
         ctx=edge_scan_options.execution_ctx,
+        artifacts=edge_artifacts,
     )
     modules_table_key = "core.modules"
     modules_determinism = _determinism_for_table(modules_table_key)
@@ -539,6 +654,11 @@ def _load_symbol_module_inputs(
     module_scan_options = _scan_options_for_table(
         modules_table_key,
         base=GraphViewScanOptions(apply_filter=False),
+    )
+    module_artifacts = _artifacts_for_scan(
+        factory,
+        determinism=modules_determinism,
+        scan_options=module_scan_options,
     )
     module_plan = factory.load_plan(
         table_key=modules_table_key,
@@ -552,6 +672,7 @@ def _load_symbol_module_inputs(
         table_key=modules_table_key,
         determinism=modules_determinism,
         ctx=module_scan_options.execution_ctx,
+        artifacts=module_artifacts,
     )
     module_lookup = _module_lookup_table(module_table, repo=repo, commit=commit)
     if module_lookup.num_rows == 0:
@@ -560,6 +681,7 @@ def _load_symbol_module_inputs(
         edge_table=edge_table,
         module_lookup=module_lookup,
         edge_determinism=edge_determinism,
+        run_metadata=edge_artifacts.run_metadata,
     )
 
 
@@ -891,6 +1013,11 @@ def load_call_graph(
         node_ids=inputs.node_ids or None,
         node_attrs=inputs.node_attrs or None,
     )
+    _apply_graph_run_metadata(
+        store,
+        kind=GraphKind.CALL_GRAPH,
+        run_metadata=inputs.run_metadata,
+    )
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
@@ -942,6 +1069,11 @@ def load_import_graph(
         ),
         node_ids=edge_inputs.node_ids or None,
         node_attrs=module_attrs or None,
+    )
+    _apply_graph_run_metadata(
+        store,
+        kind=GraphKind.IMPORT_GRAPH,
+        run_metadata=edge_inputs.run_metadata,
     )
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
@@ -1011,12 +1143,30 @@ def _allowed_modules_from_reader(
     factory: GraphViewFactory,
     modules_reader: pa.RecordBatchReader,
 ) -> set[str]:
-    table = modules_reader.read_all()
-    return _allowed_modules_from_table(
-        table,
-        repo=factory.scan_context.repo,
-        commit=factory.scan_context.commit,
-    )
+    schema_names = list(modules_reader.schema.names)
+    if "module" not in schema_names:
+        return set()
+    repo = factory.scan_context.repo
+    commit = factory.scan_context.commit
+    include_repo = repo is not None and "repo" in schema_names
+    include_commit = commit is not None and "commit" in schema_names
+    columns = ["module"]
+    if include_repo:
+        columns.append("repo")
+    if include_commit:
+        columns.append("commit")
+    allowed: set[str] = set()
+    for batch in modules_reader:
+        for row in iter_rows(batch, columns=columns):
+            module = row.get("module")
+            if module is None:
+                continue
+            if include_repo and row.get("repo") != repo:
+                continue
+            if include_commit and row.get("commit") != commit:
+                continue
+            allowed.add(str(module))
+    return allowed
 
 
 def _config_bipartite_edges(
@@ -1136,6 +1286,11 @@ def load_config_module_bipartite(
         edge_hint=len(edges),
     )
     store = build_store_from_edge_tuples(edges, spec=spec, options=options)
+    _apply_graph_run_metadata(
+        store,
+        kind=GraphKind.CONFIG_MODULE_BIPARTITE,
+        run_metadata=inputs.run_metadata,
+    )
     graph = store.graph
     log.info(
         "Config bipartite built: rows=%d empty_refs=%d allowed_modules=%d "
@@ -1212,6 +1367,11 @@ def load_symbol_module_graph(
         ),
         node_ids=node_ids or None,
     )
+    _apply_graph_run_metadata(
+        store,
+        kind=GraphKind.SYMBOL_MODULE_GRAPH,
+        run_metadata=inputs.run_metadata,
+    )
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
@@ -1251,6 +1411,11 @@ def load_symbol_function_graph(
         ("def_goid_h128", "use_goid_h128"),
     )
     edge_scan_options = _scan_options_for_table(edge_table_key)
+    edge_artifacts = _artifacts_for_scan(
+        factory,
+        determinism=edge_determinism,
+        scan_options=edge_scan_options,
+    )
     edge_plan = factory.load_plan(
         table_key=edge_table_key,
         columns=edge_columns,
@@ -1264,6 +1429,7 @@ def load_symbol_function_graph(
         table_key=edge_table_key,
         determinism=edge_determinism,
         ctx=edge_scan_options.execution_ctx,
+        artifacts=edge_artifacts,
     )
     edge_table = _aggregate_edge_counts(
         edge_table,
@@ -1294,6 +1460,11 @@ def load_symbol_function_graph(
             aggregate_edges=True,
         ),
         node_ids=node_ids or None,
+    )
+    _apply_graph_run_metadata(
+        store,
+        kind=GraphKind.SYMBOL_FUNCTION_GRAPH,
+        run_metadata=edge_artifacts.run_metadata,
     )
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 

@@ -260,7 +260,14 @@ def compute_diameter_estimate(graph: GraphInput) -> float | None:
     if len(largest) <= 1:
         return 0.0
     undirected_graph = _undirected_graph(work_store)
-    subgraph = undirected_graph.subgraph(list(largest), preserve_attrs=True)
+    ordered = sorted(
+        largest,
+        key=lambda idx: stable_key(work_store.index_to_id[idx]),
+    )
+    subgraph, _node_map = undirected_graph.subgraph_with_nodemap(
+        ordered,
+        preserve_attrs=True,
+    )
     try:
         distances = rx.graph_distance_matrix(subgraph)
     except rx.NullGraph:
@@ -305,7 +312,14 @@ def compute_avg_shortest_path_length(graph: GraphInput) -> float | None:
     if len(largest) <= 1:
         return 0.0
     undirected_graph = _undirected_graph(work_store)
-    subgraph = undirected_graph.subgraph(list(largest), preserve_attrs=True)
+    ordered = sorted(
+        largest,
+        key=lambda idx: stable_key(work_store.index_to_id[idx]),
+    )
+    subgraph, _node_map = undirected_graph.subgraph_with_nodemap(
+        ordered,
+        preserve_attrs=True,
+    )
     try:
         return float(rx.graph_unweighted_average_shortest_path_length(subgraph))
     except rx.NullGraph:

@@ -19,9 +19,10 @@ from typing import TYPE_CHECKING, TypedDict
 
 import pyarrow as pa
 
+from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 
 if TYPE_CHECKING:
@@ -215,21 +216,13 @@ def _worklist_table(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
         "start_line",
         "end_line",
     )
-    missing = [name for name in required if name not in frame.column_names]
-    if missing:
-        msg = f"Missing core.goids columns: {missing}"
-        raise ValueError(msg)
-    plan = Plan.table(frame)
-    filters: list[Expression] = []
-    if "repo" in frame.column_names:
-        filters.append(E.field("repo") == E.scalar(snapshot.repo))
-    if "commit" in frame.column_names:
-        filters.append(E.field("commit") == E.scalar(snapshot.commit))
-    if "kind" in frame.column_names:
-        filters.append(E.in_("kind", ["function", "method"]))
-    if filters:
-        plan = plan.filter(E.and_(*filters))
-    plan = plan.project({name: E.field(name) for name in required})
+    plan = snapshot_plan(
+        frame,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        columns=required,
+    )
+    plan = plan.filter(E.in_("kind", ["function", "method"]))
     aggregates: list[tuple[str, str, None, str]] = []
     for name in required:
         if name == "goid_h128":

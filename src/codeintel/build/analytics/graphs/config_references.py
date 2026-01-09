@@ -142,6 +142,12 @@ def _config_entry_rowset(
         raise ValueError(msg)
     plan = snapshot_plan(table, repo=repo, commit=commit, columns=("config_path", "key"))
     plan = plan.filter(E.and_(E.is_valid("config_path"), E.is_valid("key")))
+    plan = plan.order_by(
+        sort_keys=[
+            ("config_path", "ascending"),
+            ("key", "ascending"),
+        ]
+    )
     plan = plan.aggregate(
         keys=[E.field("config_path")],
         aggregates=[("key", "list", None, "keys")],
@@ -263,6 +269,12 @@ def _module_rowset(
     if "language" in table.column_names:
         filters.append(E.or_(E.is_null("language"), E.field("language") == E.scalar("python")))
     plan = plan.filter(E.and_(*filters))
+    plan = plan.order_by(
+        sort_keys=[
+            ("path", "ascending"),
+            ("module", "ascending"),
+        ]
+    )
     plan = plan.aggregate(
         keys=[E.field("path")],
         aggregates=[("module", "list", None, "modules")],

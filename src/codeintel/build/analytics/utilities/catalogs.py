@@ -35,7 +35,6 @@ def module_map_from_frame(
         repo=repo,
         commit=commit,
         columns=("path", "module"),
-        order_by=None,
     )
     for row in _iter_rows_from_source(source):
         path = row.get("path")
@@ -97,7 +96,6 @@ def _snapshot_source(
     repo: str | None,
     commit: str | None,
     columns: Sequence[str],
-    order_by: Sequence[str] | None,
 ) -> RowSource:
     if not isinstance(source, pa.Table):
         return source
@@ -108,7 +106,6 @@ def _snapshot_source(
         repo=repo,
         commit=commit,
         columns=columns,
-        order_by=order_by,
     )
 
 

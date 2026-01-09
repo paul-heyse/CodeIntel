@@ -26,10 +26,13 @@ from codeintel.build.hamilton.native.target_decorators import TargetSpecDescript
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
+from codeintel.build.hamilton.transforms.ingestion_normalize import (
+    finalize_ingest_reader,
+    scoped_table_for_ingest,
+)
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
+from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
@@ -318,8 +321,9 @@ def t__tree_sitter_index__ingest(
     tolerant_keys = {TS_PARSE_ERRORS_TABLE_KEY, TS_CHANGED_RANGES_TABLE_KEY}
 
     def _finalize_table(table_key: str, value: InferableTabularInput) -> pa.Table:
-        table = tabular_to_scoped_table(
+        table = scoped_table_for_ingest(
             value,
+            table_key=table_key,
             columns=None,
             scope=None,
             require_scope_columns=False,

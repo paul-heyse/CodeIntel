@@ -36,11 +36,14 @@ Target files
 - src/codeintel/build/analytics/utilities/snapshot.py
 
 Checklist
-- [ ] Add a single runner that accepts QuerySpec + ExecutionContext and returns
+- [x] Add a single runner that accepts QuerySpec + ExecutionContext and returns
       FinalizeResult.
-- [ ] Remove ad hoc plan execution from analytics modules and route through the
-      runner.
-- [ ] Keep plan lane and kernel lane explicit (no compute in nodes).
+- [x] Adopt the runner in post_run_quality_outputs (pilot path).
+- [x] Add a pipeline request helper for datasets.
+- [~] Remove ad hoc plan execution from remaining analytics modules and route
+      through the runner.
+- [~] Keep plan lane and kernel lane explicit (no compute in nodes); remaining
+      modules still mix plan execution inline.
 
 ---
 
@@ -76,9 +79,15 @@ Target files
 - src/codeintel/build/analytics/functions/*
 
 Checklist
-- [ ] Replace custom snapshot filtering/projection with QuerySpec builders.
-- [ ] Centralize provenance toggles in ExecutionContext and QuerySpec compilation.
-- [ ] Ensure scan pushdown and plan filters share the same predicate semantics.
+- [x] Replace custom snapshot filtering/projection with QuerySpec builders
+      (entrypoints/core, data_models/core, semantic_roles/core,
+      compute/dependencies, compute/data_models/usage, compute/functions/goids,
+      functions/metrics).
+- [~] Centralize provenance toggles in ExecutionContext and QuerySpec compilation
+      (QuerySpec builders exist; table-based snapshots now accept ctx;
+      post_run_quality_outputs uses ctx; remaining call sites still need
+      adoption).
+- [x] Ensure scan pushdown and plan filters share the same predicate semantics.
 
 ---
 
@@ -113,9 +122,11 @@ Target files
 - src/codeintel/build/analytics/subsystems/affinity.py
 
 Checklist
-- [ ] Use Plan.aggregate(list) rowsets for adjacency inputs.
-- [ ] Decode lists only at the final graph/AST boundary.
-- [ ] Keep ordering only when required for list semantics, not for determinism.
+- [x] Use Plan.aggregate(list) rowsets for adjacency inputs with order_by for list
+      semantics.
+- [~] Decode lists only at the final graph/AST boundary (cfg/dfg decode ordering
+      added; more rowsets remain).
+- [~] Keep ordering only when required for list semantics, not for determinism.
 
 ---
 

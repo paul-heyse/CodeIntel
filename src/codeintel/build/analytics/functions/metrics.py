@@ -22,11 +22,12 @@ from codeintel.build.analytics.functions.config import (
 )
 from codeintel.build.analytics.functions.parsing import parse_python_file
 from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
+from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 from codeintel.core.validation.reporters import FunctionValidationReporter
@@ -305,15 +306,13 @@ def _load_goids_from_frame(
         log.warning("core.goids is missing columns: %s", ", ".join(sorted(missing)))
         return {}
 
-    plan = Plan.table(goids_table)
-    filters = [
-        E.field("repo") == E.scalar(snapshot.repo),
-        E.field("commit") == E.scalar(snapshot.commit),
-        E.in_("kind", ["function", "method"]),
-    ]
-    plan = plan.filter(E.and_(*filters))
-    project = {name: E.field(name) for name in GOIDS_REQUIRED_COLUMNS}
-    plan = plan.project(project)
+    plan = snapshot_plan(
+        goids_table,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        columns=GOIDS_REQUIRED_COLUMNS,
+    )
+    plan = plan.filter(E.in_("kind", ["function", "method"]))
     aggregates: list[tuple[str, str, None, str]] = []
     for name in GOIDS_REQUIRED_COLUMNS:
         if name == "goid_h128":

@@ -42,9 +42,11 @@ from codeintel.build.analytics.utilities.ast import (
 )
 from codeintel.build.analytics.utilities.dataframe import to_records
 from codeintel.build.analytics.utilities.datasets import (
+    AnalyticsPipelineRequest,
     get_analytics_dataset_contract,
     get_function_ast_features_contract,
     insert_analytics_rows,
+    run_analytics_pipeline_to_parquet,
 )
 from codeintel.build.analytics.utilities.persistence import DeleteScope
 from codeintel.build.analytics.utilities.type_coercion import (
@@ -56,6 +58,7 @@ from codeintel.build.analytics.utilities.type_coercion import (
 )
 
 __all__ = [
+    "AnalyticsPipelineRequest",
     "CallTarget",
     "DeleteScope",
     "call_name",
@@ -73,6 +76,7 @@ __all__ = [
     "optional_int",
     "optional_str",
     "resolve_call_target",
+    "run_analytics_pipeline_to_parquet",
     "safe_unparse",
     "snippet_from_lines",
     "to_records",

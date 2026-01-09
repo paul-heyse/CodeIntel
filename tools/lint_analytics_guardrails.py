@@ -233,6 +233,88 @@ def _has_order_by(node: SgNode) -> bool:
     return node.find(pattern="$OBJ.order_by($$$ARGS)") is not None
 
 
+def _iter_rows_violations(
+    *,
+    path: Path,
+    rel: str,
+    functions: list[SgNode],
+) -> list[Violation]:
+    violations: list[Violation] = []
+    allowlist = _ALLOWLIST_ITER_ROWS.get(rel, frozenset())
+    for node in functions:
+        if not _function_has_call(node, "iter_rows"):
+            continue
+        name = _function_name(node)
+        if name is None or name in allowlist:
+            continue
+        violations.append(
+            Violation(
+                path=path,
+                lineno=node.range().start.line + 1,
+                message=_ITER_ROWS_MESSAGE,
+            )
+        )
+    return violations
+
+
+def _rowset_guardrail_violations(
+    *,
+    path: Path,
+    rel: str,
+    functions: list[SgNode],
+) -> list[Violation]:
+    violations: list[Violation] = []
+    has_list_aggregate = False
+    for node in functions:
+        if not _has_list_aggregate(node):
+            continue
+        has_list_aggregate = True
+        if _has_order_by(node):
+            continue
+        violations.append(
+            Violation(
+                path=path,
+                lineno=node.range().start.line + 1,
+                message=_ROWSET_ORDER_MESSAGE,
+            )
+        )
+    if (
+        has_list_aggregate
+        and rel not in _ALLOWLIST_NO_DECODER
+        and not _has_decoder_helper(functions)
+    ):
+        violations.append(
+            Violation(
+                path=path,
+                lineno=1,
+                message=_ROWSET_DECODER_MESSAGE,
+            )
+        )
+    return violations
+
+
+def _finalize_write_violations(*, path: Path, functions: list[SgNode]) -> list[Violation]:
+    violations: list[Violation] = []
+    for node in functions:
+        write_calls = _find_calls(node, "write_dataset")
+        if not write_calls:
+            continue
+        has_finalize = any(_function_has_call(node, name) for name in _FINALIZE_CALLS)
+        if has_finalize:
+            continue
+        for call in write_calls:
+            if not _call_has_analytics_table_key(call):
+                continue
+            violations.append(
+                Violation(
+                    path=path,
+                    lineno=call.range().start.line + 1,
+                    message=_FINALIZE_MESSAGE,
+                )
+            )
+    return violations
+
+
 def scan_analytics(repo_root: Path) -> AnalyticsScan:
     """Run analytics guardrails in a single pass.
 
@@ -262,64 +344,15 @@ def scan_analytics(repo_root: Path) -> AnalyticsScan:
         functions = _function_defs(parsed_root)
         is_analytics_file = rel.startswith(f"{_ANALYTICS_ROOT}/")
         if is_analytics_file:
-            for node in functions:
-                if not _function_has_call(node, "iter_rows"):
-                    continue
-                name = _function_name(node)
-                if name is None:
-                    continue
-                if name in _ALLOWLIST_ITER_ROWS.get(rel, frozenset()):
-                    continue
-                iter_rows_violations.append(
-                    Violation(
-                        path=path,
-                        lineno=node.range().start.line + 1,
-                        message=_ITER_ROWS_MESSAGE,
-                    )
-                )
-        has_list_aggregate = False
-        if is_analytics_file:
-            for node in functions:
-                if _has_list_aggregate(node):
-                    has_list_aggregate = True
-                    if not _has_order_by(node):
-                        rowset_violations.append(
-                            Violation(
-                                path=path,
-                                lineno=node.range().start.line + 1,
-                                message=_ROWSET_ORDER_MESSAGE,
-                            )
-                        )
-        if (
-            is_analytics_file
-            and has_list_aggregate
-            and rel not in _ALLOWLIST_NO_DECODER
-            and not _has_decoder_helper(functions)
-        ):
-            rowset_violations.append(
-                Violation(
-                    path=path,
-                    lineno=1,
-                    message=_ROWSET_DECODER_MESSAGE,
-                )
+            iter_rows_violations.extend(
+                _iter_rows_violations(path=path, rel=rel, functions=functions)
             )
-        for node in functions:
-            write_calls = _find_calls(node, "write_dataset")
-            if not write_calls:
-                continue
-            has_finalize = any(_function_has_call(node, name) for name in _FINALIZE_CALLS)
-            if has_finalize:
-                continue
-            for call in write_calls:
-                if not _call_has_analytics_table_key(call):
-                    continue
-                finalize_violations.append(
-                    Violation(
-                        path=path,
-                        lineno=call.range().start.line + 1,
-                        message=_FINALIZE_MESSAGE,
-                    )
-                )
+            rowset_violations.extend(
+                _rowset_guardrail_violations(path=path, rel=rel, functions=functions)
+            )
+        finalize_violations.extend(
+            _finalize_write_violations(path=path, functions=functions)
+        )
     return AnalyticsScan(
         iter_rows=iter_rows_violations,
         finalize_writes=finalize_violations,
@@ -336,7 +369,13 @@ def _emit_violations(violations: list[Violation], *, root: Path) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run analytics guardrails with shared scanning."""
+    """Run analytics guardrails with shared scanning.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success, 1 on violations).
+    """
     args = list(argv) if argv is not None else []
     repo_root = Path(args[0]).resolve() if args else Path.cwd().resolve()
     findings = scan_analytics(repo_root)

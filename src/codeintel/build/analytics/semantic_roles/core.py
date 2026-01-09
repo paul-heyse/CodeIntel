@@ -19,6 +19,11 @@ from codeintel.build.analytics.compute.semantic_roles import (
     classify_modules,
 )
 from codeintel.build.analytics.compute.semantic_roles.classification import decorator_names
+from codeintel.build.analytics.utilities.snapshot import (
+    require_columns,
+    snapshot_plan,
+    snapshot_table,
+)
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
@@ -480,16 +485,8 @@ def _scoped_plan(
     repo: str,
     commit: str,
 ) -> Plan:
-    missing = [name for name in ("repo", "commit") if name not in frame.column_names]
-    if missing:
-        msg = f"Missing snapshot columns: {missing}"
-        raise ValueError(msg)
-    return Plan.table(frame).filter(
-        E.and_(
-            E.field("repo") == E.scalar(repo),
-            E.field("commit") == E.scalar(commit),
-        )
-    )
+    require_columns(frame, ("repo", "commit"))
+    return snapshot_plan(frame, repo=repo, commit=commit)
 
 
 def _scoped_table(
@@ -499,10 +496,8 @@ def _scoped_table(
     commit: str,
     columns: Sequence[str],
 ) -> pa.Table:
-    plan = _scoped_plan(frame, repo=repo, commit=commit)
-    project = {name: E.field(name) for name in columns}
-    plan = plan.project(project)
-    return materialize_plan(plan, use_threads=True)
+    require_columns(frame, ("repo", "commit"))
+    return snapshot_table(frame, repo=repo, commit=commit, columns=columns)
 
 
 def _coerce_json(value: object) -> object:

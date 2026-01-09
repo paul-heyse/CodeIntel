@@ -41,6 +41,7 @@ build_extended_metrics_rows(config, request)
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
@@ -60,6 +61,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.graphs.runtime.context import GraphContext
 
+log = logging.getLogger(__name__)
 
 class GraphFilterProtocol(Protocol):
     """Protocol describing graph filter behaviors."""
@@ -326,6 +328,15 @@ def build_extended_metrics_rows[TSlices, TRow: Mapping[str, object]](
     runtime_opts = request.runtime or GraphRuntimeOptions()
     active_filters = request.filters or _NO_OP_GRAPH_FILTERS
     ctx = config.build_context(runtime_opts, request.repo, request.commit)
+    log.info(
+        "graph_metrics.run_metadata repo=%s commit=%s runtime_profile=%s scan_profile=%s "
+        "determinism=%s",
+        request.repo,
+        request.commit,
+        ctx.runtime_profile,
+        ctx.scan_profile,
+        ctx.determinism_tier,
+    )
     filtered_graph = config.filter_graph(active_filters, request.graph)
     views = build_graph_views(filtered_graph)
     slices = config.build_slices(views, ctx)
@@ -353,6 +364,15 @@ def build_metrics_pipeline_rows[TSlices, TRow](
     runtime_opts = request.runtime or GraphRuntimeOptions()
     active_filters = request.filters or _NO_OP_GRAPH_FILTERS
     ctx = config.build_context(runtime_opts, request.repo, request.commit)
+    log.info(
+        "graph_metrics.run_metadata repo=%s commit=%s runtime_profile=%s scan_profile=%s "
+        "determinism=%s",
+        request.repo,
+        request.commit,
+        ctx.runtime_profile,
+        ctx.scan_profile,
+        ctx.determinism_tier,
+    )
     filtered_graph = config.filter_graph(active_filters, request.graph)
     views = config.build_views(filtered_graph)
     slices = config.build_slices(views, ctx)

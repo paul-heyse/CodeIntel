@@ -535,6 +535,12 @@ def _call_graph_rowset(
             E.field("callee_goid_h128") != E.scalar(-1),
         )
     )
+    plan = plan.order_by(
+        sort_keys=[
+            ("caller_goid_h128", "ascending"),
+            ("callee_goid_h128", "ascending"),
+        ]
+    )
     plan = plan.aggregate(
         keys=[E.field("caller_goid_h128")],
         aggregates=[("callee_goid_h128", "list", None, "callee_goid_h128")],

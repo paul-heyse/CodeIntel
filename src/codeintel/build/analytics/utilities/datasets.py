@@ -43,9 +43,9 @@ from codeintel.build.validation.columnar import ColumnarValidationContext, valid
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable, table_to_reader
 from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.rows import table_for_rows
-from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
@@ -76,6 +76,7 @@ def snapshot_plan(
     repo: str | None = None,
     commit: str | None = None,
     columns: Sequence[str] | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> Plan:
     """Return a snapshot-scoped Plan for analytics tables.
 
@@ -84,7 +85,7 @@ def snapshot_plan(
     Plan
         Snapshot-scoped plan with optional projection applied.
     """
-    return _snapshot_plan(table, repo=repo, commit=commit, columns=columns)
+    return _snapshot_plan(table, repo=repo, commit=commit, columns=columns, ctx=ctx)
 
 
 def snapshot_table(
@@ -93,21 +94,21 @@ def snapshot_table(
     repo: str | None = None,
     commit: str | None = None,
     columns: Sequence[str] | None = None,
-    order_by: Sequence[str] | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> pa.Table:
-    """Materialize a snapshot-scoped Plan with optional ordering.
+    """Materialize a snapshot-scoped Plan.
 
     Returns
     -------
     pyarrow.Table
-        Snapshot-scoped table, optionally ordered.
+        Snapshot-scoped table.
     """
     return _snapshot_table(
         table,
         repo=repo,
         commit=commit,
         columns=columns,
-        order_by=order_by,
+        ctx=ctx,
     )
 
 
@@ -117,21 +118,21 @@ def snapshot_reader(
     repo: str | None = None,
     commit: str | None = None,
     columns: Sequence[str] | None = None,
-    order_by: Sequence[str] | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> pa.RecordBatchReader:
-    """Materialize a snapshot-scoped Plan as a reader with optional ordering.
+    """Materialize a snapshot-scoped Plan as a reader.
 
     Returns
     -------
     pyarrow.RecordBatchReader
-        Snapshot-scoped reader, optionally ordered.
+        Snapshot-scoped reader.
     """
     return _snapshot_reader(
         table,
         repo=repo,
         commit=commit,
         columns=columns,
-        order_by=order_by,
+        ctx=ctx,
     )
 
 
@@ -561,28 +562,49 @@ def insert_analytics_rows(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class AnalyticsPipelineRequest:
+    """Inputs required to execute and persist an analytics QuerySpec."""
+
+    source: QuerySource
+    spec: QuerySpec
+    table_key: str
+    ctx: ExecutionContext
+    delete_scope: DeleteScope | None = None
+
+
 def run_analytics_pipeline_to_parquet(
     gateway: BuildGateway,
     *,
-    source: QuerySource,
-    spec: QuerySpec,
-    table_key: str,
-    ctx: ExecutionContext,
-    delete_scope: DeleteScope | None = None,
+    request: AnalyticsPipelineRequest,
 ) -> int:
     """Execute a QuerySpec and persist the finalized output to parquet datasets.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for dataset access.
+    request
+        Pipeline execution inputs and optional deletion scope.
 
     Returns
     -------
     int
         Number of rows written from the finalized output.
+
+    Raises
+    ------
+    ValueError
+        If the dataset schema is missing or delete_scope is unsupported.
     """
-    contract = get_analytics_dataset_contract(gateway, table_key)
+    contract = get_analytics_dataset_contract(gateway, request.table_key)
     table_schema = contract.schema
     if table_schema is None:
         msg = f"Dataset schema missing for {contract.table_key}"
         raise ValueError(msg)
-    if delete_scope is not None and not _table_supports_snapshot_delete(contract.table_key):
+    if request.delete_scope is not None and not _table_supports_snapshot_delete(
+        contract.table_key
+    ):
         message = f"Unsupported delete target: {contract.table_key}"
         raise ValueError(message)
     dataset_root_dir, snapshot_id, repo, commit = _resolve_parquet_context(gateway)
@@ -593,10 +615,10 @@ def run_analytics_pipeline_to_parquet(
         commit=commit,
     )
     result = run_analytics_pipeline(
-        source=source,
-        spec=spec,
-        table_key=table_key,
-        ctx=ctx,
+        source=request.source,
+        spec=request.spec,
+        table_key=request.table_key,
+        ctx=request.ctx,
     )
     stable_sort_keys = _resolve_manifest_sort_keys(table_schema)
     manifest_extras = _manifest_extras(
@@ -777,6 +799,7 @@ def _chunked_rows(
 
 
 __all__ = [
+    "AnalyticsPipelineRequest",
     "get_analytics_dataset_contract",
     "get_delete_sql_by_table",
     "get_function_ast_features_contract",

@@ -95,58 +95,58 @@ def _undirected_graph(store: RxGraphStore) -> rx.PyGraph:
     return cast("rx.PyGraph", store.graph)
 
 
-def _components_from_node_map(node_map: Sequence[object]) -> list[set[int]]:
-    max_id = -1
-    for comp_id in node_map:
-        if isinstance(comp_id, int):
-            max_id = max(max_id, comp_id)
-    if max_id < 0:
-        return []
-    components: list[set[int]] = [set() for _ in range(max_id + 1)]
+def _condensation_components(
+    store: RxGraphStore,
+) -> tuple[rx.PyDiGraph, list[set[int]], dict[int, int]] | None:
+    condensed = cast("rx.PyDiGraph", rx.condensation(_directed_graph(store)))
+    node_map = condensed.attrs.get("node_map")
+    if not isinstance(node_map, Sequence) or isinstance(
+        node_map, (str, bytes, bytearray, memoryview)
+    ):
+        return None
+    components_by_id: dict[int, set[int]] = {}
     for node_idx, comp_id in enumerate(node_map):
         if isinstance(comp_id, int):
-            components[comp_id].add(node_idx)
-    return components
+            components_by_id.setdefault(comp_id, set()).add(node_idx)
+    if not components_by_id:
+        return condensed, [], {}
+    sorted_components = sort_components(store, components_by_id.values())
+    component_lookup = {
+        frozenset(component): old_id for old_id, component in components_by_id.items()
+    }
+    old_to_new: dict[int, int] = {}
+    for new_id, component in enumerate(sorted_components):
+        old_id = component_lookup.get(frozenset(component))
+        if old_id is not None:
+            old_to_new[old_id] = new_id
+    return condensed, sorted_components, old_to_new
 
 
 def _condensation_store(
     store: RxGraphStore,
     *,
-    components: Sequence[set[int]],
+    condensed_graph: rx.PyDiGraph,
+    old_to_new: dict[int, int],
+    component_count: int,
 ) -> RxGraphStore:
-    if store.graph.num_nodes() == 0:
-        return RxGraphStore.directed(weight_policy=store.weight_policy)
-    condensed = rx.condensation(_directed_graph(store))
-    node_map = condensed.attrs.get("node_map")
-    if not isinstance(node_map, Sequence) or isinstance(
-        node_map, (str, bytes, bytearray, memoryview)
-    ):
-        return RxGraphStore.directed(weight_policy=store.weight_policy)
-    old_components = _components_from_node_map(node_map)
-    if not old_components:
-        return RxGraphStore.directed(weight_policy=store.weight_policy)
-    component_keys = {
-        frozenset(store.index_to_id[idx] for idx in comp): new_id
-        for new_id, comp in enumerate(components)
-    }
-    old_to_new: dict[int, int] = {}
-    for old_id, comp in enumerate(old_components):
-        key = frozenset(store.index_to_id[idx] for idx in comp)
-        new_id = component_keys.get(key)
-        if new_id is not None:
-            old_to_new[old_id] = new_id
+    if component_count == 0:
+        return RxGraphStore.directed(
+            weight_policy=store.weight_policy,
+            numeric_policy=store.numeric_policy,
+        )
     condensed_store = RxGraphStore.directed(
-        node_hint=len(components),
+        node_hint=component_count,
         weight_policy=store.weight_policy,
+        numeric_policy=store.numeric_policy,
     )
-    for comp_id in range(len(components)):
+    for comp_id in range(component_count):
         condensed_store.ensure_node(comp_id)
-    for src_idx, dst_idx in condensed.edge_list():
+    for src_idx, dst_idx in condensed_graph.edge_list():
         src_new = old_to_new.get(src_idx)
         dst_new = old_to_new.get(dst_idx)
         if src_new is None or dst_new is None or src_new == dst_new:
             continue
-        payload = condensed.get_edge_data(src_idx, dst_idx)
+        payload = condensed_graph.get_edge_data(src_idx, dst_idx)
         weight = edge_weight_from_payload(payload)
         condensed_store.add_weighted_edge(src_new, dst_new, weight=weight)
     return condensed_store
@@ -183,9 +183,12 @@ def find_strongly_connected(
     if store.graph.num_nodes() == 0:
         return SCCResult(components=(), node_to_component={})
 
-    directed_graph = _directed_graph(store)
-    sccs = [set(component) for component in rx.strongly_connected_components(directed_graph)]
-    sorted_sccs = sort_components(store, sccs)
+    condensation_data = _condensation_components(store)
+    if condensation_data is None:
+        return SCCResult(components=(), node_to_component={})
+    condensed_graph, sorted_sccs, old_to_new = condensation_data
+    if not sorted_sccs:
+        return SCCResult(components=(), node_to_component={})
     components: list[ComponentInfo] = []
     node_to_component = component_membership_by_id(store, sorted_sccs)
     for comp_id, comp in enumerate(sorted_sccs):
@@ -199,7 +202,12 @@ def find_strongly_connected(
         )
     condensation = None
     if compute_condensation:
-        condensation = _condensation_store(store, components=sorted_sccs)
+        condensation = _condensation_store(
+            store,
+            condensed_graph=condensed_graph,
+            old_to_new=old_to_new,
+            component_count=len(sorted_sccs),
+        )
 
     return SCCResult(
         components=tuple(components),

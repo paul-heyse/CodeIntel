@@ -8,8 +8,14 @@ from dataclasses import dataclass
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
 from codeintel.core.columnar.schema_ops import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
-from codeintel.core.columnar.streaming import DatasetScanOptions, QueryPlanSpec
+from codeintel.core.columnar.streaming import (
+    DatasetScanOptions,
+    QueryPlanSpec,
+    build_scanner_for_queryspec_ctx,
+)
 from codeintel.core.columnar.streaming import build_scanner as _build_scanner
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
@@ -101,12 +107,46 @@ class ScannerParams:
             filter_expression=self.filter_expression,
         )
 
+    def to_query_spec(self) -> QuerySpec:
+        """Return a QuerySpec derived from scan parameters.
+
+        Returns
+        -------
+        QuerySpec
+            Query specification for scan or plan compilation.
+        """
+        projection = projection_spec_from_columns(
+            self.columns,
+            provenance_columns=self.provenance_columns,
+        )
+        predicate = self.filter_expression
+        return QuerySpec(
+            predicate=predicate,
+            pushdown_predicate=predicate,
+            projection=projection,
+        )
+
+
+def _query_spec_from_options(options: DatasetScanOptions) -> QuerySpec:
+    projection = projection_spec_from_columns(
+        options.columns,
+        provenance_columns=options.provenance_columns,
+    )
+    predicate = options.filter_expression
+    return QuerySpec(
+        predicate=predicate,
+        pushdown_predicate=predicate,
+        projection=projection,
+    )
+
 
 def build_scanner(
     dataset: ds.Dataset,
     *,
     options: DatasetScanOptions | None = None,
     params: ScannerParams | None = None,
+    spec: QuerySpec | None = None,
+    ctx: ExecutionContext | None = None,
 ) -> ds.Scanner:
     """Build a dataset scanner from options or convenience parameters.
 
@@ -118,15 +158,36 @@ def build_scanner(
         Optional DatasetScanOptions to use directly.
     params
         Optional convenience parameters for scanner construction.
+    spec
+        Optional QuerySpec to drive projection and predicates.
+    ctx
+        Optional execution context for runtime profile defaults.
 
     Returns
     -------
     pyarrow.dataset.Scanner
         Configured dataset scanner.
     """
-    if options is None:
-        options = (params or ScannerParams()).to_options()
-    return _build_scanner(dataset, options=options)
+    resolved_options = options
+    if resolved_options is None and params is not None:
+        resolved_options = params.to_options()
+    if spec is None:
+        if params is not None:
+            spec = params.to_query_spec()
+        elif resolved_options is not None:
+            spec = _query_spec_from_options(resolved_options)
+    if spec is None:
+        if resolved_options is None:
+            resolved_options = ScannerParams().to_options()
+        return _build_scanner(dataset, options=resolved_options)
+    if resolved_options is None:
+        resolved_options = DatasetScanOptions()
+    return build_scanner_for_queryspec_ctx(
+        dataset,
+        spec=spec,
+        ctx=ctx,
+        options=resolved_options,
+    )
 
 
 __all__ = [

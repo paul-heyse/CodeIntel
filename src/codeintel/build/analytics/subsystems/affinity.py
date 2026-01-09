@@ -297,6 +297,7 @@ def _module_rowset(
             "tags": E.field("tags") if "tags" in frame.column_names else E.scalar(None),
         }
     )
+    plan = plan.order_by(sort_keys=[("module", "ascending")])
     plan = plan.aggregate(
         keys=[E.field("module")],
         aggregates=[("tags", "list", None, "tags")],
@@ -467,6 +468,12 @@ def _config_module_rowset(
             "key": E.field("key"),
             "reference_modules": E.field(("extras", "reference_modules")),
         }
+    )
+    plan = plan.order_by(
+        sort_keys=[
+            ("config_path", "ascending"),
+            ("key", "ascending"),
+        ]
     )
     plan = plan.aggregate(
         keys=[E.field("config_path"), E.field("key")],

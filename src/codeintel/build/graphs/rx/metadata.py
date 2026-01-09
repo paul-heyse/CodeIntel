@@ -8,7 +8,7 @@ from typing import Protocol
 from codeintel.build.graphs.rx.payloads import NODE_PAYLOAD_VERSION
 
 DEFAULT_GRAPH_CACHE_VERSION = "unknown"
-DEFAULT_GRAPH_ENGINE = "unknown"
+DEFAULT_GRAPH_ENGINE = "rustworkx"
 DEFAULT_GRAPH_KIND = "unknown"
 DEFAULT_GRAPH_DETERMINISM_TIER = "stable_set"
 
@@ -23,6 +23,7 @@ class GraphMetadata:
     graph_kind: str = DEFAULT_GRAPH_KIND
     node_payload_version: str = NODE_PAYLOAD_VERSION
     determinism_tier: str = DEFAULT_GRAPH_DETERMINISM_TIER
+    scan_profile: str | None = None
 
     def as_attrs(self) -> dict[str, object]:
         """Return metadata as a JSON-compatible attribute mapping.
@@ -32,7 +33,7 @@ class GraphMetadata:
         dict[str, object]
             JSON-compatible metadata mapping.
         """
-        return {
+        attrs: dict[str, object] = {
             "cache_version": self.cache_version,
             "engine": self.engine,
             "graph_kind": self.graph_kind,
@@ -40,6 +41,9 @@ class GraphMetadata:
             "node_payload_version": self.node_payload_version,
             "determinism_tier": self.determinism_tier,
         }
+        if self.scan_profile is not None:
+            attrs["scan_profile"] = self.scan_profile
+        return attrs
 
     @classmethod
     def from_attrs(cls, attrs: object) -> GraphMetadata | None:
@@ -58,6 +62,7 @@ class GraphMetadata:
         weight_policy = _get_str(attrs, "weight_policy")
         node_payload_version = _get_str(attrs, "node_payload_version") or NODE_PAYLOAD_VERSION
         determinism_tier = _get_str(attrs, "determinism_tier") or DEFAULT_GRAPH_DETERMINISM_TIER
+        scan_profile = _get_str(attrs, "scan_profile")
         if weight_policy is None:
             return None
         return cls(
@@ -67,7 +72,35 @@ class GraphMetadata:
             graph_kind=graph_kind,
             node_payload_version=node_payload_version,
             determinism_tier=determinism_tier,
+            scan_profile=scan_profile,
         )
+
+
+def metadata_with_weight_policy(
+    metadata: GraphMetadata | None,
+    *,
+    weight_policy: str,
+) -> GraphMetadata:
+    """Return metadata with a required weight policy applied.
+
+    Returns
+    -------
+    GraphMetadata
+        Metadata with a normalized weight policy.
+    """
+    if metadata is None:
+        return GraphMetadata(weight_policy=weight_policy)
+    if metadata.weight_policy == weight_policy:
+        return metadata
+    return GraphMetadata(
+        weight_policy=weight_policy,
+        cache_version=metadata.cache_version,
+        engine=metadata.engine,
+        graph_kind=metadata.graph_kind,
+        node_payload_version=metadata.node_payload_version,
+        determinism_tier=metadata.determinism_tier,
+        scan_profile=metadata.scan_profile,
+    )
 
 
 def _get_str(attrs: dict[str, object], key: str) -> str | None:
@@ -101,4 +134,10 @@ def apply_graph_metadata(graph: GraphAttrs, metadata: GraphMetadata) -> None:
     graph.attrs = merged
 
 
-__all__ = ["GraphAttrs", "GraphMetadata", "apply_graph_metadata", "metadata_from_graph"]
+__all__ = [
+    "GraphAttrs",
+    "GraphMetadata",
+    "apply_graph_metadata",
+    "metadata_from_graph",
+    "metadata_with_weight_policy",
+]

@@ -8,12 +8,16 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.core.columnar.expr_vocab import E
+
 try:
     from pyarrow import acero
 except ImportError:  # pragma: no cover - optional dependency
     acero = None
 
 if TYPE_CHECKING or acero is not None:
+    from codeintel.core.columnar.arrowdsl import ExecutionPlan
+    from codeintel.core.columnar.execution_context import ExecutionContext
     from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
 else:
 
@@ -68,17 +72,21 @@ def build_exec_plan(
     if acero is None:
         msg = "pyarrow.acero is unavailable in this environment."
         raise RuntimeError(msg)
-    decl = acero.Declaration.from_table(table)
+    plan = Plan.table(table)
     if filter_expr is not None:
-        decl = acero.Declaration("filter", [decl], filter=filter_expr)
-    decl = acero.Declaration("project", [decl], expressions=list(projections))
-    decl = acero.Declaration(
-        "aggregate",
-        [decl],
-        keys=list(keys),
-        aggregates=list(aggregations),
-    )
-    return decl.to_table()
+        plan = plan.filter(filter_expr)
+    if projections:
+        expressions = [E.field(name) for name in projections]
+        plan = plan.project(expressions, names=list(projections))
+    if aggregations:
+        aggregate_specs = [
+            (target, function, None, f"{target}_{function}")
+            for target, function in aggregations
+        ]
+        key_exprs = [E.field(name) for name in keys]
+        plan = plan.aggregate(keys=key_exprs, aggregates=aggregate_specs)
+    exec_plan = ExecutionPlan.from_plan(plan)
+    return exec_plan.to_table(ctx=ExecutionContext())
 
 
 __all__ = [

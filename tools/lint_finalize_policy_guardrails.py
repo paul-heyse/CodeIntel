@@ -30,6 +30,13 @@ def _policy_has_list_guardrails(policy_invariants: object, policy_list_policies:
 
 
 def main() -> int:
+    """Validate finalize policies for list and dedupe guardrails.
+
+    Returns
+    -------
+    int
+        Exit code (0 on success, 1 on violations).
+    """
     service = get_schema_service()
     missing_list_policy: list[str] = []
     missing_dedupe: list[str] = []
@@ -38,15 +45,18 @@ def main() -> int:
         table_key = schema.table_key
         has_list = any(_has_list_type(column.type) for column in schema.columns)
         policy = schema.finalize_policy
-        if has_list:
-            if policy is None or not _policy_has_list_guardrails(
+        if has_list and (
+            policy is None
+            or not _policy_has_list_guardrails(
                 policy.invariants,
                 policy.list_policies,
-            ):
-                missing_list_policy.append(table_key)
-        if table_key in _DEDUPE_POLICY_REQUIRED:
-            if policy is None or policy.dedupe is None:
-                missing_dedupe.append(table_key)
+            )
+        ):
+            missing_list_policy.append(table_key)
+        if table_key in _DEDUPE_POLICY_REQUIRED and (
+            policy is None or policy.dedupe is None
+        ):
+            missing_dedupe.append(table_key)
 
     errors: list[str] = []
     if missing_list_policy:

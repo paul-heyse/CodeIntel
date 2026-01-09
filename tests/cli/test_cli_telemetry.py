@@ -13,6 +13,7 @@ from codeintel.cli.errors import OutputFormat
 from codeintel.core.config.settings import (
     BuildSettings,
     CliSettings,
+    ColumnarRuntimeSettings,
     HamiltonExecutionSettings,
     ObservabilitySettings,
     ServingSettings,
@@ -41,6 +42,7 @@ def test_run_cli_with_telemetry_calls_shutdown_on_parse_error() -> None:
     runtime_settings = RuntimeSettings(
         build=BuildSettings(engine_version="test"),
         cli=CliSettings(),
+        columnar=ColumnarRuntimeSettings(),
         execution=HamiltonExecutionSettings(),
         serving=ServingSettings(serve_dir=Path("serve")),
         observability=ObservabilitySettings(cli_enabled=False),

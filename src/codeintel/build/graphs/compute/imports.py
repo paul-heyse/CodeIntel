@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, cast
 
 import rustworkx as rx
 
+from codeintel.build.graphs.rx.components import component_membership_by_id, sort_components
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.payloads import encode_node_payload
 from codeintel.build.graphs.rx.store import RxGraphStore
@@ -103,17 +104,39 @@ def _build_import_store(
     for module in sorted(missing, key=stable_key):
         isolate_graph.add_node(encode_node_payload(module, {}))
     directed_graph = cast("rx.PyDiGraph", store.graph)
-    merged = rx.digraph_union(
-        directed_graph,
-        isolate_graph,
-        merge_nodes=True,
-        merge_edges=True,
-    )
+    merged = rx.union(directed_graph, isolate_graph, merge_nodes=True, merge_edges=True)
     return RxGraphStore.from_rx_graph(
         merged,
         weight_policy=store.weight_policy,
         numeric_policy=store.numeric_policy,
     )
+
+
+def _condensation_components(
+    store: RxGraphStore,
+) -> tuple[rx.PyDiGraph, list[set[int]], dict[int, int]] | None:
+    condensed = cast("rx.PyDiGraph", rx.condensation(cast("rx.PyDiGraph", store.graph)))
+    node_map = condensed.attrs.get("node_map")
+    if not isinstance(node_map, Sequence) or isinstance(
+        node_map, (str, bytes, bytearray, memoryview)
+    ):
+        return None
+    components_by_id: dict[int, set[int]] = {}
+    for node_idx, comp_id in enumerate(node_map):
+        if isinstance(comp_id, int):
+            components_by_id.setdefault(comp_id, set()).add(node_idx)
+    if not components_by_id:
+        return condensed, [], {}
+    sorted_components = sort_components(store, components_by_id.values())
+    component_lookup = {
+        frozenset(component): old_id for old_id, component in components_by_id.items()
+    }
+    old_to_new: dict[int, int] = {}
+    for new_id, component in enumerate(sorted_components):
+        old_id = component_lookup.get(frozenset(component))
+        if old_id is not None:
+            old_to_new[old_id] = new_id
+    return condensed, sorted_components, old_to_new
 
 
 def compute_scc(
@@ -139,16 +162,15 @@ def compute_scc(
     if store.graph.num_nodes() == 0:
         return {}
 
-    condensed = cast("rx.PyDiGraph", rx.condensation(cast("rx.PyDiGraph", store.graph)))
-    node_map = condensed.attrs.get("node_map")
-    if not isinstance(node_map, Sequence) or isinstance(
-        node_map, (str, bytes, bytearray, memoryview)
-    ):
+    condensation_data = _condensation_components(store)
+    if condensation_data is None:
+        return {}
+    _condensed_graph, components, _old_to_new = condensation_data
+    if not components:
         return {}
     return {
-        str(store.index_to_id[node_idx]): comp_id
-        for node_idx, comp_id in enumerate(node_map)
-        if isinstance(comp_id, int)
+        str(node_id): comp_id
+        for node_id, comp_id in component_membership_by_id(store, components).items()
     }
 
 
@@ -180,11 +202,16 @@ def compute_layers(
         return {}
     if not scc_map:
         return {}
-    condensed = cast("rx.PyDiGraph", rx.condensation(cast("rx.PyDiGraph", store.graph)))
+    condensation_data = _condensation_components(store)
+    if condensation_data is None:
+        return {}
+    condensed, _components, old_to_new = condensation_data
     comp_layers: dict[int, int] = {}
     for layer, generation in enumerate(rx.topological_generations(condensed)):
         for comp_id in generation:
-            comp_layers[comp_id] = layer
+            mapped = old_to_new.get(comp_id)
+            if mapped is not None:
+                comp_layers[mapped] = layer
     return {node: comp_layers.get(scc_map.get(node, -1), 0) for node in modules}
 
 

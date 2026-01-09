@@ -25,7 +25,10 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
+from codeintel.build.hamilton.transforms.ingestion_normalize import (
+    finalize_ingest_reader,
+    scoped_table_for_ingest,
+)
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.array_ops import ensure_array
@@ -50,7 +53,7 @@ from codeintel.build.tabular.compute_masks import (
     is_null_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
+from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
@@ -75,6 +78,7 @@ LOG = logging.getLogger(__name__)
 
 SYNTAX_AUGMENT_TARGET_NAME = "syntax_augment"
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
+SYNTAX_EDGES_TABLE_KEY = "core.syntax_edges"
 SYNTAX_NODES_AUGMENTED_TABLE_KEY = "core.syntax_nodes_augmented"
 SYNTAX_EDGES_AUGMENTED_TABLE_KEY = "core.syntax_edges_augmented"
 PARSE_MANIFEST_TABLE_KEY = "core.parse_manifest"
@@ -230,32 +234,37 @@ def syntax_augment__inputs(
         Collected input frames for syntax augmentation.
     """
     return _SyntaxAugmentInputs(
-        syntax_nodes=tabular_to_scoped_table(
+        syntax_nodes=scoped_table_for_ingest(
             q__core__syntax_nodes,
+            table_key=SYNTAX_NODES_TABLE_KEY,
             columns=None,
             scope=None,
             require_scope_columns=False,
         ),
-        syntax_edges=tabular_to_scoped_table(
+        syntax_edges=scoped_table_for_ingest(
             q__core__syntax_edges,
+            table_key=SYNTAX_EDGES_TABLE_KEY,
             columns=None,
             scope=None,
             require_scope_columns=False,
         ),
-        ts_nodes=tabular_to_scoped_table(
+        ts_nodes=scoped_table_for_ingest(
             q__core__ts_nodes,
+            table_key=TS_NODES_TABLE_KEY,
             columns=None,
             scope=None,
             require_scope_columns=False,
         ),
-        ts_edges=tabular_to_scoped_table(
+        ts_edges=scoped_table_for_ingest(
             q__core__ts_edges,
+            table_key=TS_EDGES_TABLE_KEY,
             columns=None,
             scope=None,
             require_scope_columns=False,
         ),
-        parse_manifest=tabular_to_scoped_table(
+        parse_manifest=scoped_table_for_ingest(
             q__core__parse_manifest,
+            table_key=PARSE_MANIFEST_TABLE_KEY,
             columns=None,
             scope=None,
             require_scope_columns=False,
@@ -1289,32 +1298,37 @@ def syntax_augment__frames(
     """
     scope = SnapshotScope.from_snapshot(env.snapshot)
     inputs = syntax_augment__inputs
-    syntax_nodes = tabular_to_scoped_table(
+    syntax_nodes = scoped_table_for_ingest(
         inputs.syntax_nodes,
+        table_key=SYNTAX_NODES_TABLE_KEY,
         columns=None,
         scope=scope,
         require_scope_columns=True,
     )
-    syntax_edges = tabular_to_scoped_table(
+    syntax_edges = scoped_table_for_ingest(
         inputs.syntax_edges,
+        table_key=SYNTAX_EDGES_TABLE_KEY,
         columns=None,
         scope=scope,
         require_scope_columns=True,
     )
-    ts_nodes = tabular_to_scoped_table(
+    ts_nodes = scoped_table_for_ingest(
         inputs.ts_nodes,
+        table_key=TS_NODES_TABLE_KEY,
         columns=None,
         scope=scope,
         require_scope_columns=True,
     )
-    ts_edges = tabular_to_scoped_table(
+    ts_edges = scoped_table_for_ingest(
         inputs.ts_edges,
+        table_key=TS_EDGES_TABLE_KEY,
         columns=None,
         scope=scope,
         require_scope_columns=True,
     )
-    parse_manifest = tabular_to_scoped_table(
+    parse_manifest = scoped_table_for_ingest(
         inputs.parse_manifest,
+        table_key=PARSE_MANIFEST_TABLE_KEY,
         columns=None,
         scope=scope,
         require_scope_columns=True,

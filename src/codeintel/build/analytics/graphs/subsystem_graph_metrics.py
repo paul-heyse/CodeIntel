@@ -197,6 +197,7 @@ def build_subsystem_graph_metrics_rows(
                 use_gpu=runtime_opts.use_gpu,
                 now=now,
                 community_detection_limit=runtime_opts.features.community_detection_limit,
+                runtime_profile=runtime_opts.runtime_profile,
             )
         )
 

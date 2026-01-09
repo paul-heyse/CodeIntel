@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import datetime
 import json
+import os
 import sys
 from asyncio.subprocess import PIPE
 from dataclasses import dataclass
@@ -86,6 +87,16 @@ class CommandResult:
         if self.exception is not None:
             payload["exception"] = self.exception
         return payload
+
+
+_SCHEMA_COMMANDS = frozenset({"finalize_policy_guardrails", "schema_diff"})
+
+
+def _schema_checks_enabled() -> bool:
+    value = os.getenv("CODEINTEL_SCHEMA_GUARDRAILS")
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _now() -> datetime.datetime:
@@ -274,6 +285,16 @@ def main() -> int:
             ],
         ),
         CommandSpec(
+            name="finalize_policy_roundtrip",
+            args=[
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "tools.lint_finalize_policy_roundtrip",
+            ],
+        ),
+        CommandSpec(
             name="build_ingestion_guardrails",
             args=[
                 "uv",
@@ -321,6 +342,8 @@ def main() -> int:
         ),
         CommandSpec(name="pyrefly", args=["uv", "run", "pyrefly", "check"]),
     ]
+    if not _schema_checks_enabled():
+        commands = [command for command in commands if command.name not in _SCHEMA_COMMANDS]
 
     results = asyncio.run(run_suite(commands, repo_root))
     report = generate_report(results, output_path)

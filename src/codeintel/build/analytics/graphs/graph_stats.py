@@ -73,6 +73,7 @@ def build_graph_stats_rows(inputs: GraphStatsInputs) -> list[tuple[object, ...]]
                 commit=commit,
                 use_gpu=inputs.use_gpu,
                 now=now,
+                runtime_profile=_runtime_opts.runtime_profile,
             )
         )
 

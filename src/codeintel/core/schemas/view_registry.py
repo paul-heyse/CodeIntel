@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+import pyarrow as pa
 from sqlglot import exp
 from sqlglot.errors import SqlglotError
 
-from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.schemas.arrow_gen import arrow_type_for_column_type
+from codeintel.core.schemas.primitives import (
+    Column,
+    FinalizeListPolicySpec,
+    FinalizePolicy,
+    TableSchema,
+)
 from codeintel.core.sqlglot_tools import (
     canonicalize_expression_duckdb,
     extract_column_lineage_from_ast,
@@ -59,13 +66,61 @@ def build_view_schema_overrides(
             schema_mapping=schema_mapping,
         )
         schema_name, table_name = _split_table_key(table_key)
+        list_policies = _list_policies_for_columns(columns)
+        finalize_policy = (
+            FinalizePolicy(list_policies=list_policies) if list_policies else None
+        )
         overrides[table_key] = TableSchema(
             schema=schema_name,
             name=table_name,
             columns=columns,
+            finalize_policy=finalize_policy,
             description=_VIEW_SCHEMA_DESCRIPTION,
         )
     return overrides
+
+
+def _is_list_type(dtype: pa.DataType) -> bool:
+    checks = [
+        pa.types.is_list,
+        pa.types.is_large_list,
+        pa.types.is_fixed_size_list,
+    ]
+    list_view = getattr(pa.types, "is_list_view", None)
+    if callable(list_view):
+        checks.append(list_view)
+    large_list_view = getattr(pa.types, "is_large_list_view", None)
+    if callable(large_list_view):
+        checks.append(large_list_view)
+    return any(check(dtype) for check in checks)
+
+
+def _list_paths(dtype: pa.DataType, prefix: str) -> Iterable[str]:
+    if _is_list_type(dtype):
+        yield prefix
+        return
+    if pa.types.is_struct(dtype):
+        for field in dtype:
+            yield from _list_paths(field.type, f"{prefix}.{field.name}")
+
+
+def _list_policies_for_columns(
+    columns: Sequence[Column],
+) -> tuple[FinalizeListPolicySpec, ...]:
+    policies: list[FinalizeListPolicySpec] = []
+    for column in columns:
+        if "LIST(" not in column.type.upper():
+            continue
+        dtype = arrow_type_for_column_type(column.type)
+        paths = list(_list_paths(dtype, column.name))
+        if not paths:
+            paths = [column.name]
+        for path in paths:
+            null_policy = "error" if path == column.name and not column.nullable else "empty"
+            policies.append(
+                FinalizeListPolicySpec(column=path, null_policy=null_policy)
+            )
+    return tuple(policies)
 
 
 def _iter_view_builders() -> Iterable[tuple[str, ViewBuilder]]:

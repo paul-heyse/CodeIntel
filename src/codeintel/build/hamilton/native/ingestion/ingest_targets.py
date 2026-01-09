@@ -70,12 +70,12 @@ from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_
 from codeintel.build.hamilton.transforms.ingestion_normalize import (
     finalize_ingest_table,
     normalize_ingest_frame,
+    scoped_table_for_ingest,
 )
 from codeintel.build.hamilton.transforms.registry_inject import inject_from_registry
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.tabular.arrow_ops import emit_alignment_report
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import (
     ColumnarRows,
@@ -545,8 +545,9 @@ def t__modules__ingest(
             )
         )
 
-    module_table = tabular_to_scoped_table(
+    module_table = scoped_table_for_ingest(
         t__modules__run.module_rows,
+        table_key=MODULES_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,
@@ -556,8 +557,9 @@ def t__modules__ingest(
         module_table,
         target_name=MODULES_TARGET_NAME,
     )
-    file_state_table = tabular_to_scoped_table(
+    file_state_table = scoped_table_for_ingest(
         t__modules__run.file_state_rows,
+        table_key=FILE_STATE_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,
@@ -567,8 +569,9 @@ def t__modules__ingest(
         file_state_table,
         target_name=MODULES_TARGET_NAME,
     )
-    repo_map_table = tabular_to_scoped_table(
+    repo_map_table = scoped_table_for_ingest(
         t__modules__run.repo_map_rows,
+        table_key=REPO_MAP_TABLE_KEY,
         columns=None,
         scope=None,
         require_scope_columns=False,

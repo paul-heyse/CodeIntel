@@ -253,6 +253,7 @@ def _config_reference_rowset(
             "reference_modules": E.field(("extras", "reference_modules")),
         }
     )
+    plan = plan.order_by(sort_keys=[("key", "ascending")])
     plan = plan.aggregate(
         keys=[E.field("key")],
         aggregates=[("reference_modules", "list", None, "reference_modules")],
@@ -440,6 +441,7 @@ def _build_projection_plan(
             betweenness_cap=MAX_BETWEENNESS_NODES,
             pagerank_weight="weight",
             betweenness_weight="weight",
+            runtime_profile=runtime_opts.runtime_profile,
         )
     )
     store = ensure_store(graph)

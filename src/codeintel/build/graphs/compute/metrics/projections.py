@@ -18,15 +18,14 @@ from codeintel.build.graphs.rx.algos import (
     BetweennessOptions,
     GraphAlgoConfig,
     GraphInput,
+    edge_strength_weight_fn,
     ensure_store,
     graph_node_count,
-    resolve_weight_epsilon,
-    resolve_weight_semantics,
+    resolve_weight_context,
 )
 from codeintel.build.graphs.rx.iterators import iter_edge_payloads
 from codeintel.build.graphs.rx.normalize import sorted_mapping
 from codeintel.build.graphs.rx.store import RxGraphStore
-from codeintel.build.graphs.rx.weights import edge_strength_from_payload
 from codeintel.core.compute.centrality import compute_betweenness, compute_closeness
 
 if TYPE_CHECKING:
@@ -47,16 +46,10 @@ def _projection_degree_stats(
 ) -> tuple[dict[Any, int], dict[Any, float]]:
     degree: dict[Any, int] = dict.fromkeys(proj_store.node_ids(), 0)
     weighted_degree: dict[Any, float] = dict.fromkeys(proj_store.node_ids(), 0.0)
-    resolved_nan_policy = proj_store.numeric_policy.nan_policy
-    semantics = resolve_weight_semantics(proj_store, algo_config)
-    epsilon = resolve_weight_epsilon(algo_config)
+    weight_ctx = resolve_weight_context(proj_store, algo_config=algo_config)
+    weight_fn = edge_strength_weight_fn(context=weight_ctx)
     for src_idx, dst_idx, payload in iter_edge_payloads(proj_store):
-        weight_val = edge_strength_from_payload(
-            payload,
-            nan_policy=resolved_nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
-        )
+        weight_val = weight_fn(payload)
         src_id = proj_store.index_to_id[src_idx]
         dst_id = proj_store.index_to_id[dst_idx]
         if src_idx == dst_idx:
