@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 from codeintel.build.graphs.compute.metrics.types import CentralityBundle, NeighborStats
 from codeintel.build.graphs.rx.algos import (
+    BetweennessOptions,
+    GraphAlgoConfig,
     GraphInput,
+    PagerankOptions,
     constraint_by_id,
     ensure_store,
     graph_node_count,
@@ -36,6 +39,14 @@ class CentralityComputations:
 
     eigen_fn: Callable[..., dict[Any, float]] | None = None
     constraint_fn: Callable[..., Any] | None = None
+
+
+def _algo_config(ctx: GraphContext) -> GraphAlgoConfig:
+    return GraphAlgoConfig(
+        parallel_threshold=ctx.parallel_threshold,
+        rayon_threads=ctx.rayon_threads,
+        weight_semantics=ctx.weight_semantics,
+    )
 
 
 def _betweenness_sample(graph: GraphInput, ctx: GraphContext) -> int | None:
@@ -106,16 +117,24 @@ def centrality_directed(
     """
     betweenness_weight = ctx.betweenness_weight if weight is None else weight
     pagerank_weight = ctx.pagerank_weight if weight is None else weight
+    algo_config = _algo_config(ctx)
 
     betweenness = compute_betweenness(
         graph,
-        k=_betweenness_sample(graph, ctx),
-        weight=betweenness_weight,
-        seed=ctx.seed,
+        options=BetweennessOptions(
+            k=_betweenness_sample(graph, ctx),
+            weight=betweenness_weight,
+            seed=ctx.seed,
+        ),
+        algo_config=algo_config,
     )
-    closeness = compute_closeness(graph)
-    harmonic = compute_harmonic_centrality(graph)
-    pagerank = compute_pagerank(graph, weight=pagerank_weight)
+    closeness = compute_closeness(graph, algo_config=algo_config)
+    harmonic = compute_harmonic_centrality(graph, algo_config=algo_config)
+    pagerank = compute_pagerank(
+        graph,
+        options=PagerankOptions(weight=pagerank_weight),
+        algo_config=algo_config,
+    )
 
     eigenvector: dict[Any, float] = {}
     if include_eigen and graph_node_count(graph) > 0:
@@ -125,6 +144,7 @@ def centrality_directed(
             graph,
             max_iter=ctx.eigen_max_iter,
             weight=weight,
+            algo_config=algo_config,
         )
         if not eigenvector:
             log.warning("Eigenvector centrality did not converge for graph=%s", graph)
@@ -153,15 +173,23 @@ def centrality_undirected(
     CentralityBundle
         Centrality metrics for the undirected graph.
     """
+    algo_config = _algo_config(ctx)
     betweenness = compute_betweenness(
         graph,
-        k=_betweenness_sample(graph, ctx),
-        weight=weight,
-        seed=ctx.seed,
+        options=BetweennessOptions(
+            k=_betweenness_sample(graph, ctx),
+            weight=weight,
+            seed=ctx.seed,
+        ),
+        algo_config=algo_config,
     )
-    closeness = compute_closeness(graph)
-    harmonic = compute_harmonic_centrality(graph)
-    pagerank = compute_pagerank(graph, weight=weight)
+    closeness = compute_closeness(graph, algo_config=algo_config)
+    harmonic = compute_harmonic_centrality(graph, algo_config=algo_config)
+    pagerank = compute_pagerank(
+        graph,
+        options=PagerankOptions(weight=weight),
+        algo_config=algo_config,
+    )
 
     eigenvector: dict[Any, float] = {}
     if graph_node_count(graph) > 0:
@@ -171,6 +199,7 @@ def centrality_undirected(
             graph,
             max_iter=ctx.eigen_max_iter,
             weight=weight,
+            algo_config=algo_config,
         )
         if not eigenvector:
             log.warning("Eigenvector centrality did not converge for graph=%s", graph)

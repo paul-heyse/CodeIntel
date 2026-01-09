@@ -15,14 +15,15 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     identity_keys,
 )
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinals
+from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.core.columnar.arrowdsl import join_safe_projection
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.rows import empty_table_for_table
 
@@ -59,6 +60,10 @@ class ImportModuleDiagnostics:
     dropped_rows: int
 
 
+def _join_ready(table: pa.Table) -> pa.Table:
+    return join_safe_projection(normalize_table_for_join(table))
+
+
 def cpg2_nodes__import_modules(
     import_modules: pa.Table,
     *,
@@ -75,7 +80,7 @@ def cpg2_nodes__import_modules(
     if not required.issubset(set(import_modules.column_names)):
         return empty_table_for_table(CPG_NODES_TABLE_KEY)
     normalized = canonicalize_for_table(import_modules, table_key=IMPORT_MODULES_TABLE_KEY)
-    normalized = normalize_table_for_join(normalized)
+    normalized = _join_ready(normalized)
     join_keys = ["repo", "commit", "module"]
     precheck = finalize_join_keys(
         normalized,
@@ -96,7 +101,7 @@ def cpg2_nodes__import_modules(
         pk_columns=identity_keys(IMPORT_MODULES_TABLE_KEY),
         include_source_pk_json=True,
     )
-    anchors = normalize_table_for_join(anchors)
+    anchors = _join_ready(anchors)
     left_plan = Plan.table(normalized).project(
         {
             "repo": E.cast(E.field("repo"), "string"),
@@ -334,7 +339,7 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
             "kind": None,
         },
     )
-    normalized_edges = normalize_table_for_join(normalized_edges)
+    normalized_edges = _join_ready(normalized_edges)
     edge_keys = ["caller_goid_h128", "callee_goid_h128"]
     edge_precheck = finalize_join_keys(
         normalized_edges,
@@ -368,17 +373,17 @@ def _call_graph_joined_table(call_edges: pa.Table, goids: pa.Table) -> pa.Table:
         join_keys=["goid_h128"],
     )
     anchor_base = anchor_precheck.good
-    anchor_base = normalize_table_for_join(anchor_base)
+    anchor_base = _join_ready(anchor_base)
     src_anchor = rename_table_columns(
         anchor_base,
         {"goid_h128": "caller_goid_h128", "cpg_node_id": "src_cpg_node_id"},
     )
-    src_anchor = normalize_table_for_join(src_anchor)
+    src_anchor = _join_ready(src_anchor)
     dst_anchor = rename_table_columns(
         anchor_base,
         {"goid_h128": "callee_goid_h128", "cpg_node_id": "dst_cpg_node_id"},
     )
-    dst_anchor = normalize_table_for_join(dst_anchor)
+    dst_anchor = _join_ready(dst_anchor)
     edge_project = {
         "repo": E.cast(E.field("repo"), "string"),
         "commit": E.cast(E.field("commit"), "string"),
@@ -450,7 +455,7 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
             "module_layer": None,
         },
     )
-    normalized_edges = normalize_table_for_join(normalized_edges)
+    normalized_edges = _join_ready(normalized_edges)
     edge_keys = ["repo", "commit", "src_module", "dst_module"]
     edge_precheck = finalize_join_keys(
         normalized_edges,
@@ -487,17 +492,17 @@ def _import_graph_joined_table(import_edges: pa.Table, import_modules: pa.Table)
         join_keys=["repo", "commit", "module"],
     )
     anchor_base = anchor_precheck.good
-    anchor_base = normalize_table_for_join(anchor_base)
+    anchor_base = _join_ready(anchor_base)
     src_anchor = rename_table_columns(
         anchor_base,
         {"module": "src_module", "cpg_node_id": "src_cpg_node_id"},
     )
-    src_anchor = normalize_table_for_join(src_anchor)
+    src_anchor = _join_ready(src_anchor)
     dst_anchor = rename_table_columns(
         anchor_base,
         {"module": "dst_module", "cpg_node_id": "dst_cpg_node_id"},
     )
-    dst_anchor = normalize_table_for_join(dst_anchor)
+    dst_anchor = _join_ready(dst_anchor)
     edge_project = {
         "repo": E.cast(E.field("repo"), "string"),
         "commit": E.cast(E.field("commit"), "string"),
@@ -570,7 +575,7 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
         )
 
     expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-    return safe_filter_expr(table, expr, fallback_mask=_edge_mask)
+    return plan_filter_or_fallback(table, expr, fallback_mask=_edge_mask)
 
 
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
@@ -580,7 +585,7 @@ def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     def _mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
         return is_valid_mask(target.column("cpg_node_id"))
 
-    return safe_filter_expr(table, is_valid_expr("cpg_node_id"), fallback_mask=_mask)
+    return plan_filter_or_fallback(table, is_valid_expr("cpg_node_id"), fallback_mask=_mask)
 
 
 __all__ = [

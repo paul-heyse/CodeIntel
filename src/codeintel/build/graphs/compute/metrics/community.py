@@ -9,7 +9,9 @@ from typing import Any, cast
 import rustworkx as rx
 
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, to_undirected_store
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, stable_key
+from codeintel.build.graphs.rx.components import sort_components
+from codeintel.build.graphs.rx.iterators import edge_weight_map, neighbors_by_index
+from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 
@@ -18,16 +20,7 @@ def _edge_key(left: int, right: int) -> tuple[int, int]:
 
 
 def _neighbor_map(store: RxGraphStore) -> dict[int, list[int]]:
-    neighbors: dict[int, set[int]] = {idx: set() for idx in store.graph.node_indices()}
-    for src_idx, dst_idx in store.graph.edge_list():
-        if src_idx == dst_idx:
-            continue
-        neighbors[src_idx].add(dst_idx)
-        neighbors[dst_idx].add(src_idx)
-    return {
-        idx: sorted(values, key=lambda node_idx: stable_key(store.index_to_id[node_idx]))
-        for idx, values in neighbors.items()
-    }
+    return neighbors_by_index(store, include_self=False)
 
 
 def _component_size_without_edge(
@@ -77,27 +70,13 @@ def _components_without_edges(
     return components
 
 
-def _component_sort_key(store: RxGraphStore, component: set[int]) -> tuple[str, str]:
-    if not component:
-        return ("", "")
-    smallest = min(
-        (store.index_to_id[idx] for idx in component),
-        key=stable_key,
-    )
-    return stable_key(smallest)
-
-
 def _assign_communities(
     store: RxGraphStore,
     components: list[set[int]],
     *,
-    sort_components: bool,
+    sort_components_flag: bool,
 ) -> dict[Any, int]:
-    ordered = (
-        sorted(components, key=lambda comp: _component_sort_key(store, comp))
-        if sort_components
-        else list(components)
-    )
+    ordered = sort_components(store, components) if sort_components_flag else list(components)
     mapping: dict[Any, int] = {}
     for community_id, component in enumerate(ordered):
         for node_idx in component:
@@ -124,7 +103,7 @@ def _bridge_split_components(
     return _components_without_edges(neighbors, node_order, removed_edges)
 
 
-def _detect_communities(
+def _detect_communities_bridge_split(
     graph: GraphInput,
     *,
     min_component_size: int,
@@ -143,7 +122,30 @@ def _detect_communities(
     if seed is not None:
         rng = random.Random(seed)
         rng.shuffle(components)
-    return _assign_communities(work_store, components, sort_components=seed is None)
+    return _assign_communities(work_store, components, sort_components_flag=seed is None)
+
+
+def detect_communities_bridge_split(
+    graph: GraphInput,
+    *,
+    weight: str | None = None,
+    resolution: float = 1.0,
+    seed: int | None = None,
+) -> dict[Any, int]:
+    """Detect communities using a deterministic bridge-split heuristic.
+
+    Returns
+    -------
+    dict[Any, int]
+        Community assignments keyed by node identifier.
+    """
+    return _detect_communities_bridge_split(
+        graph,
+        min_component_size=2,
+        weight=weight,
+        resolution=resolution,
+        seed=seed,
+    )
 
 
 def detect_communities_greedy(
@@ -159,9 +161,8 @@ def detect_communities_greedy(
     dict[Any, int]
         Community assignments keyed by node identifier.
     """
-    return _detect_communities(
+    return detect_communities_bridge_split(
         graph,
-        min_component_size=2,
         weight=weight,
         resolution=resolution,
         seed=None,
@@ -175,16 +176,15 @@ def detect_communities_louvain(
     resolution: float = 1.0,
     seed: int | None = None,
 ) -> dict[Any, int]:
-    """Detect communities using a deterministic Louvain-style heuristic.
+    """Detect communities using the bridge-split heuristic (legacy name).
 
     Returns
     -------
     dict[Any, int]
         Community assignments keyed by node identifier.
     """
-    return _detect_communities(
+    return detect_communities_bridge_split(
         graph,
-        min_component_size=2,
         weight=weight,
         resolution=resolution,
         seed=seed,
@@ -194,16 +194,15 @@ def detect_communities_louvain(
 def detect_communities_label_propagation(
     graph: GraphInput,
 ) -> dict[Any, int]:
-    """Detect communities using a deterministic label propagation heuristic.
+    """Detect communities using the bridge-split heuristic (legacy name).
 
     Returns
     -------
     dict[Any, int]
         Community assignments keyed by node identifier.
     """
-    return _detect_communities(
+    return detect_communities_bridge_split(
         graph,
-        min_component_size=2,
         weight=None,
         resolution=1.0,
         seed=None,
@@ -231,7 +230,7 @@ def compute_modularity(
     node_to_comm = _node_communities(work_store, communities)
     if not node_to_comm:
         return 0.0
-    edge_weights = _edge_weights(work_store)
+    edge_weights = edge_weight_map(work_store)
     total_weight = sum(edge_weights.values())
     if total_weight == 0.0:
         return 0.0
@@ -256,17 +255,6 @@ def _node_communities(
             continue
         node_to_comm[node_idx] = community_id
     return node_to_comm
-
-
-def _edge_weights(store: RxGraphStore) -> dict[tuple[int, int], float]:
-    edge_weights: dict[tuple[int, int], float] = {}
-    for (src_idx, dst_idx), payload in zip(
-        store.graph.edge_list(),
-        store.graph.edges(),
-        strict=True,
-    ):
-        edge_weights[_edge_key(src_idx, dst_idx)] = edge_weight_from_payload(payload)
-    return edge_weights
 
 
 def _community_weights(
@@ -309,6 +297,7 @@ def _modularity_score(
 
 __all__ = [
     "compute_modularity",
+    "detect_communities_bridge_split",
     "detect_communities_greedy",
     "detect_communities_label_propagation",
     "detect_communities_louvain",

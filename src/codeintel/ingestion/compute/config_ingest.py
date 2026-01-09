@@ -16,13 +16,18 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
     empty_table_for_table,
-    table_for_columnar_rows,
+    reader_for_columnar_rows,
 )
-from codeintel.ingestion.compute.base import BaseExtractStep, persist_arrow_tables
+from codeintel.ingestion.compute.base import (
+    BaseExtractStep,
+    build_typed_extras,
+    persist_arrow_tables,
+)
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 
 if TYPE_CHECKING:
@@ -36,6 +41,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
+CONFIG_INGEST_TARGET_NAME = "config_ingest"
 
 
 def flatten_dict(
@@ -340,10 +346,13 @@ class ConfigIngestStep(BaseExtractStep):
                         "config_path": record.rel_path,
                         "format": config_format,
                         "key": key,
-                        "extras": {
-                            "reference_paths": [],
-                            "reference_modules": [],
-                        },
+                        "extras": build_typed_extras(
+                            CONFIG_VALUES_TABLE_KEY,
+                            {
+                                "reference_paths": [],
+                                "reference_modules": [],
+                            },
+                        ),
                         "reference_count": 0,
                     }
                 )
@@ -366,21 +375,26 @@ class ConfigIngestStep(BaseExtractStep):
             buffer.row_count,
         )
 
-        rows_reader, row_count = table_for_columnar_rows(
+        rows_reader, _row_count = reader_for_columnar_rows(
             CONFIG_VALUES_TABLE_KEY,
             buffer.data,
+        )
+        finalized = finalize_ingest_reader(
+            CONFIG_VALUES_TABLE_KEY,
+            rows_reader,
+            target_name=CONFIG_INGEST_TARGET_NAME,
         )
         scope = f"{resolved_repo}@{resolved_commit}"
         persist_arrow_tables(
             storage,
-            {CONFIG_VALUES_TABLE_KEY: rows_reader},
+            {CONFIG_VALUES_TABLE_KEY: finalized},
             scope=scope,
         )
         return ConfigIngestResult(
             result=ExecutionResult.ok(warnings=warnings),
             rows=buffer.data,
-            rows_reader=rows_reader,
-            row_count=row_count,
+            rows_reader=finalized,
+            row_count=finalized.num_rows,
         )
 
 

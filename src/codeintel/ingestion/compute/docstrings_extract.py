@@ -16,11 +16,12 @@ from typing import TYPE_CHECKING, TypedDict
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
     empty_table_for_table,
-    table_for_columnar_rows,
+    reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import BaseExtractStep, persist_arrow_tables
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 DOCSTRINGS_TABLE_KEY = "core.docstrings"
+DOCSTRINGS_TARGET_NAME = "docstrings_extract"
 DocstringRow = dict[str, object]
 
 
@@ -352,21 +354,26 @@ class DocstringsExtractStep(BaseExtractStep):
             buffer.row_count,
         )
 
-        rows_reader, row_count = table_for_columnar_rows(
+        rows_reader, _row_count = reader_for_columnar_rows(
             DOCSTRINGS_TABLE_KEY,
             buffer.data,
+        )
+        finalized = finalize_ingest_reader(
+            DOCSTRINGS_TABLE_KEY,
+            rows_reader,
+            target_name=DOCSTRINGS_TARGET_NAME,
         )
         scope = f"{resolved_repo}@{resolved_commit}"
         persist_arrow_tables(
             storage,
-            {DOCSTRINGS_TABLE_KEY: rows_reader},
+            {DOCSTRINGS_TABLE_KEY: finalized},
             scope=scope,
         )
         return DocstringsExtractResult(
             result=ExecutionResult.ok(),
             rows=buffer.data,
-            rows_reader=rows_reader,
-            row_count=row_count,
+            rows_reader=finalized,
+            row_count=finalized.num_rows,
         )
 
 

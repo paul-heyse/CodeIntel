@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.graphs.rx.normalize import NanPolicy, edge_weight_from_payload
+from codeintel.build.graphs.rx.weights import WeightSemantics
 
 if TYPE_CHECKING:
     from codeintel.build.graphs.engine.protocol import GraphKind
@@ -21,6 +22,7 @@ class GraphWeightPolicy:
     default_weight: float = 1.0
     combine: Callable[[float, float], float] = operator.add
     nan_policy: NanPolicy = "keep"
+    semantics: WeightSemantics = WeightSemantics.STRENGTH
 
     def normalize_weight(self, value: object | None) -> float:
         """Coerce input values into numeric weights.

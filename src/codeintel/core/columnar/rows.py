@@ -17,7 +17,10 @@ from codeintel.core.columnar.finalize_ops import (
     finalize_table,
 )
 from codeintel.core.columnar.readers import empty_reader_from_schema
-from codeintel.core.columnar.schema_alignment import align_table_to_contract
+from codeintel.core.columnar.schema_alignment import (
+    align_reader_to_contract,
+    align_table_to_contract,
+)
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.schemas.arrow_gen import ExtrasPolicy
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
@@ -422,6 +425,52 @@ def table_for_columnar_rows(
     return result.good, row_count
 
 
+def reader_for_columnar_rows(
+    table_key: str,
+    rows: Mapping[str, Sequence[object]],
+    *,
+    extras_policy: ExtrasPolicy | None = None,
+) -> tuple[pa.RecordBatchReader, int]:
+    """Build a reader from columnar row data using the contract schema.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    rows
+        Columnar mapping of column names to sequences of values.
+    extras_policy
+        Optional extras policy to apply when aligning to the contract schema.
+
+    Returns
+    -------
+    tuple[pa.RecordBatchReader, int]
+        Reader for the row batches plus the total row count.
+    """
+    row_count = columnar_row_count(rows)
+    arrow_schema = _arrow_schema_for_table(table_key, extras_policy=extras_policy)
+    if row_count == 0:
+        return empty_reader_from_schema(arrow_schema), 0
+    normalized = {name: list(values) for name, values in rows.items()}
+    arrays: list[pa.Array] = []
+    fields: list[pa.Field] = []
+    for name, values in normalized.items():
+        if name in arrow_schema.names:
+            field = arrow_schema.field(name)
+            arrays.append(pa.array(values, type=field.type))
+            fields.append(field)
+            continue
+        array = pa.array(values)
+        arrays.append(array)
+        fields.append(pa.field(name, array.type))
+    batch = pa.record_batch(arrays, schema=pa.schema(fields))
+    reader = record_batch_reader_from_iterable([batch], empty_policy="none")
+    if reader is None:
+        return empty_reader_from_schema(arrow_schema), row_count
+    aligned = align_reader_to_contract(reader, arrow_schema, extras_policy=extras_policy)
+    return aligned, row_count
+
+
 def _arrow_schema_for_table(
     table_key: str,
     extras_policy: ExtrasPolicy | None,
@@ -481,6 +530,7 @@ __all__ = [
     "columnar_row_count",
     "empty_table_for_table",
     "finalize_columnar_rows",
+    "reader_for_columnar_rows",
     "table_for_columnar_rows",
     "table_for_rows",
 ]

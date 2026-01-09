@@ -113,6 +113,7 @@ from codeintel.build.tabular.compute_masks import (
 )
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -123,12 +124,12 @@ LOG = logging.getLogger(__name__)
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
-_CPG_NODE_SORT_KEYS: tuple[tuple[str, str], ...] = (
+_CPG_NODE_SORT_KEYS: tuple[SortKey, ...] = (
     ("repo", "ascending"),
     ("commit", "ascending"),
     ("cpg_node_id", "ascending"),
 )
-_CPG_EDGE_SORT_KEYS: tuple[tuple[str, str], ...] = (
+_CPG_EDGE_SORT_KEYS: tuple[SortKey, ...] = (
     ("repo", "ascending"),
     ("commit", "ascending"),
     ("src_cpg_node_id", "ascending"),
@@ -216,6 +217,7 @@ def assemble_cpg_nodes(tables: Sequence[pa.Table]) -> pa.Table:
         spec=FinalizeSpec(
             table_key=CPG_NODES_TABLE_KEY,
             mode="strict",
+            order_by=_CPG_NODE_SORT_KEYS,
             target_name=CPG_TARGET_NAME,
         ),
     )
@@ -242,6 +244,7 @@ def assemble_cpg_edges(tables: Sequence[pa.Table]) -> pa.Table:
         spec=FinalizeSpec(
             table_key=CPG_EDGES_TABLE_KEY,
             mode="strict",
+            order_by=_CPG_EDGE_SORT_KEYS,
             target_name=CPG_TARGET_NAME,
         ),
     )

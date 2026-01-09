@@ -20,7 +20,11 @@ from codeintel.core.columnar.rows import (
     columnar_batch_collector_for_table_key,
     empty_table_for_table,
 )
-from codeintel.ingestion.compute.base import BaseExtractStep, persist_arrow_tables
+from codeintel.ingestion.compute.base import (
+    BaseExtractStep,
+    finalize_arrow_readers,
+    persist_arrow_tables,
+)
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 from codeintel.ingestion.infrastructure.ast_facts import (
     AstSpan,
@@ -101,6 +105,28 @@ class SymtableExtractResult:
     function_partition_row_count: int = 0
     binding_row_count: int = 0
     resolution_edge_row_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _SymtableTables:
+    scope_rows_table: pa.Table
+    symbol_rows_table: pa.Table
+    scope_edge_rows_table: pa.Table
+    namespace_edge_rows_table: pa.Table
+    function_partition_rows_table: pa.Table
+    binding_rows_table: pa.Table
+    resolution_edge_rows_table: pa.Table
+
+    def as_mapping(self) -> dict[str, pa.Table]:
+        return {
+            PY_SYM_SCOPES_TABLE_KEY: self.scope_rows_table,
+            PY_SYM_SYMBOLS_TABLE_KEY: self.symbol_rows_table,
+            PY_SYM_SCOPE_EDGES_TABLE_KEY: self.scope_edge_rows_table,
+            PY_SYM_NAMESPACE_EDGES_TABLE_KEY: self.namespace_edge_rows_table,
+            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: self.function_partition_rows_table,
+            PY_SYM_BINDINGS_TABLE_KEY: self.binding_rows_table,
+            PY_SYM_RESOLUTION_EDGES_TABLE_KEY: self.resolution_edge_rows_table,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -1079,51 +1105,11 @@ class SymtableExtractStep(BaseExtractStep):
             _process_module(module_context, collectors, warnings=warnings)
             _flush_symtable_collectors(collectors)
 
-        scope_rows_table = collectors.scopes.to_table()
-        symbol_rows_table = collectors.symbols.to_table()
-        scope_edge_rows_table = collectors.scope_edges.to_table()
-        namespace_edge_rows_table = collectors.namespace_edges.to_table()
-        function_partition_rows_table = collectors.function_partitions.to_table()
-        binding_rows_table = collectors.bindings.to_table()
-        resolution_edge_rows_table = collectors.resolution_edges.to_table()
+        tables, finalize_warnings = _finalize_symtable_tables(collectors)
+        warnings.extend(finalize_warnings)
         scope = f"{resolved_repo}@{resolved_commit}"
-        persist_arrow_tables(
-            storage,
-            {
-                PY_SYM_SCOPES_TABLE_KEY: scope_rows_table,
-                PY_SYM_SYMBOLS_TABLE_KEY: symbol_rows_table,
-                PY_SYM_SCOPE_EDGES_TABLE_KEY: scope_edge_rows_table,
-                PY_SYM_NAMESPACE_EDGES_TABLE_KEY: namespace_edge_rows_table,
-                PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: function_partition_rows_table,
-                PY_SYM_BINDINGS_TABLE_KEY: binding_rows_table,
-                PY_SYM_RESOLUTION_EDGES_TABLE_KEY: resolution_edge_rows_table,
-            },
-            scope=scope,
-        )
-        return SymtableExtractResult(
-            result=ExecutionResult.ok(warnings=tuple(warnings)),
-            scope_rows={},
-            symbol_rows={},
-            scope_edge_rows={},
-            namespace_edge_rows={},
-            function_partition_rows={},
-            binding_rows={},
-            resolution_edge_rows={},
-            scope_rows_reader=scope_rows_table,
-            symbol_rows_reader=symbol_rows_table,
-            scope_edge_rows_reader=scope_edge_rows_table,
-            namespace_edge_rows_reader=namespace_edge_rows_table,
-            function_partition_rows_reader=function_partition_rows_table,
-            binding_rows_reader=binding_rows_table,
-            resolution_edge_rows_reader=resolution_edge_rows_table,
-            scope_row_count=collectors.scopes.row_count,
-            symbol_row_count=collectors.symbols.row_count,
-            scope_edge_row_count=collectors.scope_edges.row_count,
-            namespace_edge_row_count=collectors.namespace_edges.row_count,
-            function_partition_row_count=collectors.function_partitions.row_count,
-            binding_row_count=collectors.bindings.row_count,
-            resolution_edge_row_count=collectors.resolution_edges.row_count,
-        )
+        persist_arrow_tables(storage, tables.as_mapping(), scope=scope)
+        return _symtable_result(tables, warnings)
 
     def _iter_python_source_bundles(
         self,
@@ -1147,6 +1133,64 @@ class SymtableExtractStep(BaseExtractStep):
                 source_bytes = source_text.encode("utf-8", errors="replace")
             source_text, source_index = _build_source_index(source_bytes)
             yield module, source_text, source_index, None
+
+
+def _finalize_symtable_tables(
+    collectors: _SymtableCollectors,
+) -> tuple[_SymtableTables, list[str]]:
+    finalized_tables, finalize_warnings = finalize_arrow_readers(
+        {
+            PY_SYM_SCOPES_TABLE_KEY: collectors.scopes.to_reader(),
+            PY_SYM_SYMBOLS_TABLE_KEY: collectors.symbols.to_reader(),
+            PY_SYM_SCOPE_EDGES_TABLE_KEY: collectors.scope_edges.to_reader(),
+            PY_SYM_NAMESPACE_EDGES_TABLE_KEY: collectors.namespace_edges.to_reader(),
+            PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: collectors.function_partitions.to_reader(),
+            PY_SYM_BINDINGS_TABLE_KEY: collectors.bindings.to_reader(),
+            PY_SYM_RESOLUTION_EDGES_TABLE_KEY: collectors.resolution_edges.to_reader(),
+        }
+    )
+    return (
+        _SymtableTables(
+            scope_rows_table=finalized_tables[PY_SYM_SCOPES_TABLE_KEY],
+            symbol_rows_table=finalized_tables[PY_SYM_SYMBOLS_TABLE_KEY],
+            scope_edge_rows_table=finalized_tables[PY_SYM_SCOPE_EDGES_TABLE_KEY],
+            namespace_edge_rows_table=finalized_tables[PY_SYM_NAMESPACE_EDGES_TABLE_KEY],
+            function_partition_rows_table=finalized_tables[PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY],
+            binding_rows_table=finalized_tables[PY_SYM_BINDINGS_TABLE_KEY],
+            resolution_edge_rows_table=finalized_tables[PY_SYM_RESOLUTION_EDGES_TABLE_KEY],
+        ),
+        finalize_warnings,
+    )
+
+
+def _symtable_result(
+    tables: _SymtableTables,
+    warnings: Iterable[str],
+) -> SymtableExtractResult:
+    return SymtableExtractResult(
+        result=ExecutionResult.ok(warnings=tuple(warnings)),
+        scope_rows={},
+        symbol_rows={},
+        scope_edge_rows={},
+        namespace_edge_rows={},
+        function_partition_rows={},
+        binding_rows={},
+        resolution_edge_rows={},
+        scope_rows_reader=tables.scope_rows_table,
+        symbol_rows_reader=tables.symbol_rows_table,
+        scope_edge_rows_reader=tables.scope_edge_rows_table,
+        namespace_edge_rows_reader=tables.namespace_edge_rows_table,
+        function_partition_rows_reader=tables.function_partition_rows_table,
+        binding_rows_reader=tables.binding_rows_table,
+        resolution_edge_rows_reader=tables.resolution_edge_rows_table,
+        scope_row_count=tables.scope_rows_table.num_rows,
+        symbol_row_count=tables.symbol_rows_table.num_rows,
+        scope_edge_row_count=tables.scope_edge_rows_table.num_rows,
+        namespace_edge_row_count=tables.namespace_edge_rows_table.num_rows,
+        function_partition_row_count=tables.function_partition_rows_table.num_rows,
+        binding_row_count=tables.binding_rows_table.num_rows,
+        resolution_edge_row_count=tables.resolution_edge_rows_table.num_rows,
+    )
 
 
 __all__ = ["SymtableExtractResult", "SymtableExtractStep"]

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 import pyarrow.compute as pc
 
+from codeintel.core.columnar.expr_vocab import E
+
 PROVENANCE_FIELDS: tuple[tuple[str, str], ...] = (
     ("prov_filename", "__filename"),
     ("prov_fragment_index", "__fragment_index"),
@@ -33,13 +35,13 @@ class ProjectionSpec:
         needs_mapping = bool(self.computed) or provenance
         if not needs_mapping:
             return list(self.base_cols)
-        columns: dict[str, pc.Expression] = {col: pc.field(col) for col in self.base_cols}
+        columns: dict[str, pc.Expression] = {col: E.field(col) for col in self.base_cols}
         if self.computed:
             columns.update(dict(self.computed))
         if provenance:
             columns.update(
                 {
-                    output_name: pc.field(source_name)
+                    output_name: E.field(source_name)
                     for output_name, source_name in PROVENANCE_FIELDS
                 }
             )
@@ -53,12 +55,15 @@ class ProjectionSpec:
         Mapping[str, pc.Expression]
             Mapping of output column names to expressions.
         """
-        columns: dict[str, pc.Expression] = {col: pc.field(col) for col in self.base_cols}
+        columns: dict[str, pc.Expression] = {col: E.field(col) for col in self.base_cols}
         if self.computed:
             columns.update(dict(self.computed))
         if provenance:
             columns.update(
-                {output_name: pc.field(output_name) for output_name, _source_name in PROVENANCE_FIELDS}
+                {
+                    output_name: E.field(output_name)
+                    for output_name, _source_name in PROVENANCE_FIELDS
+                }
             )
         return columns
 

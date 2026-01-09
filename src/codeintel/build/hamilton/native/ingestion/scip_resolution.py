@@ -1132,8 +1132,18 @@ def _occurrence_syntax_match_table(
 def _occurrence_syntax_left_anti(left: pa.Table, right: pa.Table) -> pa.Table:
     if left.num_rows == 0 or right.num_rows == 0:
         return left
-    left_checked = normalize_table_for_join(left)
-    right_checked = normalize_table_for_join(right)
+    left_checked = _precheck_join_keys(
+        left,
+        join_keys=_OCCURRENCE_MATCH_KEYS,
+        table_key=None,
+    )
+    right_checked = _precheck_join_keys(
+        right,
+        join_keys=_OCCURRENCE_MATCH_KEYS,
+        table_key=None,
+    )
+    left_checked = normalize_table_for_join(left_checked)
+    right_checked = normalize_table_for_join(right_checked)
     plan = Plan.table(left_checked).hash_join(
         right=Plan.table(right_checked),
         spec=HashJoinSpec(
@@ -1284,16 +1294,25 @@ def scip_resolution__occurrence_syntax_xref__base(
         right_keys=_SYNTAX_LINE_JOIN_KEYS,
         match_kind="EXACT",
     )
+    if byte_matches.num_rows != 0:
+        line_matches = _occurrence_syntax_left_anti(line_matches, byte_matches)
     if byte_matches.num_rows == 0:
-        line_unmatched = line_matches
+        matches = line_matches
+    elif line_matches.num_rows == 0:
+        matches = byte_matches
     else:
-        line_unmatched = _occurrence_syntax_left_anti(line_matches, byte_matches)
-    match_tables = [table for table in (byte_matches, line_unmatched) if table.num_rows > 0]
-    if match_tables:
-        matches = concat_tables_unified(match_tables)
-    else:
-        matches = _empty_occurrence_match_table(pairs)
+        matches = concat_tables_unified([byte_matches, line_matches])
 
+    pairs = _precheck_join_keys(
+        pairs,
+        join_keys=_OCCURRENCE_MATCH_KEYS,
+        table_key=None,
+    )
+    matches = _precheck_join_keys(
+        matches,
+        join_keys=_OCCURRENCE_MATCH_KEYS,
+        table_key=None,
+    )
     pairs = normalize_table_for_join(pairs)
     matches = normalize_table_for_join(matches)
     joined = Plan.table(pairs).hash_join(

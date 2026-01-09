@@ -17,6 +17,7 @@ from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import equal_expr, is_in_expr, is_valid_expr
 from codeintel.build.tabular.expr_vocab import Expression
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 
@@ -117,7 +118,10 @@ def prefilter_table(
             expr = _combine_expr(expr, is_valid_expr(name))
     if expr is None:
         return table
-    return safe_filter_expr(table, expr)
+    try:
+        return materialize_plan(Plan.table(table).filter(expr), use_threads=True)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return safe_filter_expr(table, expr)
 
 
 def load_function_metadata(

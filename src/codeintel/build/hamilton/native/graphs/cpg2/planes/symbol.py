@@ -7,23 +7,26 @@ from dataclasses import dataclass
 import pyarrow as pa
 
 from codeintel.build.graphs.assembly import rename_table_columns
+from codeintel.build.hamilton.native.graphs.cpg.constants import CPG_TARGET_NAME
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     build_anchor_map,
     canonicalize_for_table,
     identity_keys,
 )
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinals
+from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import (
     array_from_compute,
-    safe_filter_expr,
 )
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
+from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.kernels import stable_sort_indices
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.core.columnar.arrowdsl import join_safe_projection
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.rows import empty_table_for_table
 
@@ -242,7 +245,7 @@ def _symbol_goid_joined_table(
         def _goid_mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
             return is_valid_mask(table.column("goid_h128"))
 
-        goid_rows = safe_filter_expr(
+        goid_rows = plan_filter_or_fallback(
             goid_rows,
             is_valid_expr("goid_h128"),
             fallback_mask=_goid_mask,
@@ -265,9 +268,49 @@ def _symbol_goid_joined_table(
         _goid_anchor_map(goids),
         {"cpg_node_id": "dst_cpg_node_id"},
     )
-    goid_rows = normalize_table_for_join(goid_rows)
-    symbol_anchors = normalize_table_for_join(symbol_anchors)
-    goid_anchors = normalize_table_for_join(goid_anchors)
+    goid_rows = join_safe_projection(normalize_table_for_join(goid_rows))
+    symbol_anchors = join_safe_projection(normalize_table_for_join(symbol_anchors))
+    goid_anchors = join_safe_projection(normalize_table_for_join(goid_anchors))
+    symbol_join_keys = ["repo", "commit", "scip_symbol", "goid_h128"]
+    goid_precheck = finalize_join_keys(
+        goid_rows,
+        required_non_null=symbol_join_keys,
+        key_fields=symbol_join_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        goid_precheck,
+        table_key="core.scip_symbol_goid_xref",
+        target_name=CPG_TARGET_NAME,
+        join_keys=symbol_join_keys,
+    )
+    goid_rows = goid_precheck.good
+    symbol_precheck = finalize_join_keys(
+        symbol_anchors,
+        required_non_null=["repo", "commit", "scip_symbol"],
+        key_fields=["repo", "commit", "scip_symbol"],
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        symbol_precheck,
+        table_key=SCIP_SYMBOLS_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=["repo", "commit", "scip_symbol"],
+    )
+    symbol_anchors = symbol_precheck.good
+    goid_anchor_precheck = finalize_join_keys(
+        goid_anchors,
+        required_non_null=["goid_h128"],
+        key_fields=["goid_h128"],
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        goid_anchor_precheck,
+        table_key=GOIDS_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=["goid_h128"],
+    )
+    goid_anchors = goid_anchor_precheck.good
     goid_project = {
         "repo": E.cast(E.field("repo"), "string"),
         "commit": E.cast(E.field("commit"), "string"),
@@ -409,7 +452,7 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
         )
 
     expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-    return safe_filter_expr(table, expr, fallback_mask=_edge_mask)
+    return plan_filter_or_fallback(table, expr, fallback_mask=_edge_mask)
 
 
 def _coalesce_column(table: pa.Table, column: str, fallback: str) -> pa.Table:

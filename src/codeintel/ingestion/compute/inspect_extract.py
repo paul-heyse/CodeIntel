@@ -12,7 +12,7 @@ import queue
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import (
     AsyncGeneratorType,
@@ -27,13 +27,19 @@ import pyarrow as pa
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.options.ingestion import InspectExtractOptions
+from codeintel.core.columnar.conversion import table_to_reader
+from codeintel.core.columnar.readers import record_batch_reader_from_batches
 from codeintel.core.columnar.rows import (
     ColumnarBatchCollector,
     ColumnarRows,
     columnar_batch_collector_for_table_key,
     empty_table_for_table,
 )
-from codeintel.ingestion.compute.base import BaseExtractStep, persist_arrow_tables
+from codeintel.ingestion.compute.base import (
+    BaseExtractStep,
+    finalize_arrow_readers,
+    persist_arrow_tables,
+)
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
 
 if TYPE_CHECKING:
@@ -79,34 +85,34 @@ class InspectExtractResult:
     annotation_rows: ColumnarRows = field(default_factory=dict)
     source_rows: ColumnarRows = field(default_factory=dict)
     runtime_state_rows: ColumnarRows = field(default_factory=dict)
-    object_rows_reader: pa.Table = field(
+    object_rows_reader: pa.Table | pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_OBJECTS_TABLE_KEY)
     )
-    member_rows_reader: pa.Table = field(
+    member_rows_reader: pa.Table | pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_MEMBERS_TABLE_KEY)
     )
-    class_mro_rows_reader: pa.Table = field(
+    class_mro_rows_reader: pa.Table | pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_CLASS_MRO_TABLE_KEY)
     )
-    class_attr_rows_reader: pa.Table = field(
+    class_attr_rows_reader: pa.Table | pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_CLASS_ATTRS_TABLE_KEY)
     )
-    unwrap_rows_reader: pa.Table = field(
+    unwrap_rows_reader: pa.Table | pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_UNWRAP_TABLE_KEY)
     )
-    signature_rows_reader: pa.Table = field(
+    signature_rows_reader: pa.Table | pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_SIGNATURES_TABLE_KEY)
     )
-    signature_param_rows_reader: pa.Table = field(
+    signature_param_rows_reader: pa.Table | pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY)
     )
-    annotation_rows_reader: pa.Table = field(
+    annotation_rows_reader: pa.Table | pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY)
     )
-    source_rows_reader: pa.Table = field(
+    source_rows_reader: pa.Table | pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_SOURCE_TABLE_KEY)
     )
-    runtime_state_rows_reader: pa.Table = field(
+    runtime_state_rows_reader: pa.Table | pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY)
     )
     object_row_count: int = 0
@@ -1353,11 +1359,11 @@ def _combine_warnings(base: list[str], extra: list[str]) -> tuple[str, ...]:
 def _reader_from_batches(
     table_key: str,
     batches: list[pa.RecordBatch],
-) -> pa.Table:
+) -> pa.RecordBatchReader:
     if not batches:
-        return empty_table_for_table(table_key)
+        return table_to_reader(empty_table_for_table(table_key))
     schema = batches[0].schema
-    return pa.Table.from_batches(schema, batches)
+    return record_batch_reader_from_batches(schema, batches)
 
 
 def _payload_to_result(
@@ -1441,6 +1447,55 @@ def _payload_to_result(
     )
 
 
+def _finalize_inspect_result(result: InspectExtractResult) -> InspectExtractResult:
+    def _ensure_reader(
+        payload: pa.Table | pa.RecordBatchReader,
+    ) -> pa.RecordBatchReader:
+        if isinstance(payload, pa.RecordBatchReader):
+            return payload
+        return table_to_reader(payload)
+
+    readers = {
+        PY_INSPECT_OBJECTS_TABLE_KEY: _ensure_reader(result.object_rows_reader),
+        PY_INSPECT_MEMBERS_TABLE_KEY: _ensure_reader(result.member_rows_reader),
+        PY_INSPECT_CLASS_MRO_TABLE_KEY: _ensure_reader(result.class_mro_rows_reader),
+        PY_INSPECT_CLASS_ATTRS_TABLE_KEY: _ensure_reader(result.class_attr_rows_reader),
+        PY_INSPECT_UNWRAP_TABLE_KEY: _ensure_reader(result.unwrap_rows_reader),
+        PY_INSPECT_SIGNATURES_TABLE_KEY: _ensure_reader(result.signature_rows_reader),
+        PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY: _ensure_reader(result.signature_param_rows_reader),
+        PY_INSPECT_ANNOTATIONS_TABLE_KEY: _ensure_reader(result.annotation_rows_reader),
+        PY_INSPECT_SOURCE_TABLE_KEY: _ensure_reader(result.source_rows_reader),
+        PY_INSPECT_RUNTIME_STATE_TABLE_KEY: _ensure_reader(result.runtime_state_rows_reader),
+    }
+    finalized, warnings = finalize_arrow_readers(readers)
+    combined_warnings = tuple(list(result.result.warnings) + warnings)
+    updated_execution = replace(result.result, warnings=combined_warnings)
+    return replace(
+        result,
+        result=updated_execution,
+        object_rows_reader=finalized[PY_INSPECT_OBJECTS_TABLE_KEY],
+        member_rows_reader=finalized[PY_INSPECT_MEMBERS_TABLE_KEY],
+        class_mro_rows_reader=finalized[PY_INSPECT_CLASS_MRO_TABLE_KEY],
+        class_attr_rows_reader=finalized[PY_INSPECT_CLASS_ATTRS_TABLE_KEY],
+        unwrap_rows_reader=finalized[PY_INSPECT_UNWRAP_TABLE_KEY],
+        signature_rows_reader=finalized[PY_INSPECT_SIGNATURES_TABLE_KEY],
+        signature_param_rows_reader=finalized[PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY],
+        annotation_rows_reader=finalized[PY_INSPECT_ANNOTATIONS_TABLE_KEY],
+        source_rows_reader=finalized[PY_INSPECT_SOURCE_TABLE_KEY],
+        runtime_state_rows_reader=finalized[PY_INSPECT_RUNTIME_STATE_TABLE_KEY],
+        object_row_count=finalized[PY_INSPECT_OBJECTS_TABLE_KEY].num_rows,
+        member_row_count=finalized[PY_INSPECT_MEMBERS_TABLE_KEY].num_rows,
+        class_mro_row_count=finalized[PY_INSPECT_CLASS_MRO_TABLE_KEY].num_rows,
+        class_attr_row_count=finalized[PY_INSPECT_CLASS_ATTRS_TABLE_KEY].num_rows,
+        unwrap_row_count=finalized[PY_INSPECT_UNWRAP_TABLE_KEY].num_rows,
+        signature_row_count=finalized[PY_INSPECT_SIGNATURES_TABLE_KEY].num_rows,
+        signature_param_row_count=finalized[PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY].num_rows,
+        annotation_row_count=finalized[PY_INSPECT_ANNOTATIONS_TABLE_KEY].num_rows,
+        source_row_count=finalized[PY_INSPECT_SOURCE_TABLE_KEY].num_rows,
+        runtime_state_row_count=finalized[PY_INSPECT_RUNTIME_STATE_TABLE_KEY].num_rows,
+    )
+
+
 def _run_inspect_subprocess(
     *,
     modules: Sequence[ModuleRecord],
@@ -1489,7 +1544,7 @@ def _run_inspect_subprocess(
                 warnings=warnings,
             )
         )
-    return _payload_to_result(payload)
+    return _finalize_inspect_result(_payload_to_result(payload))
 
 
 def _apply_memory_budget(max_memory_mb: int | None, *, warnings: list[str]) -> None:
@@ -1583,7 +1638,7 @@ class InspectExtractStep(BaseExtractStep):
             return InspectExtractResult(
                 result=ExecutionResult.failed(str(exc), warnings=tuple(warnings))
             )
-        result = _payload_to_result(payload)
+        result = _finalize_inspect_result(_payload_to_result(payload))
         scope = f"{resolved_repo}@{resolved_commit}"
         persist_arrow_tables(
             storage,

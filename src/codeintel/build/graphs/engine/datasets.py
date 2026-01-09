@@ -9,16 +9,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.dataset as ds
 
 from codeintel.build.graphs.assembly import iter_normalized_tuples
 from codeintel.build.scopes.snapshot import SnapshotScanContext
 from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_reader
+from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan
+from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
 from codeintel.core.columnar.streaming import scan_telemetry
 from codeintel.core.datasets.arrow_store import scan_dataset
-from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
-from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.runtime.loader import load_runtime_settings
 
 if TYPE_CHECKING:
@@ -34,7 +35,8 @@ class SnapshotScanRequest:
     dataset_root: Path
     table_key: str
     snapshot_id: str
-    columns: tuple[str, ...] | Mapping[str, ds.Expression] | None = None
+    columns: tuple[str, ...] | Mapping[str, pc.Expression] | None = None
+    provenance: bool = False
     repo: str | None = None
     commit: str | None = None
     batch_size: int | None = None
@@ -61,6 +63,7 @@ class GraphViewScanOptions:
     implicit_ordering: bool | None = True
     require_sequenced_output: bool | None = True
     metrics_enabled: bool = True
+    provenance: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +109,7 @@ class GraphViewFactory:
         self,
         *,
         table_key: str,
-        columns: Sequence[str] | Mapping[str, ds.Expression] | None = None,
+        columns: Sequence[str] | Mapping[str, pc.Expression] | None = None,
         scan_options: GraphViewScanOptions | None = None,
     ) -> pa.RecordBatchReader | None:
         """Return a record batch reader for a snapshot table.
@@ -126,7 +129,7 @@ class GraphViewFactory:
             Reader for the dataset snapshot or None when missing.
         """
         resolved_scan_options = scan_options or GraphViewScanOptions()
-        resolved_columns: tuple[str, ...] | Mapping[str, ds.Expression] | None
+        resolved_columns: tuple[str, ...] | Mapping[str, pc.Expression] | None
         if isinstance(columns, Mapping):
             resolved_columns = columns
         elif columns is None:
@@ -138,6 +141,7 @@ class GraphViewFactory:
             table_key=table_key,
             snapshot_id=self.snapshot_id,
             columns=resolved_columns,
+            provenance=resolved_scan_options.provenance,
             repo=self.scan_context.repo,
             commit=self.scan_context.commit,
             scan_context=self.scan_context,
@@ -227,23 +231,6 @@ def dataset_snapshot_exists(
     return snapshot_dir.is_dir()
 
 
-def _metadata_schema_for_request(request: SnapshotScanRequest) -> pa.Schema | None:
-    try:
-        snapshot_dir = dataset_snapshot_dir(
-            request.dataset_root,
-            table_key=request.table_key,
-            snapshot_id=request.snapshot_id,
-        )
-    except SnapshotIdError as exc:
-        LOG.warning("Invalid snapshot_id for %s: %s", request.table_key, exc)
-        return None
-    metadata_ctx = DatasetMetadataContext(
-        dataset_root=snapshot_dir,
-        table_key=request.table_key,
-    )
-    return metadata_ctx.read_schema()
-
-
 def scan_snapshot_reader(
     request: SnapshotScanRequest,
 ) -> pa.RecordBatchReader | None:
@@ -268,45 +255,6 @@ def scan_snapshot_reader(
         settings=load_runtime_settings().build.arrow_scan,
     )
     filter_expression = scan_ctx.filter_expr(dataset.schema) if request.apply_filter else None
-    resolved_columns = _resolve_columns(dataset, request.columns)
-    if resolved_columns is None and request.columns is not None:
-        return None
-    options = scan_ctx.scan_options(
-        columns=resolved_columns,
-        batch_size=request.batch_size,
-    )
-    metadata_schema = _metadata_schema_for_request(request)
-    options = replace(
-        options,
-        batch_readahead=request.batch_readahead
-        if request.batch_readahead is not None
-        else options.batch_readahead,
-        fragment_readahead=request.fragment_readahead
-        if request.fragment_readahead is not None
-        else options.fragment_readahead,
-        filter_expression=filter_expression,
-        cache_metadata=request.cache_metadata
-        if request.cache_metadata is not None
-        else options.cache_metadata,
-        use_threads=(
-            request.use_threads if request.use_threads is not None else options.use_threads
-        ),
-        parquet_pre_buffer=request.parquet_pre_buffer
-        if request.parquet_pre_buffer is not None
-        else options.parquet_pre_buffer,
-        parquet_use_buffered_stream=request.parquet_use_buffered_stream
-        if request.parquet_use_buffered_stream is not None
-        else options.parquet_use_buffered_stream,
-        parquet_buffer_size=request.parquet_buffer_size
-        if request.parquet_buffer_size is not None
-        else options.parquet_buffer_size,
-        columns=resolved_columns,
-        schema=metadata_schema if metadata_schema is not None else options.schema,
-        unify_schemas=request.unify_schemas,
-        implicit_ordering=request.implicit_ordering,
-        require_sequenced_output=request.require_sequenced_output,
-        metrics_enabled=request.metrics_enabled,
-    )
     if request.metrics_enabled:
         _log_scan_telemetry(
             dataset,
@@ -314,14 +262,28 @@ def scan_snapshot_reader(
             snapshot_id=request.snapshot_id,
             filter_expression=filter_expression,
         )
-    scanner = build_scanner(dataset, options=options)
-    return scanner.to_reader()
+    resolved_columns = _resolve_columns(dataset, request.columns)
+    if resolved_columns is None and request.columns is not None:
+        return None
+    query_spec = _query_spec_for_request(
+        dataset,
+        columns=resolved_columns,
+        predicate=filter_expression,
+    )
+    options = QueryPlanOptions(
+        provenance=request.provenance,
+        implicit_ordering=request.implicit_ordering,
+        require_sequenced_output=request.require_sequenced_output,
+    )
+    plan = build_query_plan(dataset, spec=query_spec, options=options)
+    use_threads = request.use_threads if request.use_threads is not None else True
+    return plan.to_reader(use_threads=use_threads)
 
 
 def scan_snapshot_reader_with_columns(
     request: SnapshotScanRequest,
     *,
-    columns: tuple[str, ...] | Mapping[str, ds.Expression] | None,
+    columns: tuple[str, ...] | Mapping[str, pc.Expression] | None,
 ) -> pa.RecordBatchReader | None:
     """Return a RecordBatchReader for a dataset snapshot with selected columns.
 
@@ -371,8 +333,8 @@ def _scan_dataset(dataset_root: Path, table_key: str, snapshot_id: str) -> ds.Da
 
 def _resolve_columns(
     dataset: ds.Dataset,
-    columns: tuple[str, ...] | Mapping[str, ds.Expression] | None,
-) -> tuple[str, ...] | Mapping[str, ds.Expression] | None:
+    columns: tuple[str, ...] | Mapping[str, pc.Expression] | None,
+) -> tuple[str, ...] | Mapping[str, pc.Expression] | None:
     if columns is None:
         return None
     if isinstance(columns, Mapping):
@@ -389,12 +351,37 @@ def _resolve_columns(
     return columns
 
 
+def _query_spec_for_request(
+    dataset: ds.Dataset,
+    *,
+    columns: tuple[str, ...] | Mapping[str, pc.Expression] | None,
+    predicate: pc.Expression | None,
+) -> QuerySpec:
+    projection = _projection_spec_for_columns(dataset, columns)
+    return QuerySpec(
+        predicate=predicate,
+        pushdown_predicate=predicate,
+        projection=projection,
+    )
+
+
+def _projection_spec_for_columns(
+    dataset: ds.Dataset,
+    columns: tuple[str, ...] | Mapping[str, pc.Expression] | None,
+) -> ProjectionSpec:
+    if columns is None:
+        return ProjectionSpec(base_cols=tuple(dataset.schema.names))
+    if isinstance(columns, Mapping):
+        return ProjectionSpec(base_cols=(), computed=tuple(columns.items()))
+    return ProjectionSpec(base_cols=tuple(columns))
+
+
 def _log_scan_telemetry(
     dataset: ds.Dataset,
     *,
     table_key: str,
     snapshot_id: str,
-    filter_expression: ds.Expression | None,
+    filter_expression: pc.Expression | None,
 ) -> None:
     telemetry = scan_telemetry(dataset, filter_expression=filter_expression)
     LOG.debug(

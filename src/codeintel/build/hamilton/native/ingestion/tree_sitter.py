@@ -26,10 +26,10 @@ from codeintel.build.hamilton.native.target_decorators import TargetSpecDescript
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
@@ -325,9 +325,10 @@ def t__tree_sitter_index__ingest(
             require_scope_columns=False,
         )
         mode = "tolerant" if table_key in tolerant_keys else None
-        return finalize_ingest_table(
+        reader = table_to_reader(table, batch_size=None)
+        return finalize_ingest_reader(
             table_key,
-            table,
+            reader,
             target_name=TREE_SITTER_TARGET_NAME,
             mode=mode,
         )

@@ -6,7 +6,6 @@ and structural properties without any database or file I/O.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
@@ -25,6 +24,11 @@ from codeintel.build.graphs.rx.algos import (
     ensure_store,
     to_undirected_store,
 )
+from codeintel.build.graphs.rx.components import (
+    component_membership_by_id,
+    sort_components,
+)
+from codeintel.build.graphs.rx.condensation import condensation_store
 from codeintel.build.graphs.rx.normalize import sorted_mapping, stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -80,20 +84,6 @@ class ComponentStats(TypedDict):
     singleton_count: int
 
 
-def _component_sort_key(nodes: Iterable[Any]) -> tuple[str, str]:
-    if not nodes:
-        return ("", "")
-    smallest = min(nodes, key=stable_key)
-    return stable_key(smallest)
-
-
-def _sort_components(store: RxGraphStore, components: list[set[int]]) -> list[set[int]]:
-    return sorted(
-        components,
-        key=lambda comp: _component_sort_key({store.index_to_id[idx] for idx in comp}),
-    )
-
-
 def _directed_graph(store: RxGraphStore) -> rx.PyDiGraph:
     if not store.is_directed:
         message = "Expected a directed graph store"
@@ -141,11 +131,9 @@ def find_strongly_connected(
 
     directed_graph = _directed_graph(store)
     sccs = [set(component) for component in rx.strongly_connected_components(directed_graph)]
-    sorted_sccs = _sort_components(store, sccs)
+    sorted_sccs = sort_components(store, sccs)
     components: list[ComponentInfo] = []
-    node_to_component: dict[Any, int] = {}
-
-    index_to_component: dict[int, int] = {}
+    node_to_component = component_membership_by_id(store, sorted_sccs)
     for comp_id, comp in enumerate(sorted_sccs):
         nodes_frozen = frozenset(store.index_to_id[idx] for idx in comp)
         components.append(
@@ -155,23 +143,13 @@ def find_strongly_connected(
                 nodes=nodes_frozen,
             )
         )
-        for node_idx in comp:
-            node_id = store.index_to_id[node_idx]
-            node_to_component[node_id] = comp_id
-            index_to_component[node_idx] = comp_id
-
     condensation = None
     if compute_condensation:
-        condensed_store = RxGraphStore.directed()
-        for comp_id in range(len(sorted_sccs)):
-            condensed_store.ensure_node(comp_id)
-        for src_idx, dst_idx in store.graph.edge_list():
-            src_comp = index_to_component.get(src_idx)
-            dst_comp = index_to_component.get(dst_idx)
-            if src_comp is None or dst_comp is None or src_comp == dst_comp:
-                continue
-            condensed_store.add_weighted_edge(src_comp, dst_comp, weight=1.0)
-        condensation = condensed_store
+        condensation, _ = condensation_store(
+            store,
+            components=sorted_sccs,
+            stable=False,
+        )
 
     return SCCResult(
         components=tuple(components),
@@ -203,7 +181,7 @@ def find_weakly_connected(graph: GraphInput) -> list[ComponentInfo]:
     else:
         undirected_graph = _undirected_graph(store)
         components = [set(comp) for comp in rx.connected_components(undirected_graph)]
-    sorted_components = _sort_components(store, components)
+    sorted_components = sort_components(store, components)
     return [
         ComponentInfo(
             component_id=idx,
@@ -234,7 +212,7 @@ def find_connected(graph: GraphInput) -> list[ComponentInfo]:
 
     undirected_graph = _undirected_graph(work_store)
     components = [set(comp) for comp in rx.connected_components(undirected_graph)]
-    sorted_components = _sort_components(work_store, components)
+    sorted_components = sort_components(work_store, components)
     return [
         ComponentInfo(
             component_id=idx,

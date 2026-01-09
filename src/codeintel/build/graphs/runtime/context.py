@@ -12,9 +12,11 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from codeintel.build.graphs.rx.weights import WeightSemantics
 from codeintel.config.primitives import SnapshotRef
 
 DEFAULT_BETWEENNESS_SAMPLE = 500
+DEFAULT_PARALLEL_THRESHOLD = 50
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,12 @@ class GraphMetricsOptions:
         Edge attribute to use as weight for PageRank (None for unweighted).
     betweenness_weight
         Edge attribute to use as weight for betweenness (None for unweighted).
+    parallel_threshold
+        Node-count threshold for rustworkx parallel algorithms.
+    rayon_threads
+        Optional thread count override for rustworkx rayon execution.
+    weight_semantics
+        Whether weights represent strength or cost semantics.
     """
 
     max_betweenness_sample: int | None = 200
@@ -40,6 +48,9 @@ class GraphMetricsOptions:
     seed: int = 0
     pagerank_weight: str | None = "weight"
     betweenness_weight: str | None = "weight"
+    parallel_threshold: int | None = DEFAULT_PARALLEL_THRESHOLD
+    rayon_threads: int | None = None
+    weight_semantics: WeightSemantics = WeightSemantics.STRENGTH
 
 
 @dataclass(frozen=True)
@@ -60,6 +71,9 @@ class GraphContext:
     betweenness_weight: str | None = "weight"
     use_gpu: bool = False
     community_detection_limit: int | None = None
+    parallel_threshold: int = DEFAULT_PARALLEL_THRESHOLD
+    rayon_threads: int | None = None
+    weight_semantics: WeightSemantics = WeightSemantics.STRENGTH
 
     def resolved_now(self) -> datetime:
         """Return a concrete timestamp, defaulting to current UTC time.
@@ -88,6 +102,9 @@ class GraphContextSpec:
     betweenness_weight: str | None = None
     seed: int | None = None
     community_detection_limit: int | None = None
+    parallel_threshold: int | None = None
+    rayon_threads: int | None = None
+    weight_semantics: WeightSemantics | None = None
 
 
 @dataclass(frozen=True)
@@ -138,6 +155,11 @@ def build_graph_context(
         if resolved_caps.eigen_cap is None
         else min(opts.eigen_max_iter, resolved_caps.eigen_cap)
     )
+    parallel_threshold = (
+        opts.parallel_threshold
+        if opts.parallel_threshold is not None
+        else DEFAULT_PARALLEL_THRESHOLD
+    )
     return GraphContext(
         repo=snapshot.repo,
         commit=snapshot.commit,
@@ -149,6 +171,9 @@ def build_graph_context(
         betweenness_weight=opts.betweenness_weight,
         use_gpu=use_gpu,
         community_detection_limit=resolved_caps.community_detection_limit,
+        parallel_threshold=parallel_threshold,
+        rayon_threads=opts.rayon_threads,
+        weight_semantics=opts.weight_semantics,
     )
 
 
@@ -198,6 +223,11 @@ def _base_context(spec: GraphContextSpec, base_now: datetime) -> GraphContext:
             caps=caps,
             use_gpu=spec.use_gpu,
         )
+    parallel_threshold = (
+        spec.parallel_threshold
+        if spec.parallel_threshold is not None
+        else DEFAULT_PARALLEL_THRESHOLD
+    )
     return GraphContext(
         repo=spec.repo,
         commit=spec.commit,
@@ -209,6 +239,9 @@ def _base_context(spec: GraphContextSpec, base_now: datetime) -> GraphContext:
         betweenness_weight=spec.betweenness_weight or "weight",
         use_gpu=spec.use_gpu,
         community_detection_limit=spec.community_detection_limit,
+        parallel_threshold=parallel_threshold,
+        rayon_threads=spec.rayon_threads,
+        weight_semantics=spec.weight_semantics or WeightSemantics.STRENGTH,
     )
 
 
@@ -217,32 +250,53 @@ def _normalize_context(
     ctx: GraphContext,
     base_now: datetime,
 ) -> GraphContext:
-    normalized = ctx
+    updates = _context_updates(spec, ctx, base_now)
+    if not updates:
+        return ctx
+    return replace(ctx, **updates)
+
+
+def _context_updates(
+    spec: GraphContextSpec,
+    ctx: GraphContext,
+    base_now: datetime,
+) -> dict[str, object]:
+    updates: dict[str, object] = {}
     if ctx.repo != spec.repo or ctx.commit != spec.commit:
-        normalized = replace(normalized, repo=spec.repo, commit=spec.commit)
-    if normalized.use_gpu != spec.use_gpu:
-        normalized = replace(normalized, use_gpu=spec.use_gpu)
-    if spec.betweenness_cap is not None and normalized.betweenness_sample > spec.betweenness_cap:
-        normalized = replace(normalized, betweenness_sample=spec.betweenness_cap)
-    if spec.eigen_cap is not None and normalized.eigen_max_iter > spec.eigen_cap:
-        normalized = replace(normalized, eigen_max_iter=spec.eigen_cap)
-    if spec.pagerank_weight is not None and normalized.pagerank_weight != spec.pagerank_weight:
-        normalized = replace(normalized, pagerank_weight=spec.pagerank_weight)
-    if (
-        spec.betweenness_weight is not None
-        and normalized.betweenness_weight != spec.betweenness_weight
-    ):
-        normalized = replace(normalized, betweenness_weight=spec.betweenness_weight)
-    if spec.seed is not None and normalized.seed != spec.seed:
-        normalized = replace(normalized, seed=spec.seed)
-    if normalized.now is None:
-        normalized = replace(normalized, now=base_now)
-    if (
-        spec.community_detection_limit is not None
-        and normalized.community_detection_limit != spec.community_detection_limit
-    ):
-        normalized = replace(normalized, community_detection_limit=spec.community_detection_limit)
-    return normalized
+        updates["repo"] = spec.repo
+        updates["commit"] = spec.commit
+    if ctx.now is None:
+        updates["now"] = base_now
+    updates.update(_cap_updates(spec, ctx))
+    updates.update(_override_updates(spec, ctx))
+    return updates
+
+
+def _cap_updates(spec: GraphContextSpec, ctx: GraphContext) -> dict[str, object]:
+    updates: dict[str, object] = {}
+    if spec.betweenness_cap is not None and ctx.betweenness_sample > spec.betweenness_cap:
+        updates["betweenness_sample"] = spec.betweenness_cap
+    if spec.eigen_cap is not None and ctx.eigen_max_iter > spec.eigen_cap:
+        updates["eigen_max_iter"] = spec.eigen_cap
+    return updates
+
+
+def _override_updates(spec: GraphContextSpec, ctx: GraphContext) -> dict[str, object]:
+    overrides: dict[str, object | None] = {
+        "use_gpu": spec.use_gpu,
+        "pagerank_weight": spec.pagerank_weight,
+        "betweenness_weight": spec.betweenness_weight,
+        "seed": spec.seed,
+        "parallel_threshold": spec.parallel_threshold,
+        "rayon_threads": spec.rayon_threads,
+        "weight_semantics": spec.weight_semantics,
+        "community_detection_limit": spec.community_detection_limit,
+    }
+    return {
+        key: value
+        for key, value in overrides.items()
+        if value is not None and getattr(ctx, key) != value
+    }
 
 
 def load_prior_manifest(path: Path | None) -> dict[str, dict[str, object]] | None:

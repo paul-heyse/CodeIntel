@@ -31,7 +31,7 @@ from codeintel.core.columnar.rows import (
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.ingestion.compute.base import (
     BaseExtractStep,
-    finalize_arrow_tables,
+    finalize_arrow_readers,
     persist_arrow_tables,
 )
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
@@ -2197,21 +2197,20 @@ class CstExtractStep(BaseExtractStep):
             )
             _flush_cst_collectors(collectors)
 
-        readers = _build_cst_readers(collectors)
-        finalized_tables, finalize_warnings = finalize_arrow_tables(
+        finalized_tables, finalize_warnings = finalize_arrow_readers(
             {
-                CST_NODES_TABLE_KEY: readers.cst,
-                PARSE_MANIFEST_TABLE_KEY: readers.parse_manifest,
-                SYNTAX_SPANS_TABLE_KEY: readers.spans,
-                SYNTAX_NODES_TABLE_KEY: readers.syntax_nodes,
-                SYNTAX_EDGES_TABLE_KEY: readers.syntax_edges,
-                SYNTAX_SCOPES_TABLE_KEY: readers.scopes,
-                SYNTAX_DEFS_TABLE_KEY: readers.defs,
-                SYNTAX_REFS_TABLE_KEY: readers.refs,
-                SYNTAX_CALLS_TABLE_KEY: readers.calls,
-                SYNTAX_CALL_ARGS_TABLE_KEY: readers.call_args,
-                SYNTAX_FUNC_PARAMS_TABLE_KEY: readers.func_params,
-                SYNTAX_IMPORTS_TABLE_KEY: readers.imports,
+                CST_NODES_TABLE_KEY: collectors.cst.to_reader(),
+                PARSE_MANIFEST_TABLE_KEY: collectors.parse_manifest.to_reader(),
+                SYNTAX_SPANS_TABLE_KEY: collectors.spans.to_reader(),
+                SYNTAX_NODES_TABLE_KEY: collectors.syntax_nodes.to_reader(),
+                SYNTAX_EDGES_TABLE_KEY: collectors.syntax_edges.to_reader(),
+                SYNTAX_SCOPES_TABLE_KEY: collectors.scopes.to_reader(),
+                SYNTAX_DEFS_TABLE_KEY: collectors.defs.to_reader(),
+                SYNTAX_REFS_TABLE_KEY: collectors.refs.to_reader(),
+                SYNTAX_CALLS_TABLE_KEY: collectors.calls.to_reader(),
+                SYNTAX_CALL_ARGS_TABLE_KEY: collectors.call_args.to_reader(),
+                SYNTAX_FUNC_PARAMS_TABLE_KEY: collectors.func_params.to_reader(),
+                SYNTAX_IMPORTS_TABLE_KEY: collectors.imports.to_reader(),
             }
         )
         warnings.extend(finalize_warnings)

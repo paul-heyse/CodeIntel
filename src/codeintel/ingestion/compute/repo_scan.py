@@ -12,11 +12,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.core.columnar.rows import (
     ColumnarRows,
     columnar_buffer_for_table_key,
     empty_table_for_table,
-    table_for_columnar_rows,
+    reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import persist_arrow_tables
 from codeintel.ingestion.context import (
@@ -43,6 +44,7 @@ log = logging.getLogger(__name__)
 MODULES_TABLE_KEY = "core.modules"
 FILE_STATE_TABLE_KEY = "core.file_state"
 REPO_MAP_TABLE_KEY = "core.repo_map"
+REPO_SCAN_TARGET_NAME = "repo_scan"
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,75 @@ class RepoScanResult:
     )
     repo_map_rows_reader: pa.Table = field(
         default_factory=lambda: empty_table_for_table(REPO_MAP_TABLE_KEY)
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _RepoScanContext:
+    repo: str
+    commit: str
+    root: Path
+    profile: ScanProfile
+    change_request: ChangeRequest
+
+
+@dataclass(frozen=True, slots=True)
+class _RepoScanTables:
+    module_rows: ColumnarRows
+    file_state_rows: ColumnarRows
+    repo_map_rows: ColumnarRows
+    module_rows_table: pa.Table
+    file_state_rows_table: pa.Table
+    repo_map_rows_table: pa.Table
+
+    def as_mapping(self) -> dict[str, pa.Table]:
+        return {
+            MODULES_TABLE_KEY: self.module_rows_table,
+            FILE_STATE_TABLE_KEY: self.file_state_rows_table,
+            REPO_MAP_TABLE_KEY: self.repo_map_rows_table,
+        }
+
+
+def _resolve_repo_scan_context(
+    *,
+    snapshot: SnapshotRef | None,
+    repo_root: Path | None,
+    profile: ScanProfile | None,
+    full_rebuild: bool,
+    context: IngestionContext | None,
+) -> _RepoScanContext:
+    resolved_repo, resolved_commit = resolve_repo_commit(
+        context=context,
+        repo=snapshot.repo if snapshot is not None else None,
+        commit=snapshot.commit if snapshot is not None else None,
+    )
+    resolved_root = resolve_repo_root(
+        context=context,
+        repo_root=snapshot.repo_root if snapshot is not None else repo_root,
+    )
+    resolved_profile = resolve_scan_profile(context=context, scan_profile=profile)
+    if context is not None:
+        change_request = ChangeRequest.from_context(
+            context=context,
+            language="python",
+            full_rebuild=full_rebuild,
+            scan_profile=resolved_profile,
+        )
+    else:
+        change_request = ChangeRequest(
+            repo=resolved_repo,
+            commit=resolved_commit,
+            repo_root=resolved_root,
+            language="python",
+            full_rebuild=full_rebuild,
+            scan_profile=resolved_profile,
+        )
+    return _RepoScanContext(
+        repo=resolved_repo,
+        commit=resolved_commit,
+        root=resolved_root,
+        profile=resolved_profile,
+        change_request=change_request,
     )
 
 
@@ -147,87 +218,32 @@ class RepoScanStep:
         RepoScanResult
             Discovered modules, change set, and row tuples.
         """
-        resolved_repo, resolved_commit = resolve_repo_commit(
+        resolved = _resolve_repo_scan_context(
+            snapshot=snapshot,
+            repo_root=repo_root,
+            profile=profile,
+            full_rebuild=full_rebuild,
             context=context,
-            repo=snapshot.repo if snapshot is not None else None,
-            commit=snapshot.commit if snapshot is not None else None,
         )
-        resolved_root = resolve_repo_root(
-            context=context,
-            repo_root=snapshot.repo_root if snapshot is not None else repo_root,
-        )
-        resolved_profile = resolve_scan_profile(context=context, scan_profile=profile)
-
-        modules = list(self._discovery.discover_modules(resolved_root, resolved_profile))
+        modules = list(self._discovery.discover_modules(resolved.root, resolved.profile))
         if self._module_filter is not None:
             modules = list(self._module_filter(modules))
         modules = _dedupe_modules(modules)
-        log.info("Discovered %d modules in %s", len(modules), resolved_root)
-
-        if context is not None:
-            change_request = ChangeRequest.from_context(
-                context=context,
-                language="python",
-                full_rebuild=full_rebuild,
-                scan_profile=resolved_profile,
-            )
-        else:
-            change_request = ChangeRequest(
-                repo=resolved_repo,
-                commit=resolved_commit,
-                repo_root=resolved_root,
-                language="python",
-                full_rebuild=full_rebuild,
-                scan_profile=resolved_profile,
-            )
-        change_set = self._change_detection.compute_changes(change_request, modules)
-
-        module_buffer = columnar_buffer_for_table_key(MODULES_TABLE_KEY)
-        for module in modules:
-            payload = {
-                "module": module.module_name,
-                "path": module.rel_path,
-                "repo": resolved_repo,
-                "commit": resolved_commit,
-                "language": "python",
-                "tags": [],
-                "owners": [],
-                "row_hash": None,
-            }
-            module_buffer.append(payload)
-
-        repo_map_rows = self._build_repo_map_rows(
-            repo=resolved_repo,
-            commit=resolved_commit,
-            modules=modules,
+        log.info("Discovered %d modules in %s", len(modules), resolved.root)
+        change_set = self._change_detection.compute_changes(resolved.change_request, modules)
+        tables = self._build_repo_scan_tables(
+            modules,
+            change_set,
+            repo=resolved.repo,
+            commit=resolved.commit,
         )
-        module_rows_reader, _ = table_for_columnar_rows(
-            MODULES_TABLE_KEY,
-            module_buffer.data,
-        )
-        file_state_rows_reader, _ = table_for_columnar_rows(
-            FILE_STATE_TABLE_KEY,
-            change_set.state_rows,
-        )
-        repo_map_rows_reader, _ = table_for_columnar_rows(
-            REPO_MAP_TABLE_KEY,
-            repo_map_rows,
-        )
-        scope = f"{resolved_repo}@{resolved_commit}"
-        persist_arrow_tables(
-            self._storage,
-            {
-                MODULES_TABLE_KEY: module_rows_reader,
-                FILE_STATE_TABLE_KEY: file_state_rows_reader,
-                REPO_MAP_TABLE_KEY: repo_map_rows_reader,
-            },
-            scope=scope,
-        )
+        scope = f"{resolved.repo}@{resolved.commit}"
+        persist_arrow_tables(self._storage, tables.as_mapping(), scope=scope)
 
         log.info(
             "Repo scan: repo=%s commit=%s modules=%d added=%d modified=%d deleted=%d",
-            resolved_repo,
-            resolved_commit,
+            resolved.repo,
+            resolved.commit,
             len(modules),
             len(change_set.added),
             len(change_set.modified),
@@ -237,12 +253,75 @@ class RepoScanStep:
         return RepoScanResult(
             modules=tuple(modules),
             change_set=change_set,
+            module_rows=tables.module_rows,
+            file_state_rows=tables.file_state_rows,
+            repo_map_rows=tables.repo_map_rows,
+            module_rows_reader=tables.module_rows_table,
+            file_state_rows_reader=tables.file_state_rows_table,
+            repo_map_rows_reader=tables.repo_map_rows_table,
+        )
+
+    def _build_repo_scan_tables(
+        self,
+        modules: Sequence[ModuleRecord],
+        change_set: ChangeSet,
+        *,
+        repo: str,
+        commit: str,
+    ) -> _RepoScanTables:
+        module_buffer = columnar_buffer_for_table_key(MODULES_TABLE_KEY)
+        for module in modules:
+            module_buffer.append(
+                {
+                    "module": module.module_name,
+                    "path": module.rel_path,
+                    "repo": repo,
+                    "commit": commit,
+                    "language": "python",
+                    "tags": [],
+                    "owners": [],
+                    "row_hash": None,
+                }
+            )
+        repo_map_rows = self._build_repo_map_rows(
+            repo=repo,
+            commit=commit,
+            modules=modules,
+        )
+        module_rows_reader, _ = reader_for_columnar_rows(
+            MODULES_TABLE_KEY,
+            module_buffer.data,
+        )
+        file_state_rows_reader, _ = reader_for_columnar_rows(
+            FILE_STATE_TABLE_KEY,
+            change_set.state_rows,
+        )
+        repo_map_rows_reader, _ = reader_for_columnar_rows(
+            REPO_MAP_TABLE_KEY,
+            repo_map_rows,
+        )
+        module_rows_table = finalize_ingest_reader(
+            MODULES_TABLE_KEY,
+            module_rows_reader,
+            target_name=REPO_SCAN_TARGET_NAME,
+        )
+        file_state_rows_table = finalize_ingest_reader(
+            FILE_STATE_TABLE_KEY,
+            file_state_rows_reader,
+            target_name=REPO_SCAN_TARGET_NAME,
+        )
+        repo_map_rows_table = finalize_ingest_reader(
+            REPO_MAP_TABLE_KEY,
+            repo_map_rows_reader,
+            target_name=REPO_SCAN_TARGET_NAME,
+        )
+        return _RepoScanTables(
             module_rows=module_buffer.data,
             file_state_rows=change_set.state_rows,
             repo_map_rows=repo_map_rows,
-            module_rows_reader=module_rows_reader,
-            file_state_rows_reader=file_state_rows_reader,
-            repo_map_rows_reader=repo_map_rows_reader,
+            module_rows_table=module_rows_table,
+            file_state_rows_table=file_state_rows_table,
+            repo_map_rows_table=repo_map_rows_table,
         )
 
     @staticmethod

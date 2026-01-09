@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Literal, Protocol
 
 import pyarrow as pa
@@ -11,6 +11,7 @@ import pyarrow.compute as pc
 from pyarrow import acero
 
 from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.columnar.queryspec import QuerySpec
@@ -346,6 +347,26 @@ class QueryPlanOptions:
     order_by: Sequence[tuple[str, str]] | None = None
 
 
+def query_plan_options_for_context(
+    *,
+    ctx: ExecutionContext | None,
+    options: QueryPlanOptions | None = None,
+) -> QueryPlanOptions:
+    """Return query plan options with provenance derived from an execution context.
+
+    Returns
+    -------
+    QueryPlanOptions
+        Query plan options with provenance updated from context.
+    """
+    resolved = options or QueryPlanOptions()
+    if ctx is None:
+        return resolved
+    if resolved.provenance or not ctx.provenance:
+        return resolved
+    return replace(resolved, provenance=True)
+
+
 def build_scan_plan(
     dataset: ds.Dataset,
     *,
@@ -422,6 +443,24 @@ def build_query_plan(
     if resolved.order_by is not None:
         plan = plan.order_by(sort_keys=resolved.order_by)
     return plan
+
+
+def build_query_plan_for_context(
+    dataset: ds.Dataset,
+    *,
+    spec: QuerySpec,
+    ctx: ExecutionContext | None = None,
+    options: QueryPlanOptions | None = None,
+) -> Plan:
+    """Return a scan plan compiled from a QuerySpec and execution context.
+
+    Returns
+    -------
+    Plan
+        Compiled scan/filter/project plan.
+    """
+    resolved = query_plan_options_for_context(ctx=ctx, options=options)
+    return build_query_plan(dataset, spec=spec, options=resolved)
 
 
 def _projection_for_columns(
@@ -548,9 +587,11 @@ __all__ = [
     "QueryPlanOptions",
     "ScanPlanOptions",
     "build_query_plan",
+    "build_query_plan_for_context",
     "build_scan_plan",
     "list_external_plan_runners",
     "materialize_plan",
+    "query_plan_options_for_context",
     "register_external_plan_runner",
     "run_external_plan",
 ]

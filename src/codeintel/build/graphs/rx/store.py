@@ -137,14 +137,13 @@ class RxGraphStore:
         )
 
     @property
-    def graph_view(self) -> RxGraph:
-        """Return the underlying rustworkx graph."""
-        return self.graph
-
-    @property
     def version(self) -> int:
         """Return the current mutation version."""
         return self._version
+
+    def touch(self) -> None:
+        """Invalidate cached views after mutating the graph."""
+        self._touch()
 
     def _touch(self) -> None:
         self._version += 1

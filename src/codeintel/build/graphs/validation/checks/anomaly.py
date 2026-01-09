@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import pyarrow as pa
 
-from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_table
+from codeintel.build.graphs.engine.datasets import SnapshotScanRequest, scan_snapshot_reader
 from codeintel.build.graphs.validation.base import GraphCheckBase
 from codeintel.build.graphs.validation.findings import (
     SAMPLE_LIMIT,
@@ -97,8 +97,8 @@ class SubsystemDisagreementCheck(GraphCheckBase):
 # =============================================================================
 
 
-def _scan_snapshot_table(request: SnapshotScanRequest) -> pa.Table | None:
-    return scan_snapshot_table(request)
+def _scan_snapshot_reader(request: SnapshotScanRequest) -> pa.RecordBatchReader | None:
+    return scan_snapshot_reader(request)
 
 
 def _symbol_community_findings_impl(
@@ -116,7 +116,7 @@ def _symbol_community_findings_impl(
     """
     if dataset_root_dir is None:
         return []
-    table = _scan_snapshot_table(
+    reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="analytics.symbol_graph_metrics_modules",
@@ -126,14 +126,15 @@ def _symbol_community_findings_impl(
             commit=commit,
         )
     )
-    if table is None:
+    if reader is None:
         return []
     counts: dict[object, int] = {}
-    for row in iter_rows(table):
-        community_id = row.get("symbol_community_id")
-        if community_id is None:
-            continue
-        counts[community_id] = counts.get(community_id, 0) + 1
+    for batch in reader:
+        for row in iter_rows(batch):
+            community_id = row.get("symbol_community_id")
+            if community_id is None:
+                continue
+            counts[community_id] = counts.get(community_id, 0) + 1
     comm_counts = [
         (
             coerce_str(community_id, ctx="symbol_community_id"),
@@ -175,7 +176,7 @@ def _subsystem_disagreement_findings_impl(
     """
     if dataset_root_dir is None:
         return []
-    table = _scan_snapshot_table(
+    reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="analytics.subsystem_agreement",
@@ -185,7 +186,7 @@ def _subsystem_disagreement_findings_impl(
             commit=commit,
         )
     )
-    if table is None:
+    if reader is None:
         return []
     disagreements = [
         (
@@ -196,7 +197,8 @@ def _subsystem_disagreement_findings_impl(
                 ctx="subsystem_agreement.import_community_id",
             ),
         )
-        for row in iter_rows(table)
+        for batch in reader
+        for row in iter_rows(batch)
         if row.get("agrees") is False
     ]
     if not disagreements:

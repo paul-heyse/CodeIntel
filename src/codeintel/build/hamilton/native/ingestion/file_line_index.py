@@ -18,10 +18,10 @@ from codeintel.build.hamilton.native.patterns import (
     attach_table_target_template,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
@@ -162,9 +162,10 @@ def file_line_index__base(
         )
 
     table, _ = table_for_rows(FILE_LINE_INDEX_TABLE_KEY, rows)
-    return finalize_ingest_table(
+    reader = table_to_reader(table, batch_size=None)
+    return finalize_ingest_reader(
         FILE_LINE_INDEX_TABLE_KEY,
-        table,
+        reader,
         target_name=FILE_LINE_INDEX_TARGET_NAME,
     )
 

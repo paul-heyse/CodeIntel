@@ -20,15 +20,28 @@ from codeintel.build.graphs.compute.imports import (
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_reader
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
 IMPORT_GRAPH_EDGES_TABLE_KEY = "graph.import_graph_edges"
+IMPORT_MODULES_SORT_KEYS: tuple[SortKey, ...] = (
+    ("repo", "ascending"),
+    ("commit", "ascending"),
+    ("module", "ascending"),
+)
+IMPORT_GRAPH_EDGES_SORT_KEYS: tuple[SortKey, ...] = (
+    ("repo", "ascending"),
+    ("commit", "ascending"),
+    ("src_module", "ascending"),
+    ("dst_module", "ascending"),
+)
 
 
 def _resolve_import_from(
@@ -134,9 +147,14 @@ def import_modules_compute(
         IMPORT_MODULES_TABLE_KEY,
         (dataclasses.asdict(row) for row in rows),
     )
-    result = finalize_table(
-        table,
-        spec=FinalizeSpec(table_key=IMPORT_MODULES_TABLE_KEY, mode="strict"),
+    reader = table_to_reader(table, batch_size=None)
+    result = finalize_reader(
+        reader,
+        spec=FinalizeSpec(
+            table_key=IMPORT_MODULES_TABLE_KEY,
+            mode="strict",
+            order_by=IMPORT_MODULES_SORT_KEYS,
+        ),
     )
     return result.good
 
@@ -157,9 +175,14 @@ def import_graph_edges_compute(
         for row in build_import_edge_rows(env.repo, env.commit, import_graph_analysis)
     )
     table, _ = table_for_rows(IMPORT_GRAPH_EDGES_TABLE_KEY, rows)
-    result = finalize_table(
-        table,
-        spec=FinalizeSpec(table_key=IMPORT_GRAPH_EDGES_TABLE_KEY, mode="strict"),
+    reader = table_to_reader(table, batch_size=None)
+    result = finalize_reader(
+        reader,
+        spec=FinalizeSpec(
+            table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
+            mode="strict",
+            order_by=IMPORT_GRAPH_EDGES_SORT_KEYS,
+        ),
     )
     return result.good
 

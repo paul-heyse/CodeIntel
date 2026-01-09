@@ -53,11 +53,11 @@ Target files
 Checklist
 - [x] Replace row-wise filtering (`iter_rows`) with Plan.filter + compute masks.
 - [x] Replace `pa.Table.from_pylist` assemblies with Plan projections or kernel helpers.
-- [ ] Add deterministic order_by via FinalizeSpec for contract outputs.
-- [ ] Use `finalize_reader` when outputs are immediately materialized.
+- [x] Add deterministic order_by via FinalizeSpec for contract outputs.
+- [x] Use `finalize_reader` when outputs are immediately materialized.
 
 Status
-- In progress (Phase 1 complete for `src/codeintel/build/hamilton/native/graphs/call_graph.py`, `src/codeintel/build/hamilton/native/graphs/goids.py`, `src/codeintel/build/hamilton/native/graphs/import_graph.py`, `src/codeintel/build/hamilton/native/graphs/symbol_use.py`; remaining: `src/codeintel/build/hamilton/native/graphs/pdg.py`, `src/codeintel/build/graphs/compute/goid.py`).
+- Complete: applied finalize order_by + finalize_reader for `src/codeintel/build/hamilton/native/graphs/call_graph.py`, `src/codeintel/build/hamilton/native/graphs/import_graph.py`, `src/codeintel/build/hamilton/native/graphs/pdg.py`, and `src/codeintel/build/hamilton/native/graphs/symbol_use.py`; columnar GOID hashing in `src/codeintel/build/graphs/compute/goid.py` already complete.
 
 ---
 
@@ -87,11 +87,11 @@ Target files
 
 Checklist
 - [x] Replace `pa.Table.from_pylist` edge builds with explode + Plan projection.
-- [ ] Enforce join-safe schemas before hash joins.
+- [x] Enforce join-safe schemas before hash joins.
 - [x] Route outputs through FinalizeSpec with canonical sort keys.
 
 Status
-- Complete for `src/codeintel/build/hamilton/native/graphs/cpg2/edge_helpers.py`, `src/codeintel/build/hamilton/native/graphs/cpg2/ids.py`, `src/codeintel/build/hamilton/native/graphs/cpg2/planes/scip.py`, `src/codeintel/build/hamilton/native/graphs/cpg2/planes/link.py`, `src/codeintel/build/hamilton/native/graphs/cpg2/planes/symbol.py`.
+- Complete for `src/codeintel/build/hamilton/native/graphs/cpg2/edge_helpers.py`, `src/codeintel/build/hamilton/native/graphs/cpg2/ids.py`, `src/codeintel/build/hamilton/native/graphs/cpg2/planes/scip.py`, `src/codeintel/build/hamilton/native/graphs/cpg2/planes/link.py`, `src/codeintel/build/hamilton/native/graphs/cpg2/planes/symbol.py`; join-safe schemas are enforced via `normalize_table_for_join` before hash joins.
 
 ---
 
@@ -125,9 +125,12 @@ Target files
 - src/codeintel/build/hamilton/native/ingestion/pipelines.py
 
 Checklist
-- [ ] Replace ad-hoc joins with HashJoinSpec + precheck_join_keys.
-- [ ] Move join filtering to Plan.filter nodes for deterministic inference.
-- [ ] Replace table materialization with finalize_reader where possible.
+- [x] Replace ad-hoc joins with HashJoinSpec + precheck_join_keys.
+- [x] Move join filtering to Plan.filter nodes for deterministic inference.
+- [x] Replace table materialization with finalize_reader where possible.
+
+Status
+- Complete: Plan-filtered joins and reader-finalize now applied in `src/codeintel/build/hamilton/native/ingestion/syntax_augment.py`, `src/codeintel/build/hamilton/native/ingestion/syntax_enrich.py`, `src/codeintel/build/hamilton/native/ingestion/scip.py`, `src/codeintel/build/hamilton/native/ingestion/tree_sitter.py`, `src/codeintel/build/hamilton/native/ingestion/file_line_index.py`, and `src/codeintel/build/hamilton/native/ingestion/pipelines.py`; join precheck routing is in place for `src/codeintel/build/hamilton/native/ingestion/scip_resolution.py`. Remaining targets are non-join (`scip_proto.py`, `frame_utils.py`) or already aligned (`extraction_targets.py`, `ingest_targets.py`).
 
 ---
 
@@ -150,9 +153,12 @@ Target files
 - src/codeintel/ingestion/compute/docstrings_extract.py
 
 Checklist
-- [ ] Replace dict-list assembly with ColumnarRowBuffer.
-- [ ] Enforce typed `extras` struct via shared helpers where present.
-- [ ] Route outputs through finalize_ingest_table for alignment + artifacts.
+- [x] Replace dict-list assembly with ColumnarRowBuffer.
+- [x] Enforce typed `extras` struct via shared helpers where present.
+- [x] Route outputs through finalize_ingest_table for alignment + artifacts.
+
+Status
+- Complete for `src/codeintel/ingestion/compute/config_ingest.py`, `src/codeintel/ingestion/compute/typing_ingest.py`, `src/codeintel/ingestion/compute/tests_ingest.py`, and `src/codeintel/ingestion/compute/docstrings_extract.py`; finalize now enforces schema alignment (including extras structs) before persistence.
 
 ---
 

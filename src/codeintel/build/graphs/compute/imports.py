@@ -6,12 +6,12 @@ without any database or file I/O.
 
 from __future__ import annotations
 
-from collections import Counter, deque
+from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-import rustworkx as rx
-
+from codeintel.build.graphs.compute.metrics.components import topological_layers
+from codeintel.build.graphs.rx.condensation import condensation_store
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.data_models.rows import ImportEdgeRow, ImportModuleRow
@@ -59,13 +59,6 @@ class ImportAnalysisResult:
     layer_map: Mapping[str, int]
 
 
-def _component_sort_key(store: RxGraphStore, component: set[int]) -> tuple[str, str]:
-    if not component:
-        return ("", "")
-    smallest = min((store.index_to_id[idx] for idx in component), key=stable_key)
-    return stable_key(smallest)
-
-
 def collect_import_edges(
     module_name: str,
     imports: Sequence[tuple[str, tuple[str, ...]]],
@@ -91,6 +84,33 @@ def collect_import_edges(
     return edges
 
 
+def _build_import_store(
+    edges: Sequence[ImportEdge],
+    modules: AbstractSet[str],
+) -> RxGraphStore:
+    store = RxGraphStore.directed(node_hint=len(modules), edge_hint=len(edges))
+    for module in sorted(modules, key=stable_key):
+        store.ensure_node(module)
+    for edge in edges:
+        store.add_weighted_edge(edge.src_module, edge.dst_module, weight=1.0)
+    return store
+
+
+def _components_from_scc_map(
+    store: RxGraphStore,
+    scc_map: Mapping[str, int],
+) -> list[set[int]]:
+    if not scc_map:
+        return []
+    max_id = max(scc_map.values())
+    components: list[set[int]] = [set() for _ in range(max_id + 1)]
+    for node_id, comp_id in scc_map.items():
+        node_idx = store.id_to_index.get(node_id)
+        if node_idx is not None:
+            components[comp_id].add(node_idx)
+    return components
+
+
 def compute_scc(
     edges: Sequence[ImportEdge],
     modules: AbstractSet[str],
@@ -109,26 +129,13 @@ def compute_scc(
     dict[str, int]
         Module to SCC ID mapping.
     """
-    store = RxGraphStore.directed(node_hint=len(modules), edge_hint=len(edges))
-    for module in sorted(modules, key=stable_key):
-        store.ensure_node(module)
-    for edge in edges:
-        store.add_weighted_edge(edge.src_module, edge.dst_module, weight=1.0)
+    store = _build_import_store(edges, modules)
 
     if store.graph.num_nodes() == 0:
         return {}
 
-    directed_graph = cast("rx.PyDiGraph", store.graph)
-    components = [set(component) for component in rx.strongly_connected_components(directed_graph)]
-    sorted_components = sorted(
-        components,
-        key=lambda comp: _component_sort_key(store, comp),
-    )
-    return {
-        str(store.index_to_id[node_idx]): comp_id
-        for comp_id, comp in enumerate(sorted_components)
-        for node_idx in comp
-    }
+    _condensed, membership = condensation_store(store)
+    return {str(node_id): comp_id for node_id, comp_id in membership.items()}
 
 
 def compute_layers(
@@ -154,34 +161,16 @@ def compute_layers(
     """
     if not modules:
         return {}
-    component_ids = set(scc_map.values())
-    if not component_ids:
+    store = _build_import_store(edges, modules)
+    components = _components_from_scc_map(store, scc_map)
+    if not components:
         return {}
-
-    adjacency: dict[int, set[int]] = {comp_id: set() for comp_id in component_ids}
-    in_degree = dict.fromkeys(component_ids, 0)
-    for edge in edges:
-        src_comp = scc_map.get(edge.src_module)
-        dst_comp = scc_map.get(edge.dst_module)
-        if src_comp is None or dst_comp is None or src_comp == dst_comp:
-            continue
-        if dst_comp not in adjacency[src_comp]:
-            adjacency[src_comp].add(dst_comp)
-            in_degree[dst_comp] += 1
-
-    ready = deque(sorted(comp for comp in component_ids if in_degree[comp] == 0))
-    comp_layers: dict[int, int] = {
-        comp_id: 0 for comp_id in component_ids if in_degree[comp_id] == 0
-    }
-    while ready:
-        comp_id = ready.popleft()
-        base = comp_layers.get(comp_id, 0)
-        for succ in sorted(adjacency.get(comp_id, set())):
-            comp_layers[succ] = max(comp_layers.get(succ, 0), base + 1)
-            in_degree[succ] -= 1
-            if in_degree[succ] == 0:
-                ready.append(succ)
-
+    condensed_store, _membership = condensation_store(
+        store,
+        components=components,
+        stable=False,
+    )
+    comp_layers = topological_layers(condensed_store)
     return {node: comp_layers.get(scc_map.get(node, -1), 0) for node in modules}
 
 

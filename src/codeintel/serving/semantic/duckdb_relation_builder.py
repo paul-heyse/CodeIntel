@@ -119,6 +119,13 @@ class _AlignedScanContext:
 
 
 @dataclass(frozen=True, slots=True)
+class _UnalignedScanContext:
+    table_key: str
+    finalize_on_read: bool
+    use_threads: bool | None
+
+
+@dataclass(frozen=True, slots=True)
 class _PlanReaderSource:
     reader: pa.RecordBatchReader
     engine_name: str | None = None
@@ -877,9 +884,21 @@ def _scan_unaligned_sources(
     con: DuckDBConnection,
     plan_sources: Sequence[_PlanReaderSource],
     scanner: ds.Scanner,
+    context: _UnalignedScanContext,
 ) -> DuckDBRelation | None:
     sources: list[object] = []
-    sources.extend(source.reader for source in plan_sources)
+    for source in plan_sources:
+        finalize_reader = context.finalize_on_read or source.engine_name is not None
+        if finalize_reader:
+            finalized = _finalize_reader_table(
+                source.reader,
+                table_key=context.table_key,
+                engine_name=source.engine_name,
+                use_threads=context.use_threads,
+            )
+            sources.append(finalized if finalized is not None else source.reader)
+        else:
+            sources.append(source.reader)
     sources.append(scanner)
     sources.append(scanner.to_reader())
     for source in sources:
@@ -1040,6 +1059,11 @@ def _scan_dataset(
         con=con,
         plan_sources=plan_sources,
         scanner=scanner,
+        context=_UnalignedScanContext(
+            table_key=entry.manifest.table_key,
+            finalize_on_read=context.scan_options.finalize_on_read,
+            use_threads=context.scan_options.use_threads,
+        ),
     )
     if relation is not None:
         return relation

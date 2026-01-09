@@ -38,6 +38,8 @@ import rustworkx as rx
 
 from codeintel.build.graphs.rx.algos import (
     BetweennessOptions,
+    EigenvectorOptions,
+    GraphAlgoConfig,
     GraphInput,
     PagerankOptions,
     betweenness_by_id,
@@ -91,12 +93,21 @@ class CentralityMetrics:
     degree: int
 
 
+@dataclass(frozen=True, slots=True)
+class AllCentralitiesOptions:
+    """Configuration for computing the full centrality suite."""
+
+    alpha: float = 0.85
+    betweenness_k: int | None = None
+    include_eigenvector: bool = True
+    eigenvector_max_iter: int = 100
+
+
 def compute_pagerank(
     graph: GraphInput,
-    alpha: float = 0.85,
-    max_iter: int = 100,
-    tol: float = 1e-6,
-    weight: str | None = None,
+    *,
+    options: PagerankOptions | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Any, float]:
     """Compute PageRank for all nodes in a graph.
 
@@ -104,14 +115,10 @@ def compute_pagerank(
     ----------
     graph
         Graph (directed or undirected).
-    alpha
-        Damping factor.
-    max_iter
-        Maximum iterations.
-    tol
-        Convergence tolerance.
-    weight
-        Edge attribute to use as weight (None for unweighted).
+    options
+        PageRank options (alpha, weight, convergence settings).
+    algo_config
+        Optional algorithm runtime configuration (parallelism, weight semantics).
 
     Returns
     -------
@@ -129,18 +136,15 @@ def compute_pagerank(
     >>> len(pr)
     3
     """
-    store = ensure_store(graph, weight=weight)
+    resolved = options or PagerankOptions()
+    store = ensure_store(graph, weight=resolved.weight)
     if store.graph.num_nodes() == 0:
         return {}
     try:
         return pagerank_by_id(
             store,
-            options=PagerankOptions(
-                alpha=alpha,
-                max_iter=max_iter,
-                tol=tol,
-                weight=weight,
-            ),
+            options=resolved,
+            algo_config=algo_config,
         )
     except rx.FailedToConverge:
         node_count = store.graph.num_nodes()
@@ -152,10 +156,8 @@ def compute_pagerank(
 def compute_betweenness(
     graph: GraphInput,
     *,
-    normalized: bool = True,
-    k: int | None = None,
-    weight: str | None = None,
-    seed: int | None = None,
+    options: BetweennessOptions | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Any, float]:
     """Compute betweenness centrality for all nodes.
 
@@ -163,31 +165,24 @@ def compute_betweenness(
     ----------
     graph
         Graph (directed or undirected).
-    normalized
-        Whether to normalize values.
-    k
-        Number of sample nodes (None for exact computation).
-    weight
-        Edge attribute to use as weight (None for unweighted).
-    seed
-        Random seed for sampling (used when k is specified).
+    options
+        Betweenness computation options (normalization, sampling, weighting).
+    algo_config
+        Optional algorithm runtime configuration (parallelism, weight semantics).
 
     Returns
     -------
     dict[Any, float]
         Node to betweenness centrality mapping.
     """
-    store = ensure_store(graph, weight=weight)
+    resolved = options or BetweennessOptions()
+    store = ensure_store(graph, weight=resolved.weight)
     if store.graph.num_nodes() == 0:
         return {}
     return betweenness_by_id(
         store,
-        options=BetweennessOptions(
-            normalized=normalized,
-            k=k,
-            weight=weight,
-            seed=seed,
-        ),
+        options=resolved,
+        algo_config=algo_config,
     )
 
 
@@ -195,6 +190,7 @@ def compute_closeness(
     graph: GraphInput,
     *,
     wf_improved: bool = True,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Any, float]:
     """Compute closeness centrality for all nodes.
 
@@ -204,6 +200,8 @@ def compute_closeness(
         Graph (directed or undirected).
     wf_improved
         Whether to use Wasserman-Faust improvement.
+    algo_config
+        Optional algorithm runtime configuration (parallelism, weight semantics).
 
     Returns
     -------
@@ -213,7 +211,7 @@ def compute_closeness(
     store = ensure_store(graph)
     if store.graph.num_nodes() == 0:
         return {}
-    return closeness_by_id(store, wf_improved=wf_improved)
+    return closeness_by_id(store, wf_improved=wf_improved, algo_config=algo_config)
 
 
 def compute_degree_centrality(
@@ -277,6 +275,8 @@ def compute_out_degree_centrality(graph: GraphInput) -> dict[Any, float]:
 
 def compute_harmonic_centrality(
     graph: GraphInput,
+    *,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Any, float]:
     """Compute harmonic centrality for all nodes.
 
@@ -287,6 +287,8 @@ def compute_harmonic_centrality(
     ----------
     graph
         Graph (directed or undirected).
+    algo_config
+        Optional algorithm runtime configuration (parallelism, weight semantics).
 
     Returns
     -------
@@ -296,7 +298,7 @@ def compute_harmonic_centrality(
     store = ensure_store(graph)
     if store.graph.num_nodes() == 0:
         return {}
-    return harmonic_centrality_by_id(store)
+    return harmonic_centrality_by_id(store, algo_config=algo_config)
 
 
 def compute_eigenvector_centrality(
@@ -305,6 +307,7 @@ def compute_eigenvector_centrality(
     max_iter: int = 100,
     tol: float = 1e-6,
     weight: str | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Any, float]:
     """Compute eigenvector centrality for all nodes.
 
@@ -321,6 +324,8 @@ def compute_eigenvector_centrality(
         Convergence tolerance.
     weight
         Edge attribute to use as weight (None for unweighted).
+    algo_config
+        Optional algorithm runtime configuration (parallelism, weight semantics).
 
     Returns
     -------
@@ -333,9 +338,12 @@ def compute_eigenvector_centrality(
     try:
         return eigenvector_centrality_by_id(
             store,
-            max_iter=max_iter,
-            tol=tol,
-            weight=weight,
+            options=EigenvectorOptions(
+                max_iter=max_iter,
+                tol=tol,
+                weight=weight,
+            ),
+            algo_config=algo_config,
         )
     except rx.FailedToConverge:
         log.warning("Eigenvector centrality did not converge; returning zeros")
@@ -345,10 +353,8 @@ def compute_eigenvector_centrality(
 def compute_all_centralities(
     graph: GraphInput,
     *,
-    alpha: float = 0.85,
-    betweenness_k: int | None = None,
-    include_eigenvector: bool = True,
-    eigenvector_max_iter: int = 100,
+    options: AllCentralitiesOptions | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Any, CentralityMetrics]:
     """Compute all centrality metrics for all nodes.
 
@@ -356,14 +362,10 @@ def compute_all_centralities(
     ----------
     graph
         Directed graph.
-    alpha
-        PageRank damping factor.
-    betweenness_k
-        Sample size for betweenness (None for exact).
-    include_eigenvector
-        Whether to compute eigenvector centrality (can be slow/fail to converge).
-    eigenvector_max_iter
-        Maximum iterations for eigenvector computation.
+    options
+        Configuration for which metrics to compute and their defaults.
+    algo_config
+        Optional algorithm runtime configuration (parallelism, weight semantics).
 
     Returns
     -------
@@ -374,13 +376,26 @@ def compute_all_centralities(
     if store.graph.num_nodes() == 0:
         return {}
 
-    pagerank = compute_pagerank(store, alpha=alpha)
-    betweenness = compute_betweenness(store, k=betweenness_k)
-    closeness = compute_closeness(store)
-    harmonic = compute_harmonic_centrality(store)
+    resolved = options or AllCentralitiesOptions()
+    pagerank = compute_pagerank(
+        store,
+        options=PagerankOptions(alpha=resolved.alpha),
+        algo_config=algo_config,
+    )
+    betweenness = compute_betweenness(
+        store,
+        options=BetweennessOptions(k=resolved.betweenness_k),
+        algo_config=algo_config,
+    )
+    closeness = compute_closeness(store, algo_config=algo_config)
+    harmonic = compute_harmonic_centrality(store, algo_config=algo_config)
     eigenvector: dict[Any, float] = {}
-    if include_eigenvector:
-        eigenvector = compute_eigenvector_centrality(store, max_iter=eigenvector_max_iter)
+    if resolved.include_eigenvector:
+        eigenvector = compute_eigenvector_centrality(
+            store,
+            max_iter=resolved.eigenvector_max_iter,
+            algo_config=algo_config,
+        )
 
     result: dict[Any, CentralityMetrics] = {}
     directed_graph: rx.PyDiGraph | None = None

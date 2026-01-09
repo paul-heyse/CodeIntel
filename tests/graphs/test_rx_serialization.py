@@ -10,10 +10,15 @@ from codeintel.build.graphs.rx import (
     RxGraphStore,
     decode_node_payload,
     dumps_node_link_json,
+    loads_node_link_json,
     read_node_link_json,
     write_node_link_json,
 )
-from codeintel.build.graphs.rx.metadata import GraphMetadata, apply_graph_metadata
+from codeintel.build.graphs.rx.metadata import (
+    GraphMetadata,
+    apply_graph_metadata,
+    metadata_from_graph,
+)
 from tests._helpers.assertions import expect_equal, expect_not_empty
 
 
@@ -31,14 +36,14 @@ def test_node_link_roundtrip(tmp_path: Path) -> None:
         decode_node_payload(restored.get_node_data(node_idx))
         for node_idx in restored.node_indices()
     ]
-    expect_equal({node_id for node_id, _ in decoded}, {None}, label="node_payloads")
     attrs_by_id = dict(decoded)
-    expect_equal(attrs_by_id.get("a", {}), {}, label="node_attrs")
+    expect_equal(set(attrs_by_id), {"a", "b"}, label="node_ids")
+    expect_equal(attrs_by_id.get("a", {}), {"kind": "root"}, label="node_attrs")
     edges = restored.edge_list()
     expect_equal(len(edges), 1, label="edge_list_len")
     left, right = edges[0]
     weight = restored.get_edge_data(left, right)
-    expect_equal(weight, None, label="edge_weight")
+    expect_equal(weight, 1.0, label="edge_weight")
 
 
 def test_node_link_requires_metadata_for_cache() -> None:
@@ -58,3 +63,19 @@ def test_node_link_requires_metadata_for_cache() -> None:
     apply_graph_metadata(store.graph, metadata)
     payload = dumps_node_link_json(store.graph, require_metadata=True)
     expect_not_empty(payload, label="metadata_payload")
+
+
+def test_node_link_roundtrip_metadata() -> None:
+    """Node-link JSON should preserve graph metadata."""
+    store = RxGraphStore.directed()
+    metadata = GraphMetadata(
+        cache_version="v4",
+        engine="rustworkx",
+        graph_kind="CALL_GRAPH",
+        weight_policy=store.weight_policy.name,
+    )
+    apply_graph_metadata(store.graph, metadata)
+    payload = dumps_node_link_json(store.graph, require_metadata=True)
+    restored = loads_node_link_json(payload)
+    restored_metadata = metadata_from_graph(restored)
+    expect_equal(restored_metadata, metadata, label="graph_metadata")

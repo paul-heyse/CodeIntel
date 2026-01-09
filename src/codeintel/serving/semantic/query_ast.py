@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.core.sqlglot_tools import canonicalize_select_duckdb, schema_mapping_for_table_key
-from codeintel.serving.semantic.arrow_plan_builder import ArrowPlanSpec, build_arrow_plan_spec
+from codeintel.serving.semantic.arrow_plan_builder import (
+    ArrowPlanSpec,
+    build_arrow_plan_spec,
+    build_arrow_query_spec,
+)
 from codeintel.serving.semantic.duckdb_relation_builder import validate_query_ast
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import build_sqlglot_query
@@ -18,6 +22,8 @@ if TYPE_CHECKING:
 
     from sqlglot import exp
 
+    from codeintel.core.columnar.queryspec import QuerySpec
+
 
 @dataclass(frozen=True, slots=True)
 class ServingQuery:
@@ -27,6 +33,7 @@ class ServingQuery:
     ast: exp.Select
     plan_spec: QueryPlanSpec
     arrow_plan: ArrowPlanSpec | None
+    query_spec: QuerySpec | None = None
 
 
 _ALLOWED_ANONYMOUS_FUNCTIONS = frozenset(
@@ -107,11 +114,13 @@ def build_serving_query(*, spec: SemanticQuerySpec) -> ServingQuery:
         ),
     )
     arrow_plan = build_arrow_plan_spec(spec=spec, ast=canonical)
+    query_spec = build_arrow_query_spec(arrow_plan) if arrow_plan is not None else None
     return ServingQuery(
         spec=spec,
         ast=canonical,
         plan_spec=plan_spec,
         arrow_plan=arrow_plan,
+        query_spec=query_spec,
     )
 
 

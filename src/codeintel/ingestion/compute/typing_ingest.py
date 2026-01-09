@@ -13,18 +13,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.core.columnar.rows import (
     ColumnarRowBuffer,
     ColumnarRows,
     columnar_buffer_for_table_key,
     empty_table_for_table,
-    table_for_columnar_rows,
+    reader_for_columnar_rows,
 )
 from codeintel.ingestion.compute.base import persist_arrow_tables
 from codeintel.ingestion.context import IngestionContext
 from codeintel.ingestion.ports.tools import DiagnosticResult, ToolStatus
 
 DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
+TYPING_INGEST_TARGET_NAME = "typing_ingest"
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Sequence
@@ -239,21 +241,26 @@ class TypingIngestStep:
             diagnostic_buffer.row_count,
         )
 
-        diagnostic_rows_reader, row_count = table_for_columnar_rows(
+        diagnostic_rows_reader, _row_count = reader_for_columnar_rows(
             DIAGNOSTICS_TABLE_KEY,
             diagnostic_buffer.data,
+        )
+        finalized = finalize_ingest_reader(
+            DIAGNOSTICS_TABLE_KEY,
+            diagnostic_rows_reader,
+            target_name=TYPING_INGEST_TARGET_NAME,
         )
         scope = f"{resolved_context.repo}@{resolved_context.commit}"
         persist_arrow_tables(
             storage,
-            {DIAGNOSTICS_TABLE_KEY: diagnostic_rows_reader},
+            {DIAGNOSTICS_TABLE_KEY: finalized},
             scope=scope,
         )
         return TypingIngestResult(
             result=ExecutionResult.ok(),
             diagnostic_rows=diagnostic_buffer.data,
-            diagnostic_rows_reader=diagnostic_rows_reader,
-            diagnostic_row_count=row_count,
+            diagnostic_rows_reader=finalized,
+            diagnostic_row_count=finalized.num_rows,
         )
 
     @staticmethod

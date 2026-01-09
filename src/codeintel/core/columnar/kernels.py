@@ -14,8 +14,77 @@ from codeintel.core.columnar.compute_helpers import (
     require_array,
     sort_options,
 )
+from codeintel.core.columnar.explode_ops import (
+    ExplodeResult,
+    ExplodeSpec,
+)
+from codeintel.core.columnar.explode_ops import (
+    explode_edges as _explode_edges,
+)
+from codeintel.core.columnar.explode_ops import (
+    explode_edges_with_aligned_lists as _explode_edges_with_aligned_lists,
+)
+from codeintel.core.columnar.explode_ops import (
+    explode_list_struct as _explode_list_struct,
+)
 
 SortKey = tuple[str, Literal["ascending", "descending"]]
+
+
+def explode_edges(
+    table: pa.Table,
+    *,
+    spec: ExplodeSpec,
+) -> ExplodeResult:
+    """Explode list payloads into edge rows.
+
+    Returns
+    -------
+    ExplodeResult
+        Explode output with good rows and errors.
+    """
+    return _explode_edges(table, spec=spec)
+
+
+def explode_edges_with_aligned_lists(
+    table: pa.Table,
+    *,
+    spec: ExplodeSpec,
+) -> ExplodeResult:
+    """Explode list payloads with aligned list validation.
+
+    Returns
+    -------
+    ExplodeResult
+        Explode output with aligned list validation results.
+    """
+    return _explode_edges_with_aligned_lists(table, spec=spec)
+
+
+def explode_list_struct(
+    table: pa.Table,
+    *,
+    list_col: str,
+    parent_cols: Sequence[str],
+    struct_fields: Sequence[str] | dict[str, str],
+) -> pa.Table:
+    """Explode a list<struct> column into a row-per-element table.
+
+    Returns
+    -------
+    pyarrow.Table
+        Table with one row per list element.
+    """
+    if isinstance(struct_fields, dict):
+        mapping = struct_fields
+    else:
+        mapping = {name: name for name in struct_fields}
+    return _explode_list_struct(
+        table,
+        list_col=list_col,
+        parent_cols=parent_cols,
+        struct_fields=mapping,
+    )
 
 
 def stable_sort_indices(
@@ -496,6 +565,9 @@ def _make_struct(
 __all__ = [
     "case_when",
     "coalesce",
+    "explode_edges",
+    "explode_edges_with_aligned_lists",
+    "explode_list_struct",
     "hash_struct_goid",
     "hash_struct_ordinal",
     "indices_nonzero",

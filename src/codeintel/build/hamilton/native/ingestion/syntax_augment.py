@@ -25,7 +25,7 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.array_ops import ensure_array
@@ -50,7 +50,7 @@ from codeintel.build.tabular.compute_masks import (
     is_null_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
@@ -521,6 +521,7 @@ def _hash_join_tables(
     *,
     spec: _JoinSpec,
     how: JoinType = "left outer",
+    filter_expr: Expression | None = None,
 ) -> pa.Table:
     left_checked = _precheck_join_table(
         left,
@@ -549,6 +550,8 @@ def _hash_join_tables(
             right_output=right_output,
         ),
     )
+    if filter_expr is not None:
+        joined = joined.filter(filter_expr)
     joined = joined.order_by(sort_keys=[(key, "ascending") for key in spec.left_keys])
     return materialize_plan(joined, use_threads=True)
 
@@ -632,7 +635,7 @@ def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
         return ts_selected
     xref_selected = select_table_columns(xref_exact, ["ts_node_id", "syntax_node_id"])
     xref_selected = normalize_table_for_join(xref_selected)
-    joined = _hash_join_tables(
+    return _hash_join_tables(
         ts_selected,
         xref_selected,
         spec=_JoinSpec(
@@ -641,9 +644,8 @@ def _unmatched_ts_nodes(ts_nodes: pa.Table, xref_exact: pa.Table) -> pa.Table:
             left_table_key=TS_NODES_TABLE_KEY,
             right_table_key=TS_XREF_TABLE_KEY,
         ),
+        filter_expr=E.is_null("syntax_node_id"),
     )
-    mask = is_null_mask(joined["syntax_node_id"])
-    return safe_filter(joined, mask)
 
 
 def _xref_row_from_values(values: _XrefRowValues) -> dict[str, object]:
@@ -1095,9 +1097,10 @@ def _empty_reader(table_key: str) -> pa.Table:
 def _reader_from_table(table_key: str, table: pa.Table) -> pa.Table:
     if table.num_rows == 0:
         return _empty_reader(table_key)
-    return finalize_ingest_table(
+    reader = table_to_reader(table, batch_size=None)
+    return finalize_ingest_reader(
         table_key,
-        table,
+        reader,
         target_name=SYNTAX_AUGMENT_TARGET_NAME,
     )
 

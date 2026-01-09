@@ -12,21 +12,24 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import pyarrow as pa
 from sqlglot import exp
 
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable, table_to_reader
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.readers import empty_reader_from_schema
+from codeintel.core.columnar.rows import table_for_rows
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.utilities.persistence import DeleteScope
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
+    from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
 
 from codeintel.build.schemas import (
     ContractResolutionMode,
@@ -39,7 +42,6 @@ from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
-from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
 from codeintel.core.schemas.primitives import resolve_stable_sort_keys
 from codeintel.core.schemas.resolution import resolve_table_schema
@@ -47,6 +49,7 @@ from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.validation.profiles import ValidationProfile
 
 LOG = logging.getLogger(__name__)
+ORDER_ASC: Final = "ascending"
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
 
@@ -260,32 +263,17 @@ def _write_parquet_dataset(
     if not normalized:
         return 0
     dataset_root_dir, snapshot_id, repo, commit = _resolve_parquet_context(gateway)
-    arrow_schema = arrow_contract_for_table_schema(table_schema=table_schema)
-    reader = _record_batch_reader_from_rows(
-        normalized,
-        schema=arrow_schema,
-        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+    reader, stable_sort_keys = _finalize_rows_for_parquet(
+        contract.table_key,
+        table_schema=table_schema,
+        rows=normalized,
     )
-    schema_hash_value = schema_hash(table_schema)
-    schema_digest_value = schema_digest(table_schema)
-    partition_columns = _partition_columns_for_schema(table_schema)
-    metadata = _parquet_metadata_payload(
-        context=_ParquetMetadataContext(
-            table_schema=table_schema,
-            schema_hash_value=schema_hash_value,
-            schema_digest_value=schema_digest_value,
-            partition_columns=partition_columns,
-            repo=repo,
-            commit=commit,
-            snapshot_id=snapshot_id,
-        )
-    )
-    options = ArrowDatasetWriteOptions(
-        partition_columns=partition_columns,
-        schema_hash=schema_hash_value,
-        manifest_extras=_manifest_extras(table_schema),
-        schema_metadata=metadata,
-        stable_sort_keys=resolve_stable_sort_keys(table_schema),
+    options = _parquet_write_options(
+        table_schema=table_schema,
+        stable_sort_keys=stable_sort_keys,
+        repo=repo,
+        commit=commit,
+        snapshot_id=snapshot_id,
     )
     write_dataset(
         dataset_root=dataset_root_dir,
@@ -300,6 +288,72 @@ def _write_parquet_dataset(
         snapshot_id=snapshot_id,
     )
     return len(normalized)
+
+
+def _finalize_rows_for_parquet(
+    table_key: str,
+    *,
+    table_schema: TableSchema,
+    rows: Sequence[Mapping[str, object]],
+) -> tuple[pa.RecordBatchReader, tuple[str, ...] | None]:
+    table, _ = table_for_rows(table_key, rows)
+    stable_sort_keys = resolve_stable_sort_keys(table_schema)
+    order_by = _order_by_for_keys(stable_sort_keys)
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(
+            table_key=table_key,
+            mode="tolerant",
+            order_by=order_by,
+        ),
+    )
+    if result.errors.num_rows:
+        LOG.warning(
+            "Finalize produced %d error rows for %s; persisting good rows only",
+            result.errors.num_rows,
+            table_key,
+        )
+    reader = table_to_reader(result.good, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+    return reader, stable_sort_keys
+
+
+def _parquet_write_options(
+    *,
+    table_schema: TableSchema,
+    stable_sort_keys: tuple[str, ...] | None,
+    repo: str,
+    commit: str,
+    snapshot_id: str,
+) -> ArrowDatasetWriteOptions:
+    schema_hash_value = schema_hash(table_schema)
+    schema_digest_value = schema_digest(table_schema)
+    partition_columns = _partition_columns_for_schema(table_schema)
+    metadata = _parquet_metadata_payload(
+        context=_ParquetMetadataContext(
+            table_schema=table_schema,
+            schema_hash_value=schema_hash_value,
+            schema_digest_value=schema_digest_value,
+            partition_columns=partition_columns,
+            repo=repo,
+            commit=commit,
+            snapshot_id=snapshot_id,
+        )
+    )
+    return ArrowDatasetWriteOptions(
+        partition_columns=partition_columns,
+        schema_hash=schema_hash_value,
+        manifest_extras=_manifest_extras(table_schema),
+        schema_metadata=metadata,
+        stable_sort_keys=stable_sort_keys,
+    )
+
+
+def _order_by_for_keys(
+    stable_sort_keys: tuple[str, ...] | None,
+) -> tuple[SortKey, ...]:
+    if not stable_sort_keys:
+        return ()
+    return tuple((key, ORDER_ASC) for key in stable_sort_keys)
 
 
 def insert_analytics_rows(
@@ -360,53 +414,95 @@ def validate_contract_rows(
     Raises
     ------
     ValueError
-        If rows include columns that are not present in the dataset schema.
+        If rows include columns not present in the dataset schema.
     """
     if not rows:
         return []
     observation_provider = gateway.schemas if gateway is not None else None
-    resolution = resolve_table_schema(
-        table_key,
-        observation_provider=observation_provider,
-    )
-    table_schema = resolution.table_schema
-    observation = resolution.observation
-    resolved_profile = validation_profile
-    if resolved_profile is None and gateway is not None:
-        dataset = gateway.datasets.by_table_key.get(table_key)
-        if dataset is not None:
-            resolved_profile = dataset.validation_profile
-    records: list[dict[str, object]]
-    if table_schema is None:
-        table = pa.Table.from_pylist(rows)
-        records = list(iter_rows(table))
-    else:
-        expected_columns = [col.name for col in table_schema.columns]
-        table = pa.Table.from_pylist(rows)
-        extra = [name for name in table.column_names if name not in expected_columns]
-        if extra:
-            extras = ", ".join(sorted(extra))
-            message = f"Unexpected columns for {table_key}: {extras}"
-            raise ValueError(message)
-        missing = [name for name in expected_columns if name not in table.column_names]
-        if missing:
-            table = append_constant_columns(table, dict.fromkeys(missing))
-        table = table.select(expected_columns)
-        context = ColumnarValidationContext(
-            table_schema=table_schema,
-            schema_observation=observation,
+    resolution = resolve_table_schema(table_key, observation_provider=observation_provider)
+    resolved_profile = _resolved_validation_profile(table_key, gateway, validation_profile)
+    try:
+        records = _validated_records(
+            table_key,
+            rows,
+            table_schema=resolution.table_schema,
+            observation=resolution.observation,
             validation_profile=resolved_profile,
         )
-        validate_table(
-            table_key,
-            table,
-            context=context,
-            mode="strict",
-        )
-        records = list(iter_rows(table))
-    column_types: dict[str, ColumnType] = (
-        {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    column_types = _column_types_for_schema(resolution.table_schema)
+    return _normalize_records(records, column_types)
+
+
+def _resolved_validation_profile(
+    table_key: str,
+    gateway: BuildGateway | None,
+    validation_profile: ValidationProfile | None,
+) -> ValidationProfile | None:
+    if validation_profile is not None:
+        return validation_profile
+    if gateway is None:
+        return None
+    dataset = gateway.datasets.by_table_key.get(table_key)
+    if dataset is None:
+        return None
+    return dataset.validation_profile
+
+
+def _validated_records(
+    table_key: str,
+    rows: Sequence[Mapping[str, object]],
+    *,
+    table_schema: TableSchema | None,
+    observation: SchemaObservationRecord | None,
+    validation_profile: ValidationProfile | None,
+) -> list[dict[str, object]]:
+    if table_schema is None:
+        table = pa.table(rows)
+        return list(iter_rows(table))
+    _validate_extra_columns(table_key, rows, table_schema=table_schema)
+    table, _ = table_for_rows(table_key, rows)
+    table = table.select([col.name for col in table_schema.columns])
+    context = ColumnarValidationContext(
+        table_schema=table_schema,
+        schema_observation=observation,
+        validation_profile=validation_profile,
     )
+    validate_table(
+        table_key,
+        table,
+        context=context,
+        mode="strict",
+    )
+    return list(iter_rows(table))
+
+
+def _validate_extra_columns(
+    table_key: str,
+    rows: Sequence[Mapping[str, object]],
+    *,
+    table_schema: TableSchema,
+) -> None:
+    expected = {col.name for col in table_schema.columns}
+    extra = {str(name) for row in rows for name in row if name not in expected}
+    if not extra:
+        return
+    extras = ", ".join(sorted(extra))
+    message = f"Unexpected columns for {table_key}: {extras}"
+    raise ValueError(message)
+
+
+def _column_types_for_schema(table_schema: TableSchema | None) -> dict[str, ColumnType]:
+    if table_schema is None:
+        return {}
+    return {col.name: col.type for col in table_schema.columns}
+
+
+def _normalize_records(
+    records: list[dict[str, object]],
+    column_types: Mapping[str, ColumnType],
+) -> list[dict[str, object]]:
     return [
         {
             str(key): normalize_row_value_for_type(value, column_types.get(str(key)))

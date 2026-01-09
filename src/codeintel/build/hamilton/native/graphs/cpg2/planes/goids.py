@@ -6,18 +6,21 @@ from dataclasses import dataclass
 
 import pyarrow as pa
 
+from codeintel.build.hamilton.native.graphs.cpg.constants import CPG_TARGET_NAME
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     build_anchor_map,
     canonicalize_for_table,
     identity_keys,
 )
+from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.kernels import stable_sort_indices
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.core.columnar.arrowdsl import join_safe_projection
 from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
@@ -49,14 +52,41 @@ def cpg2_nodes__goids(
     if not required.issubset(set(goids.column_names)):
         return empty_table_for_table(CPG_NODES_TABLE_KEY)
     normalized = canonicalize_for_table(goids, table_key=GOIDS_TABLE_KEY)
-    normalized = normalize_table_for_join(normalized)
+    normalized = join_safe_projection(normalize_table_for_join(normalized))
+    join_keys = ["goid_h128"]
+    left_precheck = finalize_join_keys(
+        normalized,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        left_precheck,
+        table_key=GOIDS_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=join_keys,
+    )
+    normalized = left_precheck.good
     anchors = build_anchor_map(
         normalized,
         table_key=GOIDS_TABLE_KEY,
         pk_columns=identity_keys(GOIDS_TABLE_KEY),
         include_source_pk_json=True,
     )
-    anchors = normalize_table_for_join(anchors)
+    anchors = join_safe_projection(normalize_table_for_join(anchors))
+    right_precheck = finalize_join_keys(
+        anchors,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        right_precheck,
+        table_key=GOIDS_TABLE_KEY,
+        target_name=CPG_TARGET_NAME,
+        join_keys=join_keys,
+    )
+    anchors = right_precheck.good
     left_plan = (
         Plan.table(normalized)
         .project(
@@ -145,7 +175,11 @@ def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     def _mask(value_table: pa.Table) -> pa.Array | pa.ChunkedArray:
         return is_valid_mask(value_table.column("cpg_node_id"))
 
-    return safe_filter_expr(table, is_valid_expr("cpg_node_id"), fallback_mask=_mask)
+    return plan_filter_or_fallback(
+        table,
+        is_valid_expr("cpg_node_id"),
+        fallback_mask=_mask,
+    )
 
 
 __all__ = ["GoidNodeDiagnostics", "cpg2_nodes__goids"]

@@ -9,7 +9,12 @@ import pyarrow as pa
 
 from codeintel.core.columnar.compute_helpers import array_from_compute, call_compute, sort_options
 from codeintel.core.columnar.iter import iter_rows
-from codeintel.core.columnar.kernels import SortKey, hash_struct_ordinal, stable_sort_indices
+from codeintel.core.columnar.kernels import (
+    SortKey,
+    hash_struct_ordinal,
+    stable_sort_indices,
+    stable_sort_table,
+)
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
@@ -96,6 +101,85 @@ def _stable_sort_for_dedupe(
         msg = "Deterministic dedupe requires stable sorting; sort failed."
         raise RuntimeError(msg) from None
     return table.take(indices)
+
+
+def dedupe_keep_first_after_sort(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+    prefer_columns: Sequence[str] = (),
+    tie_breakers: Sequence[SortKey] = (),
+    require_tie_breakers: bool = False,
+) -> pa.Table:
+    """Deduplicate by keeping the first row after stable sorting.
+
+    Parameters
+    ----------
+    table
+        Table to deduplicate.
+    key_columns
+        Columns defining duplicate groups.
+    prefer_columns
+        Columns to use as descending tie-breakers.
+    tie_breakers
+        Explicit ordering keys for deterministic selection.
+    require_tie_breakers
+        Whether to enforce non-empty tie breakers.
+
+    Returns
+    -------
+    pyarrow.Table
+        Deduplicated table with the first row per key kept.
+    """
+    key_columns = _require_key_columns(table, key_columns=key_columns)
+    if require_tie_breakers:
+        tie_breakers = _require_tie_breakers(table, tie_breakers=tie_breakers)
+    sort_keys = _dedupe_sort_keys(
+        table,
+        key_columns=key_columns,
+        prefer_columns=prefer_columns,
+        tie_breakers=tie_breakers,
+    )
+    ordered = stable_sort_table(table, sort_keys=sort_keys) if sort_keys else table
+    return _dedupe_keep_first(ordered, key_columns=key_columns)
+
+
+def _dedupe_keep_first(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+) -> pa.Table:
+    key_set = set(key_columns)
+    non_keys = [name for name in table.column_names if name not in key_set]
+    if not non_keys:
+        deduped = _dedupe_table_via_compute(table, key_columns=key_columns)
+        if deduped is not None:
+            return deduped
+        return _drop_duplicates(table, key_columns=key_columns)
+    aggs = [(name, "first") for name in non_keys]
+    try:
+        grouped = table.group_by(list(key_columns), use_threads=False).aggregate(aggs)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError):
+        return _dedupe_keep_first_python(table, key_columns=key_columns)
+    return grouped.rename_columns([*key_columns, *non_keys])
+
+
+def _dedupe_keep_first_python(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+) -> pa.Table:
+    seen: set[tuple[object, ...]] = set()
+    rows: list[dict[str, object]] = []
+    for row in iter_rows(table):
+        key = tuple(row.get(col) for col in key_columns)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(row)
+    if not rows:
+        return pa.Table.from_batches([], schema=table.schema)
+    return pa.Table.from_pylist(rows, schema=table.schema)
 
 
 def _dedupe_sort_keys(
@@ -215,9 +299,15 @@ def dedupe_table_for_table(
         _require_key_columns(table, key_columns=key_columns)
         prefer = tuple(name for name in spec.prefer_columns if name in table.column_names)
         tie_breakers: tuple[SortKey, ...] = tuple(spec.tie_breakers)
-        if spec.tier == "canonical" and spec.strategy == "first":
-            tie_breakers = tuple(_require_tie_breakers(table, tie_breakers=tie_breakers))
         determinism = _determinism_for_spec(spec)
+        if spec.strategy == "first":
+            return dedupe_keep_first_after_sort(
+                table,
+                key_columns=key_columns,
+                prefer_columns=prefer,
+                tie_breakers=tie_breakers,
+                require_tie_breakers=spec.tier == "canonical",
+            )
         if determinism != "best_effort":
             sort_keys = _dedupe_sort_keys(
                 table,
@@ -293,5 +383,6 @@ __all__ = [
     "DedupeSpec",
     "DedupeStrategy",
     "DedupeTier",
+    "dedupe_keep_first_after_sort",
     "dedupe_table_for_table",
 ]

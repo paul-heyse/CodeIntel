@@ -16,9 +16,9 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.build.graphs.builders import add_weighted_edge
 from codeintel.build.graphs.engine.datasets import GraphViewFactory, GraphViewScanOptions
 from codeintel.build.graphs.engine.protocol import GraphKind
+from codeintel.build.graphs.rx.build_from_edges import BulkEdgeInserter
 from codeintel.build.graphs.rx.policies import weight_policy_for_kind
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.data_models.ids import as_int
@@ -111,12 +111,14 @@ def _add_call_edges(
     store: RxGraphStore,
     rows: Iterable[tuple[object, ...]],
 ) -> None:
+    inserter = BulkEdgeInserter(store=store)
     for caller_raw, callee_raw in rows:
         caller = normalize_decimal(caller_raw)
         callee = normalize_decimal(callee_raw)
         if caller is None or callee is None:
             continue
-        add_weighted_edge(store, caller, callee)
+        inserter.add(caller, callee, weight=1.0)
+    inserter.flush()
 
 
 def _add_call_nodes(
@@ -285,6 +287,7 @@ def load_import_graph(
         return _empty_graph(directed=True, kind=GraphKind.IMPORT_GRAPH)
 
     store = RxGraphStore.directed(weight_policy=weight_policy_for_kind(GraphKind.IMPORT_GRAPH))
+    inserter = BulkEdgeInserter(store=store)
     fallback_layer_by_module: dict[str, int] = {}
     for src, dst, layer in factory.iter_tuples(edge_reader):
         if src is None or dst is None:
@@ -294,7 +297,8 @@ def load_import_graph(
         layer_value = as_int(layer)
         if layer_value is not None:
             fallback_layer_by_module[source] = layer_value
-        add_weighted_edge(store, source, target)
+        inserter.add(source, target, weight=1.0)
+    inserter.flush()
 
     module_reader = factory.load_reader(
         table_key="graph.import_modules",
@@ -369,6 +373,7 @@ def _populate_config_graph(
     allowed_modules: set[str],
 ) -> ConfigGraphStats:
     stats = ConfigGraphStats()
+    inserter = BulkEdgeInserter(store=store)
     names = list(config_reader.schema.names)
     key_idx = _column_index(names, "key")
     extras_idx = _column_index(names, "extras")
@@ -399,7 +404,8 @@ def _populate_config_graph(
         for module_name in filtered_modules:
             module_node = ("m", module_name)
             store.set_node_attrs(module_node, {"bipartite": 1})
-            add_weighted_edge(store, key_node, module_node)
+            inserter.add(key_node, module_node, weight=1.0)
+    inserter.flush()
     return stats
 
 
@@ -527,6 +533,7 @@ def load_symbol_module_graph(
     store = RxGraphStore.undirected(
         weight_policy=weight_policy_for_kind(GraphKind.SYMBOL_MODULE_GRAPH)
     )
+    inserter = BulkEdgeInserter(store=store)
     for def_path, use_path in factory.iter_tuples(edge_reader):
         if def_path is None or use_path is None:
             continue
@@ -536,7 +543,8 @@ def load_symbol_module_graph(
             continue
         if def_module == use_module:
             continue
-        add_weighted_edge(store, use_module, def_module)
+        inserter.add(use_module, def_module, weight=1.0)
+    inserter.flush()
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
@@ -579,6 +587,7 @@ def load_symbol_function_graph(
     store = RxGraphStore.undirected(
         weight_policy=weight_policy_for_kind(GraphKind.SYMBOL_FUNCTION_GRAPH)
     )
+    inserter = BulkEdgeInserter(store=store)
     for def_goid, use_goid in factory.iter_tuples(edge_reader):
         if def_goid is None or use_goid is None:
             continue
@@ -586,7 +595,8 @@ def load_symbol_function_graph(
         right = normalize_decimal(use_goid)
         if left is None or right is None or left == right:
             continue
-        add_weighted_edge(store, left, right)
+        inserter.add(left, right, weight=1.0)
+    inserter.flush()
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 

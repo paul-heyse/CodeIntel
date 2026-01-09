@@ -7,7 +7,6 @@ for rustworkx graph stores.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -19,6 +18,7 @@ from codeintel.build.graphs.rx.algos import (
     ensure_store,
     to_undirected_store,
 )
+from codeintel.build.graphs.rx.condensation import condensation_store
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -342,34 +342,9 @@ def compute_condensation_layer_count(graph: GraphInput) -> int | None:
     store = ensure_store(graph)
     if store.graph.num_nodes() == 0 or not store.is_directed:
         return None
-    condensed = _condensation_graph(store)
-    return _layer_count(condensed)
-
-
-def _condensation_graph(store: RxGraphStore) -> rx.PyDiGraph:
-    directed_graph = _directed_graph(store)
-    sccs = [set(comp) for comp in rx.strongly_connected_components(directed_graph)]
-    if not sccs:
-        return rx.PyDiGraph(multigraph=False)
-    sorted_sccs = sorted(sccs, key=lambda comp: _component_sort_key(store, comp))
-    comp_map = _component_membership(sorted_sccs)
-    condensed = rx.PyDiGraph(multigraph=False)
-    condensed.add_nodes_from(range(len(sorted_sccs)))
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_comp = comp_map.get(src_idx)
-        dst_comp = comp_map.get(dst_idx)
-        if src_comp is None or dst_comp is None or src_comp == dst_comp:
-            continue
-        condensed.add_edge(src_comp, dst_comp, 1)
-    return condensed
-
-
-def _component_membership(components: Sequence[set[int]]) -> dict[int, int]:
-    comp_map: dict[int, int] = {}
-    for comp_id, comp in enumerate(components):
-        for node_idx in comp:
-            comp_map[node_idx] = comp_id
-    return comp_map
+    condensed_store, _ = condensation_store(store)
+    directed_graph = cast("rx.PyDiGraph[object, float]", condensed_store.graph)
+    return _layer_count(directed_graph)
 
 
 def _layer_count(graph: rx.PyDiGraph) -> int:

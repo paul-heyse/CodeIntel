@@ -35,7 +35,7 @@ from codeintel.build.graphs.compute.metrics.structural import (
 from codeintel.build.graphs.compute.metrics.structural import (
     compute_clustering_coefficient as compute_structural_clustering,
 )
-from codeintel.build.graphs.rx.algos import to_undirected_store
+from codeintel.build.graphs.rx.algos import BetweennessOptions, PagerankOptions, to_undirected_store
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.compute.centrality import (
     CentralityMetrics,
@@ -145,7 +145,7 @@ def test_pagerank_custom_alpha() -> None:
     """Custom damping factor works."""
     graph = _directed_store([(1, 2), (2, 3)])
     result_default = compute_pagerank(graph)
-    result_low_alpha = compute_pagerank(graph, alpha=0.5)
+    result_low_alpha = compute_pagerank(graph, options=PagerankOptions(alpha=0.5))
 
     expect_true(result_default != result_low_alpha)
 
@@ -190,7 +190,7 @@ def test_betweenness_empty_graph_returns_empty() -> None:
 def test_betweenness_path_graph_middle_node_highest() -> None:
     """Middle node in path has highest betweenness."""
     graph = _directed_store([(1, 2), (2, 3), (3, 4), (4, 5)])
-    result = compute_betweenness(graph, normalized=True)
+    result = compute_betweenness(graph, options=BetweennessOptions(normalized=True))
 
     expect_true(result[3] >= result[1])
 
@@ -198,7 +198,7 @@ def test_betweenness_path_graph_middle_node_highest() -> None:
 def test_betweenness_sampling_parameter() -> None:
     """Sampling parameter k works."""
     graph = _directed_store([(i, i + 1) for i in range(10)])
-    result = compute_betweenness(graph, k=3)
+    result = compute_betweenness(graph, options=BetweennessOptions(k=3))
 
     expect_true(len(result) == graph.graph.num_nodes())
 

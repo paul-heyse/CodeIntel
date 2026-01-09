@@ -19,9 +19,9 @@ from codeintel.build.hamilton.native.graphs.cpg2.edge_helpers import (
     finalize_cpg_edge_rows,
 )
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
+from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
@@ -34,6 +34,7 @@ from codeintel.build.tabular.finalize_ops import (
     record_join_precheck_errors,
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.core.columnar.arrowdsl import join_safe_projection
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
 
@@ -86,7 +87,7 @@ def _scip_symbol_joined_table(
     left_output: Sequence[str],
 ) -> pa.Table:
     normalized = canonicalize_for_table(symbols, table_key=table_key)
-    normalized = normalize_table_for_join(normalized)
+    normalized = join_safe_projection(normalize_table_for_join(normalized))
     normalized = _precheck_join_table(
         normalized,
         table_key=table_key,
@@ -98,7 +99,7 @@ def _scip_symbol_joined_table(
         pk_columns=identity_keys(table_key),
         include_source_pk_json=True,
     )
-    anchors = normalize_table_for_join(anchors)
+    anchors = join_safe_projection(normalize_table_for_join(anchors))
     anchors = _precheck_join_table(
         anchors,
         table_key=None,
@@ -590,7 +591,7 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
         )
 
     expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-    return safe_filter_expr(table, expr, fallback_mask=_mask)
+    return plan_filter_or_fallback(table, expr, fallback_mask=_mask)
 
 
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
@@ -600,7 +601,7 @@ def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     def _mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
         return is_valid_mask(target.column("cpg_node_id"))
 
-    return safe_filter_expr(table, is_valid_expr("cpg_node_id"), fallback_mask=_mask)
+    return plan_filter_or_fallback(table, is_valid_expr("cpg_node_id"), fallback_mask=_mask)
 
 
 def _symbol_key_set(table: pa.Table) -> set[tuple[str, str, str]]:

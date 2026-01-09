@@ -14,17 +14,16 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     identity_keys,
     lookup_keys,
 )
+from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.tabular.arrow_ops import iter_array_values, normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import (
-    safe_filter_expr,
-    scalar_from_compute,
-)
+from codeintel.build.tabular.compute_helpers import scalar_from_compute
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_payload
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
+from codeintel.core.columnar.arrowdsl import join_safe_projection
 from codeintel.core.columnar.rows import empty_table_for_table
 
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
@@ -58,14 +57,14 @@ def _syntax_anchor_map(syntax_nodes: pa.Table, *, include_source_pk_json: bool =
         Anchor map containing syntax node identifiers.
     """
     normalized = canonicalize_for_table(syntax_nodes, table_key=SYNTAX_NODES_TABLE_KEY)
-    normalized = normalize_table_for_join(normalized)
+    normalized = join_safe_projection(normalize_table_for_join(normalized))
     anchors = build_anchor_map(
         normalized,
         table_key=SYNTAX_NODES_TABLE_KEY,
         pk_columns=identity_keys(SYNTAX_NODES_TABLE_KEY),
         include_source_pk_json=include_source_pk_json,
     )
-    return normalize_table_for_join(anchors)
+    return join_safe_projection(normalize_table_for_join(anchors))
 
 
 def cpg2_nodes__syntax_nodes(
@@ -98,7 +97,7 @@ def cpg2_nodes__syntax_nodes(
             "extras",
         ),
     )
-    normalized = normalize_table_for_join(base)
+    normalized = join_safe_projection(normalize_table_for_join(base))
     if "extras_kv" not in normalized.column_names:
         extras_kv = _extras_kv_column(normalized, column_name="extras")
         normalized = normalized.append_column("extras_kv", extras_kv)
@@ -116,8 +115,8 @@ def cpg2_nodes__syntax_nodes(
         join_keys=join_keys,
     )
     normalized = precheck.good
-    anchor_map = normalize_table_for_join(
-        _syntax_anchor_map(normalized, include_source_pk_json=True)
+    anchor_map = join_safe_projection(
+        normalize_table_for_join(_syntax_anchor_map(normalized, include_source_pk_json=True))
     )
     left_plan = Plan.table(normalized).project(
         {
@@ -209,11 +208,13 @@ def cpg2_edges__syntax_edges(
     required = set(join_keys) | {"parent_node_id", "child_node_id"}
     if not required.issubset(set(syntax_edges.column_names)):
         return _empty_edge_table()
-    anchor_map = normalize_table_for_join(
-        _syntax_anchor_map(syntax_nodes, include_source_pk_json=False)
+    anchor_map = join_safe_projection(
+        normalize_table_for_join(_syntax_anchor_map(syntax_nodes, include_source_pk_json=False))
     )
-    normalized_edges = normalize_table_for_join(
-        canonicalize_for_table(syntax_edges, table_key="core.syntax_edges")
+    normalized_edges = join_safe_projection(
+        normalize_table_for_join(
+            canonicalize_for_table(syntax_edges, table_key="core.syntax_edges")
+        )
     )
     join_keys = ["repo", "commit", "rel_path", "producer", "parent_node_id", "child_node_id"]
     precheck = finalize_join_keys(
@@ -351,7 +352,7 @@ def cpg2_edges__syntax_edges(
         )
 
     expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-    filtered = safe_filter_expr(selected, expr, fallback_mask=_edge_mask)
+    filtered = plan_filter_or_fallback(selected, expr, fallback_mask=_edge_mask)
     if diagnostics is not None:
         resolved = filtered.num_rows
         diagnostics["syntax_edges"] = SyntaxEdgeDiagnostics(

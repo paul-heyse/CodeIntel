@@ -6,11 +6,14 @@ analogous to base types in graphs/compute/.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
+import pyarrow.dataset as ds
 
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
     FinalizeMode,
@@ -18,6 +21,8 @@ from codeintel.core.columnar.finalize_ops import (
     FinalizeSpec,
     finalize_table,
 )
+from codeintel.core.columnar.plan_ops import build_query_plan, materialize_plan
+from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
 from codeintel.core.query_results import records_from_arrow_table
 from codeintel.core.schemas.service import get_schema_service
 
@@ -121,17 +126,20 @@ class BaseToolIngestStep:
 
 def persist_arrow_tables(
     storage: IngestStoragePort | None,
-    tables: Mapping[str, pa.Table],
+    tables: Mapping[str, pa.Table | pa.RecordBatchReader],
     *,
     scope: str | None = None,
 ) -> None:
     """Persist Arrow tables when a storage port is provided."""
     if storage is None:
         return
-    for table_key, table in tables.items():
-        if table.num_rows == 0:
+    for table_key, payload in tables.items():
+        if isinstance(payload, pa.RecordBatchReader):
+            storage.write_reader(table_key, payload, scope=scope)
             continue
-        storage.write_table(table_key, table, scope=scope)
+        if payload.num_rows == 0:
+            continue
+        storage.write_table(table_key, payload, scope=scope)
 
 
 def finalize_arrow_tables(
@@ -165,6 +173,139 @@ def finalize_arrow_tables(
         finalized[table_key] = result.good
         warnings.extend(_finalize_warnings(table_key, result))
     return finalized, warnings
+
+
+def finalize_arrow_readers(
+    readers: Mapping[str, pa.RecordBatchReader],
+    *,
+    mode: FinalizeMode = "tolerant",
+) -> tuple[dict[str, pa.Table], list[str]]:
+    """Finalize Arrow readers against their contracts in tolerant mode.
+
+    Returns
+    -------
+    tuple[dict[str, pyarrow.Table], list[str]]
+        Finalized tables keyed by table_key plus warning messages.
+    """
+    finalized: dict[str, pa.Table] = {}
+    warnings: list[str] = []
+    for table_key, reader in readers.items():
+        spec = FinalizeSpec(
+            table_key=table_key,
+            mode=mode,
+            required_non_null=_required_non_null_columns(table_key),
+            dedupe=FinalizeDedupe(enabled=False),
+            emit_artifacts=True,
+        )
+        table = reader_to_table(reader)
+        table = _apply_ingest_query_plan(table, table_key=table_key)
+        try:
+            result = finalize_table(table, spec=spec)
+        except ValueError as exc:
+            warnings.append(f"{table_key}: {exc}")
+            finalized[table_key] = table
+            continue
+        finalized[table_key] = result.good
+        warnings.extend(_finalize_warnings(table_key, result))
+    return finalized, warnings
+
+
+def _apply_ingest_query_plan(table: pa.Table, *, table_key: str) -> pa.Table:
+    spec = build_ingest_query_spec(table_key)
+    try:
+        dataset = ds.dataset(table)
+        plan = build_query_plan(dataset, spec=spec)
+        return materialize_plan(plan, use_threads=True)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        return table
+
+
+def build_typed_extras(
+    table_key: str,
+    extras: Mapping[str, object] | None,
+) -> dict[str, object] | None:
+    """Build a typed extras struct aligned to the table schema.
+
+    Returns
+    -------
+    dict[str, object] | None
+        Typed extras mapping when the schema defines a struct.
+    """
+    if not extras:
+        return None
+    arrow_schema = get_schema_service().get_arrow_schema(table_key)
+    if arrow_schema is None or "extras" not in arrow_schema.names:
+        return dict(extras)
+    extras_field = arrow_schema.field("extras")
+    if not pa.types.is_struct(extras_field.type):
+        return dict(extras)
+    typed: dict[str, object] = {}
+    for field in extras_field.type:
+        value = extras.get(field.name)
+        if (pa.types.is_list(field.type) or pa.types.is_large_list(field.type)) and isinstance(
+            value, (tuple, set)
+        ):
+            value = list(value)
+        typed[field.name] = value
+    return typed
+
+
+def build_ingest_query_spec(
+    table_key: str,
+    *,
+    columns: Sequence[str] | None = None,
+    repo: str | None = None,
+    commit: str | None = None,
+    rel_path: str | None = None,
+) -> QuerySpec:
+    """Build an ingestion-friendly QuerySpec for repo/commit/rel_path scoping.
+
+    Returns
+    -------
+    QuerySpec
+        Query specification with optional repo/commit/path filtering.
+    """
+    resolved_columns = _resolve_query_columns(table_key, columns)
+    predicate = _ingest_scope_predicate(
+        column_names=set(resolved_columns),
+        repo=repo,
+        commit=commit,
+        rel_path=rel_path,
+    )
+    projection = ProjectionSpec(base_cols=tuple(resolved_columns))
+    return QuerySpec(
+        predicate=predicate,
+        pushdown_predicate=predicate,
+        projection=projection,
+    )
+
+
+def _resolve_query_columns(table_key: str, columns: Sequence[str] | None) -> list[str]:
+    if columns is not None:
+        return list(columns)
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is None:
+        return []
+    return list(schema.column_names())
+
+
+def _ingest_scope_predicate(
+    *,
+    column_names: set[str],
+    repo: str | None,
+    commit: str | None,
+    rel_path: str | None,
+) -> Expression | None:
+    exprs: list[Expression] = []
+    if repo is not None and "repo" in column_names:
+        exprs.append(E.field("repo") == E.scalar(repo))
+    if commit is not None and "commit" in column_names:
+        exprs.append(E.field("commit") == E.scalar(commit))
+    if rel_path is not None and "rel_path" in column_names:
+        exprs.append(E.field("rel_path") == E.scalar(rel_path))
+    if not exprs:
+        return None
+    return E.and_(*exprs)
 
 
 def _required_non_null_columns(table_key: str) -> tuple[str, ...]:
@@ -201,6 +342,9 @@ def _finalize_warnings(table_key: str, result: FinalizeResult) -> list[str]:
 __all__ = [
     "BaseExtractStep",
     "BaseToolIngestStep",
+    "build_ingest_query_spec",
+    "build_typed_extras",
+    "finalize_arrow_readers",
     "finalize_arrow_tables",
     "persist_arrow_tables",
 ]

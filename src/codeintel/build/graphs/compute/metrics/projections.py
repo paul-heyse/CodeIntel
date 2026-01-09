@@ -14,8 +14,15 @@ from codeintel.build.graphs.compute.metrics.community import detect_communities_
 from codeintel.build.graphs.compute.metrics.conversions import log_projection_skipped
 from codeintel.build.graphs.compute.metrics.structural import compute_clustering_coefficient
 from codeintel.build.graphs.compute.metrics.types import BipartiteDegrees, ProjectionMetrics
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, sorted_mapping
+from codeintel.build.graphs.rx.algos import (
+    BetweennessOptions,
+    GraphAlgoConfig,
+    GraphInput,
+    ensure_store,
+    graph_node_count,
+)
+from codeintel.build.graphs.rx.iterators import iter_edge_weights
+from codeintel.build.graphs.rx.normalize import sorted_mapping
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.compute.centrality import compute_betweenness, compute_closeness
 
@@ -112,6 +119,11 @@ def projection_metrics(
     proj_store = ensure_store(proj, weight=weight_attr)
     node_count = proj_store.graph.num_nodes()
     edge_count = proj_store.graph.num_edges()
+    algo_config = GraphAlgoConfig(
+        parallel_threshold=ctx.parallel_threshold,
+        rayon_threads=ctx.rayon_threads,
+        weight_semantics=ctx.weight_semantics,
+    )
     log.info(
         "projection_metrics.start label=%s nodes=%d edges=%d",
         label or "unnamed",
@@ -121,11 +133,9 @@ def projection_metrics(
 
     degree: dict[Any, int] = dict.fromkeys(proj_store.node_ids(), 0)
     weighted_degree: dict[Any, float] = dict.fromkeys(proj_store.node_ids(), 0.0)
-    for src_idx, dst_idx in proj_store.graph.edge_list():
+    for src_idx, dst_idx, weight_val in iter_edge_weights(proj_store):
         src_id = proj_store.index_to_id[src_idx]
         dst_id = proj_store.index_to_id[dst_idx]
-        payload = proj_store.graph.get_edge_data(src_idx, dst_idx)
-        weight_val = edge_weight_from_payload(payload)
         if src_idx == dst_idx:
             degree[src_id] += 2
             weighted_degree[src_id] += weight_val * 2.0
@@ -159,13 +169,16 @@ def projection_metrics(
     log.debug("projection_metrics.betweenness label=%s", label or "unnamed")
     betweenness = compute_betweenness(
         proj_store,
-        k=_betweenness_sample(proj, ctx),
-        weight=weight_attr,
-        seed=ctx.seed,
+        options=BetweennessOptions(
+            k=_betweenness_sample(proj, ctx),
+            weight=weight_attr,
+            seed=ctx.seed,
+        ),
+        algo_config=algo_config,
     )
 
     log.debug("projection_metrics.closeness label=%s", label or "unnamed")
-    closeness = compute_closeness(proj_store)
+    closeness = compute_closeness(proj_store, algo_config=algo_config)
 
     log.debug("projection_metrics.community label=%s", label or "unnamed")
     communities = community_ids(proj_store, weight=weight_attr)

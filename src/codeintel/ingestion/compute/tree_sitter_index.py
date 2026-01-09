@@ -18,7 +18,7 @@ from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.spans import normalize_byte_span
 from codeintel.ingestion.compute.base import (
     BaseExtractStep,
-    finalize_arrow_tables,
+    finalize_arrow_readers,
     persist_arrow_tables,
 )
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
@@ -701,8 +701,19 @@ class TreeSitterIndexStep(BaseExtractStep):
                 )
             )
 
-        tables = _materialize_tree_sitter_tables(buffers)
-        tables, finalize_warnings = finalize_arrow_tables(tables)
+        tables, finalize_warnings = finalize_arrow_readers(
+            {
+                TS_PARSE_MANIFEST_TABLE_KEY: buffers.parse_manifest.to_reader(),
+                TS_CAPTURES_TABLE_KEY: buffers.captures.to_reader(),
+                TS_NODES_TABLE_KEY: buffers.nodes.to_reader(),
+                TS_EDGES_TABLE_KEY: buffers.edges.to_reader(),
+                TS_PARSE_ERRORS_TABLE_KEY: buffers.parse_errors.to_reader(),
+                TS_CHANGED_RANGES_TABLE_KEY: buffers.changed_ranges.to_reader(),
+                TS_TOKENS_TABLE_KEY: buffers.tokens.to_reader(),
+                TS_TRIVIA_TABLE_KEY: buffers.trivia.to_reader(),
+                TS_LANGUAGE_METADATA_TABLE_KEY: buffers.language_metadata.to_reader(),
+            }
+        )
         warnings.extend(finalize_warnings)
         scope = f"{resolved_repo}@{resolved_commit}"
         persist_arrow_tables(self._storage, tables, scope=scope)

@@ -14,17 +14,28 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_reader
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
 CALL_GRAPH_NODES_TABLE_KEY = "graph.call_graph_nodes"
 CALL_GRAPH_EDGES_TABLE_KEY = "graph.call_graph_edges"
+CALL_GRAPH_NODES_SORT_KEYS: tuple[SortKey, ...] = (("goid_h128", "ascending"),)
+CALL_GRAPH_EDGES_SORT_KEYS: tuple[SortKey, ...] = (
+    ("repo", "ascending"),
+    ("commit", "ascending"),
+    ("caller_goid_h128", "ascending"),
+    ("callee_goid_h128", "ascending"),
+    ("callsite_path", "ascending"),
+    ("callsite_line", "ascending"),
+    ("callsite_col", "ascending"),
+)
 
 _FUNCTION_KINDS: tuple[str, ...] = ("function", "method")
 
@@ -382,9 +393,14 @@ def call_graph_nodes_compute(
         module_by_path=module_by_path,
     )
     table, _ = table_for_rows(CALL_GRAPH_NODES_TABLE_KEY, output_rows)
-    result = finalize_table(
-        table,
-        spec=FinalizeSpec(table_key=CALL_GRAPH_NODES_TABLE_KEY, mode="strict"),
+    reader = table_to_reader(table, batch_size=None)
+    result = finalize_reader(
+        reader,
+        spec=FinalizeSpec(
+            table_key=CALL_GRAPH_NODES_TABLE_KEY,
+            mode="strict",
+            order_by=CALL_GRAPH_NODES_SORT_KEYS,
+        ),
     )
     return result.good
 
@@ -434,9 +450,14 @@ def call_graph_edges_compute(
         CALL_GRAPH_EDGES_TABLE_KEY,
         _edge_rows(edge_context, module_by_path=module_by_path),
     )
-    result = finalize_table(
-        table,
-        spec=FinalizeSpec(table_key=CALL_GRAPH_EDGES_TABLE_KEY, mode="strict"),
+    reader = table_to_reader(table, batch_size=None)
+    result = finalize_reader(
+        reader,
+        spec=FinalizeSpec(
+            table_key=CALL_GRAPH_EDGES_TABLE_KEY,
+            mode="strict",
+            order_by=CALL_GRAPH_EDGES_SORT_KEYS,
+        ),
     )
     return result.good
 

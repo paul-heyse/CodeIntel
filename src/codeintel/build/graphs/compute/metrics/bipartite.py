@@ -16,7 +16,8 @@ from codeintel.build.graphs.rx.algos import (
     to_undirected_store,
     weighted_projection_store,
 )
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, sorted_mapping
+from codeintel.build.graphs.rx.iterators import iter_edge_weights
+from codeintel.build.graphs.rx.normalize import sorted_mapping
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 
@@ -89,11 +90,9 @@ def compute_bipartite_degrees(
 
     degree: dict[Any, int] = dict.fromkeys(work_store.node_ids(), 0)
     weighted_degree: dict[Any, float] = dict.fromkeys(work_store.node_ids(), 0.0)
-    for src_idx, dst_idx in work_store.graph.edge_list():
+    for src_idx, dst_idx, weight_val in iter_edge_weights(work_store):
         src_id = work_store.index_to_id[src_idx]
         dst_id = work_store.index_to_id[dst_idx]
-        payload = work_store.graph.get_edge_data(src_idx, dst_idx)
-        weight_val = edge_weight_from_payload(payload)
         if src_idx == dst_idx:
             degree[src_id] += 2
             weighted_degree[src_id] += weight_val * 2.0

@@ -54,7 +54,7 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.tabular.arrow_ops import (
@@ -62,7 +62,11 @@ from codeintel.build.tabular.arrow_ops import (
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.conversion import reader_to_table, tabular_to_arrow_table
+from codeintel.build.tabular.conversion import (
+    reader_to_table,
+    table_to_reader,
+    tabular_to_arrow_table,
+)
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
@@ -1423,7 +1427,8 @@ def _scip_payload_table(
 
 
 def _finalize_scip_table(table_key: str, table: pa.Table) -> pa.Table:
-    return finalize_ingest_table(table_key, table, target_name=SCIP_TARGET_NAME)
+    reader = table_to_reader(table, batch_size=None)
+    return finalize_ingest_reader(table_key, reader, target_name=SCIP_TARGET_NAME)
 
 
 def scip__symbol_rows__base(

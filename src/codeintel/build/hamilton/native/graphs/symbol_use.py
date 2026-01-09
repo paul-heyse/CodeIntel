@@ -25,10 +25,12 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_reader
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.intervals.span_resolver import SpanResolver
@@ -37,6 +39,13 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 SYMBOL_USES_TARGET_NAME = "symbol_uses"
 SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
+SYMBOL_USE_EDGES_SORT_KEYS: tuple[SortKey, ...] = (
+    ("repo", "ascending"),
+    ("commit", "ascending"),
+    ("symbol", "ascending"),
+    ("def_path", "ascending"),
+    ("use_path", "ascending"),
+)
 
 
 def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
@@ -234,11 +243,13 @@ def symbol_use_edges_compute(
     edges = _attach_goids(edges, def_info_by_symbol, use_lines_by_symbol_path, goid_resolver)
     rows = (dataclasses.asdict(row) for row in edges_to_rows(edges, env.repo, env.commit))
     table, _ = table_for_rows(SYMBOL_USE_EDGES_TABLE_KEY, rows)
-    result = finalize_table(
-        table,
+    reader = table_to_reader(table, batch_size=None)
+    result = finalize_reader(
+        reader,
         spec=FinalizeSpec(
             table_key=SYMBOL_USE_EDGES_TABLE_KEY,
             mode="strict",
+            order_by=SYMBOL_USE_EDGES_SORT_KEYS,
             target_name=SYMBOL_USES_TARGET_NAME,
         ),
     )

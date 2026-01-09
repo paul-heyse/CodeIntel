@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 from pyarrow import acero
 
+from codeintel.core.columnar.dedupe_ops import DedupeTier
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.finalize_ops import (
     FinalizeResult,
     FinalizeSpec,
@@ -22,23 +24,11 @@ from codeintel.core.validation.schema_constraints import is_list_like
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from codeintel.core.columnar.dedupe_ops import DedupeTier
-
     type TableThunk = Callable[[], pa.Table]
     type PostStep = Callable[[pa.Table], pa.Table]
 else:
     type TableThunk = object
     type PostStep = object
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionContext:
-    """Execution context for Acero plans or table fallbacks."""
-
-    use_threads: bool = True
-    determinism: DedupeTier = "throughput"
-    combine_chunks: bool = True
-    provenance: bool = False
 
 
 @dataclass(frozen=True, slots=True)

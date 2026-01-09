@@ -15,7 +15,12 @@ import rustworkx as rx
 
 from codeintel.build.graphs.compute.metrics.components import find_strongly_connected
 from codeintel.build.graphs.engine.datasets import dataset_snapshot_exists
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store, graph_to_store
+from codeintel.build.graphs.rx.algos import (
+    BetweennessOptions,
+    GraphInput,
+    ensure_directed_store,
+    graph_to_store,
+)
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.graphs.validation.base import GraphCheckBase
@@ -598,8 +603,10 @@ def _import_bridge_findings_impl(
         sample_size = min(200, node_count)
         raw_betweenness = compute_betweenness(
             import_graph,
-            k=sample_size if sample_size < node_count else None,
-            seed=0,
+            options=BetweennessOptions(
+                k=sample_size if sample_size < node_count else None,
+                seed=0,
+            ),
         )
         betweenness = {str(node): float(score) for node, score in raw_betweenness.items()}
     if not betweenness:

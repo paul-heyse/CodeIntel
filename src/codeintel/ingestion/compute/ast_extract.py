@@ -24,7 +24,7 @@ from codeintel.core.columnar.rows import (
 )
 from codeintel.ingestion.compute.base import (
     BaseExtractStep,
-    finalize_arrow_tables,
+    finalize_arrow_readers,
     persist_arrow_tables,
 )
 from codeintel.ingestion.context import IngestionContext, resolve_repo_commit
@@ -589,12 +589,10 @@ class AstExtractStep(BaseExtractStep):
                 collectors.metrics.append(result.metric_row)
             _flush_ast_collectors(collectors)
 
-        ast_rows_table = collectors.ast_nodes.to_table()
-        metric_rows_table = collectors.metrics.to_table()
-        finalized_tables, finalize_warnings = finalize_arrow_tables(
+        finalized_tables, finalize_warnings = finalize_arrow_readers(
             {
-                AST_NODES_TABLE_KEY: ast_rows_table,
-                AST_METRICS_TABLE_KEY: metric_rows_table,
+                AST_NODES_TABLE_KEY: collectors.ast_nodes.to_reader(),
+                AST_METRICS_TABLE_KEY: collectors.metrics.to_reader(),
             }
         )
         warnings.extend(finalize_warnings)

@@ -27,7 +27,7 @@ from codeintel.build.graphs.engine.datasets import (
     SnapshotScanRequest,
     dataset_snapshot_exists,
     resolve_dataset_root,
-    scan_snapshot_table,
+    scan_snapshot_reader,
 )
 from codeintel.build.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.build.graphs.validation.base import GraphCheckBase
@@ -54,8 +54,7 @@ from codeintel.build.graphs.validation.findings import (
     persist_findings,
     resolve_validation_options,
 )
-from codeintel.build.tabular.compute_helpers import safe_filter
-from codeintel.build.tabular.compute_masks import equal_mask, is_in_mask
+from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.validation.runner import ValidationRunner
 
 if TYPE_CHECKING:
@@ -274,8 +273,8 @@ def warn_graph_structure(
 # =============================================================================
 
 
-def _scan_snapshot_table(request: SnapshotScanRequest) -> pa.Table | None:
-    return scan_snapshot_table(request)
+def _scan_snapshot_reader(request: SnapshotScanRequest) -> pa.RecordBatchReader | None:
+    return scan_snapshot_reader(request)
 
 
 def _catalog_provider_from_dataset(
@@ -285,7 +284,7 @@ def _catalog_provider_from_dataset(
 ) -> FunctionCatalogProvider | None:
     if dataset_root_dir is None:
         return None
-    goids_table = _scan_snapshot_table(
+    goids_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.goids",
@@ -305,7 +304,7 @@ def _catalog_provider_from_dataset(
             commit=snapshot.commit,
         )
     )
-    modules_table = _scan_snapshot_table(
+    modules_reader = _scan_snapshot_reader(
         SnapshotScanRequest(
             dataset_root=dataset_root_dir,
             table_key="core.modules",
@@ -315,11 +314,11 @@ def _catalog_provider_from_dataset(
             commit=snapshot.commit,
         )
     )
-    if goids_table is None or modules_table is None:
+    if goids_reader is None or modules_reader is None:
         return None
     return catalog_provider_from_frames(
-        goids_frame=goids_table,
-        modules_frame=modules_table,
+        goids_frame=goids_reader,
+        modules_frame=modules_reader,
     )
 
 
@@ -379,11 +378,11 @@ def log_db_snapshot(
     def _count(
         table_key: str,
         *,
-        filter_expr: Callable[[pa.Table], pa.Array | pa.ChunkedArray] | None = None,
+        row_filter: Callable[[dict[str, object]], bool] | None = None,
     ) -> int:
         if dataset_root_dir is None:
             return -1
-        table = _scan_snapshot_table(
+        reader = _scan_snapshot_reader(
             SnapshotScanRequest(
                 dataset_root=dataset_root_dir,
                 table_key=table_key,
@@ -393,29 +392,38 @@ def log_db_snapshot(
                 commit=commit,
             )
         )
-        if table is None:
+        if reader is None:
             return -1
-        if filter_expr is not None:
-            table = safe_filter(table, filter_expr(table))
-        return table.num_rows
+        if row_filter is None:
+            return sum(batch.num_rows for batch in reader)
+        count = 0
+        for batch in reader:
+            for row in iter_rows(batch):
+                if row_filter(row):
+                    count += 1
+        return count
+
+    def _kind_matches(values: set[str]) -> Callable[[dict[str, object]], bool]:
+        def _predicate(row: dict[str, object]) -> bool:
+            kind = row.get("kind")
+            return kind is not None and str(kind) in values
+
+        return _predicate
 
     counts = {
         "modules": _count("core.modules"),
         "goids": _count("core.goids"),
         "module_goids": _count(
             "core.goids",
-            filter_expr=lambda table: equal_mask(table["kind"], pa.scalar("module")),
+            row_filter=_kind_matches({"module"}),
         ),
         "class_goids": _count(
             "core.goids",
-            filter_expr=lambda table: equal_mask(table["kind"], pa.scalar("class")),
+            row_filter=_kind_matches({"class"}),
         ),
         "function_goids": _count(
             "core.goids",
-            filter_expr=lambda table: is_in_mask(
-                table["kind"],
-                value_set=pa.array(["function", "method"]),
-            ),
+            row_filter=_kind_matches({"function", "method"}),
         ),
         "call_nodes": _count("graph.call_graph_nodes"),
         "call_edges": _count("graph.call_graph_edges"),

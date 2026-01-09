@@ -13,25 +13,34 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
+import pyarrow.dataset as ds
+
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.exprs import build_export_relation_plan
-from codeintel.build.schemas import iter_contracts
+from codeintel.build.schemas import (
+    ContractResolutionMode,
+    ContractResolutionSettings,
+    get_contract_for_table_key,
+    iter_contracts,
+)
+from codeintel.core.columnar.conversion import table_to_reader
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan
+from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
+from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
 from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.manifests import dataset_manifest_path
-from codeintel.core.datasets.scanning import (
-    ParquetScanOptions,
-    scan_parquet_dataset_with_telemetry,
-)
 from codeintel.core.errors.taxonomy import ErrorCode
 from codeintel.core.ports.export import ExportRelation
 from codeintel.core.schemas.hashing import schema_digest
+from codeintel.core.schemas.primitives import resolve_stable_sort_keys
 from codeintel.core.validation.profiles import ValidationProfile
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-    import pyarrow as pa
 
     from codeintel.build.meta.bundle import BuildMetadataBundleWriter
     from codeintel.core.gateway import BuildGateway
@@ -40,6 +49,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 MAX_EXPORT_LIMIT = 9_223_372_036_854_775_807
+_FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +230,86 @@ def resolve_export_snapshot(gateway: BuildGateway) -> tuple[Path, str]:
     return dataset_root_dir, snapshot_id
 
 
+def _resolve_export_contract(table_key: str) -> DatasetContract | None:
+    try:
+        return get_contract_for_table_key(table_key, settings=_FULL_CONTRACT_SETTINGS)
+    except (KeyError, ValueError) as exc:
+        log.warning("Export contract resolution failed for %s: %s", table_key, exc)
+        return None
+
+
+def _projection_spec_for_export(
+    dataset: ds.Dataset,
+    contract: DatasetContract | None,
+) -> ProjectionSpec:
+    if contract is not None and contract.schema is not None:
+        columns = contract.schema.column_names()
+        if columns:
+            return ProjectionSpec(base_cols=tuple(columns))
+    return ProjectionSpec(base_cols=tuple(dataset.schema.names))
+
+
+def _query_spec_for_export(
+    dataset: ds.Dataset,
+    contract: DatasetContract | None,
+) -> QuerySpec:
+    projection = _projection_spec_for_export(dataset, contract)
+    return QuerySpec(predicate=None, pushdown_predicate=None, projection=projection)
+
+
+def _stable_sort_keys_for_export(
+    contract: DatasetContract | None,
+) -> tuple[str, ...] | None:
+    if contract is None or contract.schema is None:
+        return None
+    return resolve_stable_sort_keys(contract.schema)
+
+
+def _scan_export_dataset(
+    dataset_root_dir: Path,
+    table_key: str,
+    snapshot_id: str,
+) -> ds.Dataset:
+    try:
+        return scan_dataset(
+            dataset_root=dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+        )
+    except FileNotFoundError as exc:
+        msg = f"Dataset snapshot missing for {table_key}@{snapshot_id}"
+        raise FileNotFoundError(msg) from exc
+    except (OSError, ValueError, pa.ArrowInvalid) as exc:
+        msg = f"Dataset snapshot scan failed for {table_key}@{snapshot_id}: {exc}"
+        raise RuntimeError(msg) from exc
+
+
+def _export_reader_from_dataset(
+    dataset: ds.Dataset,
+    *,
+    table_key: str,
+    contract: DatasetContract | None,
+    batch_size: int,
+) -> pa.RecordBatchReader:
+    spec = _query_spec_for_export(dataset, contract)
+    telemetry = scan_telemetry_for_queryspec(dataset, spec=spec)
+    log.debug(
+        "Export scan telemetry: %s",
+        {"fragment_count": telemetry.fragment_count, "estimated_rows": telemetry.estimated_rows},
+    )
+    options = QueryPlanOptions(
+        implicit_ordering=True,
+        require_sequenced_output=True,
+    )
+    plan = build_query_plan(dataset, spec=spec, options=options)
+    stable_sort_keys = _stable_sort_keys_for_export(contract)
+    if stable_sort_keys:
+        plan = plan.order_by(sort_keys=[(key, "ascending") for key in stable_sort_keys])
+    table = plan.to_table(use_threads=True)
+    result = finalize_table(table, spec=FinalizeSpec(table_key=table_key, mode="tolerant"))
+    return table_to_reader(result.good, batch_size=batch_size)
+
+
 def build_export_reader(
     gateway: BuildGateway,
     table_key: str,
@@ -241,30 +331,16 @@ def build_export_reader(
     -------
     pyarrow.RecordBatchReader
         Streaming reader for the dataset snapshot.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the dataset snapshot is missing.
     """
     dataset_root_dir, snapshot_id = resolve_export_snapshot(gateway)
-    reader, telemetry = scan_parquet_dataset_with_telemetry(
-        dataset_root=dataset_root_dir,
+    dataset = _scan_export_dataset(dataset_root_dir, table_key, snapshot_id)
+    contract = _resolve_export_contract(table_key)
+    return _export_reader_from_dataset(
+        dataset,
         table_key=table_key,
-        snapshot_id=snapshot_id,
-        options=ParquetScanOptions(
-            batch_size=batch_size,
-            implicit_ordering=True,
-            require_sequenced_output=True,
-            metrics_enabled=True,
-        ),
+        contract=contract,
+        batch_size=batch_size,
     )
-    if telemetry is not None:
-        log.debug("Export scan telemetry: %s", telemetry.to_mapping())
-    if reader is None:
-        msg = f"Dataset snapshot missing for {table_key}@{snapshot_id}"
-        raise FileNotFoundError(msg)
-    return reader
 
 
 def build_export_reader_from_snapshot(
@@ -291,29 +367,15 @@ def build_export_reader_from_snapshot(
     -------
     pyarrow.RecordBatchReader
         Streaming reader for the dataset snapshot.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the dataset snapshot is missing.
     """
-    reader, telemetry = scan_parquet_dataset_with_telemetry(
-        dataset_root=dataset_root_dir,
+    dataset = _scan_export_dataset(dataset_root_dir, table_key, snapshot_id)
+    contract = _resolve_export_contract(table_key)
+    return _export_reader_from_dataset(
+        dataset,
         table_key=table_key,
-        snapshot_id=snapshot_id,
-        options=ParquetScanOptions(
-            batch_size=batch_size,
-            implicit_ordering=True,
-            require_sequenced_output=True,
-            metrics_enabled=True,
-        ),
+        contract=contract,
+        batch_size=batch_size,
     )
-    if telemetry is not None:
-        log.debug("Export scan telemetry: %s", telemetry.to_mapping())
-    if reader is None:
-        msg = f"Dataset snapshot missing for {table_key}@{snapshot_id}"
-        raise FileNotFoundError(msg)
-    return reader
 
 
 # ---------------------------------------------------------------------------

@@ -25,6 +25,7 @@ from codeintel.build.graphs.compute.metrics.types import (
     DominanceMetrics as DominanceSummary,
 )
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.condensation import condensation_store
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -83,36 +84,8 @@ def _directed_graph(store: RxGraphStore) -> rx.PyDiGraph:
     return cast("rx.PyDiGraph", store.graph)
 
 
-def _component_sort_key(store: RxGraphStore, component: set[int]) -> tuple[str, str]:
-    if not component:
-        return ("", "")
-    smallest = min((store.index_to_id[idx] for idx in component), key=stable_key)
-    return stable_key(smallest)
-
-
-def _sorted_components(store: RxGraphStore, components: list[set[int]]) -> list[set[int]]:
-    return sorted(components, key=lambda comp: _component_sort_key(store, comp))
-
-
 def _condensation_store(store: RxGraphStore) -> RxGraphStore:
-    directed_graph = _directed_graph(store)
-    components = [set(comp) for comp in rx.strongly_connected_components(directed_graph)]
-    if not components:
-        return RxGraphStore.directed()
-    sorted_components = _sorted_components(store, components)
-    index_to_component: dict[int, int] = {}
-    for comp_id, comp in enumerate(sorted_components):
-        for node_idx in comp:
-            index_to_component[node_idx] = comp_id
-    condensed = RxGraphStore.directed(node_hint=len(sorted_components))
-    for comp_id in range(len(sorted_components)):
-        condensed.ensure_node(comp_id)
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_comp = index_to_component.get(src_idx)
-        dst_comp = index_to_component.get(dst_idx)
-        if src_comp is None or dst_comp is None or src_comp == dst_comp:
-            continue
-        condensed.add_weighted_edge(src_comp, dst_comp, weight=1.0)
+    condensed, _ = condensation_store(store)
     return condensed
 
 

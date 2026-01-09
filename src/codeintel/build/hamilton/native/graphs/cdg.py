@@ -6,11 +6,13 @@ import logging
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 import pyarrow as pa
 
+from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     is_valid_expr,
@@ -21,12 +23,14 @@ from codeintel.build.tabular.compute_masks import (
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 CDG_EDGES_TABLE_KEY = "graph.cdg_edges"
 CDG_TARGET_NAME = "cdg"
 LOG = logging.getLogger(__name__)
+_ASCENDING: Literal["ascending"] = "ascending"
 
 
 @dataclass(frozen=True)
@@ -309,11 +313,9 @@ def _prefilter_cdg_blocks(blocks_table: pa.Table) -> pa.Table:
         return and_kleene(combined, block_idx_mask)
 
     expr = (
-        is_valid_expr("function_goid_h128")
-        & is_valid_expr("block_id")
-        & is_valid_expr("block_idx")
+        is_valid_expr("function_goid_h128") & is_valid_expr("block_id") & is_valid_expr("block_idx")
     )
-    return safe_filter_expr(blocks_table, expr, fallback_mask=_mask)
+    return plan_filter_or_fallback(blocks_table, expr, fallback_mask=_mask)
 
 
 def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
@@ -329,7 +331,7 @@ def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
         return and_kleene(goid_mask, kind_mask)
 
     expr = is_valid_expr("function_goid_h128") & non_empty_string_expr("edge_kind")
-    return safe_filter_expr(edges_table, expr, fallback_mask=_mask)
+    return plan_filter_or_fallback(edges_table, expr, fallback_mask=_mask)
 
 
 def cdg_edges(
@@ -417,10 +419,29 @@ def cdg_edges(
         spec=FinalizeSpec(
             table_key=CDG_EDGES_TABLE_KEY,
             mode="strict",
+            key_fields=_key_fields_for_table(CDG_EDGES_TABLE_KEY),
+            order_by=_order_by_for_table(CDG_EDGES_TABLE_KEY),
             target_name=CDG_TARGET_NAME,
         ),
     )
     return result.good
+
+
+def _key_fields_for_table(table_key: str) -> tuple[str, ...]:
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except (KeyError, RuntimeError, TypeError):
+        return ()
+    if schema is None or not schema.primary_key:
+        return ()
+    return tuple(schema.primary_key)
+
+
+def _order_by_for_table(table_key: str) -> tuple[SortKey, ...]:
+    key_fields = _key_fields_for_table(table_key)
+    if not key_fields:
+        return ()
+    return tuple((field, _ASCENDING) for field in key_fields)
 
 
 __all__ = [

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import heapq
 import math
+import os
 import random
 from collections import deque
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence
@@ -13,15 +14,26 @@ from typing import cast
 import rustworkx as rx
 
 from codeintel.build.graphs.rx.convert import store_from_rx
+from codeintel.build.graphs.rx.iterators import (
+    edge_weight_map,
+    iter_edge_payloads,
+    neighbors_by_index,
+    weighted_neighbors_by_index,
+)
 from codeintel.build.graphs.rx.normalize import (
     NanPolicy,
-    edge_weight_from_payload,
     normalize_mapping,
     sorted_mapping,
     stable_key,
 )
 from codeintel.build.graphs.rx.policies import GraphNumericPolicy
 from codeintel.build.graphs.rx.store import RxGraphStore
+from codeintel.build.graphs.rx.weights import (
+    DEFAULT_WEIGHT_EPSILON,
+    WeightSemantics,
+    edge_cost_from_payload,
+    edge_strength_from_payload,
+)
 
 RxGraph = rx.PyGraph | rx.PyDiGraph
 DirectedRxGraph = rx.PyDiGraph
@@ -30,6 +42,8 @@ GraphInput = RxGraphStore | RxGraph
 
 _MIN_BETWEENNESS_NODES = 2
 _MIN_CLUSTERING_DEGREE = 2
+_RAYON_ENV_VAR = "RAYON_NUM_THREADS"
+_RAYON_THREADS_STATE: dict[str, int | None] = {"threads": None}
 
 
 def _apply_tolerance(value: float, *, abs_tol: float, rel_tol: float) -> float:
@@ -67,17 +81,6 @@ def _sorted_node_indices(store: RxGraphStore) -> list[int]:
     return [store.id_to_index[node_id] for node_id in store.node_ids()]
 
 
-def _sorted_neighbors(store: RxGraphStore, nodes: Iterable[int]) -> list[int]:
-    return sorted(nodes, key=lambda idx: stable_key(store.index_to_id[idx]))
-
-
-def _edge_weight_fn(*, nan_policy: NanPolicy) -> Callable[[object], float]:
-    def weight_fn(payload: object) -> float:
-        return edge_weight_from_payload(payload, nan_policy=nan_policy)
-
-    return weight_fn
-
-
 def _constant_weight_fn(_payload: object) -> float:
     return 1.0
 
@@ -102,6 +105,95 @@ class BetweennessOptions:
     weight: str | None = None
     seed: int | None = None
     nan_policy: NanPolicy | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EigenvectorOptions:
+    """Options for eigenvector centrality computation."""
+
+    max_iter: int = 100
+    tol: float = 1e-6
+    weight: str | None = None
+    nan_policy: NanPolicy | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GraphAlgoConfig:
+    """Shared algorithm configuration for rustworkx wrappers."""
+
+    parallel_threshold: int | None = None
+    rayon_threads: int | None = None
+    weight_semantics: WeightSemantics | None = None
+    weight_epsilon: float = DEFAULT_WEIGHT_EPSILON
+
+
+def _apply_rayon_threads(config: GraphAlgoConfig | None) -> None:
+    if config is None or config.rayon_threads is None:
+        return
+    if config.rayon_threads < 1:
+        message = "rayon_threads must be >= 1"
+        raise ValueError(message)
+    if config.rayon_threads != _RAYON_THREADS_STATE["threads"]:
+        os.environ[_RAYON_ENV_VAR] = str(config.rayon_threads)
+        _RAYON_THREADS_STATE["threads"] = config.rayon_threads
+
+
+def _resolve_parallel_threshold(config: GraphAlgoConfig | None) -> int | None:
+    if config is None or config.parallel_threshold is None:
+        return None
+    if config.parallel_threshold < 0:
+        message = "parallel_threshold must be >= 0"
+        raise ValueError(message)
+    return config.parallel_threshold
+
+
+def _resolve_weight_semantics(
+    store: RxGraphStore,
+    config: GraphAlgoConfig | None,
+) -> WeightSemantics:
+    if config is not None and config.weight_semantics is not None:
+        return config.weight_semantics
+    return store.weight_policy.semantics
+
+
+def _resolve_weight_epsilon(config: GraphAlgoConfig | None) -> float:
+    if config is None:
+        return DEFAULT_WEIGHT_EPSILON
+    return config.weight_epsilon
+
+
+def _edge_strength_fn(
+    *,
+    nan_policy: NanPolicy,
+    semantics: WeightSemantics,
+    epsilon: float,
+) -> Callable[[object], float]:
+    def weight_fn(payload: object) -> float:
+        return edge_strength_from_payload(
+            payload,
+            nan_policy=nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
+
+    return weight_fn
+
+
+def _edge_cost_fn(
+    *,
+    nan_policy: NanPolicy,
+    semantics: WeightSemantics,
+    epsilon: float,
+) -> Callable[[object], float]:
+    def cost_fn(payload: object) -> float:
+        return edge_cost_from_payload(
+            payload,
+            nan_policy=nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
+
+    return cost_fn
 
 
 def ensure_store(
@@ -235,6 +327,7 @@ def pagerank_by_id(
     graph: GraphInput,
     *,
     options: PagerankOptions | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Hashable, float]:
     """Compute PageRank scores keyed by node id.
 
@@ -246,13 +339,20 @@ def pagerank_by_id(
     resolved = options or PagerankOptions()
     store = ensure_directed_store(graph, weight=resolved.weight, nan_policy=resolved.nan_policy)
     resolved_nan_policy = _resolve_nan_policy(store, resolved.nan_policy)
+    _apply_rayon_threads(algo_config)
+    semantics = _resolve_weight_semantics(store, algo_config)
+    epsilon = _resolve_weight_epsilon(algo_config)
     node_count = store.graph.num_nodes()
     if node_count == 0:
         return {}
     directed_graph = _directed_graph(store)
     weight_fn: Callable[[object], float] | None = None
     if resolved.weight is not None:
-        weight_fn = _edge_weight_fn(nan_policy=resolved_nan_policy)
+        weight_fn = _edge_strength_fn(
+            nan_policy=resolved_nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
     raw = rx.pagerank(
         directed_graph,
         alpha=resolved.alpha,
@@ -267,10 +367,8 @@ def pagerank_by_id(
 def eigenvector_centrality_by_id(
     graph: GraphInput,
     *,
-    max_iter: int = 100,
-    tol: float = 1e-6,
-    weight: str | None = None,
-    nan_policy: NanPolicy | None = None,
+    options: EigenvectorOptions | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Hashable, float]:
     """Compute eigenvector centrality keyed by node id.
 
@@ -279,23 +377,96 @@ def eigenvector_centrality_by_id(
     dict[Hashable, float]
         Eigenvector centrality scores keyed by node identifier.
     """
-    store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
-    resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
+    resolved = options or EigenvectorOptions()
+    store = ensure_store(graph, weight=resolved.weight, nan_policy=resolved.nan_policy)
+    resolved_nan_policy = _resolve_nan_policy(store, resolved.nan_policy)
+    _apply_rayon_threads(algo_config)
+    semantics = _resolve_weight_semantics(store, algo_config)
+    epsilon = _resolve_weight_epsilon(algo_config)
     work_store = to_undirected_store(store)
     if work_store.graph.num_nodes() == 0:
         return {}
     undirected_graph = _undirected_graph(work_store)
     weight_fn: Callable[[object], float] | None = None
-    if weight is not None:
-        weight_fn = _edge_weight_fn(nan_policy=resolved_nan_policy)
+    if resolved.weight is not None:
+        weight_fn = _edge_strength_fn(
+            nan_policy=resolved_nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
     raw = rx.graph_eigenvector_centrality(
         undirected_graph,
         weight_fn=weight_fn,
-        max_iter=max_iter,
-        tol=tol,
+        max_iter=resolved.max_iter,
+        tol=resolved.tol,
     )
     mapped = {work_store.index_to_id[idx]: float(score) for idx, score in raw.items()}
     return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
+
+
+def _closeness_unweighted(
+    store: RxGraphStore,
+    *,
+    wf_improved: bool,
+    parallel_threshold: int | None,
+) -> Mapping[int, float]:
+    if store.is_directed:
+        graph = _directed_graph(store)
+        if parallel_threshold is None:
+            return rx.digraph_closeness_centrality(graph, wf_improved=wf_improved)
+        return rx.digraph_closeness_centrality(
+            graph,
+            wf_improved=wf_improved,
+            parallel_threshold=parallel_threshold,
+        )
+    graph = _undirected_graph(store)
+    if parallel_threshold is None:
+        return rx.graph_closeness_centrality(graph, wf_improved=wf_improved)
+    return rx.graph_closeness_centrality(
+        graph,
+        wf_improved=wf_improved,
+        parallel_threshold=parallel_threshold,
+    )
+
+
+def _closeness_weighted(
+    store: RxGraphStore,
+    *,
+    weight_fn: Callable[[object], float],
+    wf_improved: bool,
+    parallel_threshold: int | None,
+) -> Mapping[int, float]:
+    if store.is_directed:
+        graph = _directed_graph(store)
+        if parallel_threshold is None:
+            return rx.digraph_newman_weighted_closeness_centrality(
+                graph,
+                weight_fn=weight_fn,
+                default_weight=1.0,
+                wf_improved=wf_improved,
+            )
+        return rx.digraph_newman_weighted_closeness_centrality(
+            graph,
+            weight_fn=weight_fn,
+            default_weight=1.0,
+            wf_improved=wf_improved,
+            parallel_threshold=parallel_threshold,
+        )
+    graph = _undirected_graph(store)
+    if parallel_threshold is None:
+        return rx.graph_newman_weighted_closeness_centrality(
+            graph,
+            weight_fn=weight_fn,
+            default_weight=1.0,
+            wf_improved=wf_improved,
+        )
+    return rx.graph_newman_weighted_closeness_centrality(
+        graph,
+        weight_fn=weight_fn,
+        default_weight=1.0,
+        wf_improved=wf_improved,
+        parallel_threshold=parallel_threshold,
+    )
 
 
 def closeness_by_id(
@@ -304,6 +475,7 @@ def closeness_by_id(
     weight: str | None = None,
     wf_improved: bool = True,
     nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Hashable, float]:
     """Compute closeness centrality keyed by node id.
 
@@ -314,46 +486,57 @@ def closeness_by_id(
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
     resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
+    _apply_rayon_threads(algo_config)
+    semantics = _resolve_weight_semantics(store, algo_config)
+    epsilon = _resolve_weight_epsilon(algo_config)
+    parallel_threshold = _resolve_parallel_threshold(algo_config)
     if store.graph.num_nodes() == 0:
         return {}
     if weight is None:
-        if store.is_directed:
-            directed_graph = _directed_graph(store)
-            raw = rx.digraph_closeness_centrality(directed_graph, wf_improved=wf_improved)
-        else:
-            undirected_graph = _undirected_graph(store)
-            raw = rx.graph_closeness_centrality(undirected_graph, wf_improved=wf_improved)
+        raw = _closeness_unweighted(
+            store,
+            wf_improved=wf_improved,
+            parallel_threshold=parallel_threshold,
+        )
     else:
-        weight_fn = _edge_weight_fn(nan_policy=resolved_nan_policy)
-        if store.is_directed:
-            directed_graph = _directed_graph(store)
-            raw = rx.digraph_newman_weighted_closeness_centrality(
-                directed_graph,
-                weight_fn=weight_fn,
-                default_weight=1.0,
-                wf_improved=wf_improved,
-            )
-        else:
-            undirected_graph = _undirected_graph(store)
-            raw = rx.graph_newman_weighted_closeness_centrality(
-                undirected_graph,
-                weight_fn=weight_fn,
-                default_weight=1.0,
-                wf_improved=wf_improved,
-            )
+        weight_fn = _edge_strength_fn(
+            nan_policy=resolved_nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
+        raw = _closeness_weighted(
+            store,
+            weight_fn=weight_fn,
+            wf_improved=wf_improved,
+            parallel_threshold=parallel_threshold,
+        )
     mapped = {store.index_to_id[idx]: float(score) for idx, score in raw.items()}
     return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
 
 
 def _edge_weight_map(store: RxGraphStore, *, nan_policy: NanPolicy) -> dict[tuple[int, int], float]:
+    return edge_weight_map(store, nan_policy=nan_policy)
+
+
+def _edge_cost_map(
+    store: RxGraphStore,
+    *,
+    nan_policy: NanPolicy,
+    semantics: WeightSemantics,
+    epsilon: float,
+) -> dict[tuple[int, int], float]:
     edge_map: dict[tuple[int, int], float] = {}
-    for (src, dst), payload in zip(
-        store.graph.edge_list(),
-        store.graph.edges(),
-        strict=True,
-    ):
-        key = (src, dst) if store.is_directed else (min(src, dst), max(src, dst))
-        edge_map[key] = edge_weight_from_payload(payload, nan_policy=nan_policy)
+    for src_idx, dst_idx, payload in iter_edge_payloads(store):
+        if store.is_directed:
+            key = (src_idx, dst_idx)
+        else:
+            key = (min(src_idx, dst_idx), max(src_idx, dst_idx))
+        edge_map[key] = edge_cost_from_payload(
+            payload,
+            nan_policy=nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
     return edge_map
 
 
@@ -362,35 +545,14 @@ def _neighbor_map(
     *,
     include_self: bool = False,
 ) -> dict[int, list[int]]:
-    neighbors: dict[int, set[int]] = {idx: set() for idx in store.graph.node_indices()}
-    for src, dst in store.graph.edge_list():
-        if src == dst:
-            if include_self:
-                neighbors[src].add(src)
-            continue
-        if store.is_directed:
-            neighbors[src].add(dst)
-        else:
-            neighbors[src].add(dst)
-            neighbors[dst].add(src)
-    return {idx: _sorted_neighbors(store, items) for idx, items in neighbors.items()}
+    return neighbors_by_index(store, include_self=include_self)
 
 
 def _weighted_neighbor_map(
     store: RxGraphStore,
     edge_weights: Mapping[tuple[int, int], float],
 ) -> dict[int, list[tuple[int, float]]]:
-    neighbors: dict[int, list[tuple[int, float]]] = {idx: [] for idx in store.graph.node_indices()}
-    for src, dst in store.graph.edge_list():
-        key = (src, dst) if store.is_directed else (min(src, dst), max(src, dst))
-        weight = edge_weights.get(key, 1.0)
-        if src != dst:
-            neighbors[src].append((dst, weight))
-            if not store.is_directed:
-                neighbors[dst].append((src, weight))
-    for idx, items in neighbors.items():
-        neighbors[idx] = sorted(items, key=lambda item: stable_key(store.index_to_id[item[0]]))
-    return neighbors
+    return weighted_neighbors_by_index(store, edge_weights)
 
 
 def _brandes_unweighted(
@@ -526,19 +688,34 @@ def _betweenness_builtin_by_id(
     store: RxGraphStore,
     *,
     normalized: bool,
+    parallel_threshold: int | None,
 ) -> dict[Hashable, float]:
     if store.is_directed:
         directed_graph = _directed_graph(store)
-        raw = rx.digraph_betweenness_centrality(
-            directed_graph,
-            normalized=normalized,
-        )
+        if parallel_threshold is None:
+            raw = rx.digraph_betweenness_centrality(
+                directed_graph,
+                normalized=normalized,
+            )
+        else:
+            raw = rx.digraph_betweenness_centrality(
+                directed_graph,
+                normalized=normalized,
+                parallel_threshold=parallel_threshold,
+            )
     else:
         undirected_graph = _undirected_graph(store)
-        raw = rx.graph_betweenness_centrality(
-            undirected_graph,
-            normalized=normalized,
-        )
+        if parallel_threshold is None:
+            raw = rx.graph_betweenness_centrality(
+                undirected_graph,
+                normalized=normalized,
+            )
+        else:
+            raw = rx.graph_betweenness_centrality(
+                undirected_graph,
+                normalized=normalized,
+                parallel_threshold=parallel_threshold,
+            )
     return {store.index_to_id[idx]: float(val) for idx, val in raw.items()}
 
 
@@ -561,6 +738,7 @@ def betweenness_by_id(
     graph: GraphInput,
     *,
     options: BetweennessOptions | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Hashable, float]:
     """Compute betweenness centrality keyed by node id.
 
@@ -572,12 +750,20 @@ def betweenness_by_id(
     resolved = options or BetweennessOptions()
     store = ensure_store(graph, weight=resolved.weight, nan_policy=resolved.nan_policy)
     resolved_nan_policy = _resolve_nan_policy(store, resolved.nan_policy)
+    _apply_rayon_threads(algo_config)
+    semantics = _resolve_weight_semantics(store, algo_config)
+    epsilon = _resolve_weight_epsilon(algo_config)
+    parallel_threshold = _resolve_parallel_threshold(algo_config)
     numeric_policy = store.numeric_policy
     node_count = store.graph.num_nodes()
     if node_count == 0:
         return {}
     if resolved.weight is None and resolved.k is None:
-        mapped = _betweenness_builtin_by_id(store, normalized=resolved.normalized)
+        mapped = _betweenness_builtin_by_id(
+            store,
+            normalized=resolved.normalized,
+            parallel_threshold=parallel_threshold,
+        )
         return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
 
     indices, sampled = _resolve_sampled_indices(store, k=resolved.k, seed=resolved.seed)
@@ -586,7 +772,12 @@ def betweenness_by_id(
         neighbors = _neighbor_map(store, include_self=False)
         betweenness = _brandes_unweighted(neighbors, indices)
     else:
-        edge_weights = _edge_weight_map(store, nan_policy=resolved_nan_policy)
+        edge_weights = _edge_cost_map(
+            store,
+            nan_policy=resolved_nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
         neighbors = _weighted_neighbor_map(store, edge_weights)
         betweenness = _brandes_weighted(neighbors, indices, numeric_policy=numeric_policy)
 
@@ -606,6 +797,7 @@ def harmonic_centrality_by_id(
     *,
     weight: str | None = None,
     nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Hashable, float]:
     """Compute harmonic centrality keyed by node id.
 
@@ -616,12 +808,19 @@ def harmonic_centrality_by_id(
     """
     store = ensure_store(graph, weight=weight, nan_policy=nan_policy)
     resolved_nan_policy = _resolve_nan_policy(store, nan_policy)
+    _apply_rayon_threads(algo_config)
+    semantics = _resolve_weight_semantics(store, algo_config)
+    epsilon = _resolve_weight_epsilon(algo_config)
     numeric_policy = store.numeric_policy
     if store.graph.num_nodes() == 0:
         return {}
     weight_fn: Callable[[object], float] = _constant_weight_fn
     if weight is not None:
-        weight_fn = _edge_weight_fn(nan_policy=resolved_nan_policy)
+        weight_fn = _edge_cost_fn(
+            nan_policy=resolved_nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
     result: dict[Hashable, float] = {}
     directed_graph: DirectedRxGraph | None = None
     undirected_graph: UndirectedRxGraph | None = None
@@ -1184,6 +1383,8 @@ def weighted_projection_store(
 
 __all__ = [
     "BetweennessOptions",
+    "EigenvectorOptions",
+    "GraphAlgoConfig",
     "GraphInput",
     "PagerankOptions",
     "RxGraph",

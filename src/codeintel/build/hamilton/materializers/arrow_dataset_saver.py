@@ -47,13 +47,18 @@ from codeintel.build.schemas.observations import (
     observe_batches,
     schema_drift_summary,
 )
-from codeintel.build.tabular.conversion import record_batch_reader_from_iterable, table_to_reader
+from codeintel.build.tabular.conversion import (
+    reader_to_table,
+    record_batch_reader_from_iterable,
+    table_to_reader,
+)
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar import (
     LazyFrameStream,
     align_reader_to_contract,
     extras_policy_from_schema,
 )
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.config.settings import BuildSettings
@@ -699,6 +704,16 @@ def _write_dataset_from_reader(
     reader: ArrowDatasetInput,
     observation: SchemaObservationAccumulator | None,
 ) -> ArrowDatasetManifest:
+    table = reader_to_table(reader)
+    result = finalize_table(table, spec=FinalizeSpec(table_key=ctx.table_key, mode="tolerant"))
+    if result.errors.num_rows:
+        LOG.warning(
+            "Finalize produced %d error rows for %s; persisting good rows only",
+            result.errors.num_rows,
+            ctx.table_key,
+        )
+    batch_size = ctx.build_settings.arrow_scan.batch_size
+    reader = table_to_reader(result.good, batch_size=batch_size)
     if observation is not None:
         reader = instrument_reader_for_observation(reader, accumulator=observation)
     snapshot_dir = dataset_snapshot_dir(

@@ -28,6 +28,7 @@ The following are treated as present or in-flight and are not redefined here:
 ## Scope Items
 
 ### Scope 01 - DSL IR consolidation and guardrails
+Status: Completed
 Representative pattern:
 ```python
 from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
@@ -49,13 +50,15 @@ Target files:
 - `src/codeintel/core/columnar/__init__.py`
 - `src/codeintel/build/tabular/expr_vocab.py`
 - `src/codeintel/build/tabular/arrow_ops.py`
-- `tests/arrowdsl/test_no_raw_compute_in_nodes.py`
+- `tools/lint_no_raw_pyarrow_compute_in_nodes.py`
+- `tests/lint/test_no_raw_pyarrow_compute_in_nodes.py`
 Implementation checklist:
-- [ ] Add a `rg`-based guardrail test for `pyarrow.compute` imports in build/ingestion.
-- [ ] Ensure DSL surface is re-exported from `codeintel.core.columnar.__init__`.
-- [ ] Update docs or comments to enforce "plan -> execute -> finalize".
+- [x] Add a guardrail lint/test for `pyarrow.compute` imports in build/ingestion.
+- [x] Ensure DSL surface is re-exported from `codeintel.core.columnar.__init__`.
+- [x] Update docs or comments to enforce "plan -> execute -> finalize".
 
 ### Scope 02 - QuerySpec-driven scan control plane + provenance
+Status: Completed
 Representative pattern:
 ```python
 from codeintel.core.columnar.expr_vocab import E
@@ -77,11 +80,12 @@ Target files:
 - `src/codeintel/core/columnar/compute_config.py`
 - `src/codeintel/core/columnar/queryspec.py`
 Implementation checklist:
-- [ ] Compile QuerySpec into scan + filter + project nodes everywhere.
-- [ ] Attach provenance columns when `ctx.provenance=True`.
-- [ ] Record scan telemetry per dataset scan for diagnostics.
+- [x] Compile QuerySpec into scan + filter + project nodes everywhere.
+- [x] Attach provenance columns when `ctx.provenance=True`.
+- [x] Record scan telemetry per dataset scan for diagnostics.
 
 ### Scope 03 - Build graph pipelines: plan lane adoption (Acero-first)
+Status: Completed
 Representative pattern:
 ```python
 from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
@@ -111,12 +115,14 @@ Target files:
 - `src/codeintel/build/graphs/assembly/ids.py`
 - `src/codeintel/build/analytics/cfg_dfg/helpers.py`
 Implementation checklist:
-- [ ] Replace ad hoc `pc.*` logic with Plan.filter/project/join pipelines.
-- [ ] Pre-project and pre-cast join keys in Plan nodes.
-- [ ] Enforce join-safe schemas to avoid list payload join failures.
-- [ ] Route outputs through FinalizeSpec with invariants and canonical order keys.
+- [x] Pre-project and pre-cast join keys in Plan nodes where joins occur.
+- [x] Enforce join-safe schemas and record join precheck errors for call wiring joins.
+- [x] Route outputs through FinalizeSpec with canonical order keys in call wiring, CFG/DFG, and CDG.
+- [x] Replace remaining ad hoc `pc.*` logic with Plan.filter/project/join pipelines.
+- [x] Extend join-safe/precheck coverage across remaining CPG2 planes and assembly helpers.
 
 ### Scope 04 - Kernel lane consolidation: explode + dedupe + canonical sort
+Status: Completed
 Representative pattern:
 ```python
 from codeintel.core.columnar.explode_ops import explode_edges_with_aligned_lists
@@ -141,12 +147,13 @@ Target files:
 - `src/codeintel/build/tabular/explode_ops.py`
 - `src/codeintel/build/tabular/array_ops.py`
 Implementation checklist:
-- [ ] Standardize explode helpers with list alignment checks.
-- [ ] Reuse parent indices to repeat scalar columns efficiently.
-- [ ] Add null-list policies (error vs empty) in explode specs.
-- [ ] Centralize dedupe and canonical sort in shared kernels.
+- [x] Standardize explode helpers with list alignment checks.
+- [x] Reuse parent indices to repeat scalar columns efficiently.
+- [x] Add null-list policies (error vs empty) in explode specs.
+- [x] Centralize dedupe and canonical sort in shared kernels.
 
 ### Scope 05 - Finalize gate: determinism tiers + structured artifacts
+Status: Completed
 Representative pattern:
 ```python
 from codeintel.core.columnar.finalize_ops import FinalizeSpec
@@ -168,11 +175,12 @@ Target files:
 - `src/codeintel/core/columnar/arrowdsl.py`
 - `src/codeintel/core/columnar/schema_alignment.py`
 Implementation checklist:
-- [ ] Encode determinism tiers in dedupe and ordering policies.
-- [ ] Emit `good/errors/alignment/stats` for all finalize operations.
-- [ ] Add nested invariant error codes and stage labeling.
+- [x] Encode determinism tiers in dedupe and ordering policies.
+- [x] Emit `good/errors/alignment/stats` for all finalize operations.
+- [x] Add nested invariant error codes and stage labeling.
 
 ### Scope 06 - Ingestion pipelines: scan + finalize via Plan + QuerySpec
+Status: Completed
 Representative pattern:
 ```python
 from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
@@ -198,11 +206,12 @@ Target files:
 - `src/codeintel/ingestion/compute/tree_sitter_index.py`
 - `src/codeintel/ingestion/compute/*_extract.py`
 Implementation checklist:
-- [ ] Replace direct table materialization with QuerySpec + Plan.scan.
-- [ ] Keep readers streaming until finalize boundaries.
-- [ ] Route ingestion outputs through finalize for schema alignment and artifacts.
+- [x] Replace direct table materialization with QuerySpec + Plan.scan.
+- [x] Keep readers streaming until finalize boundaries for config/tests/typing/docstrings/repo scan.
+- [x] Route ingestion outputs through finalize for schema alignment and artifacts.
 
 ### Scope 07 - Ingestion compute (non-Hamilton): ColumnarRowBuffer and typed extras
+Status: Completed
 Representative pattern:
 ```python
 from codeintel.core.columnar.rows import columnar_buffer_for_table_key, table_for_columnar_rows
@@ -211,7 +220,10 @@ from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
 buffer = columnar_buffer_for_table_key("core.typing_diagnostics")
 buffer.append(row_payload)
 table = table_for_columnar_rows(buffer, table_key="core.typing_diagnostics")
-result = finalize_table(table, spec=FinalizeSpec(table_key="core.typing_diagnostics", mode="tolerant"))
+result = finalize_table(
+    table,
+    spec=FinalizeSpec(table_key="core.typing_diagnostics", mode="tolerant"),
+)
 ```
 DSL extensions:
 - Add a `reader_for_columnar_rows` helper to avoid table materialization.
@@ -222,9 +234,9 @@ Target files:
 - `src/codeintel/ingestion/compute/tests_ingest.py`
 - `src/codeintel/ingestion/compute/docstrings_extract.py`
 Implementation checklist:
-- [ ] Replace dict-list assembly with ColumnarRowBuffer or batch collectors.
-- [ ] Enforce typed `extras` struct where present.
-- [ ] Route outputs through finalize for alignment + error artifacts.
+- [x] Replace dict-list assembly with ColumnarRowBuffer or batch collectors.
+- [x] Enforce typed `extras` struct where present.
+- [x] Route outputs through finalize for alignment + error artifacts.
 
 ### Scope 08 - Streaming safety and row-iteration boundaries
 Representative pattern:
@@ -256,7 +268,9 @@ from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges
 
 exploded = explode_edges(parent_table, spec=ExplodeSpec(src_col="edge_id", dst_list_col="edge"))
-projected = Plan.table(exploded.good).project({name: E.field(("edge", name)) for name in edge_fields})
+projected = Plan.table(exploded.good).project(
+    {name: E.field(("edge", name)) for name in edge_fields}
+)
 ```
 DSL extensions:
 - Add a small helper for struct-field projection (`project_struct_fields`).
@@ -281,7 +295,12 @@ Implementation checklist:
 ### Scope 10 - Hamilton ingestion pipelines: join prechecks + finalize_reader
 Representative pattern:
 ```python
-from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, precheck_join_keys, run_pipeline
+from codeintel.core.columnar.arrowdsl import (
+    ExecutionContext,
+    ExecutionPlan,
+    precheck_join_keys,
+    run_pipeline,
+)
 from codeintel.core.columnar.finalize_ops import FinalizeSpec
 from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
 
@@ -357,7 +376,10 @@ from codeintel.core.columnar.finalize_ops import finalize_reader, FinalizeSpec
 
 plan = build_query_plan(dataset, spec=spec, options=QueryPlanOptions(provenance=True))
 reader = plan.to_reader(use_threads=True)
-finalized = finalize_reader(reader, spec=FinalizeSpec(table_key="graph.call_graph_edges", mode="tolerant"))
+finalized = finalize_reader(
+    reader,
+    spec=FinalizeSpec(table_key="graph.call_graph_edges", mode="tolerant"),
+)
 ```
 DSL extensions:
 - Add scan telemetry hooks for validation scans (fragment counts and estimates).

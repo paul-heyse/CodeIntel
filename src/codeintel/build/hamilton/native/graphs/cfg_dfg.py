@@ -6,7 +6,7 @@ import ast
 import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import pyarrow as pa
 
@@ -17,13 +17,16 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
     filter_function_ast_nodes,
     filter_python_goids,
 )
+from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import iter_array_values, iter_rows
-from codeintel.build.tabular.compute_helpers import cast_array, safe_filter_expr
+from codeintel.build.tabular.compute_helpers import cast_array
 from codeintel.build.tabular.compute_masks import non_empty_string_expr, non_empty_string_mask
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
@@ -37,6 +40,7 @@ CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
 DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
 _FUNCTION_GOID_TYPE = pa.decimal128(38, 0)
+_ASCENDING: Literal["ascending"] = "ascending"
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,14 +74,11 @@ def _filter_non_empty_paths(table: pa.Table) -> pa.Table:
     def _mask(value_table: pa.Table) -> pa.Array | pa.ChunkedArray:
         return non_empty_string_mask(value_table.column("path"))
 
-    try:
-        return safe_filter_expr(
-            table,
-            non_empty_string_expr("path"),
-            fallback_mask=_mask,
-        )
-    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
-        return table
+    return plan_filter_or_fallback(
+        table,
+        non_empty_string_expr("path"),
+        fallback_mask=_mask,
+    )
 
 
 def _collect_ast_function_keys(
@@ -301,7 +302,12 @@ def cfg_blocks_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInp
     table = _cast_function_goid(table)
     result = finalize_table(
         table,
-        spec=FinalizeSpec(table_key=CFG_BLOCKS_TABLE_KEY, mode="strict"),
+        spec=FinalizeSpec(
+            table_key=CFG_BLOCKS_TABLE_KEY,
+            mode="strict",
+            key_fields=_key_fields_for_table(CFG_BLOCKS_TABLE_KEY),
+            order_by=_order_by_for_table(CFG_BLOCKS_TABLE_KEY),
+        ),
     )
     return result.good
 
@@ -321,7 +327,12 @@ def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
     table = _cast_function_goid(table)
     result = finalize_table(
         table,
-        spec=FinalizeSpec(table_key=CFG_EDGES_TABLE_KEY, mode="strict"),
+        spec=FinalizeSpec(
+            table_key=CFG_EDGES_TABLE_KEY,
+            mode="strict",
+            key_fields=_key_fields_for_table(CFG_EDGES_TABLE_KEY),
+            order_by=_order_by_for_table(CFG_EDGES_TABLE_KEY),
+        ),
     )
     return result.good
 
@@ -341,7 +352,12 @@ def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
     table = _cast_function_goid(table)
     result = finalize_table(
         table,
-        spec=FinalizeSpec(table_key=DFG_EDGES_TABLE_KEY, mode="strict"),
+        spec=FinalizeSpec(
+            table_key=DFG_EDGES_TABLE_KEY,
+            mode="strict",
+            key_fields=_key_fields_for_table(DFG_EDGES_TABLE_KEY),
+            order_by=_order_by_for_table(DFG_EDGES_TABLE_KEY),
+        ),
     )
     return result.good
 
@@ -442,6 +458,23 @@ def _cast_function_goid(table: pa.Table) -> pa.Table:
     column = table.column(index)
     casted = cast_array(column, _FUNCTION_GOID_TYPE, safe=True)
     return table.set_column(index, field.name, casted)
+
+
+def _key_fields_for_table(table_key: str) -> tuple[str, ...]:
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except (KeyError, RuntimeError, TypeError):
+        return ()
+    if schema is None or not schema.primary_key:
+        return ()
+    return tuple(schema.primary_key)
+
+
+def _order_by_for_table(table_key: str) -> tuple[SortKey, ...]:
+    key_fields = _key_fields_for_table(table_key)
+    if not key_fields:
+        return ()
+    return tuple((field, _ASCENDING) for field in key_fields)
 
 
 __all__ = [

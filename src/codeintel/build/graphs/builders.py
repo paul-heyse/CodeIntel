@@ -6,6 +6,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING
 
 from codeintel.build.graphs.engine.protocol import GraphKind
+from codeintel.build.graphs.rx.build_from_edges import BulkEdgeInserter
 from codeintel.build.graphs.rx.policies import GraphWeightPolicy, weight_policy_for_kind
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.data_models.ids import as_int, normalize_decimal_id
@@ -28,12 +29,14 @@ def add_call_graph_edges(
     rows: Iterable[Mapping[str, object]],
 ) -> None:
     """Append call graph edges from row mappings."""
+    inserter = BulkEdgeInserter(store=store)
     for row in rows:
         caller = normalize_decimal_id(row.get("caller_goid_h128"))
         callee = normalize_decimal_id(row.get("callee_goid_h128"))
         if caller is None or callee is None:
             continue
-        add_weighted_edge(store, caller, callee)
+        inserter.add(caller, callee, weight=1.0)
+    inserter.flush()
 
 
 def add_call_graph_nodes(
@@ -85,6 +88,7 @@ def add_import_edges(
         Fallback layer assignments keyed by module name.
     """
     fallback_layer_by_module: dict[str, int] = {}
+    inserter = BulkEdgeInserter(store=store)
     for row in rows:
         source_raw = row.get("src_module")
         target_raw = row.get("dst_module")
@@ -95,7 +99,8 @@ def add_import_edges(
         layer = coerce_int(row.get("module_layer"))
         if layer is not None:
             fallback_layer_by_module[source] = layer
-        add_weighted_edge(store, source, target)
+        inserter.add(source, target, weight=1.0)
+    inserter.flush()
     return fallback_layer_by_module
 
 
@@ -183,6 +188,7 @@ def build_symbol_module_graph(
     """
     resolved_policy = policy or weight_policy_for_kind(GraphKind.SYMBOL_MODULE_GRAPH)
     store = RxGraphStore.undirected(weight_policy=resolved_policy)
+    inserter = BulkEdgeInserter(store=store)
     for record in symbol_use_edges:
         def_module = _map_path_to_module(record.get("def_path"), module_by_path)
         use_module = _map_path_to_module(record.get("use_path"), module_by_path)
@@ -190,7 +196,8 @@ def build_symbol_module_graph(
             continue
         if def_module == use_module:
             continue
-        add_weighted_edge(store, use_module, def_module)
+        inserter.add(use_module, def_module, weight=1.0)
+    inserter.flush()
     return store
 
 
@@ -208,6 +215,7 @@ def build_symbol_function_graph(
     """
     resolved_policy = policy or weight_policy_for_kind(GraphKind.SYMBOL_FUNCTION_GRAPH)
     store = RxGraphStore.undirected(weight_policy=resolved_policy)
+    inserter = BulkEdgeInserter(store=store)
     for record in symbol_use_edges:
         def_goid = normalize_decimal_id(record.get("def_goid_h128"))
         use_goid = normalize_decimal_id(record.get("use_goid_h128"))
@@ -215,7 +223,8 @@ def build_symbol_function_graph(
             continue
         if def_goid == use_goid:
             continue
-        add_weighted_edge(store, use_goid, def_goid)
+        inserter.add(use_goid, def_goid, weight=1.0)
+    inserter.flush()
     return store
 
 

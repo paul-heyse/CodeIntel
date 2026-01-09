@@ -19,18 +19,11 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
+from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_reader
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
-from codeintel.build.tabular.compute_columns import constant_array
-from codeintel.build.tabular.compute_helpers import cast_array, safe_filter
-from codeintel.build.tabular.compute_masks import (
-    and_kleene,
-    invert_mask,
-    is_null_mask,
-    is_valid_mask,
-)
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.compute_helpers import cast_array
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
@@ -398,9 +391,10 @@ def _resolve_facts(
     combined = concat_tables_unified(tables)
     if resolved_columns:
         combined = combined.select(resolved_columns)
-    return finalize_ingest_table(
+    reader = table_to_reader(combined, batch_size=None)
+    return finalize_ingest_reader(
         table_key,
-        combined,
+        reader,
         target_name=SYNTAX_ENRICH_TARGET_NAME,
     )
 
@@ -410,14 +404,14 @@ def _resolve_occurrence_joins(
     occurrences: pa.Table,
     fact_columns: Sequence[str],
 ) -> tuple[pa.Table, pa.Table, pa.Table]:
-    bytes_mask = _null_mask(facts, "start_byte", "end_byte")
-    facts_with_bytes = _filter_table(facts, bytes_mask)
-    facts_without_bytes = _filter_table(facts, invert_mask(bytes_mask))
+    bytes_expr = _valid_pair_expr("start_byte", "end_byte")
+    facts_with_bytes = _filter_table_expr(facts, bytes_expr)
+    facts_without_bytes = _filter_table_expr(facts, ~bytes_expr)
     facts_with_bytes, extras_bytes = _detach_column(facts_with_bytes, "extras")
     facts_without_bytes, extras_no_bytes = _detach_column(facts_without_bytes, "extras")
 
-    occ_bytes_mask = _null_mask(occurrences, "occ_start_byte", "occ_end_byte")
-    occ_bytes = _filter_table(occurrences, occ_bytes_mask)
+    occ_bytes_expr = _valid_pair_expr("occ_start_byte", "occ_end_byte")
+    occ_bytes = _filter_table_expr(occurrences, occ_bytes_expr)
     byte_left, byte_right = _occurrence_byte_join_keys()
     bytes_join = _hash_join_tables(
         facts_with_bytes,
@@ -425,25 +419,23 @@ def _resolve_occurrence_joins(
         spec=_JoinSpec(left_keys=byte_left, right_keys=byte_right),
     )
     bytes_join = _attach_column(bytes_join, "extras", extras_bytes)
-    fallback = _filter_table(bytes_join, is_null_mask(bytes_join["scip_symbol"]))
+    fallback = _filter_table_expr(bytes_join, E.is_null("scip_symbol"))
     fallback = fallback.select(fact_columns)
     line_join = _line_join_occurrences(facts_without_bytes, occurrences)
     line_join = _attach_column(line_join, "extras", extras_no_bytes)
     fallback_join = _line_join_occurrences(fallback, occurrences)
-    matched_bytes = _filter_table(bytes_join, is_valid_mask(bytes_join["scip_symbol"]))
+    matched_bytes = _filter_table_expr(bytes_join, E.is_valid("scip_symbol"))
     return matched_bytes, fallback_join, line_join
 
 
-def _null_mask(table: pa.Table, start_col: str, end_col: str) -> pa.Array | pa.ChunkedArray:
-    if start_col not in table.column_names or end_col not in table.column_names:
-        return constant_array(value=False, length=table.num_rows)
-    return and_kleene(is_valid_mask(table[start_col]), is_valid_mask(table[end_col]))
+def _valid_pair_expr(start_col: str, end_col: str) -> Expression:
+    return E.and_(E.is_valid(start_col), E.is_valid(end_col))
 
 
-def _filter_table(table: pa.Table, mask: pa.Array | pa.ChunkedArray) -> pa.Table:
+def _filter_table_expr(table: pa.Table, expr: Expression) -> pa.Table:
     if table.num_rows == 0:
         return table
-    return safe_filter(table, mask)
+    return materialize_plan(Plan.table(table).filter(expr), use_threads=True)
 
 
 def _line_join_occurrences(left: pa.Table, occurrences: pa.Table) -> pa.Table:

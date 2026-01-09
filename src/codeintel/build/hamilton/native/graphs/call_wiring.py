@@ -7,6 +7,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Literal
 
 import pyarrow as pa
 from intervaltree import IntervalTree
@@ -43,12 +44,16 @@ from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeResult,
     FinalizeSpec,
+    finalize_join_keys,
     finalize_reader,
     finalize_table,
+    record_join_precheck_errors,
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.arrowdsl import join_safe_projection
 from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.intervals.span_resolver import MatchKind, SpanResolver
 from codeintel.core.serialization.payload import PayloadValue, decode_payload, encode_payload
@@ -59,6 +64,7 @@ CPG_CALL_CANDIDATES_TABLE_KEY = "graph.cpg_call_candidates"
 CPG_CALL_EDGES_TABLE_KEY = "graph.cpg_edges_calls"
 CPG_ARG_TO_PARAM_EDGES_TABLE_KEY = "graph.cpg_edges_arg_to_param"
 CPG_RET_TO_CALL_EDGES_TABLE_KEY = "graph.cpg_edges_ret_to_call"
+CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 
 _GOID_ARROW_TYPE = pa.decimal128(38, 0)
 _GOID_CAST_TYPE = "decimal128(38,0)"
@@ -74,6 +80,7 @@ _ASSIGN_CALL_PATTERN = re.compile(
 _BASE_CALL_PATTERN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*\(.*\)$")
 
 _TARGET_ROLE_PRIMARY = "primary"
+_ASCENDING: Literal["ascending"] = "ascending"
 _TARGET_ROLE_INIT = "init"
 
 _BINDING_CONSTRUCTOR = "constructor"
@@ -664,6 +671,13 @@ def _key_fields_for_table(table_key: str) -> tuple[str, ...]:
     return tuple(schema.primary_key)
 
 
+def _order_by_for_table(table_key: str) -> tuple[SortKey, ...]:
+    key_fields = _key_fields_for_table(table_key)
+    if not key_fields:
+        return ()
+    return tuple((field, _ASCENDING) for field in key_fields)
+
+
 def _table_to_reader(table_key: str, table: pa.Table) -> pa.Table:
     result = finalize_table(
         table,
@@ -671,6 +685,7 @@ def _table_to_reader(table_key: str, table: pa.Table) -> pa.Table:
             table_key=table_key,
             mode="strict",
             key_fields=_key_fields_for_table(table_key),
+            order_by=_order_by_for_table(table_key),
             emit_artifacts=True,
             target_name=CALL_WIRING_TARGET_NAME,
         ),
@@ -1386,6 +1401,7 @@ def _hash_join_block_targets(
     *,
     right_key: str,
     output_column: str,
+    left_columns: Sequence[str] | None = None,
 ) -> pa.Table:
     if targets.num_rows == 0 or blocks.num_rows == 0:
         return targets
@@ -1393,8 +1409,42 @@ def _hash_join_block_targets(
         return targets
     if right_key not in blocks.column_names or output_column not in blocks.column_names:
         return targets
+    resolved_columns = list(targets.column_names) if left_columns is None else list(left_columns)
+    if "callee_goid_h128" not in resolved_columns:
+        resolved_columns.append("callee_goid_h128")
+    resolved_columns = [name for name in resolved_columns if name in targets.column_names]
+    if not resolved_columns:
+        return targets
+    targets = join_safe_projection(targets, allowed_columns=resolved_columns)
+    blocks = join_safe_projection(blocks, allowed_columns=[right_key, output_column])
     targets = normalize_table_for_join(targets)
     blocks = normalize_table_for_join(blocks)
+    left_precheck = finalize_join_keys(
+        targets,
+        required_non_null=["callee_goid_h128"],
+        key_fields=["callee_goid_h128"],
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        left_precheck,
+        table_key=CPG_CALL_TARGETS_TABLE_KEY,
+        target_name=CALL_WIRING_TARGET_NAME,
+        join_keys=["callee_goid_h128"],
+    )
+    targets = left_precheck.good
+    right_precheck = finalize_join_keys(
+        blocks,
+        required_non_null=[right_key],
+        key_fields=[right_key],
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        right_precheck,
+        table_key=CFG_BLOCKS_TABLE_KEY,
+        target_name=CALL_WIRING_TARGET_NAME,
+        join_keys=[right_key],
+    )
+    blocks = right_precheck.good
     left_exprs = _project_with_goid_cast(targets, key="callee_goid_h128")
     right_exprs = {
         right_key: E.cast(E.field(right_key), _GOID_CAST_TYPE),
@@ -2070,20 +2120,12 @@ def _implicit_rows_for_call_targets(
     return _implicit_call_rows(syntax_nodes_df, implicit_context)
 
 
-def cpg_call_targets(
+def _build_call_targets_table(
     q__core__syntax_calls: InferableTabularInput,
     q__core__scip_occurrence_span_xref: InferableTabularInput,
     q__core__syntax_defs_resolved: InferableTabularInput,
-    q__graph__cfg_blocks: InferableTabularInput,
     q__core__syntax_nodes: InferableTabularInput,
-) -> InferableTabularInput:
-    """Resolve call targets by welding callee spans to SCIP occurrences.
-
-    Returns
-    -------
-    InferableTabularInput
-        Arrow table for graph.cpg_call_targets.
-    """
+) -> pa.Table | None:
     calls = _select_table_columns(
         tabular_to_table(q__core__syntax_calls),
         [
@@ -2124,7 +2166,6 @@ def cpg_call_targets(
         ],
     )
     catalog = _build_def_catalog(_table_rows(defs_table))
-
     explicit_rows = _explicit_rows_for_call_targets(calls, occurrences, catalog)
     syntax_nodes_table = _select_table_columns(
         tabular_to_table(q__core__syntax_nodes),
@@ -2147,34 +2188,60 @@ def cpg_call_targets(
         row for row in _table_rows(syntax_nodes_table) if row.get("extras") is not None
     ]
     implicit_rows = _implicit_rows_for_call_targets(syntax_nodes_rows, catalog)
-
     all_rows = [*explicit_rows, *implicit_rows]
     if not all_rows:
-        return empty_reader(CPG_CALL_TARGETS_TABLE_KEY)
+        return None
     targets_table = table_for_rows(CPG_CALL_TARGETS_TABLE_KEY, all_rows)[0]
-    targets_table = _drop_table_columns(
+    return _drop_table_columns(
         targets_table,
         ["callee_entry_block_id", "callee_exit_block_id"],
     )
-    blocks = tabular_to_table(q__graph__cfg_blocks)
+
+
+def _attach_call_target_blocks(
+    targets_table: pa.Table,
+    blocks: pa.Table,
+) -> pa.Table:
     entry_table = _entry_blocks(blocks)
     entry_table = _cast_table_column(entry_table, "function_goid_h128", _GOID_ARROW_TYPE)
     entry_table = _cast_table_column(entry_table, "entry_block_id", _BLOCK_ID_ARROW_TYPE)
     exit_table = _exit_blocks(blocks)
     exit_table = _cast_table_column(exit_table, "function_goid_h128", _GOID_ARROW_TYPE)
     exit_table = _cast_table_column(exit_table, "exit_block_id", _BLOCK_ID_ARROW_TYPE)
-
+    target_columns = [
+        "repo",
+        "commit",
+        "rel_path",
+        "call_id",
+        "call_node_id",
+        "callee_symbol",
+        "callee_def_id",
+        "callee_def_node_id",
+        "callee_goid_h128",
+        "target_role",
+        "binding_kind",
+        "origin",
+        "call_kind",
+        "augop",
+        "resolution_kind",
+        "confidence",
+        "candidate_count",
+        "extras",
+        "extras_kv",
+    ]
     joined = _hash_join_block_targets(
         targets_table,
         entry_table,
         right_key="function_goid_h128",
         output_column="entry_block_id",
+        left_columns=target_columns,
     )
     joined = _hash_join_block_targets(
         joined,
         exit_table,
         right_key="function_goid_h128",
         output_column="exit_block_id",
+        left_columns=target_columns,
     )
     joined = _rename_table_columns(
         joined,
@@ -2183,7 +2250,7 @@ def cpg_call_targets(
             "exit_block_id": "callee_exit_block_id",
         },
     )
-    joined = joined.select(
+    return joined.select(
         [
             "repo",
             "commit",
@@ -2208,6 +2275,32 @@ def cpg_call_targets(
             "extras_kv",
         ]
     )
+
+
+def cpg_call_targets(
+    q__core__syntax_calls: InferableTabularInput,
+    q__core__scip_occurrence_span_xref: InferableTabularInput,
+    q__core__syntax_defs_resolved: InferableTabularInput,
+    q__graph__cfg_blocks: InferableTabularInput,
+    q__core__syntax_nodes: InferableTabularInput,
+) -> InferableTabularInput:
+    """Resolve call targets by welding callee spans to SCIP occurrences.
+
+    Returns
+    -------
+    InferableTabularInput
+        Arrow table for graph.cpg_call_targets.
+    """
+    targets_table = _build_call_targets_table(
+        q__core__syntax_calls,
+        q__core__scip_occurrence_span_xref,
+        q__core__syntax_defs_resolved,
+        q__core__syntax_nodes,
+    )
+    if targets_table is None:
+        return empty_reader(CPG_CALL_TARGETS_TABLE_KEY)
+    blocks = tabular_to_table(q__graph__cfg_blocks)
+    joined = _attach_call_target_blocks(targets_table, blocks)
     deduped = dedupe_table_for_table(CPG_CALL_TARGETS_TABLE_KEY, joined)
     return _table_to_reader(CPG_CALL_TARGETS_TABLE_KEY, deduped)
 
@@ -2379,6 +2472,7 @@ def cpg_edges_calls(
             table_key=CPG_CALL_EDGES_TABLE_KEY,
             mode="strict",
             key_fields=_key_fields_for_table(CPG_CALL_EDGES_TABLE_KEY),
+            order_by=_order_by_for_table(CPG_CALL_EDGES_TABLE_KEY),
             target_name=CALL_WIRING_TARGET_NAME,
         ),
     )
@@ -2856,6 +2950,7 @@ def cpg_edges_arg_to_param(
             table_key=CPG_ARG_TO_PARAM_EDGES_TABLE_KEY,
             mode="strict",
             key_fields=_key_fields_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY),
+            order_by=_order_by_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY),
             target_name=CALL_WIRING_TARGET_NAME,
         ),
     )
@@ -2964,6 +3059,7 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
             table_key=CPG_RET_TO_CALL_EDGES_TABLE_KEY,
             mode="strict",
             key_fields=_key_fields_for_table(CPG_RET_TO_CALL_EDGES_TABLE_KEY),
+            order_by=_order_by_for_table(CPG_RET_TO_CALL_EDGES_TABLE_KEY),
             target_name=CALL_WIRING_TARGET_NAME,
         ),
     )

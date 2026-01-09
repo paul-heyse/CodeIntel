@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 from hamilton import registry
 from hamilton.io.data_adapters import DataLoader, DataSaver
 
+from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.parquet_metadata import read_parquet_metadata, read_parquet_schema
+from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
+from codeintel.core.schemas.primitives import resolve_stable_sort_keys
+
+LOG = logging.getLogger(__name__)
+ORDER_ASC: Final = "ascending"
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,16 +60,50 @@ class PyArrowParquetSaver(DataSaver):
         dict[str, Any]
             Parquet cache metadata payload.
         """
-        pq.write_table(data, self.path)
+        finalized = _finalize_cache_table(data)
+        pq.write_table(finalized, self.path)
         return {
             "path": self.path,
             "format": "parquet",
-            "rows": data.num_rows,
-            "columns": data.num_columns,
+            "rows": finalized.num_rows,
+            "columns": finalized.num_columns,
         }
 
 
 _DICTIONARY_ENCODINGS = frozenset({"PLAIN_DICTIONARY", "RLE_DICTIONARY"})
+
+
+def _finalize_cache_table(table: pa.Table) -> pa.Table:
+    try:
+        table_schema = table_schema_from_arrow_schema(arrow_schema=table.schema)
+    except (TypeError, ValueError) as exc:
+        LOG.debug("Cache finalize skipped: %s", exc)
+        return table
+    stable_sort_keys = resolve_stable_sort_keys(table_schema)
+    order_by = _order_by_for_keys(stable_sort_keys)
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(
+            table_key=table_schema.table_key,
+            mode="tolerant",
+            order_by=order_by,
+        ),
+    )
+    if result.errors.num_rows:
+        LOG.warning(
+            "Parquet cache finalize produced %d error rows for %s",
+            result.errors.num_rows,
+            table_schema.table_key,
+        )
+    return result.good
+
+
+def _order_by_for_keys(
+    stable_sort_keys: tuple[str, ...] | None,
+) -> tuple[SortKey, ...]:
+    if not stable_sort_keys:
+        return ()
+    return tuple((key, ORDER_ASC) for key in stable_sort_keys)
 
 
 def _has_dictionary_encoding(column: pq.ColumnChunkMetaData) -> bool:

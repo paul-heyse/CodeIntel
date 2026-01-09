@@ -15,6 +15,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.readers import empty_reader_from_schema
@@ -520,6 +521,87 @@ def scan_options_for_queryspec(
         columns=columns,
         filter_expression=filter_expression,
     )
+
+
+def scan_options_for_queryspec_ctx(
+    spec: QuerySpec,
+    *,
+    ctx: ExecutionContext | None,
+    options: DatasetScanOptions | None = None,
+) -> DatasetScanOptions:
+    """Return DatasetScanOptions configured from a QuerySpec and execution context.
+
+    Returns
+    -------
+    DatasetScanOptions
+        Scan options reflecting query spec and execution context.
+    """
+    provenance = ctx.provenance if ctx is not None else False
+    return scan_options_for_queryspec(
+        spec,
+        provenance=provenance,
+        options=options,
+    )
+
+
+def build_scanner_for_queryspec(
+    dataset: ds.Dataset,
+    *,
+    spec: QuerySpec,
+    provenance: bool,
+    options: DatasetScanOptions | None = None,
+) -> Scanner:
+    """Build a dataset scanner from a QuerySpec.
+
+    Returns
+    -------
+    pyarrow.dataset.Scanner
+        Scanner configured from the query specification.
+    """
+    scan_options = scan_options_for_queryspec(
+        spec,
+        provenance=provenance,
+        options=options,
+    )
+    return build_scanner(dataset, options=scan_options)
+
+
+def build_scanner_for_queryspec_ctx(
+    dataset: ds.Dataset,
+    *,
+    spec: QuerySpec,
+    ctx: ExecutionContext | None,
+    options: DatasetScanOptions | None = None,
+) -> Scanner:
+    """Build a dataset scanner from a QuerySpec and execution context.
+
+    Returns
+    -------
+    pyarrow.dataset.Scanner
+        Scanner configured from query spec and execution context.
+    """
+    scan_options = scan_options_for_queryspec_ctx(
+        spec,
+        ctx=ctx,
+        options=options,
+    )
+    return build_scanner(dataset, options=scan_options)
+
+
+def scan_telemetry_for_queryspec(
+    dataset: ds.Dataset,
+    *,
+    spec: QuerySpec,
+) -> ScanTelemetry:
+    """Return scan telemetry based on a QuerySpec.
+
+    Returns
+    -------
+    ScanTelemetry
+        Fragment count and estimated rows for the query.
+    """
+    filter_expression = spec.pushdown_predicate or spec.predicate
+    return scan_telemetry(dataset, filter_expression=filter_expression)
 
 
 def unify_dataset_schema(
@@ -1051,6 +1133,8 @@ __all__ = [
     "ScanTelemetry",
     "apply_row_group_pruning",
     "build_scanner",
+    "build_scanner_for_queryspec",
+    "build_scanner_for_queryspec_ctx",
     "configure_arrow_threading",
     "dataset_for_manifest",
     "dataset_for_path",
@@ -1060,7 +1144,9 @@ __all__ = [
     "scan_dataset_lazyframe",
     "scan_dataset_reader",
     "scan_options_for_queryspec",
+    "scan_options_for_queryspec_ctx",
     "scan_profile_options",
     "scan_telemetry",
+    "scan_telemetry_for_queryspec",
     "unify_dataset_schema",
 ]

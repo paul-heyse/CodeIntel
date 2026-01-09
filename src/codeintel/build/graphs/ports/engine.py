@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.iterators import iter_weighted_edge_ids
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -94,18 +94,13 @@ class GraphData:
         """
         store = ensure_store(graph)
         nodes = tuple(store.node_ids())
-        edges_list: list[tuple[Any, Any]] = [
-            (store.index_to_id[src_idx], store.index_to_id[dst_idx])
-            for src_idx, dst_idx in store.graph.edge_list()
-        ]
+        edges_list: list[tuple[Any, Any]] = []
+        edge_attrs_dict: dict[tuple[Hashable, Hashable], Mapping[str, object]] = {}
+        for src_id, dst_id, weight in iter_weighted_edge_ids(store):
+            edges_list.append((src_id, dst_id))
+            edge_attrs_dict[src_id, dst_id] = {"weight": weight}
         edges = tuple(edges_list)
         node_attrs = {node: store.get_node_attrs(node) for node in store.node_ids()}
-        edge_attrs_dict: dict[tuple[Hashable, Hashable], Mapping[str, object]] = {}
-        for src_id, dst_id in edges_list:
-            src_idx = store.id_to_index[src_id]
-            dst_idx = store.id_to_index[dst_id]
-            payload = store.graph.get_edge_data(src_idx, dst_idx)
-            edge_attrs_dict[src_id, dst_id] = {"weight": edge_weight_from_payload(payload)}
         return cls(
             nodes=nodes,
             edges=edges,

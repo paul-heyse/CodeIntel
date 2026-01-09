@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from codeintel.core.columnar.acero_ops import build_exec_plan
     from codeintel.core.columnar.arrowdsl import (
-        ExecutionContext,
         ExecutionPlan,
         JoinPrecheckSpec,
         apply_deterministic_order,
@@ -37,8 +36,10 @@ if TYPE_CHECKING:
         DedupeSpec,
         DedupeStrategy,
         DedupeTier,
+        dedupe_keep_first_after_sort,
         dedupe_table_for_table,
     )
+    from codeintel.core.columnar.execution_context import ExecutionContext
     from codeintel.core.columnar.explode_ops import (
         ExplodeResult,
         ExplodeSpec,
@@ -118,8 +119,10 @@ if TYPE_CHECKING:
         QueryPlanOptions,
         ScanPlanOptions,
         build_query_plan,
+        build_query_plan_for_context,
         list_external_plan_runners,
         materialize_plan,
+        query_plan_options_for_context,
         register_external_plan_runner,
         run_external_plan,
     )
@@ -148,9 +151,13 @@ if TYPE_CHECKING:
         DatasetScanOptions,
         ScanProfile,
         ScanTelemetry,
+        build_scanner_for_queryspec,
+        build_scanner_for_queryspec_ctx,
         scan_options_for_queryspec,
+        scan_options_for_queryspec_ctx,
         scan_profile_options,
         scan_telemetry,
+        scan_telemetry_for_queryspec,
     )
 
     _TYPE_CHECKING_EXPORTS = (
@@ -170,6 +177,7 @@ if TYPE_CHECKING:
         DedupeSpec,
         DedupeStrategy,
         DedupeTier,
+        dedupe_keep_first_after_sort,
         dedupe_table_for_table,
         build_exec_plan,
         E,
@@ -266,15 +274,21 @@ if TYPE_CHECKING:
         coerce_arrow_table,
         is_in_mask,
         value_set,
+        query_plan_options_for_context,
         build_query_plan,
+        build_query_plan_for_context,
         PROVENANCE_FIELDS,
         ProjectionSpec,
         QuerySpec,
         ScanProfile,
         ScanTelemetry,
+        build_scanner_for_queryspec,
+        build_scanner_for_queryspec_ctx,
         scan_options_for_queryspec,
+        scan_options_for_queryspec_ctx,
         scan_profile_options,
         scan_telemetry,
+        scan_telemetry_for_queryspec,
     )
 
 _EXPORTS: dict[str, tuple[str, str]] = {
@@ -297,8 +311,12 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "DedupeSpec": ("codeintel.core.columnar.dedupe_ops", "DedupeSpec"),
     "DedupeStrategy": ("codeintel.core.columnar.dedupe_ops", "DedupeStrategy"),
     "DedupeTier": ("codeintel.core.columnar.dedupe_ops", "DedupeTier"),
+    "dedupe_keep_first_after_sort": (
+        "codeintel.core.columnar.dedupe_ops",
+        "dedupe_keep_first_after_sort",
+    ),
     "dedupe_table_for_table": ("codeintel.core.columnar.dedupe_ops", "dedupe_table_for_table"),
-    "ExecutionContext": ("codeintel.core.columnar.arrowdsl", "ExecutionContext"),
+    "ExecutionContext": ("codeintel.core.columnar.execution_context", "ExecutionContext"),
     "ExecutionPlan": ("codeintel.core.columnar.arrowdsl", "ExecutionPlan"),
     "JoinPrecheckSpec": ("codeintel.core.columnar.arrowdsl", "JoinPrecheckSpec"),
     "build_exec_plan": ("codeintel.core.columnar.acero_ops", "build_exec_plan"),
@@ -307,6 +325,14 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "QueryPlanOptions": ("codeintel.core.columnar.plan_ops", "QueryPlanOptions"),
     "ScanPlanOptions": ("codeintel.core.columnar.plan_ops", "ScanPlanOptions"),
     "build_query_plan": ("codeintel.core.columnar.plan_ops", "build_query_plan"),
+    "build_query_plan_for_context": (
+        "codeintel.core.columnar.plan_ops",
+        "build_query_plan_for_context",
+    ),
+    "query_plan_options_for_context": (
+        "codeintel.core.columnar.plan_ops",
+        "query_plan_options_for_context",
+    ),
     "PROVENANCE_FIELDS": ("codeintel.core.columnar.queryspec", "PROVENANCE_FIELDS"),
     "ProjectionSpec": ("codeintel.core.columnar.queryspec", "ProjectionSpec"),
     "QuerySpec": ("codeintel.core.columnar.queryspec", "QuerySpec"),
@@ -436,12 +462,28 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "DatasetScanOptions": ("codeintel.core.columnar.streaming", "DatasetScanOptions"),
     "ScanProfile": ("codeintel.core.columnar.streaming", "ScanProfile"),
     "ScanTelemetry": ("codeintel.core.columnar.streaming", "ScanTelemetry"),
+    "build_scanner_for_queryspec": (
+        "codeintel.core.columnar.streaming",
+        "build_scanner_for_queryspec",
+    ),
+    "build_scanner_for_queryspec_ctx": (
+        "codeintel.core.columnar.streaming",
+        "build_scanner_for_queryspec_ctx",
+    ),
     "scan_options_for_queryspec": (
         "codeintel.core.columnar.streaming",
         "scan_options_for_queryspec",
     ),
+    "scan_options_for_queryspec_ctx": (
+        "codeintel.core.columnar.streaming",
+        "scan_options_for_queryspec_ctx",
+    ),
     "scan_profile_options": ("codeintel.core.columnar.streaming", "scan_profile_options"),
     "scan_telemetry": ("codeintel.core.columnar.streaming", "scan_telemetry"),
+    "scan_telemetry_for_queryspec": (
+        "codeintel.core.columnar.streaming",
+        "scan_telemetry_for_queryspec",
+    ),
     "ColumnarStream": ("codeintel.core.columnar.stream", "ColumnarStream"),
     "ColumnarStreamAdapter": ("codeintel.core.columnar.stream", "ColumnarStreamAdapter"),
     "LazyFrameStream": ("codeintel.core.columnar.stream", "LazyFrameStream"),
@@ -519,6 +561,9 @@ __all__ = (
     "apply_deterministic_order",
     "build_exec_plan",
     "build_query_plan",
+    "build_query_plan_for_context",
+    "build_scanner_for_queryspec",
+    "build_scanner_for_queryspec_ctx",
     "call_compute",
     "case_when",
     "coalesce",
@@ -530,6 +575,8 @@ __all__ = (
     "count_distinct",
     "count_non_positive",
     "count_true",
+    "dedupe_keep_first_after_sort",
+    "dedupe_keep_first_after_sort",
     "dedupe_table_for_table",
     "deep_cast_array",
     "deep_cast_table_to_contract",
@@ -570,6 +617,7 @@ __all__ = (
     "normalize_table_for_compute",
     "orphan_ref_count",
     "precheck_join_keys",
+    "query_plan_options_for_context",
     "read_ipc_stream",
     "record_join_precheck_errors",
     "regex_match",
@@ -584,8 +632,10 @@ __all__ = (
     "safe_cast",
     "safe_divide",
     "scan_options_for_queryspec",
+    "scan_options_for_queryspec_ctx",
     "scan_profile_options",
     "scan_telemetry",
+    "scan_telemetry_for_queryspec",
     "stable_sort_indices",
     "stable_sort_table",
     "struct_field",

@@ -52,6 +52,9 @@ from codeintel.core.validation.schema_constraints import (
 FinalizeMode = Literal["strict", "tolerant"]
 NullListPolicy = Literal["error", "empty"]
 
+ERROR_CODE_NULL_REQUIRED_LIST = "NULL_REQUIRED_LIST"
+ERROR_CODE_MISALIGNED_LIST_COLUMNS = "MISALIGNED_LIST_COLUMNS"
+
 
 @dataclass(frozen=True, slots=True)
 class FinalizeDedupe:
@@ -838,7 +841,7 @@ def _list_policy_errors(
                 context,
                 mask=null_mask,
                 spec=ErrorSpec(
-                    error_code="NULL_REQUIRED_LIST",
+                    error_code=ERROR_CODE_NULL_REQUIRED_LIST,
                     stage="invariant",
                     column=policy.column,
                     detail="null list not allowed",
@@ -990,7 +993,18 @@ def _apply_order_by(
     if spec.order_by:
         return stable_sort_table(table, sort_keys=spec.order_by)
     dedupe = spec.dedupe or FinalizeDedupe()
-    if not dedupe.enabled or dedupe_spec is None or dedupe_spec.tier != "canonical":
+    if not dedupe.enabled:
+        return table
+    if dedupe_spec is None:
+        if dedupe.determinism == "best_effort":
+            return table
+        fallback = _default_order_by(
+            table,
+            spec=spec,
+            dedupe_spec=DedupeSpec(),
+        )
+        return stable_sort_table(table, sort_keys=fallback) if fallback else table
+    if dedupe_spec.tier != "canonical":
         return table
     fallback = _default_order_by(table, spec=spec, dedupe_spec=dedupe_spec)
     if not fallback:
@@ -1056,7 +1070,7 @@ def _invariant_mask(
 
 def _invariant_error_code(invariant: FinalizeInvariant) -> str:
     if invariant.kind == "list_alignment":
-        return "MISALIGNED_LIST_COLUMNS"
+        return ERROR_CODE_MISALIGNED_LIST_COLUMNS
     if invariant.kind == "struct_required":
         return "NULL_REQUIRED_STRUCT_FIELD"
     return "INVARIANT_FAILED"

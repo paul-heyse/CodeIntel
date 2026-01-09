@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, TypedDict
 
 from codeintel.build.analytics.compute.graphs import centrality as centrality_module
 from codeintel.build.graphs.runtime.context import GraphContext
+from codeintel.build.graphs.rx.algos import BetweennessOptions, PagerankOptions
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.compute.centrality import (
     CentralityMetrics,
@@ -286,8 +287,8 @@ def test_pagerank_realistic_call_graph() -> None:
 def test_pagerank_custom_alpha() -> None:
     """PageRank respects custom alpha (damping) parameter."""
     graph = _make_simple_chain()
-    result_low = compute_pagerank(graph, alpha=0.5)
-    result_high = compute_pagerank(graph, alpha=0.95)
+    result_low = compute_pagerank(graph, options=PagerankOptions(alpha=0.5))
+    result_high = compute_pagerank(graph, options=PagerankOptions(alpha=0.95))
 
     expect_not_equal(result_low, result_high)
 
@@ -296,15 +297,15 @@ def test_pagerank_custom_max_iter() -> None:
     """PageRank respects custom max_iter parameter."""
     graph = _make_simple_chain()
 
-    result = compute_pagerank(graph, max_iter=10)
+    result = compute_pagerank(graph, options=PagerankOptions(max_iter=10))
     expect_length(result, EXPECTED_NODES_4)
 
 
 def test_pagerank_custom_tolerance() -> None:
     """PageRank respects custom tolerance parameter."""
     graph = _make_simple_chain()
-    result_low = compute_pagerank(graph, tol=1e-9)
-    result_high = compute_pagerank(graph, tol=1e-3)
+    result_low = compute_pagerank(graph, options=PagerankOptions(tol=1e-9))
+    result_high = compute_pagerank(graph, options=PagerankOptions(tol=1e-3))
 
     expect_length(result_low, EXPECTED_NODES_4)
     expect_length(result_high, EXPECTED_NODES_4)
@@ -393,7 +394,7 @@ def test_betweenness_cycle_equal() -> None:
 def test_betweenness_normalized() -> None:
     """Normalized betweenness values are between 0 and 1."""
     graph = _make_call_graph_realistic()
-    result = compute_betweenness(graph, normalized=True)
+    result = compute_betweenness(graph, options=BetweennessOptions(normalized=True))
     for value in result.values():
         expect_true(0.0 <= value <= 1.0)
 
@@ -401,7 +402,7 @@ def test_betweenness_normalized() -> None:
 def test_betweenness_unnormalized() -> None:
     """Unnormalized betweenness can exceed 1."""
     graph = _make_call_graph_realistic()
-    result = compute_betweenness(graph, normalized=False)
+    result = compute_betweenness(graph, options=BetweennessOptions(normalized=False))
 
     expect_length(result, graph.graph.num_nodes())
 
@@ -410,7 +411,7 @@ def test_betweenness_sampled_with_k() -> None:
     """Approximate betweenness with sample size k."""
     graph = _make_dense_cluster()
 
-    result = compute_betweenness(graph, k=3)
+    result = compute_betweenness(graph, options=BetweennessOptions(k=3))
 
     expect_length(result, EXPECTED_NODES_5)
 
