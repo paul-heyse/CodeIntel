@@ -16,6 +16,7 @@ from codeintel.core.columnar.normalization import normalize_table_for_compute
 
 if TYPE_CHECKING:
     import pyarrow.dataset as ds
+
     from codeintel.core.columnar.streaming import DatasetScanOptions
 
 JoinType = Literal[
@@ -295,6 +296,25 @@ class Plan:
         return self.declaration.to_reader(use_threads=use_threads)
 
 
+def materialize_plan(plan: Plan, *, use_threads: bool = True) -> pa.Table:
+    """Materialize a plan into a normalized Arrow table.
+
+    Parameters
+    ----------
+    plan
+        Plan to materialize.
+    use_threads
+        Whether to allow compute parallelism.
+
+    Returns
+    -------
+    pyarrow.Table
+        Materialized table with compute-normalized chunks.
+    """
+    reader = plan.to_reader(use_threads=use_threads)
+    return normalize_table_for_compute(reader_to_table(reader))
+
+
 def build_scan_plan(
     dataset: ds.Dataset,
     *,
@@ -377,7 +397,30 @@ class ExternalPlanRunner(Protocol):
         columns: Sequence[str] | Mapping[str, pc.Expression] | None,
         scan_options: DatasetScanOptions | None,
         use_threads: bool | None,
-    ) -> pa.RecordBatchReader: ...
+    ) -> pa.RecordBatchReader:
+        """Execute an external plan and return a record batch reader.
+
+        Parameters
+        ----------
+        spec
+            External plan specification.
+        dataset
+            Dataset for plan execution.
+        filter_expr
+            Optional dataset filter expression.
+        columns
+            Columns or expression mapping to project.
+        scan_options
+            Dataset scan options for execution.
+        use_threads
+            Whether to enable threaded execution.
+
+        Returns
+        -------
+        pyarrow.RecordBatchReader
+            Record batch reader for plan results.
+        """
+        ...
 
 
 _EXTERNAL_PLAN_RUNNERS: dict[str, ExternalPlanRunner] = {}
@@ -398,7 +441,13 @@ def register_external_plan_runner(name: str, runner: ExternalPlanRunner) -> None
 
 
 def list_external_plan_runners() -> tuple[str, ...]:
-    """Return the registered external plan runner names."""
+    """Return the registered external plan runner names.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Sorted external runner names.
+    """
     return tuple(sorted(_EXTERNAL_PLAN_RUNNERS))
 
 
@@ -411,7 +460,20 @@ def run_external_plan(
     scan_options: DatasetScanOptions | None,
     use_threads: bool | None,
 ) -> pa.RecordBatchReader:
-    """Execute an external plan via the registered runner."""
+    """Execute an external plan via the registered runner.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Record batch reader for plan results.
+
+    Raises
+    ------
+    ValueError
+        Raised when no runner is registered for the plan engine.
+    TypeError
+        Raised when the runner returns an unexpected type.
+    """
     normalized = _normalize_external_engine(spec.engine)
     runner = _EXTERNAL_PLAN_RUNNERS.get(normalized)
     if runner is None:
@@ -442,6 +504,7 @@ __all__ = [
     "Plan",
     "build_scan_plan",
     "list_external_plan_runners",
+    "materialize_plan",
     "register_external_plan_runner",
     "run_external_plan",
 ]

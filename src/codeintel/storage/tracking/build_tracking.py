@@ -20,7 +20,7 @@ from sqlglot import exp
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
 from codeintel.core.columnar.conversion import table_to_reader
-from codeintel.core.columnar.dedupe_ops import dedupe_table_for_table
+from codeintel.core.columnar.dedupe_ops import DedupeLegacy, dedupe_table_for_table
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.kernels import stable_sort_indices
 from codeintel.core.columnar.masks import and_mask, fill_null_false, invert_mask
@@ -377,9 +377,11 @@ class BuildTracking:
         return dedupe_table_for_table(
             _MANIFEST_TABLE_KEY,
             table,
-            prefer_columns=("computed_at",),
-            determinism="stable",
-            tie_breaker_columns=("input_hash", "output_hash", "options_hash"),
+            legacy=DedupeLegacy(
+                prefer_columns=("computed_at",),
+                determinism="stable",
+                tie_breaker_columns=("input_hash", "output_hash", "options_hash"),
+            ),
         )
 
     @staticmethod

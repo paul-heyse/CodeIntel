@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Literal
 
 import pyarrow as pa
@@ -13,7 +14,29 @@ from codeintel.core.columnar.kernels import SortKey, hash_struct_ordinal, stable
 from codeintel.core.schemas.service import get_schema_service
 
 DedupeDeterminism = Literal["best_effort", "stable", "order_independent"]
+DedupeTier = Literal["canonical", "throughput"]
+DedupeStrategy = Literal["order_independent", "first"]
 _HASH_ORDINAL_MODULUS = 2**31 - 1
+
+
+@dataclass(frozen=True, slots=True)
+class DedupeSpec:
+    """Specification for dedupe behavior."""
+
+    keys: Sequence[str] = ()
+    prefer_columns: Sequence[str] = ()
+    tie_breakers: Sequence[SortKey] = ()
+    tier: DedupeTier = "canonical"
+    strategy: DedupeStrategy = "order_independent"
+
+
+@dataclass(frozen=True, slots=True)
+class DedupeLegacy:
+    """Legacy dedupe configuration parameters."""
+
+    prefer_columns: Sequence[str] = ()
+    determinism: DedupeDeterminism = "best_effort"
+    tie_breaker_columns: Sequence[str] = ()
 
 
 def _row_index_array(length: int) -> pa.Array | None:
@@ -78,7 +101,7 @@ def _dedupe_sort_keys(
     *,
     key_columns: Sequence[str],
     prefer_columns: Sequence[str],
-    tie_breaker_columns: Sequence[str],
+    tie_breakers: Sequence[SortKey],
 ) -> list[SortKey]:
     available = set(table.column_names)
     keys: list[SortKey] = []
@@ -91,9 +114,9 @@ def _dedupe_sort_keys(
         if name in available and name not in used:
             keys.append((name, "descending"))
             used.add(name)
-    for name in tie_breaker_columns:
+    for name, order in tie_breakers:
         if name in available and name not in used:
-            keys.append((name, "ascending"))
+            keys.append((name, order))
             used.add(name)
     return keys
 
@@ -101,16 +124,39 @@ def _dedupe_sort_keys(
 def _require_tie_breakers(
     table: pa.Table,
     *,
-    tie_breaker_columns: Sequence[str],
-) -> Sequence[str]:
-    if not tie_breaker_columns:
+    tie_breakers: Sequence[SortKey],
+) -> Sequence[SortKey]:
+    if not tie_breakers:
         msg = "Deterministic dedupe requires tie_breaker_columns."
         raise ValueError(msg)
-    missing = [name for name in tie_breaker_columns if name not in table.column_names]
+    missing = [name for name, _ in tie_breakers if name not in table.column_names]
     if missing:
         msg = f"Deterministic dedupe missing tie_breaker columns: {missing}"
         raise ValueError(msg)
-    return tie_breaker_columns
+    return tie_breakers
+
+
+def _require_key_columns(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+) -> Sequence[str]:
+    if not key_columns:
+        msg = "Deduplication requires at least one key column."
+        raise ValueError(msg)
+    missing = [name for name in key_columns if name not in table.column_names]
+    if missing:
+        msg = f"Deduplication missing key columns: {missing}"
+        raise ValueError(msg)
+    return key_columns
+
+
+def _determinism_for_spec(spec: DedupeSpec) -> DedupeDeterminism:
+    if spec.strategy == "order_independent":
+        return "order_independent"
+    if spec.tie_breakers:
+        return "stable"
+    return "best_effort"
 
 
 def _dedupe_table_via_compute(
@@ -143,9 +189,8 @@ def dedupe_table_for_table(
     table_key: str,
     table: pa.Table,
     *,
-    prefer_columns: Sequence[str] | None = None,
-    determinism: DedupeDeterminism = "best_effort",
-    tie_breaker_columns: Sequence[str] | None = None,
+    spec: DedupeSpec | None = None,
+    legacy: DedupeLegacy | None = None,
 ) -> pa.Table:
     """Return a table with duplicate primary-key rows removed.
 
@@ -159,27 +204,70 @@ def dedupe_table_for_table(
     if schema is None or not schema.primary_key:
         return table
     key_columns = list(schema.primary_key)
-    if determinism != "best_effort":
+    if spec is not None:
+        key_columns = list(spec.keys) if spec.keys else key_columns
+        _require_key_columns(table, key_columns=key_columns)
+        prefer = tuple(name for name in spec.prefer_columns if name in table.column_names)
+        tie_breakers = tuple(spec.tie_breakers)
+        if spec.tier == "canonical" and spec.strategy == "first":
+            tie_breakers = tuple(_require_tie_breakers(table, tie_breakers=tie_breakers))
+        determinism = _determinism_for_spec(spec)
+        if determinism != "best_effort":
+            sort_keys = _dedupe_sort_keys(
+                table,
+                key_columns=key_columns,
+                prefer_columns=prefer,
+                tie_breakers=tie_breakers,
+            )
+            table = _stable_sort_for_dedupe(
+                table,
+                sort_keys=sort_keys,
+                hash_tiebreaker=determinism == "order_independent",
+            )
+        elif prefer:
+            table = _sort_table_for_preference(table, prefer)
+        return _drop_duplicates(table, key_columns=key_columns)
+    _require_key_columns(table, key_columns=key_columns)
+    resolved_legacy = legacy or DedupeLegacy()
+    if resolved_legacy.determinism != "best_effort":
         resolved_tie_breakers = _require_tie_breakers(
             table,
-            tie_breaker_columns=tie_breaker_columns or (),
+            tie_breakers=[
+                (name, "ascending") for name in resolved_legacy.tie_breaker_columns
+            ],
         )
-        prefer = tuple(name for name in prefer_columns or () if name in table.column_names)
+        prefer = tuple(
+            name
+            for name in resolved_legacy.prefer_columns
+            if name in table.column_names
+        )
         sort_keys = _dedupe_sort_keys(
             table,
             key_columns=key_columns,
             prefer_columns=prefer,
-            tie_breaker_columns=resolved_tie_breakers,
+            tie_breakers=resolved_tie_breakers,
         )
         table = _stable_sort_for_dedupe(
             table,
             sort_keys=sort_keys,
-            hash_tiebreaker=determinism == "order_independent",
+            hash_tiebreaker=resolved_legacy.determinism == "order_independent",
         )
-    elif prefer_columns:
-        prefer = [name for name in prefer_columns if name in set(table.column_names)]
+    elif resolved_legacy.prefer_columns:
+        prefer = [
+            name
+            for name in resolved_legacy.prefer_columns
+            if name in set(table.column_names)
+        ]
         if prefer:
             table = _sort_table_for_preference(table, prefer)
+    return _drop_duplicates(table, key_columns=key_columns)
+
+
+def _drop_duplicates(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+) -> pa.Table:
     try:
         return table.drop_duplicates(key_columns)
     except (AttributeError, pa.ArrowNotImplementedError, pa.ArrowTypeError):
@@ -199,4 +287,11 @@ def dedupe_table_for_table(
         return pa.Table.from_pylist(rows, schema=table.schema)
 
 
-__all__ = ["DedupeDeterminism", "dedupe_table_for_table"]
+__all__ = [
+    "DedupeDeterminism",
+    "DedupeLegacy",
+    "DedupeSpec",
+    "DedupeStrategy",
+    "DedupeTier",
+    "dedupe_table_for_table",
+]

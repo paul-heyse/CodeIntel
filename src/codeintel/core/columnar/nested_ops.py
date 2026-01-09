@@ -71,6 +71,8 @@ def deep_cast_table_to_contract(table: pa.Table, contract_schema: pa.Schema) -> 
 def deep_cast_array(
     values: pa.Array | pa.ChunkedArray,
     target_type: pa.DataType,
+    *,
+    cast_options: pc.CastOptions | None = None,
 ) -> pa.Array | pa.ChunkedArray:
     """Recursively cast nested Arrow arrays.
 
@@ -80,6 +82,8 @@ def deep_cast_array(
         Array or chunked array to cast.
     target_type
         Target Arrow data type.
+    cast_options
+        Optional Arrow cast options for explicit promotion control.
 
     Returns
     -------
@@ -92,57 +96,110 @@ def deep_cast_array(
     _ensure_allowed_promotion(source_type, target_type)
     if isinstance(values, pa.ChunkedArray):
         return pa.chunked_array(
-            [deep_cast_array(chunk, target_type) for chunk in values.chunks],
+            [
+                deep_cast_array(chunk, target_type, cast_options=cast_options)
+                for chunk in values.chunks
+            ],
             type=target_type,
         )
     if _is_list_view_type(source_type) or _is_list_view_type(target_type):
-        return pc.cast(values, target_type, safe=True)
+        if cast_options is None:
+            return pc.cast(values, target_type, safe=True)
+        return pc.cast(values, options=cast_options)
     if pa.types.is_struct(target_type):
-        casted = _cast_struct(values, target_type)
+        casted = _cast_struct(values, target_type, cast_options=cast_options)
     elif _is_list_type(target_type):
-        casted = _cast_list(values, target_type)
+        casted = _cast_list(values, target_type, cast_options=cast_options)
     elif pa.types.is_map(target_type):
-        casted = _cast_map(values, target_type)
-    else:
+        casted = _cast_map(values, target_type, cast_options=cast_options)
+    elif cast_options is None:
         casted = pc.cast(values, target_type, safe=True)
+    else:
+        casted = pc.cast(values, options=cast_options)
     return casted
 
 
 def is_allowed_promotion(source_type: pa.DataType, target_type: pa.DataType) -> bool:
-    """Return True when a promotion from source to target is allowed."""
+    """Return True when a promotion from source to target is allowed.
+
+    Returns
+    -------
+    bool
+        True when the promotion is allowed.
+    """
     source_type = _unwrap_dictionary(source_type)
     target_type = _unwrap_dictionary(target_type)
     if source_type.equals(target_type):
         return True
     if pa.types.is_null(source_type):
         return True
+    list_allowed = _list_promotion_allowed(source_type, target_type)
+    if list_allowed is not None:
+        return list_allowed
+    struct_allowed = _struct_promotion_allowed_if_struct(source_type, target_type)
+    if struct_allowed is not None:
+        return struct_allowed
+    map_allowed = _map_promotion_allowed_if_map(source_type, target_type)
+    if map_allowed is not None:
+        return map_allowed
+    return _scalar_promotion_allowed(source_type, target_type)
+
+
+def _list_promotion_allowed(
+    source_type: pa.DataType,
+    target_type: pa.DataType,
+) -> bool | None:
     source_list = _list_kind(source_type)
     target_list = _list_kind(target_type)
-    if source_list or target_list:
-        if source_list != target_list:
-            return False
-        if source_list == "fixed_size_list" and source_type.list_size != target_type.list_size:
-            return False
-        return is_allowed_promotion(source_type.value_type, target_type.value_type)
-    if pa.types.is_struct(source_type) or pa.types.is_struct(target_type):
-        if not (pa.types.is_struct(source_type) and pa.types.is_struct(target_type)):
-            return False
-        return _struct_promotion_allowed(source_type, target_type)
-    if pa.types.is_map(source_type) or pa.types.is_map(target_type):
-        if not (pa.types.is_map(source_type) and pa.types.is_map(target_type)):
-            return False
-        return _map_promotion_allowed(source_type, target_type)
-    if _is_int_promotion(source_type, target_type):
-        return True
-    if _is_uint_promotion(source_type, target_type):
-        return True
-    if _is_float_promotion(source_type, target_type):
-        return True
-    if _is_string_promotion(source_type, target_type):
-        return True
-    if _is_timestamp_promotion(source_type, target_type):
-        return True
-    return False
+    if not source_list and not target_list:
+        return None
+    if source_list != target_list:
+        return False
+    if source_list == "fixed_size_list" and source_type.list_size != target_type.list_size:
+        return False
+    return is_allowed_promotion(source_type.value_type, target_type.value_type)
+
+
+def _struct_promotion_allowed_if_struct(
+    source_type: pa.DataType,
+    target_type: pa.DataType,
+) -> bool | None:
+    if not (pa.types.is_struct(source_type) or pa.types.is_struct(target_type)):
+        return None
+    if not (pa.types.is_struct(source_type) and pa.types.is_struct(target_type)):
+        return False
+    return _struct_promotion_allowed(
+        cast("pa.StructType", source_type),
+        cast("pa.StructType", target_type),
+    )
+
+
+def _map_promotion_allowed_if_map(
+    source_type: pa.DataType,
+    target_type: pa.DataType,
+) -> bool | None:
+    if not (pa.types.is_map(source_type) or pa.types.is_map(target_type)):
+        return None
+    if not (pa.types.is_map(source_type) and pa.types.is_map(target_type)):
+        return False
+    return _map_promotion_allowed(
+        cast("pa.MapType", source_type),
+        cast("pa.MapType", target_type),
+    )
+
+
+def _scalar_promotion_allowed(
+    source_type: pa.DataType,
+    target_type: pa.DataType,
+) -> bool:
+    checks = (
+        _is_int_promotion,
+        _is_uint_promotion,
+        _is_float_promotion,
+        _is_string_promotion,
+        _is_timestamp_promotion,
+    )
+    return any(check(source_type, target_type) for check in checks)
 
 
 def _ensure_allowed_promotion(source_type: pa.DataType, target_type: pa.DataType) -> None:
@@ -250,36 +307,51 @@ def make_extras_kv_map(
     )
 
 
-def _cast_struct(values: pa.Array, target_type: pa.StructType) -> pa.Array:
+def _cast_struct(
+    values: pa.Array,
+    target_type: pa.StructType,
+    *,
+    cast_options: pc.CastOptions | None = None,
+) -> pa.Array:
     arrays: list[pa.Array | pa.ChunkedArray] = []
     fields: list[pa.Field] = []
     for field in target_type:
         if field.name in values.type:
             child = values.field(field.name)
-            arrays.append(deep_cast_array(child, field.type))
+            arrays.append(deep_cast_array(child, field.type, cast_options=cast_options))
         else:
             arrays.append(pa.nulls(len(values), type=field.type))
         fields.append(field)
     return pa.StructArray.from_arrays(arrays, fields=fields)
 
 
-def _cast_list(values: pa.Array, target_type: pa.DataType) -> pa.Array:
+def _cast_list(
+    values: pa.Array,
+    target_type: pa.DataType,
+    *,
+    cast_options: pc.CastOptions | None = None,
+) -> pa.Array:
     if not _is_list_type(target_type):
         msg = "target list type is required"
         raise TypeError(msg)
     offsets = values.offsets
     value_type = target_type.value_type
-    casted_values = deep_cast_array(values.values, value_type)
+    casted_values = deep_cast_array(values.values, value_type, cast_options=cast_options)
     if pa.types.is_fixed_size_list(target_type):
         return pa.FixedSizeListArray.from_arrays(casted_values, target_type.list_size)
     return pa.ListArray.from_arrays(offsets, casted_values, type=target_type)
 
 
-def _cast_map(values: pa.Array, target_type: pa.MapType) -> pa.Array:
+def _cast_map(
+    values: pa.Array,
+    target_type: pa.MapType,
+    *,
+    cast_options: pc.CastOptions | None = None,
+) -> pa.Array:
     key_type = target_type.key_type
     item_type = target_type.item_type
-    keys = deep_cast_array(values.keys, key_type)
-    items = deep_cast_array(values.items, item_type)
+    keys = deep_cast_array(values.keys, key_type, cast_options=cast_options)
+    items = deep_cast_array(values.items, item_type, cast_options=cast_options)
     return pa.MapArray.from_arrays(values.offsets, keys, items, type=target_type)
 
 
@@ -363,19 +435,20 @@ def _is_float_promotion(source_type: pa.DataType, target_type: pa.DataType) -> b
 
 
 def _is_string_promotion(source_type: pa.DataType, target_type: pa.DataType) -> bool:
-    if pa.types.is_string(source_type) and pa.types.is_large_string(target_type):
-        return True
-    if pa.types.is_string(source_type) and pa.types.is_string(target_type):
-        return True
-    if pa.types.is_large_string(source_type) and pa.types.is_large_string(target_type):
-        return True
-    return False
+    return (
+        (pa.types.is_string(source_type) and pa.types.is_large_string(target_type))
+        or (pa.types.is_string(source_type) and pa.types.is_string(target_type))
+        or (pa.types.is_large_string(source_type) and pa.types.is_large_string(target_type))
+    )
 
 
 def _is_timestamp_promotion(source_type: pa.DataType, target_type: pa.DataType) -> bool:
-    if not (pa.types.is_timestamp(source_type) and pa.types.is_timestamp(target_type)):
-        return False
-    return source_type.unit == target_type.unit and source_type.tz == target_type.tz
+    return (
+        pa.types.is_timestamp(source_type)
+        and pa.types.is_timestamp(target_type)
+        and source_type.unit == target_type.unit
+        and source_type.tz == target_type.tz
+    )
 
 
 def _struct_promotion_allowed(source_type: pa.StructType, target_type: pa.StructType) -> bool:

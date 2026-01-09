@@ -59,6 +59,7 @@ from codeintel.build.tabular.finalize_ops import (
     FinalizeSpec,
     finalize_join_keys,
     finalize_table,
+    record_join_precheck_errors,
 )
 from codeintel.build.tabular.nested_ops import deep_cast_table_to_contract, make_extras_struct
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan, materialize_plan
@@ -478,6 +479,12 @@ def _precheck_join_table(
                 target_name=SYNTAX_AUGMENT_TARGET_NAME,
             ),
         )
+    record_join_precheck_errors(
+        result,
+        table_key=table_key,
+        target_name=SYNTAX_AUGMENT_TARGET_NAME,
+        join_keys=join_keys,
+    )
     _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
     return result.good
 

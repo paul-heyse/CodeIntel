@@ -324,7 +324,7 @@ def test_symbol_and_config_metrics_populate_and_views_create(
     config_value_rows = _records_for_table(
         test_ctx,
         "analytics.config_values",
-        ["repo", "commit", "key", "reference_modules"],
+        ["repo", "commit", "key", "extras"],
     )
     _write_config_graph_metrics(
         test_ctx,

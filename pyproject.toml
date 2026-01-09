@@ -132,6 +132,7 @@ dependencies = [
     "rustworkx>=0.17.1",
     "pip>=25.3",
     "setuptools>=80.9.0",
+    "datafusion>=50.1.0",
 ]
 
 [project.scripts]

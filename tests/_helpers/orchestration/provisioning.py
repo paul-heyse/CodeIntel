@@ -343,9 +343,9 @@ def _config_bipartite_for_graph_metrics(
 ) -> RxGraphStore:
     config_rows = _fetch_rows(
         gateway,
-        "SELECT repo, commit, key, reference_modules "
+        "SELECT repo, commit, key, extras "
         "FROM analytics.config_values WHERE repo = ? AND commit = ?",
-        ("repo", "commit", "key", "reference_modules"),
+        ("repo", "commit", "key", "extras"),
         [snapshot.repo, snapshot.commit],
     )
     return ensure_store(

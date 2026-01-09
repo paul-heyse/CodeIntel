@@ -42,6 +42,8 @@ if TYPE_CHECKING:
     from polars import LazyFrame
     from pyarrow.dataset import Scanner
 
+    from codeintel.core.columnar.plan_ops import ExternalPlanSpec
+
     type PolarsLazyFrame = LazyFrame
 else:
     type PolarsLazyFrame = object
@@ -78,7 +80,13 @@ class DatasetScanOptions:
     def projection_columns(
         self,
     ) -> Sequence[str] | Mapping[str, ds.Expression] | None:
-        """Return projection columns merged with provenance columns."""
+        """Return projection columns merged with provenance columns.
+
+        Returns
+        -------
+        Sequence[str] | Mapping[str, ds.Expression] | None
+            Projection columns including provenance columns.
+        """
         return _merge_scan_columns(self.columns, self.provenance_columns)
 
 
@@ -89,6 +97,7 @@ class QueryPlanSpec:
     table_key: str
     columns: tuple[str, ...]
     filter_expression: ds.Expression | None
+    external_plan: ExternalPlanSpec | None = None
 
 
 _ARROW_THREADING_CONFIGURED = threading.Event()

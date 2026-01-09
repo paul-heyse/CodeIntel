@@ -10,10 +10,32 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
-from codeintel.core.columnar.dedupe_ops import DedupeDeterminism, dedupe_table_for_table
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.dedupe_ops import (
+    DedupeDeterminism,
+    DedupeLegacy,
+    DedupeSpec,
+    DedupeStrategy,
+    DedupeTier,
+    dedupe_table_for_table,
+)
+from codeintel.core.columnar.kernels import (
+    SortKey,
+    list_value_length,
+    stable_sort_table,
+    struct_field,
+)
+from codeintel.core.columnar.nested_ops import (
+    deep_cast_table_to_contract,
+    unify_schemas_with_contract_first,
+)
 from codeintel.core.columnar.schema_alignment import (
     align_table_to_contract,
     extras_policy_from_schema,
+)
+from codeintel.core.columnar.schema_ops import (
+    DEFAULT_SCHEMA_PROMOTE_OPTIONS,
+    SchemaPromoteOptions,
 )
 from codeintel.core.columnar.table_utils import empty_table_for_table
 from codeintel.core.columnar.type_normalization import (
@@ -38,6 +60,10 @@ class FinalizeDedupe:
     enabled: bool = True
     determinism: DedupeDeterminism = "best_effort"
     tie_breaker_columns: Sequence[str] = ()
+    keys: Sequence[str] | None = None
+    tie_breakers: Sequence[SortKey] | None = None
+    tier: DedupeTier | None = None
+    strategy: DedupeStrategy | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,12 +111,14 @@ class FinalizeSpec:
 
     table_key: str
     mode: FinalizeMode
+    schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
     required_non_null: Sequence[str] = ()
     invariants: Sequence[FinalizeInvariant] = ()
     list_policies: Sequence[FinalizeListPolicy] = ()
     key_fields: Sequence[str] = ()
     context_fields: Sequence[str] = ()
     dedupe: FinalizeDedupe | None = None
+    order_by: Sequence[SortKey] = ()
     emit_artifacts: bool = False
     target_name: str | None = None
 
@@ -116,6 +144,14 @@ class FinalizeContext:
 
 
 @dataclass(frozen=True, slots=True)
+class _AlignedContext:
+    aligned: pa.Table
+    report: AlignmentReport | None
+    context_columns: Mapping[str, pa.Array | pa.ChunkedArray]
+    context_fields: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ErrorSpec:
     """Error metadata for finalize error tables."""
 
@@ -137,6 +173,51 @@ class AlignmentReport:
     missing_columns: tuple[str, ...]
     extra_columns: tuple[str, ...]
     coerced_columns: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class JoinPrecheckReport:
+    """Captured join precheck errors for persistence."""
+
+    table_key: str | None
+    target_name: str | None
+    join_keys: tuple[str, ...]
+    errors: pa.Table
+
+
+_JOIN_PRECHECK_REPORTS: list[JoinPrecheckReport] = []
+
+
+def record_join_precheck_errors(
+    result: FinalizeResult,
+    *,
+    table_key: str | None,
+    target_name: str | None,
+    join_keys: Sequence[str],
+) -> None:
+    """Capture join precheck errors for persistence."""
+    if result.errors.num_rows == 0:
+        return
+    report = JoinPrecheckReport(
+        table_key=table_key,
+        target_name=target_name,
+        join_keys=tuple(join_keys),
+        errors=result.errors,
+    )
+    _JOIN_PRECHECK_REPORTS.append(report)
+
+
+def drain_join_precheck_reports() -> tuple[JoinPrecheckReport, ...]:
+    """Return and clear stored join precheck diagnostics.
+
+    Returns
+    -------
+    tuple[JoinPrecheckReport, ...]
+        Collected join precheck reports.
+    """
+    reports = tuple(_JOIN_PRECHECK_REPORTS)
+    _JOIN_PRECHECK_REPORTS.clear()
+    return reports
 
 
 def finalize_table(
@@ -166,43 +247,186 @@ def finalize_table(
     if table.num_rows == 0:
         return _empty_finalize_result(spec)
 
-    context_fields = _resolve_context_fields(spec)
-    context_columns = _context_column_map(table, context_fields)
-    aligned, report = _align_table(table, spec, context_fields=context_fields)
-    if aligned is None:
-        return _missing_contract_result(table, spec, context_columns)
-
-    resolved_context_fields = _filter_context_fields(
-        aligned,
-        context_columns=context_columns,
-        fields=context_fields,
-    )
+    aligned_context, failure = _prepare_alignment(table, spec)
+    if failure is not None:
+        return failure
+    if aligned_context is None:
+        return _missing_contract_result(table, spec, context_columns={})
     context = FinalizeContext(
-        table=aligned,
-        row_id=pa.arange(0, aligned.num_rows),
-        context_columns=context_columns,
-        context_fields=resolved_context_fields,
+        table=aligned_context.aligned,
+        row_id=pa.arange(0, aligned_context.aligned.num_rows),
+        context_columns=aligned_context.context_columns,
+        context_fields=aligned_context.context_fields,
     )
     invariants = _resolve_invariants(spec)
     error_tables, masks = _collect_error_tables(context, spec, invariants=invariants)
     bad_mask = _combine_masks(masks)
-    good = _filter_good_rows(aligned, bad_mask)
-    good = _apply_dedupe(good, spec)
+    good = _filter_good_rows(context.table, bad_mask)
+    dedupe_spec = _dedupe_spec_from_finalize(spec)
+    good = _apply_dedupe(good, spec, dedupe_spec=dedupe_spec)
+    good = _apply_order_by(good, spec, dedupe_spec=dedupe_spec)
 
     errors = _concat_errors(
         error_tables,
-        aligned,
+        context.table,
         key_fields=spec.key_fields,
         context_fields=context.context_fields,
         context_columns=context.context_columns,
     )
-    alignment, stats = _build_artifacts(report, errors, spec)
+    alignment, stats = _build_artifacts(aligned_context.report, errors, spec)
 
     if spec.mode == "strict" and errors.num_rows:
         msg = f"Finalize strict mode: {errors.num_rows} invalid rows"
         raise ValueError(msg)
 
     return FinalizeResult(good=good, errors=errors, alignment=alignment, stats=stats)
+
+
+def finalize_join_keys(
+    table: pa.Table,
+    *,
+    required_non_null: Sequence[str],
+    key_fields: Sequence[str] = (),
+    context_fields: Sequence[str] = (),
+    stage: str = "schema",
+) -> FinalizeResult:
+    """Finalize a table by validating required join keys without a contract schema.
+
+    Parameters
+    ----------
+    table
+        Table to finalize.
+    required_non_null
+        Join key columns that must be non-null.
+    key_fields
+        Columns to copy into the error table for context.
+    context_fields
+        Additional context columns to copy into error rows.
+    stage
+        Error stage label for join-key failures.
+
+    Returns
+    -------
+    FinalizeResult
+        Finalize result with filtered good rows and error rows.
+    """
+    if table.num_rows == 0:
+        empty_errors = _empty_error_table(
+            table,
+            key_fields=key_fields,
+            context_fields=context_fields,
+            context_columns={},
+        )
+        return FinalizeResult(
+            good=table,
+            errors=empty_errors,
+            alignment=_empty_alignment_table(),
+            stats=_empty_stats_table(),
+        )
+    context_columns = _context_column_map(table, context_fields)
+    resolved_context_fields = _filter_context_fields(
+        table,
+        context_columns=context_columns,
+        fields=(*key_fields, *context_fields),
+    )
+    context = FinalizeContext(
+        table=table,
+        row_id=pa.arange(0, table.num_rows),
+        context_columns=context_columns,
+        context_fields=resolved_context_fields,
+    )
+    required_mask = _required_non_null_mask(table, required_non_null)
+    error_tables: list[pa.Table] = []
+    if required_mask is not None:
+        error_tables.append(
+            _error_table_from_mask(
+                context,
+                mask=required_mask,
+                spec=ErrorSpec(
+                    error_code="NULL_REQUIRED_FIELD",
+                    stage=stage,
+                    column="required_non_null",
+                    detail="missing required value",
+                    key_fields=key_fields,
+                    context_fields=resolved_context_fields,
+                ),
+            )
+        )
+    good = _filter_good_rows(table, required_mask)
+    errors = _concat_errors(
+        error_tables,
+        table,
+        key_fields=key_fields,
+        context_fields=resolved_context_fields,
+        context_columns=context_columns,
+    )
+    stats = _stats_table(errors)
+    return FinalizeResult(
+        good=good,
+        errors=errors,
+        alignment=_empty_alignment_table(),
+        stats=stats,
+    )
+
+
+def finalize_reader(
+    reader: pa.RecordBatchReader,
+    *,
+    spec: FinalizeSpec,
+) -> FinalizeResult:
+    """Finalize an Arrow reader against its contract and invariants.
+
+    Parameters
+    ----------
+    reader
+        RecordBatchReader to finalize.
+    spec
+        Finalize specification.
+
+    Returns
+    -------
+    FinalizeResult
+        Finalized result containing good rows, error rows, and artifacts.
+    """
+    table = reader_to_table(reader)
+    return finalize_table(table, spec=spec)
+
+
+def _prepare_alignment(
+    table: pa.Table,
+    spec: FinalizeSpec,
+) -> tuple[_AlignedContext | None, FinalizeResult | None]:
+    context_fields = _resolve_context_fields(spec)
+    context_columns = _context_column_map(table, context_fields)
+    aligned, report, cast_error = _align_table(table, spec, context_fields=context_fields)
+    if aligned is None:
+        if cast_error is not None:
+            return None, _cast_failure_result(
+                table,
+                spec,
+                context_columns=context_columns,
+                report=report,
+                detail=cast_error,
+            )
+        return None, _missing_contract_result(
+            table,
+            spec,
+            context_columns=context_columns,
+        )
+    resolved_context_fields = _filter_context_fields(
+        aligned,
+        context_columns=context_columns,
+        fields=context_fields,
+    )
+    return (
+        _AlignedContext(
+            aligned=aligned,
+            report=report,
+            context_columns=context_columns,
+            context_fields=resolved_context_fields,
+        ),
+        None,
+    )
 
 
 def _empty_finalize_result(spec: FinalizeSpec) -> FinalizeResult:
@@ -235,6 +459,27 @@ def _missing_contract_result(
     stats = _stats_table(errors)
     if spec.mode == "strict":
         msg = f"Missing contract schema for {spec.table_key}"
+        raise ValueError(msg)
+    return FinalizeResult(good=table, errors=errors, alignment=alignment, stats=stats)
+
+
+def _cast_failure_result(
+    table: pa.Table,
+    spec: FinalizeSpec,
+    *,
+    context_columns: Mapping[str, pa.Array | pa.ChunkedArray],
+    report: AlignmentReport | None,
+    detail: str,
+) -> FinalizeResult:
+    errors = _error_table_for_cast_failure(
+        table,
+        spec,
+        context_columns=context_columns,
+        detail=detail,
+    )
+    alignment, stats = _build_artifacts(report, errors, spec)
+    if spec.mode == "strict":
+        msg = f"Finalize strict mode: nested cast failed ({detail})"
         raise ValueError(msg)
     return FinalizeResult(good=table, errors=errors, alignment=alignment, stats=stats)
 
@@ -284,30 +529,100 @@ def _error_table_for_missing_contract(
     return pa.table(columns)
 
 
+def _error_table_for_cast_failure(
+    table: pa.Table,
+    spec: FinalizeSpec,
+    *,
+    context_columns: Mapping[str, pa.Array | pa.ChunkedArray],
+    detail: str,
+) -> pa.Table:
+    if table.num_rows == 0:
+        return _empty_error_table(
+            table,
+            key_fields=spec.key_fields,
+            context_fields=_filter_context_fields(
+                table,
+                context_columns=context_columns,
+                fields=_resolve_context_fields(spec),
+            ),
+            context_columns=context_columns,
+        )
+    row_id = pa.arange(0, table.num_rows)
+    indices = pa.array(range(table.num_rows), type=pa.int64())
+    columns = _error_columns(
+        row_id=row_id,
+        indices=indices,
+        spec=ErrorSpec(
+            error_code="NESTED_CAST_FAILED",
+            stage="alignment",
+            column="schema",
+            detail=detail,
+            key_fields=spec.key_fields,
+            context_fields=spec.context_fields,
+        ),
+    )
+    _add_context_columns(
+        columns,
+        context=context_columns,
+        table=table,
+        fields=_filter_context_fields(
+            table,
+            context_columns=context_columns,
+            fields=_resolve_context_fields(spec),
+        ),
+        indices=indices,
+    )
+    return pa.table(columns)
+
+
 def _align_table(
     table: pa.Table,
     spec: FinalizeSpec,
     *,
     context_fields: Sequence[str],
-) -> tuple[pa.Table | None, AlignmentReport | None]:
+) -> tuple[pa.Table | None, AlignmentReport | None, str | None]:
     schema_service = get_schema_service()
     contract_schema = schema_service.get_arrow_schema(spec.table_key)
     if contract_schema is None:
-        return None, None
-    table_for_alignment = _drop_context_columns(table, contract_schema, context_fields)
+        return None, None, None
+    normalized_contract = _normalize_view_schema(contract_schema)
+    table_for_alignment = _drop_context_columns(table, normalized_contract, context_fields)
     report = _alignment_report(
-        contract_schema=contract_schema,
+        contract_schema=normalized_contract,
         incoming_schema=table_for_alignment.schema,
         table_key=spec.table_key,
         target_name=spec.target_name,
         row_count=table.num_rows,
     )
+    try:
+        unify_schemas_with_contract_first(
+            normalized_contract,
+            [_normalize_view_schema(table_for_alignment.schema)],
+            promote=spec.schema_promote_options,
+        )
+    except (pa.ArrowInvalid, pa.ArrowTypeError, TypeError, ValueError) as exc:
+        return None, report, str(exc)
     aligned = align_table_to_contract(
         table_for_alignment,
-        contract_schema,
-        extras_policy=extras_policy_from_schema(contract_schema),
+        normalized_contract,
+        extras_policy=extras_policy_from_schema(normalized_contract),
+        schema_promote_options=spec.schema_promote_options,
     )
-    return aligned, report
+    cast_schema = _contract_cast_schema(
+        contract_schema=normalized_contract,
+        aligned_schema=aligned.schema,
+    )
+    try:
+        aligned_cast = deep_cast_table_to_contract(aligned, cast_schema)
+    except (
+        pa.ArrowInvalid,
+        pa.ArrowNotImplementedError,
+        pa.ArrowTypeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        return None, report, str(exc)
+    return aligned_cast, report, None
 
 
 def _alignment_report(
@@ -318,8 +633,8 @@ def _alignment_report(
     target_name: str | None,
     row_count: int,
 ) -> AlignmentReport:
-    contract_fields = {field.name: field.type for field in contract_schema}
-    incoming_fields = {field.name: field.type for field in incoming_schema}
+    contract_fields = {schema_field.name: schema_field.type for schema_field in contract_schema}
+    incoming_fields = {schema_field.name: schema_field.type for schema_field in incoming_schema}
     missing = tuple(name for name in contract_fields if name not in incoming_fields)
     extra = tuple(name for name in incoming_fields if name not in contract_fields)
     coerced: list[str] = []
@@ -346,6 +661,34 @@ def _normalize_type(data_type: pa.DataType) -> pa.DataType:
     return binary_view_cast_type(normalized)
 
 
+def _normalize_view_schema(schema: pa.Schema) -> pa.Schema:
+    normalized_fields = [
+        schema_field.with_type(normalized)
+        if (normalized := _normalize_type(schema_field.type)) != schema_field.type
+        else schema_field
+        for schema_field in schema
+    ]
+    if not any(
+        normalized_field.type != schema_field.type
+        for normalized_field, schema_field in zip(normalized_fields, schema, strict=True)
+    ):
+        return schema
+    return pa.schema(normalized_fields, metadata=schema.metadata)
+
+
+def _contract_cast_schema(
+    *,
+    contract_schema: pa.Schema,
+    aligned_schema: pa.Schema,
+) -> pa.Schema:
+    contract_by_name = {schema_field.name: schema_field for schema_field in contract_schema}
+    fields: list[pa.Field] = []
+    for schema_field in aligned_schema:
+        contract_field = contract_by_name.get(schema_field.name)
+        fields.append(contract_field or schema_field)
+    return pa.schema(fields, metadata=contract_schema.metadata)
+
+
 def _resolve_context_fields(spec: FinalizeSpec) -> tuple[str, ...]:
     return _dedupe_field_names((*spec.key_fields, *spec.context_fields))
 
@@ -356,11 +699,11 @@ def _filter_context_fields(
     context_columns: Mapping[str, pa.Array | pa.ChunkedArray],
     fields: Sequence[str],
 ) -> tuple[str, ...]:
-    resolved: list[str] = []
-    for name in _dedupe_field_names(fields):
-        if name in table.column_names or name in context_columns:
-            resolved.append(name)
-    return tuple(resolved)
+    return tuple(
+        name
+        for name in _dedupe_field_names(fields)
+        if name in table.column_names or name in context_columns
+    )
 
 
 def _dedupe_field_names(fields: Sequence[str]) -> tuple[str, ...]:
@@ -536,17 +879,79 @@ def _filter_good_rows(
     return table.filter(good_mask)
 
 
-def _apply_dedupe(table: pa.Table, spec: FinalizeSpec) -> pa.Table:
+def _dedupe_spec_from_finalize(spec: FinalizeSpec) -> DedupeSpec | None:
+    dedupe = spec.dedupe
+    if dedupe is None:
+        return None
+    if (
+        dedupe.keys is None
+        and dedupe.tie_breakers is None
+        and dedupe.tier is None
+        and dedupe.strategy is None
+    ):
+        return None
+    return DedupeSpec(
+        keys=dedupe.keys or (),
+        prefer_columns=dedupe.prefer_columns,
+        tie_breakers=dedupe.tie_breakers or (),
+        tier=dedupe.tier or "canonical",
+        strategy=dedupe.strategy or "order_independent",
+    )
+
+
+def _apply_dedupe(
+    table: pa.Table,
+    spec: FinalizeSpec,
+    *,
+    dedupe_spec: DedupeSpec | None,
+) -> pa.Table:
     dedupe = spec.dedupe or FinalizeDedupe()
     if not dedupe.enabled:
         return table
-    return dedupe_table_for_table(
-        spec.table_key,
-        table,
+    if dedupe_spec is not None:
+        return dedupe_table_for_table(spec.table_key, table, spec=dedupe_spec)
+    legacy = DedupeLegacy(
         prefer_columns=dedupe.prefer_columns,
         determinism=dedupe.determinism,
         tie_breaker_columns=dedupe.tie_breaker_columns,
     )
+    return dedupe_table_for_table(
+        spec.table_key,
+        table,
+        legacy=legacy,
+    )
+
+
+def _default_order_by(
+    table: pa.Table,
+    *,
+    spec: FinalizeSpec,
+    dedupe_spec: DedupeSpec,
+) -> Sequence[SortKey]:
+    if dedupe_spec.keys:
+        return [(name, "ascending") for name in dedupe_spec.keys]
+    schema = get_schema_service().get_table_schema(spec.table_key)
+    if schema is None or not schema.primary_key:
+        return ()
+    return [(name, "ascending") for name in schema.primary_key if name in table.column_names]
+
+
+def _apply_order_by(
+    table: pa.Table,
+    spec: FinalizeSpec,
+    *,
+    dedupe_spec: DedupeSpec | None,
+) -> pa.Table:
+    if spec.order_by:
+        return stable_sort_table(table, sort_keys=spec.order_by)
+    dedupe = spec.dedupe or FinalizeDedupe()
+    if not dedupe.enabled or dedupe_spec is None or dedupe_spec.tier != "canonical":
+        return table
+    fallback = _default_order_by(table, spec=spec, dedupe_spec=dedupe_spec)
+    if not fallback:
+        msg = "Canonical finalize requires stable order_by keys."
+        raise ValueError(msg)
+    return stable_sort_table(table, sort_keys=fallback)
 
 
 def _build_artifacts(
@@ -582,12 +987,12 @@ def _invariant_mask(
     if invariant.column not in table.column_names:
         return None
     if invariant.kind == "list_alignment":
-        base = _list_value_length(table[invariant.column])
+        base = list_value_length(table[invariant.column])
         mismatch: pa.Array | pa.ChunkedArray | None = None
         for name in invariant.related:
             if name not in table.column_names:
                 continue
-            other = _list_value_length(table[name])
+            other = list_value_length(table[name])
             equal = _fill_null_false(_equal(base, other))
             diff = _invert(equal)
             mismatch = diff if mismatch is None else _or(mismatch, diff)
@@ -596,7 +1001,7 @@ def _invariant_mask(
         struct_col = table[invariant.column]
         missing: pa.Array | pa.ChunkedArray | None = None
         for field_name in invariant.related:
-            field_values = _struct_field(struct_col, field_name)
+            field_values = struct_field(struct_col, field_name)
             valid = _fill_null_false(_is_valid(field_values))
             invalid = _invert(valid)
             missing = invalid if missing is None else _or(missing, invalid)
@@ -786,17 +1191,6 @@ def _is_null(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
     return _compute_array("is_null", [values])
 
 
-def _list_value_length(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
-    return _compute_array("list_value_length", [values])
-
-
-def _struct_field(
-    values: pa.Array | pa.ChunkedArray,
-    field_name: str,
-) -> pa.Array | pa.ChunkedArray:
-    return _compute_array("struct_field", [values, field_name])
-
-
 def _equal(
     left: pa.Array | pa.ChunkedArray,
     right: pa.Array | pa.ChunkedArray,
@@ -828,11 +1222,17 @@ def _fill_null(
 
 
 __all__ = [
+    "AlignmentReport",
     "FinalizeDedupe",
     "FinalizeInvariant",
     "FinalizeListPolicy",
     "FinalizeResult",
     "FinalizeSpec",
+    "JoinPrecheckReport",
     "NullListPolicy",
+    "drain_join_precheck_reports",
+    "finalize_join_keys",
+    "finalize_reader",
     "finalize_table",
+    "record_join_precheck_errors",
 ]

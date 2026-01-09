@@ -12,7 +12,11 @@ from sqlglot import exp
 
 from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
-from codeintel.core.columnar.plan_ops import build_scan_plan
+from codeintel.core.columnar.plan_ops import (
+    ExternalPlanSpec,
+    build_scan_plan,
+    run_external_plan,
+)
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
@@ -59,6 +63,7 @@ class DuckDBRelationQueryBuilderError(ValueError):
 
 
 DEFAULT_FRAGMENT_READAHEAD = 2
+_EXTERNAL_PLAN_ENGINE_COLUMN = "__external_engine"
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +106,12 @@ class _AlignedScanContext:
 
 
 @dataclass(frozen=True, slots=True)
+class _PlanReaderSource:
+    reader: pa.RecordBatchReader
+    engine_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class _AstQueryComponents:
     select_exprs: list[Expression]
     predicate: Expression | None
@@ -140,6 +151,7 @@ def build_relation_plan(
             column_types=context.column_types,
         )
     )
+    external_plan = plan_spec.external_plan if plan_spec is not None else None
     projection_columns = None
     if not _ast_has_joins(ast):
         ast_columns = _projection_columns_from_ast(ast)
@@ -150,6 +162,9 @@ def build_relation_plan(
         else:
             projection_columns = ast_columns
     if _ast_has_joins(ast):
+        if external_plan is not None:
+            msg = "External plans are not supported for JOIN queries."
+            raise DuckDBRelationQueryBuilderError(msg)
         relation = _relation_from_ast(
             con=con,
             ast=ast,
@@ -163,6 +178,7 @@ def build_relation_plan(
             context=context,
             filter_expression=filter_expression,
             projection_columns=projection_columns,
+            external_plan=external_plan,
         )
     default_order_by: tuple[str, ...] = ()
     if not spec.order_by and not _ast_has_joins(ast):
@@ -252,6 +268,7 @@ def _resolve_relation(
     context: RelationBuildContext,
     filter_expression: ds.Expression | None,
     projection_columns: Sequence[str] | None = None,
+    external_plan: ExternalPlanSpec | None = None,
 ) -> DuckDBRelation:
     entry = context.dataset_manifests.get(table_key)
     if entry is None:
@@ -263,6 +280,7 @@ def _resolve_relation(
         context=context,
         filter_expression=filter_expression,
         projection_columns=projection_columns,
+        external_plan=external_plan,
     )
 
 
@@ -341,6 +359,7 @@ def _relation_for_table(
         table_key=table_key,
         context=context,
         filter_expression=None,
+        external_plan=None,
     )
 
 
@@ -705,14 +724,28 @@ def _finalize_reader_table(
     reader: pa.RecordBatchReader,
     *,
     table_key: str,
+    engine_name: str | None = None,
 ) -> pa.Table | None:
     try:
         table = reader_to_table(reader)
     except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         return None
+    context_fields: tuple[str, ...] = ()
+    if engine_name is not None:
+        if _EXTERNAL_PLAN_ENGINE_COLUMN not in table.column_names:
+            engine_values = pa.array(
+                [engine_name] * table.num_rows,
+                type=pa.string(),
+            )
+            table = table.append_column(_EXTERNAL_PLAN_ENGINE_COLUMN, engine_values)
+        context_fields = (_EXTERNAL_PLAN_ENGINE_COLUMN,)
     finalized = finalize_table(
         table,
-        spec=FinalizeSpec(table_key=table_key, mode="tolerant"),
+        spec=FinalizeSpec(
+            table_key=table_key,
+            mode="tolerant",
+            context_fields=context_fields,
+        ),
     )
     return finalized.good
 
@@ -720,36 +753,47 @@ def _finalize_reader_table(
 def _scan_aligned_sources(
     *,
     con: DuckDBConnection,
-    plan_reader: pa.RecordBatchReader | None,
+    plan_sources: Sequence[_PlanReaderSource],
     scanner: ds.Scanner,
     context: _AlignedScanContext,
 ) -> DuckDBRelation | None:
     extras_policy = extras_policy_from_schema(context.schema)
     sources: list[object] = []
-    readers: list[pa.RecordBatchReader] = []
-    if plan_reader is not None:
+    readers: list[_PlanReaderSource] = []
+    for source in plan_sources:
         readers.append(
-            align_reader_to_contract(
-                plan_reader,
-                context.schema,
-                extras_policy=extras_policy,
-                schema_promote_options=context.promote_options,
+            _PlanReaderSource(
+                reader=align_reader_to_contract(
+                    source.reader,
+                    context.schema,
+                    extras_policy=extras_policy,
+                    schema_promote_options=context.promote_options,
+                ),
+                engine_name=source.engine_name,
             )
         )
     readers.append(
-        align_reader_to_contract(
-            scanner.to_reader(),
-            context.schema,
-            extras_policy=extras_policy,
-            schema_promote_options=context.promote_options,
+        _PlanReaderSource(
+            reader=align_reader_to_contract(
+                scanner.to_reader(),
+                context.schema,
+                extras_policy=extras_policy,
+                schema_promote_options=context.promote_options,
+            ),
+            engine_name=None,
         )
     )
     for reader in readers:
-        if context.finalize_on_read:
-            finalized = _finalize_reader_table(reader, table_key=context.table_key)
-            sources.append(finalized if finalized is not None else reader)
+        finalize_reader = context.finalize_on_read or reader.engine_name is not None
+        if finalize_reader:
+            finalized = _finalize_reader_table(
+                reader.reader,
+                table_key=context.table_key,
+                engine_name=reader.engine_name,
+            )
+            sources.append(finalized if finalized is not None else reader.reader)
         else:
-            sources.append(reader)
+            sources.append(reader.reader)
     for source in sources:
         relation = _try_scan_arrow_relation(con=con, source=source)
         if relation is not None:
@@ -760,12 +804,11 @@ def _scan_aligned_sources(
 def _scan_unaligned_sources(
     *,
     con: DuckDBConnection,
-    plan_reader: pa.RecordBatchReader | None,
+    plan_sources: Sequence[_PlanReaderSource],
     scanner: ds.Scanner,
 ) -> DuckDBRelation | None:
     sources: list[object] = []
-    if plan_reader is not None:
-        sources.append(plan_reader)
+    sources.extend(source.reader for source in plan_sources)
     sources.append(scanner)
     sources.append(scanner.to_reader())
     for source in sources:
@@ -775,6 +818,37 @@ def _scan_unaligned_sources(
     return None
 
 
+def _external_plan_reader(
+    *,
+    plan_spec: ExternalPlanSpec,
+    dataset: ds.Dataset,
+    filter_expression: ds.Expression | None,
+    projection_columns: Sequence[str] | None,
+    context: RelationBuildContext,
+) -> pa.RecordBatchReader:
+    use_threads = context.scan_options.use_threads
+    resolved_use_threads = use_threads if use_threads is not None else True
+    try:
+        return run_external_plan(
+            plan_spec,
+            dataset=dataset,
+            filter_expr=filter_expression,
+            columns=projection_columns,
+            scan_options=context.scan_options,
+            use_threads=resolved_use_threads,
+        )
+    except (
+        pa.ArrowInvalid,
+        pa.ArrowNotImplementedError,
+        pa.ArrowTypeError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        msg = f"External plan runner failed for engine '{plan_spec.engine}'."
+        raise DuckDBRelationQueryBuilderError(msg) from exc
+
+
 def _scan_dataset(
     *,
     con: DuckDBConnection,
@@ -782,6 +856,7 @@ def _scan_dataset(
     context: RelationBuildContext,
     filter_expression: ds.Expression | None,
     projection_columns: Sequence[str] | None,
+    external_plan: ExternalPlanSpec | None,
 ) -> DuckDBRelation:
     schema = dataset_schema_for_entry(entry) or context.contract_schema
     scan_paths = _parquet_scan_paths(entry)
@@ -795,12 +870,29 @@ def _scan_dataset(
     if relation is not None:
         return relation
     dataset = dataset_for_entry(entry)
+    plan_sources: list[_PlanReaderSource] = []
+    if external_plan is not None:
+        external_reader = _external_plan_reader(
+            plan_spec=external_plan,
+            dataset=dataset,
+            filter_expression=filter_expression,
+            projection_columns=projection_columns,
+            context=context,
+        )
+        plan_sources.append(
+            _PlanReaderSource(
+                reader=external_reader,
+                engine_name=external_plan.engine,
+            )
+        )
     plan_reader = _plan_scan_reader(
         dataset,
         filter_expression=filter_expression,
         projection_columns=projection_columns,
         context=context,
     )
+    if plan_reader is not None:
+        plan_sources.append(_PlanReaderSource(reader=plan_reader))
     options = DatasetScannerOptions(
         batch_size=context.scan_options.batch_size,
         batch_readahead=context.scan_options.batch_readahead,
@@ -827,7 +919,7 @@ def _scan_dataset(
     if schema is not None:
         relation = _scan_aligned_sources(
             con=con,
-            plan_reader=plan_reader,
+            plan_sources=plan_sources,
             scanner=scanner,
             context=_AlignedScanContext(
                 schema=schema,
@@ -841,7 +933,7 @@ def _scan_dataset(
         return scan_arrow(con, source=scanner)
     relation = _scan_unaligned_sources(
         con=con,
-        plan_reader=plan_reader,
+        plan_sources=plan_sources,
         scanner=scanner,
     )
     if relation is not None:

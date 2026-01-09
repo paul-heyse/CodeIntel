@@ -24,7 +24,6 @@ from codeintel.build.analytics.compute.dependencies.detection import (
     group_calls_by_library,
 )
 from codeintel.build.analytics.dependencies import load_config_key_map
-from codeintel.core.serialization.payload import encode_payload
 from tests._helpers.analytics_samples import (
     dependency_alias_sources,
     dependency_calls_sample,
@@ -98,9 +97,8 @@ def test_load_config_keys_filters_repo(dependencies_ctx: DependenciesFixture) ->
     con.executemany(
         """
         INSERT INTO analytics.config_values (
-            repo, commit, config_path, format, key, reference_paths,
-            reference_modules, reference_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            repo, commit, config_path, format, key, extras, reference_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -109,8 +107,7 @@ def test_load_config_keys_filters_repo(dependencies_ctx: DependenciesFixture) ->
                 "cfg/other.yaml",
                 "yaml",
                 "feature.flag",
-                encode_payload(["cfg/other.yaml"]),
-                encode_payload(["other.mod"]),
+                {"reference_paths": ["cfg/other.yaml"], "reference_modules": ["other.mod"]},
                 1,
             )
         ],

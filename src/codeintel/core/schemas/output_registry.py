@@ -4191,7 +4191,13 @@ def _build_output_table_schemas() -> dict[str, TableSchema]:
 
 
 def is_allowed_output_promotion(source: ColumnType, target: ColumnType) -> bool:
-    """Return True when output schema promotions are allowed."""
+    """Return True when output schema promotions are allowed.
+
+    Returns
+    -------
+    bool
+        True when the promotion is allowed.
+    """
     return is_allowed_column_promotion(source, target)
 
 

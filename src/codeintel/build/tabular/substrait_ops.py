@@ -16,12 +16,29 @@ if TYPE_CHECKING:
 
 
 def substrait_available() -> bool:
-    """Return True when pyarrow.substrait is available."""
+    """Return True when pyarrow.substrait is available.
+
+    Returns
+    -------
+    bool
+        True when Substrait support is available.
+    """
     return _substrait is not None
 
 
 def require_substrait() -> substrait:
-    """Return the Substrait module or raise when unavailable."""
+    """Return the Substrait module or raise when unavailable.
+
+    Returns
+    -------
+    pyarrow.substrait
+        Substrait module handle.
+
+    Raises
+    ------
+    RuntimeError
+        Raised when Substrait support is unavailable.
+    """
     if _substrait is None:
         msg = "pyarrow.substrait is unavailable; install pyarrow with Substrait support."
         raise RuntimeError(msg)
@@ -29,7 +46,18 @@ def require_substrait() -> substrait:
 
 
 def run_substrait_plan(plan: bytes | bytearray | memoryview) -> pa.RecordBatchReader:
-    """Execute a Substrait plan and return a RecordBatchReader."""
+    """Execute a Substrait plan and return a RecordBatchReader.
+
+    Parameters
+    ----------
+    plan
+        Serialized Substrait plan payload.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Record batch reader for the plan results.
+    """
     substrait = require_substrait()
     result = substrait.run_query(bytes(plan))
     return _reader_from_result(result)

@@ -14,6 +14,7 @@ __all__ = [
     "DEFAULT_ARROW_PARQUET_BUFFER_SIZE",
     "DEFAULT_ARROW_PARQUET_PRE_BUFFER",
     "DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM",
+    "DEFAULT_ARROW_PROVENANCE_COLUMNS",
     "DEFAULT_ARROW_USE_THREADS",
     "DUCKDB_DIALECT",
     "SCHEMAS",
@@ -60,3 +61,6 @@ DEFAULT_ARROW_IO_THREAD_MULTIPLIER = 2
 
 DEFAULT_ARROW_MIN_IO_THREADS = 8
 """Minimum IO threads when deriving Arrow IO thread count from CPU."""
+
+DEFAULT_ARROW_PROVENANCE_COLUMNS = ("__filename", "__fragment_index", "__batch_index")
+"""Default provenance columns for dataset scan debugging."""

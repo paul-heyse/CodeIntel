@@ -81,6 +81,9 @@ from codeintel.build.hamilton.hooks import (
     ProgressBarHook,
     build_hooks,
 )
+from codeintel.build.hamilton.join_precheck_issues import (
+    persist_join_precheck_issues,
+)
 from codeintel.build.hamilton.native.views.view_outputs import view_lineage_payload
 from codeintel.build.hamilton.optional_inputs import optional_inputs_for_target
 from codeintel.build.hamilton.post_run_quality_outputs import (
@@ -1832,6 +1835,7 @@ def _finalize_run(
     ]
     inputs.writer.save_run_targets(env=context.env, run_id=context.run_id, records=records)
     persist_contract_alignment_issues(env=context.env, run_id=context.run_id)
+    persist_join_precheck_issues(env=context.env, run_id=context.run_id)
     persist_contract_alignment_summary(env=context.env, run_id=context.run_id)
     persist_empty_dataset_issues(
         env=context.env,

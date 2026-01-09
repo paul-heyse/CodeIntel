@@ -22,6 +22,7 @@ from starlette.responses import FileResponse
 
 from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec
 from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.serving.export.engine import (
     ExportDelivery,
@@ -55,8 +56,6 @@ class ExportDispatchResult:
 
 
 LOG = logging.getLogger(__name__)
-_DEFAULT_PROVENANCE_FIELDS = ("__filename", "__fragment_index", "__batch_index")
-
 
 @dataclass(frozen=True, slots=True)
 class ExportMetricsContext:
@@ -141,6 +140,21 @@ def _finalize_log_hook(table_key: str) -> Callable[[FinalizeResult], None]:
                 table_key,
                 list(iter_rows(result.stats)),
             )
+            sample = next(iter_rows(result.errors), None)
+            if sample is not None:
+                context = {
+                    name: sample.get(name)
+                    for name in DEFAULT_ARROW_PROVENANCE_COLUMNS
+                    if name in sample
+                }
+                details = {
+                    key: sample.get(key)
+                    for key in ("error_code", "column", "detail")
+                    if key in sample
+                }
+                payload = {**details, **context}
+                if payload:
+                    LOG.warning("NDJSON finalize error sample for %s: %s", table_key, payload)
             logged_errors = True
         if result.alignment.num_rows and not logged_alignment:
             row = next(iter_rows(result.alignment), None)
@@ -210,7 +224,7 @@ async def dispatch_semantic_export(
             required_non_null=_required_non_null_columns(view_desc.table_key),
             dedupe=FinalizeDedupe(enabled=False),
             key_fields=tuple(view_desc.primary_key),
-            context_fields=_DEFAULT_PROVENANCE_FIELDS,
+            context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
             emit_artifacts=True,
         )
         response = ndjson_response_from_batches(

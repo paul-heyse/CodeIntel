@@ -68,6 +68,7 @@ from codeintel.build.tabular.finalize_ops import (
     FinalizeSpec,
     finalize_join_keys,
     finalize_table,
+    record_join_precheck_errors,
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -1432,6 +1433,12 @@ def _precheck_join_table(
                 target_name=SYMTABLE_TARGET_NAME,
             ),
         )
+    record_join_precheck_errors(
+        result,
+        table_key=table_key,
+        target_name=SYMTABLE_TARGET_NAME,
+        join_keys=join_keys,
+    )
     _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
     return result.good
 

@@ -165,7 +165,7 @@ def test_subsystem_profile_view_prefers_cache(docs_views_gateway: StorageGateway
         """
         INSERT INTO analytics.subsystem_profile_cache (
             repo, commit, subsystem_id, name, description, module_count,
-            modules_json, entrypoints_json, internal_edge_count,
+            extras, internal_edge_count,
             external_edge_count, fan_in, fan_out, function_count,
             avg_risk_score, max_risk_score, high_risk_function_count,
             risk_level, import_in_degree, import_out_degree, import_pagerank,
@@ -173,11 +173,11 @@ def test_subsystem_profile_view_prefers_cache(docs_views_gateway: StorageGateway
         )
         VALUES (
             'demo/repo', 'deadbeef', 'subsysdemo', 'Cached Name', 'cached',
-            ?, '[]', '[]', 1, 1, 2, 3, ?, 0.5, 0.9, 7, 'medium',
+            ?, ?, 1, 1, 2, 3, ?, 0.5, 0.9, 7, 'medium',
             0.1, 0.2, 0.3, 0.4, 0.5, 2, CURRENT_TIMESTAMP
         )
         """,
-        [EXPECTED_MODULE_COUNT_42, EXPECTED_FUNCTION_COUNT_4],
+        [EXPECTED_MODULE_COUNT_42, {"modules": [], "entrypoints": []}, EXPECTED_FUNCTION_COUNT_4],
     )
     row = docs_views_gateway.con.execute(
         """

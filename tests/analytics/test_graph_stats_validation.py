@@ -142,7 +142,7 @@ def test_graph_stats_include_symbol_and_config_graphs(graph_ctx: TestContext) ->
     config_rows = _records_for_table(
         graph_ctx,
         "analytics.config_values",
-        ["repo", "commit", "key", "reference_modules"],
+        ["repo", "commit", "key", "extras"],
     )
     config_bipartite = build_config_module_bipartite(
         config_rows,

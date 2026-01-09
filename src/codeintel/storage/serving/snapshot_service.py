@@ -398,6 +398,7 @@ def _dataset_read_parquet_relation(
             pa.ArrowInvalid,
             pa.ArrowNotImplementedError,
             pa.ArrowTypeError,
+            ValueError,
         ):
             good = deep_cast_table_to_contract(good, contract_schema)
         good = _apply_table_ordering(good, table_key=manifest.table_key)

@@ -291,7 +291,13 @@ def column_type_is_nested(value: ColumnType) -> bool:
 
 
 def is_allowed_column_promotion(source: ColumnType, target: ColumnType) -> bool:
-    """Return True when a column type promotion is explicitly allowed."""
+    """Return True when a column type promotion is explicitly allowed.
+
+    Returns
+    -------
+    bool
+        True when the promotion is allowed.
+    """
     source_norm = normalize_column_type(source)
     target_norm = normalize_column_type(target)
     if source_norm == target_norm:

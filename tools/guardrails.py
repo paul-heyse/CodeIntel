@@ -441,11 +441,13 @@ def _core_registry_issues() -> list[str]:
             column_name = getattr(column, "name", "<unknown>")
             if column_type == "JSON":
                 issues.append(
-                    f"{table_key}: column {column_name} declares JSON type (core JSON is boundary-only)"
+                    f"{table_key}: column {column_name} declares JSON type "
+                    "(core JSON is boundary-only)"
                 )
             if column_name.endswith("_json") and column_type in {"BLOB", "JSON"}:
                 issues.append(
-                    f"{table_key}: column {column_name} uses {column_type} (core JSON is boundary-only)"
+                    f"{table_key}: column {column_name} uses {column_type} "
+                    "(core JSON is boundary-only)"
                 )
 
     for table in OUTPUT_TABLE_SCHEMAS.values():

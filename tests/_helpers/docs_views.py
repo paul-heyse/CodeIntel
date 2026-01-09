@@ -65,12 +65,12 @@ def seed_subsystem(con: DuckDBPyConnection, *, overrides: dict[str, object] | No
         """
         INSERT OR REPLACE INTO analytics.subsystems (
             repo, commit, subsystem_id, name, description,
-            module_count, modules_json, entrypoints_json,
+            module_count, extras,
             internal_edge_count, external_edge_count, fan_in, fan_out,
             function_count, avg_risk_score, max_risk_score,
             high_risk_function_count, risk_level, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, '[]', '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
         [
             base["repo"],
@@ -79,6 +79,7 @@ def seed_subsystem(con: DuckDBPyConnection, *, overrides: dict[str, object] | No
             base["name"],
             base["description"],
             base["module_count"],
+            {"modules": [], "entrypoints": []},
             0,
             0,
             0,

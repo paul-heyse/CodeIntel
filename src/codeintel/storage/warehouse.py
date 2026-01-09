@@ -1058,6 +1058,7 @@ def _write_tabular(
                 pa.ArrowInvalid,
                 pa.ArrowNotImplementedError,
                 pa.ArrowTypeError,
+                ValueError,
             ):
                 table = deep_cast_table_to_contract(table, contract_schema)
         finalized = finalize_table(

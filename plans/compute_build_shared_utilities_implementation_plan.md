@@ -70,9 +70,14 @@
   in export logging.
 - Action Set 11 completed: plan materialization normalized across join-heavy pipelines and
   edge builder audit found no remaining non-CPG2 list payloads requiring explode conversion.
+- Non-graph analytics producers now emit typed extras (function_ast_features) and consumers
+  read extras across entrypoints/semantic_roles/tables_dependencies/config_graphs/graph_metrics,
+  with config graph views preferring extras.
+- Optional escape hatches implemented (Substrait/DataFusion wrappers) behind availability
+  checks for optional dependencies.
 - Pending migrations: schema snapshot refresh (deferred) + guardrails blocked by missing
-  analytics.config_references schema, optional escape hatches, and any new pipelines that
-  bypass shared scan/plan helpers.
+  analytics.config_references schema, expr/kernels adoption audit for long-tail pipelines,
+  and any new pipelines that bypass shared scan/plan helpers.
 
 ## Phase sequencing
 - Phase 0: Schema and contract updates (extras_json removal, extras/extras_kv additions).
@@ -515,12 +520,21 @@ Distinctive pattern to standardize
 
 Status
 - Implemented utilities + graph schema updates in `output_registry.py`; producer migrations
-  completed for graph + remaining CPG2/legacy planes; non-graph producers pending.
+  completed for graph + remaining CPG2/legacy planes; non-graph analytics producers migrated
+  (function_ast_features + entrypoints/semantic_roles/tables_dependencies/config_graphs/
+  graph_metrics) and config graph views read extras; remaining non-graph producers to audit.
 
 Target files
 - src/codeintel/build/tabular/nested_ops.py (new)
 - src/codeintel/core/schemas/output_registry.py (replace extras_json with extras/extras_kv)
 - src/codeintel/build/hamilton/contracts/schemas/pandera_schemas.py (if registered)
+- src/codeintel/build/hamilton/native/analytics/function_ast_features.py
+- src/codeintel/build/hamilton/native/analytics/entrypoints.py
+- src/codeintel/build/hamilton/native/analytics/semantic_roles.py
+- src/codeintel/build/hamilton/native/analytics/tables_dependencies.py
+- src/codeintel/build/hamilton/native/analytics/config_graphs.py
+- src/codeintel/build/hamilton/native/analytics/graph_metrics.py
+- src/codeintel/build/graphs/engine/views.py
 
 Representative pattern
 ```python
@@ -831,7 +845,7 @@ Distinctive pattern to standardize
 ### 15) Escape hatches (Substrait / DataFusion)
 
 Status
-- Not started (optional).
+- Implemented (optional).
 
 Target files
 - src/codeintel/build/tabular/substrait_ops.py (new, optional)
@@ -839,14 +853,27 @@ Target files
 
 Representative pattern
 ```python
-import pyarrow.substrait as ps
+from codeintel.build.tabular.datafusion_ops import (
+    datafusion_available,
+    register_arrow_table,
+    run_sql,
+    session_context,
+)
+from codeintel.build.tabular.substrait_ops import run_substrait_plan, substrait_available
 
-reader = ps.run_query(plan_bytes)
+if substrait_available():
+    reader = run_substrait_plan(plan_bytes)
+
+if datafusion_available():
+    ctx = session_context()
+    register_arrow_table(ctx, "nodes", nodes_table)
+    reader = run_sql(ctx, "select * from nodes")
 ```
 
 Distinctive pattern to standardize
 - Use Substrait for standardized plan interchange where Acero plans are generated externally.
 - Use DataFusion for complex relational cases Acero cannot express.
+- Use optional wrappers to avoid hard dependency edges and return streaming readers.
 
 
 ## Pilot plan: graph.cpg_edges_calls (call_wiring.py)

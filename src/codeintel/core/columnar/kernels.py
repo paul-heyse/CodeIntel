@@ -8,7 +8,12 @@ from typing import Literal
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from codeintel.core.columnar.compute_helpers import call_compute, require_array, sort_options
+from codeintel.core.columnar.compute_helpers import (
+    call_compute,
+    cast_options,
+    require_array,
+    sort_options,
+)
 
 SortKey = tuple[str, Literal["ascending", "descending"]]
 
@@ -46,6 +51,38 @@ def stable_sort_indices(
         return result
     msg = "Arrow compute sort_indices did not return an array."
     raise TypeError(msg)
+
+
+def stable_sort_table(
+    table: pa.Table,
+    *,
+    sort_keys: Sequence[SortKey],
+    null_placement: Literal["at_end", "at_start"] = "at_end",
+) -> pa.Table:
+    """Return a table sorted using stable sort indices.
+
+    Parameters
+    ----------
+    table
+        Table to sort.
+    sort_keys
+        Sequence of (column, order) pairs.
+    null_placement
+        Null placement policy.
+
+    Returns
+    -------
+    pyarrow.Table
+        Table sorted by the provided keys.
+    """
+    if table.num_rows <= 1 or not sort_keys:
+        return table
+    indices = stable_sort_indices(
+        table,
+        sort_keys=sort_keys,
+        null_placement=null_placement,
+    )
+    return table.take(indices)
 
 
 def coalesce(
@@ -165,6 +202,286 @@ def hash_struct_ordinal(
     return pc.cast(modded, pa.int64())
 
 
+def hash_struct_goid(
+    table: pa.Table,
+    *,
+    columns: Sequence[str],
+) -> pa.Array | pa.ChunkedArray:
+    """Hash columns into a deterministic GOID using Arrow kernels.
+
+    Parameters
+    ----------
+    table
+        Source table containing the columns to hash.
+    columns
+        Column names to hash together.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Decimal128 values derived from the hash kernel.
+
+    Raises
+    ------
+    RuntimeError
+        If the hash kernel is unavailable.
+    ValueError
+        If no columns are provided.
+    """
+    if not columns:
+        msg = "hash_struct_goid requires at least one column"
+        raise ValueError(msg)
+    try:
+        pc.get_function("hash")
+    except (AttributeError, KeyError):
+        msg = "Arrow hash kernel is unavailable; upgrade pyarrow to enable it."
+        raise RuntimeError(msg) from None
+    struct_values = _make_struct(
+        [table[column] for column in columns],
+        field_names=list(columns),
+    )
+    hashed = require_array(call_compute("hash", [struct_values]), name="hash")
+    return pc.cast(hashed, pa.decimal128(38, 0))
+
+
+def list_value_length(values: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    """Return list value lengths for list-like arrays.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Length of each list element.
+    """
+    return require_array(
+        call_compute("list_value_length", [values]),
+        name="list_value_length",
+    )
+
+
+def list_element(
+    values: pa.Array | pa.ChunkedArray,
+    *,
+    index: int,
+) -> pa.Array | pa.ChunkedArray:
+    """Return list elements at the provided index.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Array of list elements at the index.
+    """
+    return require_array(
+        call_compute("list_element", [values, index]),
+        name="list_element",
+    )
+
+
+def list_slice(
+    values: pa.Array | pa.ChunkedArray,
+    *,
+    start: int | None = None,
+    stop: int | None = None,
+) -> pa.Array | pa.ChunkedArray:
+    """Return list slices for each list element.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Array of list slices.
+    """
+    args: list[object] = [values]
+    if start is not None:
+        args.append(start)
+    if stop is not None:
+        args.append(stop)
+    return require_array(
+        call_compute("list_slice", args),
+        name="list_slice",
+    )
+
+
+def struct_field(
+    values: pa.Array | pa.ChunkedArray,
+    field_name: str,
+) -> pa.Array | pa.ChunkedArray:
+    """Return a struct field array for the provided field name.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Struct field values.
+
+    Raises
+    ------
+    TypeError
+        If the values are not struct arrays.
+    """
+    if not pa.types.is_struct(values.type):
+        msg = f"struct_field expects struct values but got {values.type}"
+        raise TypeError(msg)
+    return require_array(
+        call_compute("struct_field", [values, field_name]),
+        name="struct_field",
+    )
+
+
+def regex_match(
+    values: pa.Array | pa.ChunkedArray,
+    *,
+    pattern: str,
+    ignore_case: bool = False,
+) -> pa.Array | pa.ChunkedArray:
+    """Return a boolean mask for regex matches.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Boolean match mask.
+    """
+    options = _match_regex_options(pattern=pattern, ignore_case=ignore_case)
+    if options is None:
+        result = call_compute("match_substring_regex", [values, pattern])
+    else:
+        result = call_compute("match_substring_regex", [values], options=options)
+    return require_array(result, name="match_substring_regex")
+
+
+def regex_replace(
+    values: pa.Array | pa.ChunkedArray,
+    *,
+    pattern: str,
+    replacement: str,
+    ignore_case: bool = False,
+) -> pa.Array | pa.ChunkedArray:
+    """Return an array with regex replacements applied.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Array with substitutions applied.
+    """
+    options = _replace_regex_options(
+        pattern=pattern,
+        replacement=replacement,
+        ignore_case=ignore_case,
+    )
+    if options is None:
+        result = call_compute("replace_substring_regex", [values, pattern, replacement])
+    else:
+        result = call_compute("replace_substring_regex", [values], options=options)
+    return require_array(result, name="replace_substring_regex")
+
+
+def safe_cast(
+    values: pa.Array | pa.ChunkedArray,
+    *,
+    target_type: pa.DataType,
+) -> pa.Array | pa.ChunkedArray:
+    """Return safely cast values to a target type.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Casted values.
+    """
+    options = cast_options(target_type, safe=True)
+    return require_array(call_compute("cast", [values], options=options), name="cast")
+
+
+def safe_divide(
+    numerator: pa.Array | pa.ChunkedArray,
+    denominator: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    """Divide arrays while returning nulls on divide-by-zero.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Safe division results.
+    """
+    zero_mask = require_array(
+        call_compute(
+            "equal",
+            [denominator, pa.scalar(0, type=denominator.type)],
+        ),
+        name="equal",
+    )
+    null_denominator = pa.scalar(None, type=denominator.type)
+    safe_denominator = require_array(
+        call_compute("if_else", [zero_mask, null_denominator, denominator]),
+        name="if_else",
+    )
+    return require_array(
+        call_compute("divide", [numerator, safe_denominator]),
+        name="divide",
+    )
+
+
+def indices_nonzero(
+    mask: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray:
+    """Return indices where mask is non-zero/true.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Indices for true values.
+    """
+    return require_array(call_compute("indices_nonzero", [mask]), name="indices_nonzero")
+
+
+def replace_with_mask(
+    values: pa.Array | pa.ChunkedArray,
+    *,
+    mask: pa.Array | pa.ChunkedArray,
+    replacement: object,
+) -> pa.Array | pa.ChunkedArray:
+    """Replace values selected by a mask with a replacement.
+
+    Returns
+    -------
+    pyarrow.Array | pyarrow.ChunkedArray
+        Array with masked replacements applied.
+    """
+    return require_array(
+        call_compute("replace_with_mask", [values, mask, replacement]),
+        name="replace_with_mask",
+    )
+
+
+def _match_regex_options(
+    *,
+    pattern: str,
+    ignore_case: bool,
+) -> pc.FunctionOptions | None:
+    options_type = getattr(pc, "MatchSubstringRegexOptions", None)
+    if not callable(options_type):
+        return None
+    try:
+        return options_type(pattern=pattern, ignore_case=ignore_case)
+    except TypeError:
+        return options_type(pattern=pattern)
+
+
+def _replace_regex_options(
+    *,
+    pattern: str,
+    replacement: str,
+    ignore_case: bool,
+) -> pc.FunctionOptions | None:
+    options_type = getattr(pc, "ReplaceSubstringRegexOptions", None)
+    if not callable(options_type):
+        return None
+    try:
+        return options_type(
+            pattern=pattern,
+            replacement=replacement,
+            ignore_case=ignore_case,
+        )
+    except TypeError:
+        return options_type(pattern=pattern, replacement=replacement)
+
+
 def _make_struct(
     values: Sequence[pa.Array | pa.ChunkedArray],
     *,
@@ -179,6 +496,18 @@ def _make_struct(
 __all__ = [
     "case_when",
     "coalesce",
+    "hash_struct_goid",
     "hash_struct_ordinal",
+    "indices_nonzero",
+    "list_element",
+    "list_slice",
+    "list_value_length",
+    "regex_match",
+    "regex_replace",
+    "replace_with_mask",
+    "safe_cast",
+    "safe_divide",
     "stable_sort_indices",
+    "stable_sort_table",
+    "struct_field",
 ]

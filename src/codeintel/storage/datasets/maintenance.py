@@ -16,6 +16,7 @@ from codeintel.core.columnar.finalize_ops import (
     finalize_table,
 )
 from codeintel.core.columnar.normalization import normalize_table_for_compute
+from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetWriteOptions,
     ExistingDataBehavior,
@@ -240,6 +241,7 @@ def _scan_dataset_table(
         implicit_ordering=True,
         require_sequenced_output=True,
         metrics_enabled=True,
+        provenance_columns=DEFAULT_ARROW_PROVENANCE_COLUMNS,
     )
     reader, telemetry = scan_parquet_dataset_with_telemetry(
         dataset_root=dataset_root,
@@ -264,6 +266,7 @@ def _finalize_table_for_maintenance(*, table_key: str, table: pa.Table) -> pa.Ta
             mode="tolerant",
             required_non_null=_required_non_null_columns(table_key),
             dedupe=FinalizeDedupe(enabled=False),
+            context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
             emit_artifacts=True,
         ),
     )

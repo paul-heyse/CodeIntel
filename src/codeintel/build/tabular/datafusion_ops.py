@@ -18,33 +18,64 @@ except ImportError:
 class DataFusionDataFrame(Protocol):
     """Minimal DataFusion DataFrame protocol for Arrow materialization."""
 
-    def collect(self) -> Sequence[pa.RecordBatch] | pa.Table: ...
+    def collect(self) -> Sequence[pa.RecordBatch] | pa.Table:
+        """Collect results as record batches or a table."""
+        ...
 
-    def to_arrow_table(self) -> pa.Table: ...
+    def to_arrow_table(self) -> pa.Table:
+        """Return the result as an Arrow table."""
+        ...
 
-    def schema(self) -> pa.Schema: ...
+    def schema(self) -> pa.Schema:
+        """Return the DataFusion schema for the frame."""
+        ...
 
 
 @runtime_checkable
 class DataFusionSession(Protocol):
     """Minimal DataFusion SessionContext protocol."""
 
-    def sql(self, query: str) -> DataFusionDataFrame: ...
+    def sql(self, query: str) -> DataFusionDataFrame:
+        """Run a SQL query and return the DataFusion frame."""
+        ...
 
-    def register_table(self, name: str, table: object) -> None: ...
+    def register_table(self, name: str, table: object) -> None:
+        """Register a table in the session catalog."""
+        ...
 
-    def register_record_batches(self, name: str, batches: Sequence[pa.RecordBatch]) -> None: ...
+    def register_record_batches(self, name: str, batches: Sequence[pa.RecordBatch]) -> None:
+        """Register record batches in the session catalog."""
+        ...
 
-    def from_substrait(self, plan: bytes) -> DataFusionDataFrame: ...
+    def from_substrait(self, plan: bytes) -> DataFusionDataFrame:
+        """Build a DataFusion frame from a Substrait plan."""
+        ...
 
 
 def datafusion_available() -> bool:
-    """Return True when the DataFusion module is available."""
+    """Return True when the DataFusion module is available.
+
+    Returns
+    -------
+    bool
+        True when DataFusion can be imported.
+    """
     return _datafusion is not None
 
 
 def session_context() -> DataFusionSession:
-    """Return a DataFusion SessionContext or raise when unavailable."""
+    """Return a DataFusion SessionContext or raise when unavailable.
+
+    Returns
+    -------
+    DataFusionSession
+        Session context for DataFusion execution.
+
+    Raises
+    ------
+    RuntimeError
+        Raised when DataFusion or SessionContext is unavailable.
+    """
     if _datafusion is None:
         msg = "datafusion is unavailable; install datafusion to enable execution."
         raise RuntimeError(msg)
@@ -56,7 +87,22 @@ def session_context() -> DataFusionSession:
 
 
 def register_arrow_table(ctx: DataFusionSession, name: str, table: pa.Table) -> None:
-    """Register an Arrow table with a DataFusion context."""
+    """Register an Arrow table with a DataFusion context.
+
+    Parameters
+    ----------
+    ctx
+        DataFusion session context.
+    name
+        Table name to register.
+    table
+        Arrow table to register.
+
+    Raises
+    ------
+    RuntimeError
+        Raised when the context cannot register Arrow tables.
+    """
     register = getattr(ctx, "register_table", None)
     if callable(register):
         register(name, table)
@@ -70,7 +116,20 @@ def register_arrow_table(ctx: DataFusionSession, name: str, table: pa.Table) -> 
 
 
 def run_sql(ctx: DataFusionSession, query: str) -> pa.RecordBatchReader:
-    """Execute SQL in DataFusion and return a RecordBatchReader."""
+    """Execute SQL in DataFusion and return a RecordBatchReader.
+
+    Parameters
+    ----------
+    ctx
+        DataFusion session context.
+    query
+        SQL query string to execute.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Record batch reader for the query results.
+    """
     frame = ctx.sql(query)
     return _reader_from_frame(frame)
 
@@ -79,7 +138,25 @@ def run_substrait_plan(
     ctx: DataFusionSession,
     plan: bytes | bytearray | memoryview,
 ) -> pa.RecordBatchReader:
-    """Execute a Substrait plan in DataFusion and return a RecordBatchReader."""
+    """Execute a Substrait plan in DataFusion and return a RecordBatchReader.
+
+    Parameters
+    ----------
+    ctx
+        DataFusion session context.
+    plan
+        Serialized Substrait plan payload.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Record batch reader for the plan results.
+
+    Raises
+    ------
+    RuntimeError
+        Raised when the context does not support Substrait execution.
+    """
     builder = getattr(ctx, "from_substrait", None)
     if not callable(builder):
         msg = "DataFusion context does not support from_substrait."

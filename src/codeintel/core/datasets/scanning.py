@@ -25,6 +25,7 @@ from codeintel.core.constants import (
     DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
     DEFAULT_ARROW_PARQUET_PRE_BUFFER,
     DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
+    DEFAULT_ARROW_PROVENANCE_COLUMNS,
     DEFAULT_ARROW_USE_THREADS,
 )
 from codeintel.core.datasets.arrow_store import scan_dataset
@@ -64,6 +65,8 @@ class ParquetScanTelemetry:
     fragment_count: int | None
     row_count: int | None
     filter_expression: ds.Expression | None
+    projection_columns: tuple[str, ...] = ()
+    provenance_columns: tuple[str, ...] = ()
 
     def to_mapping(self) -> dict[str, object]:
         """Return a mapping representation for telemetry logging.
@@ -83,6 +86,10 @@ class ParquetScanTelemetry:
             payload["row_count"] = self.row_count
         if self.filter_expression is not None:
             payload["filter_expression"] = str(self.filter_expression)
+        if self.projection_columns:
+            payload["projection_columns"] = list(self.projection_columns)
+        if self.provenance_columns:
+            payload["provenance_columns"] = list(self.provenance_columns)
         return payload
 
 
@@ -154,7 +161,7 @@ def scan_parquet_dataset_with_telemetry(
         dataset=dataset,
         table_key=table_key,
         snapshot_id=snapshot_id,
-        filter_expression=scan_options.filter_expression,
+        scan_options=scan_options,
     )
     plan_reader = _plan_scan_reader(dataset, scan_options)
     if plan_reader is not None:
@@ -206,7 +213,7 @@ def _prepare_parquet_dataset(
         parquet_use_buffered_stream=resolved.parquet_use_buffered_stream,
         parquet_buffer_size=resolved.parquet_buffer_size,
         columns=resolved.columns,
-        provenance_columns=resolved.provenance_columns,
+        provenance_columns=_resolve_provenance_columns(resolved),
         implicit_ordering=resolved.implicit_ordering,
         require_sequenced_output=resolved.require_sequenced_output,
         metrics_enabled=resolved.metrics_enabled,
@@ -263,12 +270,17 @@ def scan_parquet_table(
     if reader is None:
         return None
     resolved = options or ParquetScanOptions()
+    provenance_columns = _resolve_provenance_columns(resolved)
     table = normalize_table_for_compute(reader_to_table(reader))
     if resolved.finalize_mode is None or resolved.columns is not None:
         return table
     finalized = finalize_table(
         table,
-        spec=FinalizeSpec(table_key=table_key, mode=resolved.finalize_mode),
+        spec=FinalizeSpec(
+            table_key=table_key,
+            mode=resolved.finalize_mode,
+            context_fields=provenance_columns,
+        ),
     )
     return finalized.good
 
@@ -278,7 +290,7 @@ def collect_parquet_scan_telemetry(
     dataset: ds.Dataset,
     table_key: str,
     snapshot_id: str,
-    filter_expression: ds.Expression | None,
+    scan_options: DatasetScanOptions,
 ) -> ParquetScanTelemetry:
     """Collect scan telemetry for a dataset scan plan.
 
@@ -291,7 +303,7 @@ def collect_parquet_scan_telemetry(
         dataset=dataset,
         table_key=table_key,
         snapshot_id=snapshot_id,
-        filter_expression=filter_expression,
+        scan_options=scan_options,
     )
 
 
@@ -300,14 +312,17 @@ def _collect_parquet_scan_telemetry(
     dataset: ds.Dataset,
     table_key: str,
     snapshot_id: str,
-    filter_expression: ds.Expression | None,
+    scan_options: DatasetScanOptions,
 ) -> ParquetScanTelemetry:
+    projection_columns = _projection_column_names(scan_options.projection_columns())
     return ParquetScanTelemetry(
         table_key=table_key,
         snapshot_id=snapshot_id,
-        fragment_count=_count_fragments(dataset, filter_expression),
-        row_count=_count_rows(dataset, filter_expression),
-        filter_expression=filter_expression,
+        fragment_count=_count_fragments(dataset, scan_options.filter_expression),
+        row_count=_count_rows(dataset, scan_options.filter_expression),
+        filter_expression=scan_options.filter_expression,
+        projection_columns=projection_columns,
+        provenance_columns=tuple(scan_options.provenance_columns),
     )
 
 
@@ -372,6 +387,24 @@ def _coerce_int(value: object) -> int | None:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return None
+
+
+def _projection_column_names(
+    columns: Sequence[str] | Mapping[str, ds.Expression] | None,
+) -> tuple[str, ...]:
+    if columns is None:
+        return ()
+    if isinstance(columns, Mapping):
+        return tuple(columns.keys())
+    return tuple(columns)
+
+
+def _resolve_provenance_columns(options: ParquetScanOptions) -> tuple[str, ...]:
+    if options.provenance_columns:
+        return tuple(options.provenance_columns)
+    if options.metrics_enabled:
+        return DEFAULT_ARROW_PROVENANCE_COLUMNS
+    return ()
 
 
 __all__ = [

@@ -12,6 +12,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable, table_to_reader
+from codeintel.core.columnar.nested_ops import deep_cast_array
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_metadata import decode_metadata
@@ -74,8 +75,8 @@ def align_reader_to_contract(
         If extras_policy is invalid or unexpected columns are present under
         a reject policy.
     """
-    normalized_contract = _normalize_string_view_schema(contract_schema)
-    normalized_incoming = _normalize_string_view_schema(reader.schema)
+    normalized_contract = _normalize_view_schema(contract_schema)
+    normalized_incoming = _normalize_view_schema(reader.schema)
     resolved_policy = extras_policy or extras_policy_from_schema(normalized_contract)
     _validate_extras_policy(resolved_policy)
     extras_column = _extras_column_name(normalized_contract)
@@ -197,11 +198,11 @@ def _target_schema(
     return base_schema.append(_extras_field(context.extras_column))
 
 
-def _normalize_string_view_schema(schema: pa.Schema) -> pa.Schema:
+def _normalize_view_schema(schema: pa.Schema) -> pa.Schema:
     fields: list[pa.Field] = []
     changed = False
     for field in schema:
-        normalized_type = binary_view_cast_type(string_view_cast_type(field.type))
+        normalized_type = _normalize_view_type(field.type)
         if normalized_type != field.type:
             updated_field = field.with_type(normalized_type)
             changed = True
@@ -211,6 +212,11 @@ def _normalize_string_view_schema(schema: pa.Schema) -> pa.Schema:
     if not changed:
         return schema
     return pa.schema(fields, metadata=schema.metadata)
+
+
+def _normalize_view_type(data_type: pa.DataType) -> pa.DataType:
+    normalized = string_view_cast_type(data_type)
+    return binary_view_cast_type(normalized)
 
 
 def _resolved_field(field: pa.Field, unified: pa.Schema) -> pa.Field:
@@ -277,6 +283,8 @@ def _coerce_array(
     cast_options: pc.CastOptions | None,
 ) -> pa.Array:
     try:
+        if _is_nested_type(field.type):
+            return deep_cast_array(array, field.type, cast_options=cast_options)
         return _cast_array(array, field.type, cast_options)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         if _is_json_field(field) and pa.types.is_string(field.type):
@@ -397,6 +405,28 @@ def _validate_extras_policy(extras_policy: ExtrasPolicy) -> None:
     if extras_policy not in EXTRAS_POLICIES:
         msg = f"Unsupported extras policy: {extras_policy!r}"
         raise ValueError(msg)
+
+
+def _is_nested_type(data_type: pa.DataType) -> bool:
+    return (
+        pa.types.is_struct(data_type)
+        or pa.types.is_map(data_type)
+        or _is_list_type(data_type)
+    )
+
+
+def _is_list_type(data_type: pa.DataType) -> bool:
+    is_list_view = getattr(pa.types, "is_list_view", None)
+    is_large_list_view = getattr(pa.types, "is_large_list_view", None)
+    list_view = bool(callable(is_list_view) and is_list_view(data_type))
+    large_list_view = bool(callable(is_large_list_view) and is_large_list_view(data_type))
+    return (
+        pa.types.is_list(data_type)
+        or pa.types.is_large_list(data_type)
+        or pa.types.is_fixed_size_list(data_type)
+        or list_view
+        or large_list_view
+    )
 
 
 __all__ = ["align_reader_to_contract", "extras_policy_from_schema"]

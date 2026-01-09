@@ -10,6 +10,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import table_rows
+from codeintel.build.hamilton.native.graphs.cpg.constants import CPG_TARGET_NAME
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     build_anchor_map,
     canonicalize_for_table,
@@ -31,6 +32,7 @@ from codeintel.build.tabular.finalize_ops import (
     FinalizeSpec,
     finalize_join_keys,
     finalize_table,
+    record_join_precheck_errors,
 )
 from codeintel.build.tabular.kernels import stable_sort_indices
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
@@ -176,6 +178,12 @@ def _precheck_join_table(
                 dedupe=FinalizeDedupe(enabled=False),
             ),
         )
+    record_join_precheck_errors(
+        result,
+        table_key=table_key,
+        target_name=CPG_TARGET_NAME,
+        join_keys=join_keys,
+    )
     _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
     return result.good
 

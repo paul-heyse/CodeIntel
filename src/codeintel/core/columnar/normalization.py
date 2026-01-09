@@ -43,8 +43,8 @@ def normalize_array(values: pa.Array | pa.ChunkedArray) -> pa.Array:
     raise TypeError(msg)
 
 
-def normalize_table(table: pa.Table) -> pa.Table:
-    """Unify dictionaries and combine chunks for compute-heavy operations.
+def normalize_table(table: pa.Table, *, combine_chunks: bool = True) -> pa.Table:
+    """Unify dictionaries and optionally combine chunks for compute-heavy operations.
 
     Parameters
     ----------
@@ -60,10 +60,11 @@ def normalize_table(table: pa.Table) -> pa.Table:
     if callable(unify):
         with contextlib.suppress(pa.ArrowInvalid):
             table = unify()
-    combine = getattr(table, "combine_chunks", None)
-    if callable(combine):
-        with contextlib.suppress(pa.ArrowInvalid):
-            table = combine()
+    if combine_chunks:
+        combine = getattr(table, "combine_chunks", None)
+        if callable(combine):
+            with contextlib.suppress(pa.ArrowInvalid):
+                table = combine()
     return table
 
 
@@ -78,7 +79,11 @@ def normalize_array_for_compute(values: pa.Array | pa.ChunkedArray) -> pa.Array:
     return normalize_array(values)
 
 
-def normalize_table_for_compute(table: pa.Table) -> pa.Table:
+def normalize_table_for_compute(
+    table: pa.Table,
+    *,
+    combine_chunks: bool = True,
+) -> pa.Table:
     """Normalize a table for compute-heavy kernels.
 
     Returns
@@ -87,7 +92,7 @@ def normalize_table_for_compute(table: pa.Table) -> pa.Table:
         Normalized table with unified dictionaries and combined chunks.
     """
     configure_arrow_threading()
-    return normalize_table(table)
+    return normalize_table(table, combine_chunks=combine_chunks)
 
 
 __all__ = [

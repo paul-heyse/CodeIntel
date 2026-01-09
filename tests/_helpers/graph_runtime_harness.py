@@ -656,7 +656,7 @@ def _config_value_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object
         table = (
             ctx.gateway.con.execute(
                 """
-            SELECT repo, commit, config_path, key, reference_paths, reference_modules
+            SELECT repo, commit, config_path, key, extras
             FROM analytics.config_values
             """
             )
@@ -670,8 +670,7 @@ def _config_value_rows(ctx: GraphRuntimeHarness) -> Sequence[Mapping[str, object
             "commit",
             "config_path",
             "key",
-            "reference_paths",
-            "reference_modules",
+            "extras",
         )
     )
 

@@ -12,8 +12,7 @@ changes that improve correctness, consistency, and deterministic outputs.
 - Replace ad-hoc compute fallbacks with core compute helpers.
 
 ## Status update
-- Scope Items 1–15 completed.
-- Advanced follow-up items planned (Scope Items 16–23).
+- Scope Items 1–23 completed.
 
 ## Non-goals
 - Full ingestion pipeline refactors.
@@ -611,9 +610,9 @@ errors = result.errors
 
 ---
 
-## Advanced follow-up plan (best-in-class)
+## Advanced follow-up plan (best-in-class, completed)
 
-## Scope Item 16: Fused Acero scan plan builder (Planned)
+## Scope Item 16: Fused Acero scan plan builder (Completed)
 
 ### Rationale
 `ScanNodeOptions` pushdown does not guarantee final semantics. Build a shared
@@ -649,7 +648,7 @@ plan = Plan.scan(
 
 ---
 
-## Scope Item 17: Finalize artifact schema + multi-error reporting (Planned)
+## Scope Item 17: Finalize artifact schema + multi-error reporting (Completed)
 
 ### Rationale
 Finalize gates currently emit artifacts but do not standardize the error table
@@ -682,7 +681,7 @@ stats = error_rows.group_by(["error_code"]).aggregate([("row_id", "count")])
 
 ---
 
-## Scope Item 18: Nested list/struct policies in finalize gates (Planned)
+## Scope Item 18: Nested list/struct policies in finalize gates (Completed)
 
 ### Rationale
 List semantics (null vs empty) and aligned list constraints must be enforced
@@ -713,7 +712,7 @@ spec = FinalizeSpec(
 
 ---
 
-## Scope Item 19: Determinism tiers + dedupe tie-breakers (Planned)
+## Scope Item 19: Determinism tiers + dedupe tie-breakers (Completed)
 
 ### Rationale
 Dedupe based on `hash_first` is order-dependent. Introduce deterministic tiers
@@ -740,7 +739,7 @@ deduped = sorted_table.group_by(keys, use_threads=False).aggregate(agg_specs)
 
 ---
 
-## Scope Item 20: Dataset scan control plane + provenance (Planned)
+## Scope Item 20: Dataset scan control plane + provenance (Completed)
 
 ### Rationale
 Unify dataset discovery and preflight telemetry. Emit provenance columns for
@@ -770,7 +769,7 @@ options = DatasetScanOptions(
 
 ---
 
-## Scope Item 21: Schema evolution policy + allowed promotions (Planned)
+## Scope Item 21: Schema evolution policy + allowed promotions (Completed)
 
 ### Rationale
 Nested schema evolution needs explicit, contract-first promotion rules to avoid
@@ -796,7 +795,7 @@ casted = deep_cast_table_to_contract(table, unified)
 
 ---
 
-## Scope Item 22: Expression/kernel vocabulary enforcement (Planned)
+## Scope Item 22: Expression/kernel vocabulary enforcement (Completed)
 
 ### Rationale
 Prevent mixed usage of eager kernels vs expressions and ensure pushdown-friendly
@@ -822,7 +821,7 @@ filter_expr = E.and_(E.field("repo") == E.scalar(repo), E.is_valid("commit"))
 
 ---
 
-## Scope Item 23: Substrait/engine escape hatch boundary (Planned)
+## Scope Item 23: Substrait/engine escape hatch boundary (Completed)
 
 ### Rationale
 Define a single boundary for using alternate engines when Acero is insufficient,
@@ -847,12 +846,12 @@ finalized = finalize_table(reader_to_table(reader), spec=FinalizeSpec(...))
 
 ---
 
-## Execution order (advanced, recommended)
-1. Fused Acero scan plan builder (Scope Item 16).
-2. Finalize artifact schema + multi-error reporting (Scope Item 17).
-3. Nested list/struct policies in finalize gates (Scope Item 18).
-4. Determinism tiers + dedupe tie-breakers (Scope Item 19).
-5. Dataset scan control plane + provenance (Scope Item 20).
-6. Schema evolution policy + allowed promotions (Scope Item 21).
-7. Expression/kernel vocabulary enforcement (Scope Item 22).
-8. Substrait/engine escape hatch boundary (Scope Item 23).
+## Execution order (advanced, completed)
+1. Fused Acero scan plan builder (Scope Item 16). (Done)
+2. Finalize artifact schema + multi-error reporting (Scope Item 17). (Done)
+3. Nested list/struct policies in finalize gates (Scope Item 18). (Done)
+4. Determinism tiers + dedupe tie-breakers (Scope Item 19). (Done)
+5. Dataset scan control plane + provenance (Scope Item 20). (Done)
+6. Schema evolution policy + allowed promotions (Scope Item 21). (Done)
+7. Expression/kernel vocabulary enforcement (Scope Item 22). (Done)
+8. Substrait/engine escape hatch boundary (Scope Item 23). (Done)

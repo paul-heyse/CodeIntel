@@ -70,6 +70,7 @@ from codeintel.build.tabular.finalize_ops import (
     FinalizeSpec,
     finalize_join_keys,
     finalize_table,
+    record_join_precheck_errors,
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
@@ -1561,6 +1562,12 @@ def _precheck_join_table(
                 target_name=SCIP_TARGET_NAME,
             ),
         )
+    record_join_precheck_errors(
+        result,
+        table_key=table_key,
+        target_name=SCIP_TARGET_NAME,
+        join_keys=join_keys,
+    )
     _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
     return result.good
 

@@ -21,7 +21,10 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ingest_table
+from codeintel.build.hamilton.transforms.ingestion_normalize import (
+    finalize_ingest_reader,
+    finalize_ingest_table,
+)
 from codeintel.build.tabular.arrow_ops import (
     dedupe_table_for_table,
     iter_rows,
@@ -40,7 +43,7 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
     not_equal_mask,
 )
-from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
@@ -48,6 +51,7 @@ from codeintel.build.tabular.finalize_ops import (
     FinalizeSpec,
     finalize_join_keys,
     finalize_table,
+    record_join_precheck_errors,
 )
 from codeintel.build.tabular.kernels import hash_struct_goid
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan, materialize_plan
@@ -184,6 +188,12 @@ def _precheck_join_table(
                 target_name=SCIP_RESOLUTION_TARGET_NAME,
             ),
         )
+    record_join_precheck_errors(
+        result,
+        table_key=table_key,
+        target_name=SCIP_RESOLUTION_TARGET_NAME,
+        join_keys=join_keys,
+    )
     _log_join_precheck_errors(result, table_key=table_key, join_keys=join_keys)
     return result.good
 
@@ -1111,9 +1121,10 @@ def scip_resolution__symbol_goid_xref__base(
     table = scip_resolution__frames.symbol_goid_xref
     if table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_SYMBOL_GOID_XREF_TABLE_KEY)
-    return finalize_ingest_table(
+    reader = table_to_reader(table, batch_size=None)
+    return finalize_ingest_reader(
         SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
-        table,
+        reader,
         target_name=SCIP_RESOLUTION_TARGET_NAME,
     )
 
@@ -1131,9 +1142,10 @@ def scip_resolution__occurrence_span_xref__base(
     table = scip_resolution__frames.occurrence_span_xref
     if table.num_rows == 0:
         return _empty_reader_for_output_table(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY)
-    return finalize_ingest_table(
+    reader = table_to_reader(table, batch_size=None)
+    return finalize_ingest_reader(
         SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
-        table,
+        reader,
         target_name=SCIP_RESOLUTION_TARGET_NAME,
     )
 
