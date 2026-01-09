@@ -366,23 +366,24 @@ def _scan_materialize(root: SgRoot, *, path: Path, repo_root: Path) -> list[Viol
     rel = _rel_path(path, root=repo_root)
     if rel in _ALLOWLIST_MATERIALIZE:
         return []
-    violations: list[Violation] = []
-    for node in root.root().find_all(pattern="materialize_plan($$$ARGS)"):
-        violations.append(
+    violations = [
+        Violation(
+            path=path,
+            lineno=node.range().start.line + 1,
+            message=_MATERIALIZE_MESSAGE,
+        )
+        for node in root.root().find_all(pattern="materialize_plan($$$ARGS)")
+    ]
+    violations.extend(
+        [
             Violation(
                 path=path,
                 lineno=node.range().start.line + 1,
                 message=_MATERIALIZE_MESSAGE,
             )
-        )
-    for node in root.root().find_all(pattern="$OBJ.to_table($$$ARGS)"):
-        violations.append(
-            Violation(
-                path=path,
-                lineno=node.range().start.line + 1,
-                message=_MATERIALIZE_MESSAGE,
-            )
-        )
+            for node in root.root().find_all(pattern="$OBJ.to_table($$$ARGS)")
+        ]
+    )
     return violations
 
 
@@ -457,9 +458,7 @@ def scan_analytics(repo_root: Path) -> AnalyticsScan:
             materialize_violations.extend(
                 _scan_materialize(parsed_root, path=path, repo_root=repo_root)
             )
-        finalize_violations.extend(
-            _finalize_write_violations(path=path, functions=functions)
-        )
+        finalize_violations.extend(_finalize_write_violations(path=path, functions=functions))
     return AnalyticsScan(
         iter_rows=iter_rows_violations,
         finalize_writes=finalize_violations,
@@ -515,9 +514,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         had_violations = True
     if findings.iter_rows:
         _emit_violations(findings.iter_rows, root=repo_root)
-        sys.stderr.write(
-            f"{len(findings.iter_rows)} analytics iter_rows guardrail violation(s).\n"
-        )
+        sys.stderr.write(f"{len(findings.iter_rows)} analytics iter_rows guardrail violation(s).\n")
         had_violations = True
     return 1 if had_violations else 0
 

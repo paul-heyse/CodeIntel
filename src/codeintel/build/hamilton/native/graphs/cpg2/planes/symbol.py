@@ -240,103 +240,12 @@ def _symbol_goid_joined_table(
     scip_symbols: pa.Table,
     goids: pa.Table,
 ) -> pa.Table:
-    goid_rows = _normalize_symbol_goid(symbol_goid)
-    if "goid_h128" in goid_rows.column_names:
-        goid_rows = plan_filter_or_fallback(goid_rows, is_valid_expr("goid_h128"))
-    goid_rows = append_constant_columns(
-        goid_rows,
-        {
-            "def_rel_path": None,
-            "def_start_line": None,
-            "def_start_col": None,
-            "def_end_line": None,
-            "def_end_col": None,
-        },
+    goid_rows, symbol_anchors, goid_anchors = _prepare_symbol_goid_inputs(
+        symbol_goid=symbol_goid,
+        scip_symbols=scip_symbols,
+        goids=goids,
     )
-    symbol_anchors = rename_table_columns(
-        _symbol_anchor_map(scip_symbols),
-        {"symbol": "scip_symbol", "cpg_node_id": "src_cpg_node_id"},
-    )
-    goid_anchors = rename_table_columns(
-        _goid_anchor_map(goids),
-        {"cpg_node_id": "dst_cpg_node_id"},
-    )
-    goid_allowlist = _join_safe_allowlist("core.scip_symbol_goid_xref")
-    symbol_allowlist = _join_safe_allowlist(SCIP_SYMBOLS_TABLE_KEY)
-    goid_table_allowlist = _join_safe_allowlist(GOIDS_TABLE_KEY)
-    goid_rows = join_safe_projection(
-        normalize_table_for_join(goid_rows, allowed_columns=goid_allowlist),
-        allowed_columns=goid_allowlist,
-    )
-    symbol_anchors = join_safe_projection(
-        normalize_table_for_join(symbol_anchors, allowed_columns=symbol_allowlist),
-        allowed_columns=symbol_allowlist,
-    )
-    goid_anchors = join_safe_projection(
-        normalize_table_for_join(goid_anchors, allowed_columns=goid_table_allowlist),
-        allowed_columns=goid_table_allowlist,
-    )
-    symbol_join_keys = ["repo", "commit", "scip_symbol", "goid_h128"]
-    goid_precheck = finalize_join_keys(
-        goid_rows,
-        required_non_null=symbol_join_keys,
-        key_fields=symbol_join_keys,
-        stage="join_precheck",
-    )
-    record_join_precheck_errors(
-        goid_precheck,
-        table_key="core.scip_symbol_goid_xref",
-        target_name=CPG_TARGET_NAME,
-        join_keys=symbol_join_keys,
-    )
-    goid_rows = goid_precheck.good
-    symbol_precheck = finalize_join_keys(
-        symbol_anchors,
-        required_non_null=["repo", "commit", "scip_symbol"],
-        key_fields=["repo", "commit", "scip_symbol"],
-        stage="join_precheck",
-    )
-    record_join_precheck_errors(
-        symbol_precheck,
-        table_key=SCIP_SYMBOLS_TABLE_KEY,
-        target_name=CPG_TARGET_NAME,
-        join_keys=["repo", "commit", "scip_symbol"],
-    )
-    symbol_anchors = symbol_precheck.good
-    goid_anchor_precheck = finalize_join_keys(
-        goid_anchors,
-        required_non_null=["goid_h128"],
-        key_fields=["goid_h128"],
-        stage="join_precheck",
-    )
-    record_join_precheck_errors(
-        goid_anchor_precheck,
-        table_key=GOIDS_TABLE_KEY,
-        target_name=CPG_TARGET_NAME,
-        join_keys=["goid_h128"],
-    )
-    goid_anchors = goid_anchor_precheck.good
-    goid_project = {
-        "repo": E.cast(E.field("repo"), "string"),
-        "commit": E.cast(E.field("commit"), "string"),
-        "scip_symbol": E.cast(E.field("scip_symbol"), "string"),
-        "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
-        "def_rel_path": E.field("def_rel_path"),
-        "def_start_line": E.field("def_start_line"),
-        "def_start_col": E.field("def_start_col"),
-        "def_end_line": E.field("def_end_line"),
-        "def_end_col": E.field("def_end_col"),
-    }
-    symbol_project = {
-        "repo": E.cast(E.field("repo"), "string"),
-        "commit": E.cast(E.field("commit"), "string"),
-        "scip_symbol": E.cast(E.field("scip_symbol"), "string"),
-        "src_cpg_node_id": E.field("src_cpg_node_id"),
-    }
-    goid_anchor_project = {
-        "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
-        "dst_cpg_node_id": E.field("dst_cpg_node_id"),
-    }
+    goid_project, symbol_project, goid_anchor_project = _symbol_goid_projections()
     symbol_plan = build_table_plan(
         table=symbol_anchors,
         options=TablePlanOptions(
@@ -394,6 +303,104 @@ def _symbol_goid_joined_table(
             )
         )
     return joined_table
+
+
+def _prepare_symbol_goid_inputs(
+    *,
+    symbol_goid: pa.Table,
+    scip_symbols: pa.Table,
+    goids: pa.Table,
+) -> tuple[pa.Table, pa.Table, pa.Table]:
+    goid_rows = _normalize_symbol_goid(symbol_goid)
+    if "goid_h128" in goid_rows.column_names:
+        goid_rows = plan_filter_or_fallback(goid_rows, is_valid_expr("goid_h128"))
+    goid_rows = append_constant_columns(
+        goid_rows,
+        {
+            "def_rel_path": None,
+            "def_start_line": None,
+            "def_start_col": None,
+            "def_end_line": None,
+            "def_end_col": None,
+        },
+    )
+    symbol_anchors = rename_table_columns(
+        _symbol_anchor_map(scip_symbols),
+        {"symbol": "scip_symbol", "cpg_node_id": "src_cpg_node_id"},
+    )
+    goid_anchors = rename_table_columns(
+        _goid_anchor_map(goids),
+        {"cpg_node_id": "dst_cpg_node_id"},
+    )
+    goid_rows = _normalize_symbol_goid_inputs(
+        goid_rows,
+        table_key="core.scip_symbol_goid_xref",
+        join_keys=["repo", "commit", "scip_symbol", "goid_h128"],
+    )
+    symbol_anchors = _normalize_symbol_goid_inputs(
+        symbol_anchors,
+        table_key=SCIP_SYMBOLS_TABLE_KEY,
+        join_keys=["repo", "commit", "scip_symbol"],
+    )
+    goid_anchors = _normalize_symbol_goid_inputs(
+        goid_anchors,
+        table_key=GOIDS_TABLE_KEY,
+        join_keys=["goid_h128"],
+    )
+    return goid_rows, symbol_anchors, goid_anchors
+
+
+def _normalize_symbol_goid_inputs(
+    table: pa.Table,
+    *,
+    table_key: str,
+    join_keys: list[str],
+) -> pa.Table:
+    allowlist = _join_safe_allowlist(table_key)
+    normalized = join_safe_projection(
+        normalize_table_for_join(table, allowed_columns=allowlist),
+        allowed_columns=allowlist,
+    )
+    precheck = finalize_join_keys(
+        normalized,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        precheck,
+        table_key=table_key,
+        target_name=CPG_TARGET_NAME,
+        join_keys=join_keys,
+    )
+    return precheck.good
+
+
+def _symbol_goid_projections() -> tuple[
+    dict[str, Expression], dict[str, Expression], dict[str, Expression]
+]:
+    goid_project = {
+        "repo": E.cast(E.field("repo"), "string"),
+        "commit": E.cast(E.field("commit"), "string"),
+        "scip_symbol": E.cast(E.field("scip_symbol"), "string"),
+        "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
+        "def_rel_path": E.field("def_rel_path"),
+        "def_start_line": E.field("def_start_line"),
+        "def_start_col": E.field("def_start_col"),
+        "def_end_line": E.field("def_end_line"),
+        "def_end_col": E.field("def_end_col"),
+    }
+    symbol_project = {
+        "repo": E.cast(E.field("repo"), "string"),
+        "commit": E.cast(E.field("commit"), "string"),
+        "scip_symbol": E.cast(E.field("scip_symbol"), "string"),
+        "src_cpg_node_id": E.field("src_cpg_node_id"),
+    }
+    goid_anchor_project = {
+        "goid_h128": E.cast(E.field("goid_h128"), "decimal128(38,0)"),
+        "dst_cpg_node_id": E.field("dst_cpg_node_id"),
+    }
+    return goid_project, symbol_project, goid_anchor_project
 
 
 def _symbol_anchor_map(scip_symbols: pa.Table) -> pa.Table:

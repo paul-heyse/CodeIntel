@@ -90,9 +90,7 @@ class TreeSitterIndexResult:
         default_factory=lambda: empty_table_for_table(TS_TRIVIA_TABLE_KEY).to_reader()
     )
     language_metadata_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_table_for_table(
-            TS_LANGUAGE_METADATA_TABLE_KEY
-        ).to_reader()
+        default_factory=lambda: empty_table_for_table(TS_LANGUAGE_METADATA_TABLE_KEY).to_reader()
     )
     parse_manifest_row_count: int = 0
     captures_row_count: int = 0

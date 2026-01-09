@@ -52,6 +52,11 @@ from codeintel.build.graphs.rx.algos import (
     ensure_store,
     to_undirected_store,
 )
+from codeintel.build.graphs.rx.build_from_edges import (
+    BuildStoreOptions,
+    EdgeBuildSpec,
+    build_store_from_edge_tuples,
+)
 from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -237,23 +242,38 @@ _NO_OP_GRAPH_FILTERS: GraphFilterProtocol = _NoOpGraphFilters()
 
 
 def _copy_without_self_loops(store: RxGraphStore) -> RxGraphStore:
-    if store.is_directed:
-        filtered = RxGraphStore.directed(
-            node_hint=store.graph.num_nodes(),
-            edge_hint=store.graph.num_edges(),
-        )
-    else:
-        filtered = RxGraphStore.undirected(
-            node_hint=store.graph.num_nodes(),
-            edge_hint=store.graph.num_edges(),
-        )
-    for node_id in store.node_ids():
-        filtered.set_node_attrs(node_id, store.get_node_attrs(node_id))
+    edge_rows: list[tuple[object, object, float]] = []
+    node_ids = list(store.node_ids())
+    node_attrs = {node_id: dict(store.get_node_attrs(node_id)) for node_id in node_ids}
     for src_id, dst_id, weight in iter_edge_id_weights(store):
         if src_id == dst_id:
             continue
-        filtered.add_weighted_edge(src_id, dst_id, weight=weight)
-    return filtered
+        edge_rows.append((src_id, dst_id, weight))
+    if not edge_rows and not node_ids:
+        return (
+            RxGraphStore.directed(
+                weight_policy=store.weight_policy,
+                numeric_policy=store.numeric_policy,
+            )
+            if store.is_directed
+            else RxGraphStore.undirected(
+                weight_policy=store.weight_policy,
+                numeric_policy=store.numeric_policy,
+            )
+        )
+    spec = EdgeBuildSpec(
+        directed=store.is_directed,
+        weight_policy=store.weight_policy,
+        numeric_policy=store.numeric_policy,
+    )
+    options = BuildStoreOptions(
+        stable_nodes=True,
+        node_ids=node_ids or None,
+        node_attrs=node_attrs or None,
+        node_hint=len(node_ids) if node_ids else None,
+        edge_hint=len(edge_rows),
+    )
+    return build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
 
 
 def build_graph_views(source_graph: GraphInput) -> GraphViews:

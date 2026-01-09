@@ -501,9 +501,7 @@ def _import_hub_findings_impl(
     findings: list[dict[str, object]] = []
     store = ensure_directed_store(import_graph)
     degree_threshold = hub_threshold(store.graph.num_nodes())
-    degree_map = {
-        str(node_id): degree for node_id, degree in total_degree_by_id(store).items()
-    }
+    degree_map = {str(node_id): degree for node_id, degree in total_degree_by_id(store).items()}
     hubs = [node for node, deg in degree_map.items() if deg > degree_threshold]
     if hubs:
         sample = ", ".join(sorted(hubs)[:SAMPLE_LIMIT])

@@ -616,9 +616,7 @@ PY_BC_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "rel_path", "code_unit_id", "instr_id"),
         finalize_policy=FinalizePolicy(
-            list_policies=(
-                FinalizeListPolicySpec(column="cache_info", null_policy="empty"),
-            ),
+            list_policies=(FinalizeListPolicySpec(column="cache_info", null_policy="empty"),),
         ),
         plan_policy=PlanPolicy(
             join_safe_columns=("cache_info",),
@@ -903,9 +901,7 @@ PY_INSPECT_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "object_id", "state_kind"),
         finalize_policy=FinalizePolicy(
-            list_policies=(
-                FinalizeListPolicySpec(column="locals", null_policy="empty"),
-            ),
+            list_policies=(FinalizeListPolicySpec(column="locals", null_policy="empty"),),
         ),
         plan_policy=PlanPolicy(
             join_safe_columns=("locals",),
@@ -972,9 +968,7 @@ SYNTAX_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             conflict_columns=("repo", "commit", "rel_path", "producer"),
         ),
         finalize_policy=FinalizePolicy(
-            list_policies=(
-                FinalizeListPolicySpec(column="future_imports", null_policy="empty"),
-            ),
+            list_policies=(FinalizeListPolicySpec(column="future_imports", null_policy="empty"),),
         ),
         plan_policy=PlanPolicy(
             join_safe_columns=("future_imports",),
@@ -1506,9 +1500,7 @@ TREE_SITTER_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             conflict_columns=("repo", "commit", "rel_path", "producer"),
         ),
         finalize_policy=FinalizePolicy(
-            list_policies=(
-                FinalizeListPolicySpec(column="future_imports", null_policy="empty"),
-            ),
+            list_policies=(FinalizeListPolicySpec(column="future_imports", null_policy="empty"),),
         ),
         plan_policy=PlanPolicy(
             join_safe_columns=("future_imports",),
@@ -2488,9 +2480,7 @@ TESTS_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         primary_key=("test_id",),
         indexes=(Index("idx_analytics_test_catalog_id", ("test_id",), unique=True),),
         finalize_policy=FinalizePolicy(
-            list_policies=(
-                FinalizeListPolicySpec(column="extras.markers", null_policy="empty"),
-            ),
+            list_policies=(FinalizeListPolicySpec(column="extras.markers", null_policy="empty"),),
         ),
         description="Pytest test catalog",
     ),
@@ -3037,9 +3027,7 @@ CALL_WIRING_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         primary_key=("repo", "commit", "rel_path", "call_id"),
         indexes=(Index("idx_graph_cpg_call_candidates_call", ("call_id",)),),
         finalize_policy=FinalizePolicy(
-            list_policies=(
-                FinalizeListPolicySpec(column="candidates", null_policy="error"),
-            ),
+            list_policies=(FinalizeListPolicySpec(column="candidates", null_policy="error"),),
         ),
         plan_policy=PlanPolicy(
             default_projection=(
@@ -3370,9 +3358,7 @@ EXTERNAL_DEPS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "dep_id", "function_goid_h128"),
         finalize_policy=FinalizePolicy(
-            list_policies=(
-                FinalizeListPolicySpec(column="extras.modes", null_policy="empty"),
-            ),
+            list_policies=(FinalizeListPolicySpec(column="extras.modes", null_policy="empty"),),
         ),
         description="Function-level callsites into external dependencies with modes and evidence",
     ),

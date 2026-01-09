@@ -18,10 +18,7 @@ _ALLOWLIST_RAW_COMPUTE: frozenset[str] = frozenset(
         "src/codeintel/build/tabular/array_ops.py",
     }
 )
-_ALLOWLIST_MATERIALIZE: frozenset[str] = frozenset(
-    {
-    }
-)
+_ALLOWLIST_MATERIALIZE: frozenset[str] = frozenset({})
 
 _SCAN_DIRS: tuple[str, ...] = (
     "src/codeintel/build/hamilton",
@@ -198,15 +195,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     had_violations = False
     if findings.raw_compute:
         _emit_violations(findings.raw_compute, root=repo_root)
-        sys.stderr.write(
-            f"{len(findings.raw_compute)} raw pyarrow.compute import(s) detected.\n"
-        )
+        sys.stderr.write(f"{len(findings.raw_compute)} raw pyarrow.compute import(s) detected.\n")
         had_violations = True
     if findings.materialize:
         _emit_violations(findings.materialize, root=repo_root)
-        sys.stderr.write(
-            f"{len(findings.materialize)} materialization call(s) detected.\n"
-        )
+        sys.stderr.write(f"{len(findings.materialize)} materialization call(s) detected.\n")
         had_violations = True
     return 1 if had_violations else 0
 

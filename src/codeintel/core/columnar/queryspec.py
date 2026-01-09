@@ -237,10 +237,7 @@ def _scan_columns_from_projection(
         columns.update(dict(computed))
     if provenance:
         columns.update(
-            {
-                output_name: E.field(source_name)
-                for output_name, source_name in PROVENANCE_FIELDS
-            }
+            {output_name: E.field(source_name) for output_name, source_name in PROVENANCE_FIELDS}
         )
     return columns
 

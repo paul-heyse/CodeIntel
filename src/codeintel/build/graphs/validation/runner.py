@@ -410,9 +410,7 @@ def _emit_validation_run_manifest(
         )
         write_run_manifest(output_dir, options=options)
     except (OSError, TypeError, ValueError) as exc:
-        logging.getLogger(__name__).warning(
-            "Graph validation manifest emission failed: %s", exc
-        )
+        logging.getLogger(__name__).warning("Graph validation manifest emission failed: %s", exc)
 
 
 def _manifest_table_key(dataset_root_dir: Path, snapshot_id: str) -> str | None:

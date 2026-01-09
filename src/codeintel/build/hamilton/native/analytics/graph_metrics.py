@@ -39,13 +39,14 @@ from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.graphs.builders import (
     build_call_graph_from_tables,
     build_import_graph_from_tables,
-    build_symbol_function_graph,
-    build_symbol_module_edges,
-    build_symbol_module_graph,
+    build_symbol_function_graph_from_tables,
+    build_symbol_module_graph_from_tables,
 )
 from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
 from codeintel.build.graphs.rx.algos import GraphInput
+from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.finalize_helpers import (
@@ -252,13 +253,30 @@ def _load_call_graph(
     scope = SnapshotScope.from_snapshot(env.snapshot)
     call_edges_table = tabular_to_scoped_table(
         edges,
-        columns=("caller_goid_h128", "callee_goid_h128"),
+        columns=(
+            "repo",
+            "commit",
+            "caller_goid_h128",
+            "callee_goid_h128",
+            "callsite_path",
+            "callsite_line",
+            "callsite_col",
+            "language",
+            "kind",
+        ),
         scope=scope,
         require_scope_columns=True,
     )
     call_nodes_table = tabular_to_scoped_table(
         nodes,
-        columns=("goid_h128", "kind"),
+        columns=(
+            "goid_h128",
+            "language",
+            "kind",
+            "arity",
+            "is_public",
+            "rel_path",
+        ),
         scope=scope,
         require_scope_columns=False,
     )
@@ -273,13 +291,30 @@ def _load_import_graph(
     scope = SnapshotScope.from_snapshot(env.snapshot)
     import_edges_table = tabular_to_scoped_table(
         edges,
-        columns=("src_module", "dst_module", "module_layer"),
+        columns=(
+            "repo",
+            "commit",
+            "src_module",
+            "dst_module",
+            "src_fan_out",
+            "dst_fan_in",
+            "cycle_group",
+            "module_layer",
+        ),
         scope=scope,
         require_scope_columns=True,
     )
     import_modules_table = tabular_to_scoped_table(
         modules,
-        columns=("module", "scc_id", "component_size", "layer"),
+        columns=(
+            "repo",
+            "commit",
+            "module",
+            "scc_id",
+            "component_size",
+            "layer",
+            "cycle_group",
+        ),
         scope=scope,
         require_scope_columns=True,
     )
@@ -331,26 +366,69 @@ def _component_meta_from_import_rows(
     }
 
 
+def _module_map_table_from_mapping(module_by_path: Mapping[str, str]) -> pa.Table:
+    if not module_by_path:
+        return pa.Table.from_arrays(
+            [pa.array([], type=pa.string()), pa.array([], type=pa.string())],
+            names=["path", "module"],
+        )
+    items = sorted(module_by_path.items())
+    paths = [item[0] for item in items]
+    modules = [item[1] for item in items]
+    return pa.Table.from_arrays(
+        [pa.array(paths, type=pa.string()), pa.array(modules, type=pa.string())],
+        names=["path", "module"],
+    )
+
+
+def _symbol_module_edges_from_store(store: RxGraphStore) -> SymbolModuleEdges:
+    modules: set[str] = set()
+    inbound: dict[str, set[str]] = {}
+    outbound: dict[str, set[str]] = {}
+    for src_id, dst_id, _weight in iter_edge_id_weights(store):
+        src_module = str(src_id)
+        dst_module = str(dst_id)
+        modules.update((src_module, dst_module))
+        inbound.setdefault(dst_module, set()).add(src_module)
+        outbound.setdefault(src_module, set()).add(dst_module)
+    return modules, inbound, outbound
+
+
 def _load_symbol_graphs(
     module_by_path: Mapping[str, str],
     table: InferableTabularInput,
     *,
     scope: SnapshotScope,
 ) -> tuple[SymbolModuleEdges, GraphInput, GraphInput]:
-    symbol_rows = collect_scoped_rows(
+    symbol_table = tabular_to_scoped_table(
         table,
-        ("def_path", "use_path", "def_goid_h128", "use_goid_h128"),
+        columns=(
+            "repo",
+            "commit",
+            "symbol",
+            "def_path",
+            "use_path",
+            "same_file",
+            "same_module",
+            "def_goid_h128",
+            "use_goid_h128",
+        ),
         scope=scope,
-        require_scope_columns=False,
+        require_scope_columns=True,
     )
-    symbol_module_edges = build_symbol_module_edges(symbol_rows, module_by_path)
-    symbol_module_graph = build_symbol_module_graph(
-        symbol_rows,
-        module_by_path,
+    module_map_table = _module_map_table_from_mapping(module_by_path)
+    symbol_module_graph = build_symbol_module_graph_from_tables(
+        symbol_table,
+        module_map_table,
+        repo=scope.repo,
+        commit=scope.commit,
     )
-    symbol_function_graph = build_symbol_function_graph(
-        symbol_rows,
+    symbol_function_graph = build_symbol_function_graph_from_tables(
+        symbol_table,
+        repo=scope.repo,
+        commit=scope.commit,
     )
+    symbol_module_edges = _symbol_module_edges_from_store(symbol_module_graph)
     return symbol_module_edges, symbol_module_graph, symbol_function_graph
 
 

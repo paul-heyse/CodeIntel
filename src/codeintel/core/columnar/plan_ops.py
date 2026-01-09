@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol, TypeGuard
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -21,6 +21,13 @@ from codeintel.core.columnar.ordering import OrderingSpec, SortKey, ordering_key
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.streaming import configure_arrow_threading_for_context
 
+try:
+    from codeintel.core.columnar.external_plans import (
+        register_default_external_plan_runners as _register_default_external_plan_runners_impl,
+    )
+except ImportError:  # pragma: no cover - optional dependency
+    _register_default_external_plan_runners_impl = None
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
@@ -28,6 +35,7 @@ if TYPE_CHECKING:
 
     from codeintel.core.columnar.arrowdsl import ExecutionPlan
     from codeintel.core.columnar.streaming import DatasetScanOptions
+
     type ReaderThunk = Callable[[], pa.RecordBatchReader]
 else:
     type ReaderThunk = object
@@ -471,6 +479,8 @@ def materialize_plan(
     ----------
     plan
         Plan to materialize.
+    ctx
+        Optional execution context overrides.
     use_threads
         Whether to allow compute parallelism.
     combine_chunks
@@ -493,9 +503,10 @@ def materialize_plan(
             use_threads=use_threads,
             combine_chunks=combine_chunks,
         )
-    from codeintel.core.columnar.arrowdsl import ExecutionPlan
-
-    return ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    configure_arrow_threading_for_context(ctx=execution_ctx)
+    reader = plan.declaration.to_reader(use_threads=execution_ctx.resolve_use_threads())
+    table = reader.read_all()
+    return normalize_table_for_compute(table, combine_chunks=execution_ctx.combine_chunks)
 
 
 @dataclass(frozen=True, slots=True)
@@ -717,6 +728,24 @@ class ExternalPlanRunner(Protocol):
 _EXTERNAL_PLAN_RUNNERS: dict[str, ExternalPlanRunner] = {}
 
 
+class _ExecutionPlanLike(Protocol):
+    external_request: ExternalPlanRequest | None
+    reader_thunk: object | None
+    table_thunk: object | None
+
+    def to_reader(self, *, ctx: ExecutionContext) -> pa.RecordBatchReader:
+        """Return a reader for the execution plan."""
+
+
+def _is_execution_plan_like(value: object) -> TypeGuard[_ExecutionPlanLike]:
+    return (
+        hasattr(value, "to_reader")
+        and hasattr(value, "external_request")
+        and hasattr(value, "reader_thunk")
+        and hasattr(value, "table_thunk")
+    )
+
+
 def _normalize_external_engine(engine: str) -> str:
     normalized = engine.strip().lower()
     if not normalized:
@@ -768,9 +797,7 @@ def run_external_plan(request: ExternalPlanRequest) -> pa.RecordBatchReader:
     result = runner(request=request)
     if isinstance(result, pa.RecordBatchReader):
         return result
-    from codeintel.core.columnar.arrowdsl import ExecutionPlan
-
-    if isinstance(result, ExecutionPlan):
+    if _is_execution_plan_like(result):
         execution_ctx = resolve_execution_context(None)
         if request.use_threads is not None:
             execution_ctx = replace(execution_ctx, use_threads=request.use_threads)
@@ -786,13 +813,9 @@ def run_external_plan(request: ExternalPlanRequest) -> pa.RecordBatchReader:
 
 
 def _register_default_external_plan_runners() -> None:
-    try:
-        from codeintel.core.columnar.external_plans import (
-            register_default_external_plan_runners,
-        )
-    except ImportError:
+    if _register_default_external_plan_runners_impl is None:
         return
-    register_default_external_plan_runners()
+    _register_default_external_plan_runners_impl()
 
 
 __all__ = [

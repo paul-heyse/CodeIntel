@@ -242,6 +242,7 @@ def _partition_columns_for_schema(table_schema: TableSchema) -> tuple[str, ...]:
         return ("repo", "commit")
     return ()
 
+
 def _resolve_manifest_sort_keys(table_schema: TableSchema) -> tuple[str, ...] | None:
     return resolve_canonical_sort_keys(table_schema)
 
@@ -621,9 +622,7 @@ def run_analytics_pipeline_to_parquet(
     table_schema = contract.schema
     if table_schema is None:
         raise DatasetSchemaMissingError(contract.table_key)
-    if request.delete_scope is not None and not _table_supports_snapshot_delete(
-        contract.table_key
-    ):
+    if request.delete_scope is not None and not _table_supports_snapshot_delete(contract.table_key):
         raise UnsupportedDeleteScopeError(contract.table_key)
     dataset_root_dir, snapshot_id, repo, commit = _resolve_parquet_context(gateway)
     write_context = _WriteContext(

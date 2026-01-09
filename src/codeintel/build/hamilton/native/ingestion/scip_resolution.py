@@ -1223,8 +1223,7 @@ def _occurrence_syntax_match_table(
             ("node_id", "count", None, "candidate_count"),
         ),
         order_by=tuple(
-            (name, "ascending")
-            for name in (*_OCCURRENCE_MATCH_BASE_COLUMNS, "producer")
+            (name, "ascending") for name in (*_OCCURRENCE_MATCH_BASE_COLUMNS, "producer")
         ),
     )
     project = {

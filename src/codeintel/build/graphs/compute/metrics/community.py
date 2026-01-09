@@ -152,7 +152,7 @@ def _detect_communities_bridge_split(
     if work_store.graph.num_nodes() == 0:
         return {}
     adjusted_min_size = min_component_size if resolution >= 1.0 else max(1, min_component_size - 1)
-    components, component_store = _bridge_split_components(
+    components, _component_store = _bridge_split_components(
         work_store,
         min_component_size=adjusted_min_size,
     )

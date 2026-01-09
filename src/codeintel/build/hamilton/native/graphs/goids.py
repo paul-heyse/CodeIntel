@@ -400,16 +400,12 @@ def _collect_descriptors(
         row = dict(zip(columns, values, strict=True))
         result = _descriptor_from_values(
             values=_DescriptorValues(
-                node_type=(
-                    str(row["node_type"]) if row.get("node_type") is not None else None
-                ),
+                node_type=(str(row["node_type"]) if row.get("node_type") is not None else None),
                 path=str(row["path"]) if row.get("path") is not None else None,
                 module_name=(
                     str(row["module_name"]) if row.get("module_name") is not None else None
                 ),
-                language=(
-                    str(row["language"]) if row.get("language") is not None else None
-                ),
+                language=(str(row["language"]) if row.get("language") is not None else None),
                 name=row.get("name"),
                 qualname=row.get("qualname"),
                 parent_qualname=row.get("parent_qualname"),

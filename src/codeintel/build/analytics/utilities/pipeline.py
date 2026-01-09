@@ -22,7 +22,10 @@ from codeintel.core.columnar.plan_builder import (
 )
 from codeintel.core.columnar.plan_ops import QueryPlanOptions
 from codeintel.core.columnar.queryspec import QuerySpec
-from codeintel.core.columnar.run_manifest import RunManifestOptions
+from codeintel.core.columnar.run_manifest import (
+    RunManifestOptions,
+    run_manifest_options_for_context,
+)
 from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.schemas.service import get_schema_service
@@ -83,7 +86,14 @@ def run_analytics_pipeline(request: AnalyticsPipelineRunRequest) -> FinalizeResu
     pipeline_options = PipelineRunOptions(
         ctx=resolved_ctx,
         manifest_dir=request.manifest_dir,
-        manifest_options=request.manifest_options,
+        manifest_options=(
+            request.manifest_options
+            or run_manifest_options_for_context(
+                ctx=resolved_ctx,
+                ordering=plan.ordering,
+                scan_telemetry=scan_telemetry,
+            )
+        ),
         scan_telemetry=scan_telemetry,
     )
     return run_pipeline(

@@ -23,6 +23,11 @@ from codeintel.build.analytics.graphs.constants import MAX_BETWEENNESS_NODES, MA
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
+from codeintel.build.graphs.rx.build_from_edges import (
+    BuildStoreOptions,
+    EdgeBuildSpec,
+    build_store_from_edge_tuples,
+)
 from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -70,24 +75,42 @@ class UndirectedMetricInputs[TNode]:
 
 def _filter_nodes(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphStore:
     store = ensure_store(graph)
-    if store.is_directed:
-        filtered = RxGraphStore.directed(
-            node_hint=store.graph.num_nodes(),
-            edge_hint=store.graph.num_edges(),
-        )
-    else:
-        filtered = RxGraphStore.undirected(
-            node_hint=store.graph.num_nodes(),
-            edge_hint=store.graph.num_edges(),
-        )
+    edge_rows: list[tuple[Hashable, Hashable, float]] = []
+    node_ids: set[Hashable] = set()
+    node_attrs: dict[Hashable, dict[str, object]] = {}
     for node_id in store.node_ids():
         if node_id in allowed:
-            filtered.set_node_attrs(node_id, store.get_node_attrs(node_id))
+            node_ids.add(node_id)
+            node_attrs[node_id] = dict(store.get_node_attrs(node_id))
     for src_id, dst_id, weight in iter_edge_id_weights(store):
         if src_id not in allowed or dst_id not in allowed:
             continue
-        filtered.add_weighted_edge(src_id, dst_id, weight=weight)
-    return filtered
+        edge_rows.append((src_id, dst_id, weight))
+    if not edge_rows and not node_ids:
+        return (
+            RxGraphStore.directed(
+                weight_policy=store.weight_policy,
+                numeric_policy=store.numeric_policy,
+            )
+            if store.is_directed
+            else RxGraphStore.undirected(
+                weight_policy=store.weight_policy,
+                numeric_policy=store.numeric_policy,
+            )
+        )
+    spec = EdgeBuildSpec(
+        directed=store.is_directed,
+        weight_policy=store.weight_policy,
+        numeric_policy=store.numeric_policy,
+    )
+    options = BuildStoreOptions(
+        stable_nodes=True,
+        node_ids=node_ids or None,
+        node_attrs=node_attrs or None,
+        node_hint=len(node_ids) if node_ids else None,
+        edge_hint=len(edge_rows),
+    )
+    return build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
 
 
 def build_undirected_symbol_metric_rows[TNode](

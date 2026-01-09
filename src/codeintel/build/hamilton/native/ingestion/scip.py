@@ -81,7 +81,7 @@ from codeintel.build.tabular.finalize_ops import (
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
 from codeintel.core.columnar.plan_ops import build_query_plan_for_context
@@ -96,7 +96,7 @@ from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.execution.ids import new_run_id
-from codeintel.core.query_results import records_from_arrow_reader
+from codeintel.core.query_results import iter_records_from_arrow_reader
 from codeintel.core.spans import normalize_byte_span
 from codeintel.core.tools import ToolName
 from codeintel.ingestion.engine.infrastructure import (
@@ -502,6 +502,59 @@ def _snapshot_predicate(env: BuildEnv, *, available: set[str]) -> Expression | N
     return E.and_(*exprs)
 
 
+def _file_line_index_columns(available: set[str]) -> tuple[str, ...] | None:
+    required = ("rel_path", "line", "start_byte", "end_byte")
+    if not set(required).issubset(available):
+        return None
+    columns: list[str] = list(required)
+    if "encoding" in available:
+        columns.append("encoding")
+    return tuple(columns)
+
+
+def _file_line_index_reader(
+    dataset: ds.Dataset,
+    *,
+    columns: Sequence[str],
+    base_predicate: Expression | None,
+    rel_paths: Sequence[str],
+    execution_ctx: ExecutionContext,
+) -> pa.RecordBatchReader:
+    rel_path_expr = E.in_("rel_path", rel_paths)
+    predicate = rel_path_expr if base_predicate is None else E.and_(base_predicate, rel_path_expr)
+    spec = QuerySpec(
+        predicate=predicate,
+        pushdown_predicate=predicate,
+        projection=ProjectionSpec(base_cols=tuple(columns)),
+    )
+    plan = build_query_plan_for_context(dataset, spec=spec, ctx=execution_ctx)
+    return ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+
+
+def _merge_file_line_index_rows(
+    results: dict[str, _FileLineIndex],
+    reader: pa.RecordBatchReader,
+) -> None:
+    for row in iter_records_from_arrow_reader(reader):
+        rel_path = row.get("rel_path")
+        if not isinstance(rel_path, str):
+            continue
+        line = _coerce_int(row.get("line"))
+        start_byte = _coerce_int(row.get("start_byte"))
+        end_byte = _coerce_int(row.get("end_byte"))
+        if line is None or start_byte is None or end_byte is None:
+            continue
+        encoding = row.get("encoding")
+        file_index = results.get(rel_path)
+        if file_index is None:
+            file_index = _FileLineIndex(
+                encoding=encoding if isinstance(encoding, str) else None,
+                lines={},
+            )
+            results[rel_path] = file_index
+        file_index.lines[line] = (start_byte, end_byte)
+
+
 def _load_file_line_index(
     env: BuildEnv,
     rel_paths: Iterable[str],
@@ -513,47 +566,22 @@ def _load_file_line_index(
     if dataset is None:
         return {}
     available = set(dataset.schema.names)
-    required = {"rel_path", "line", "start_byte", "end_byte"}
-    if not required.issubset(available):
+    columns = _file_line_index_columns(available)
+    if columns is None:
         return {}
-    columns = list(required)
-    if "encoding" in available:
-        columns.append("encoding")
     base_predicate = _snapshot_predicate(env, available=available)
     execution_ctx = resolve_execution_context(None)
     results: dict[str, _FileLineIndex] = {}
     try:
         for chunk in _chunked(rel_path_list, 500):
-            rel_path_expr = E.in_("rel_path", chunk)
-            if base_predicate is None:
-                predicate = rel_path_expr
-            else:
-                predicate = E.and_(base_predicate, rel_path_expr)
-            spec = QuerySpec(
-                predicate=predicate,
-                pushdown_predicate=predicate,
-                projection=ProjectionSpec(base_cols=tuple(columns)),
+            reader = _file_line_index_reader(
+                dataset,
+                columns=columns,
+                base_predicate=base_predicate,
+                rel_paths=chunk,
+                execution_ctx=execution_ctx,
             )
-            plan = build_query_plan_for_context(dataset, spec=spec, ctx=execution_ctx)
-            reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-            for row in records_from_arrow_reader(reader):
-                rel_path = row.get("rel_path")
-                if not isinstance(rel_path, str):
-                    continue
-                line = _coerce_int(row.get("line"))
-                start_byte = _coerce_int(row.get("start_byte"))
-                end_byte = _coerce_int(row.get("end_byte"))
-                if line is None or start_byte is None or end_byte is None:
-                    continue
-                encoding = row.get("encoding")
-                file_index = results.get(rel_path)
-                if file_index is None:
-                    file_index = _FileLineIndex(
-                        encoding=encoding if isinstance(encoding, str) else None,
-                        lines={},
-                    )
-                    results[rel_path] = file_index
-                file_index.lines[line] = (start_byte, end_byte)
+            _merge_file_line_index_rows(results, reader)
     except (OSError, RuntimeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError):
         log.warning("File line index unavailable; skipping SCIP byte span normalization")
         return {}
@@ -874,7 +902,7 @@ def _load_module_state_rows(env: BuildEnv) -> list[dict[str, object]]:
     )
     plan = build_query_plan_for_context(dataset, spec=spec, ctx=execution_ctx)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return records_from_arrow_reader(reader)
+    return list(iter_records_from_arrow_reader(reader))
 
 
 def _manifest_records_match(
@@ -943,10 +971,15 @@ def _ensure_manifest_from_module_state(env: BuildEnv, scip_dir: Path) -> None:
     write_manifest(manifest_file, manifest)
 
 
-def _build_file_state_map(file_state_rows: pa.Table) -> dict[str, FileDigest]:
+def _build_file_state_map(
+    file_state_rows: pa.RecordBatchReader | pa.Table,
+) -> dict[str, FileDigest]:
     digest_by_path: dict[str, FileDigest] = {}
-    table = reader_to_table(file_state_rows)
-    for row in iter_rows(table):
+    if isinstance(file_state_rows, pa.Table):
+        row_iter = iter_rows(file_state_rows)
+    else:
+        row_iter = iter_records_from_arrow_reader(file_state_rows)
+    for row in row_iter:
         rel_path_raw = row.get("rel_path")
         size_raw = row.get("size_bytes")
         mtime_raw = row.get("mtime_ns")

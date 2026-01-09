@@ -244,9 +244,7 @@ def compute_diameter_estimate(graph: GraphInput) -> float | None:
         return 0.0
     undirected_graph = _undirected_graph(work_store)
     ordered_indices = [
-        work_store.id_to_index[node_id]
-        for node_id in largest
-        if node_id in work_store.id_to_index
+        work_store.id_to_index[node_id] for node_id in largest if node_id in work_store.id_to_index
     ]
     ordered_indices.sort(key=lambda idx: stable_key(work_store.index_to_id[idx]))
     subgraph, _node_map = undirected_graph.subgraph_with_nodemap(
@@ -297,9 +295,7 @@ def compute_avg_shortest_path_length(graph: GraphInput) -> float | None:
         return 0.0
     undirected_graph = _undirected_graph(work_store)
     ordered_indices = [
-        work_store.id_to_index[node_id]
-        for node_id in largest
-        if node_id in work_store.id_to_index
+        work_store.id_to_index[node_id] for node_id in largest if node_id in work_store.id_to_index
     ]
     ordered_indices.sort(key=lambda idx: stable_key(work_store.index_to_id[idx]))
     subgraph, _node_map = undirected_graph.subgraph_with_nodemap(

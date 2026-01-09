@@ -5,19 +5,30 @@ from __future__ import annotations
 import ast
 import logging
 from collections import deque
+from collections.abc import Hashable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
-import rustworkx as rx
 
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
+from codeintel.build.graphs.engine.protocol import GraphKind
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    ensure_directed_store,
+    successors_by_id,
+)
+from codeintel.build.graphs.rx.build_from_edges import (
+    BuildStoreOptions,
+    EdgeBuildSpec,
+    build_store_from_edge_tuples,
+)
+from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, weight_policy_for_kind
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
@@ -431,19 +442,14 @@ def _compute_transitive_effects(
 ) -> dict[int, set[int]]:
     transitive: dict[int, set[int]] = {}
     store = ensure_directed_store(call_graph)
-    directed_graph = cast("rx.PyDiGraph", store.graph)
     for node_id in store.node_ids():
         node = int(str(node_id))
         if direct_flags.get(node):
             continue
-        node_idx = store.id_to_index.get(node_id)
-        if node_idx is None:
-            continue
         hits = _transitive_hits_for_node(
             store,
-            directed_graph,
             direct_flags,
-            node_idx,
+            node_id,
             max_depth,
         )
         if hits:
@@ -453,9 +459,8 @@ def _compute_transitive_effects(
 
 def _transitive_hits_for_node(
     store: RxGraphStore,
-    directed_graph: rx.PyDiGraph,
     direct_flags: dict[int, bool],
-    node_idx: int,
+    node_id: object,
     max_depth: int,
 ) -> set[int]:
     """Compute transitive effect hits for a single node.
@@ -466,21 +471,20 @@ def _transitive_hits_for_node(
         GOIDs for reachable nodes with direct effects.
     """
     hits: set[int] = set()
-    visited: set[int] = {node_idx}
-    queue: deque[tuple[int, int]] = deque([(node_idx, 0)])
+    visited: set[object] = {node_id}
+    queue: deque[tuple[object, int]] = deque([(node_id, 0)])
     while queue:
-        current_idx, depth = queue.popleft()
+        current_id, depth = queue.popleft()
         if depth >= max_depth:
             continue
-        for succ_idx in directed_graph.successor_indices(current_idx):
-            if succ_idx in visited:
+        for succ_id in successors_by_id(store, current_id):
+            if succ_id in visited:
                 continue
-            visited.add(succ_idx)
-            succ_id = store.index_to_id[succ_idx]
+            visited.add(succ_id)
             succ = int(str(succ_id))
             if direct_flags.get(succ):
                 hits.add(succ)
-            queue.append((succ_idx, depth + 1))
+            queue.append((succ_id, depth + 1))
         if hits:
             break
     return hits
@@ -518,10 +522,52 @@ def _call_graph_from_frames(
     commit: str,
     ctx: ExecutionContext | RuntimeExecutionContext | None,
 ) -> GraphInput:
+    policy = weight_policy_for_kind(GraphKind.CALL_GRAPH)
+    edge_rows, node_ids = _call_graph_edges_from_frame(
+        edges_frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+    )
+    node_attrs, node_ids_from_nodes = _call_graph_nodes_from_frame(
+        nodes_frame,
+        repo=repo,
+        commit=commit,
+        ctx=ctx,
+    )
+    node_ids.update(node_ids_from_nodes)
+    if not edge_rows and not node_ids:
+        return RxGraphStore.directed(
+            weight_policy=policy,
+            numeric_policy=DEFAULT_NUMERIC_POLICY,
+        )
+    spec = EdgeBuildSpec(
+        directed=True,
+        weight_policy=policy,
+        numeric_policy=DEFAULT_NUMERIC_POLICY,
+    )
+    options = BuildStoreOptions(
+        stable_nodes=True,
+        node_ids=node_ids or None,
+        node_attrs=node_attrs or None,
+        node_hint=len(node_ids) if node_ids else None,
+        edge_hint=len(edge_rows),
+    )
+    return build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
+
+
+def _call_graph_edges_from_frame(
+    edges_frame: pa.Table | None,
+    *,
+    repo: str,
+    commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> tuple[list[tuple[int, int, float]], set[Hashable]]:
+    edge_rows: list[tuple[int, int, float]] = []
+    node_ids: set[Hashable] = set()
     if edges_frame is None or edges_frame.num_rows == 0:
-        return RxGraphStore.directed()
+        return edge_rows, node_ids
     rowset = _call_graph_rowset(edges_frame, repo=repo, commit=commit, ctx=ctx)
-    graph = RxGraphStore.directed()
     for row in iter_rows(rowset, ("caller_goid_h128", "callee_goid_h128")):
         caller = normalize_decimal_id(row.get("caller_goid_h128"))
         if caller is None:
@@ -530,11 +576,43 @@ def _call_graph_from_frames(
         if not callee_ids:
             continue
         caller_id = int(caller)
+        node_ids.add(caller_id)
         for callee_id in callee_ids:
-            graph.add_weighted_edge(caller_id, callee_id, weight=1.0)
+            node_ids.add(callee_id)
+            edge_rows.append((caller_id, callee_id, 1.0))
+    return edge_rows, node_ids
 
-    _ensure_call_graph_nodes(graph, nodes_frame, repo=repo, commit=commit, ctx=ctx)
-    return graph
+
+def _call_graph_nodes_from_frame(
+    nodes_frame: pa.Table | None,
+    *,
+    repo: str,
+    commit: str,
+    ctx: ExecutionContext | RuntimeExecutionContext | None,
+) -> tuple[dict[Hashable, dict[str, object]], set[Hashable]]:
+    node_attrs: dict[Hashable, dict[str, object]] = {}
+    node_ids: set[Hashable] = set()
+    if nodes_frame is None or "goid_h128" not in nodes_frame.column_names:
+        return node_attrs, node_ids
+    plan = snapshot_plan(
+        nodes_frame,
+        columns=("goid_h128", "kind"),
+        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
+    )
+    plan = plan.filter(E.is_valid("goid_h128"))
+    table = _materialize_plan(plan, ctx=ctx)
+    for row in iter_rows(table, ("goid_h128", "kind")):
+        goid = normalize_decimal_id(row.get("goid_h128"))
+        if goid is None:
+            continue
+        attrs: dict[str, object] = {}
+        kind = row.get("kind")
+        if kind is not None:
+            attrs["kind"] = str(kind)
+        node_id = int(goid)
+        node_attrs[node_id] = attrs
+        node_ids.add(node_id)
+    return node_attrs, node_ids
 
 
 def _call_graph_rowset(
@@ -611,31 +689,6 @@ def _unresolved_call_rowset(
         ),
         ctx=resolve_columnar_context(ctx),
     )
-
-
-def _ensure_call_graph_nodes(
-    graph: RxGraphStore,
-    nodes_frame: pa.Table | None,
-    *,
-    repo: str,
-    commit: str,
-    ctx: ExecutionContext | RuntimeExecutionContext | None,
-) -> None:
-    if nodes_frame is None or nodes_frame.num_rows == 0:
-        return
-    if "goid_h128" not in nodes_frame.column_names:
-        return
-    plan = snapshot_plan(
-        nodes_frame,
-        columns=("goid_h128",),
-        context=SnapshotContext(repo=repo, commit=commit, ctx=ctx),
-    )
-    plan = plan.filter(E.is_valid("goid_h128"))
-    table = _materialize_plan(plan, ctx=ctx)
-    for row in iter_rows(table, ("goid_h128",)):
-        goid = normalize_decimal_id(row.get("goid_h128"))
-        if goid is not None:
-            graph.ensure_node(int(goid))
 
 
 def _coerce_sorted_goids(raw: object) -> list[int]:

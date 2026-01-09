@@ -13,6 +13,7 @@ from codeintel.build.analytics.graphs.config_data_flow import (
     compute_config_data_flow_result,
 )
 from codeintel.build.analytics.graphs.config_graph_metrics import (
+    ConfigGraphMetricsRequest,
     build_config_module_bipartite,
     compute_config_graph_metrics_result,
 )
@@ -756,11 +757,13 @@ def _write_config_metrics(
     _write_tuple_rows(ctx, "analytics.config_data_flow", data_flow_result.rows)
 
     config_metrics_result = compute_config_graph_metrics_result(
-        repo=ctx.snapshot.repo,
-        commit=ctx.snapshot.commit,
-        config_value_rows=config_value_rows,
-        allowed_modules=module_names,
-        runtime=ctx.runtime_options,
+        ConfigGraphMetricsRequest(
+            repo=ctx.snapshot.repo,
+            commit=ctx.snapshot.commit,
+            config_value_rows=config_value_rows,
+            allowed_modules=module_names,
+            runtime=ctx.runtime_options,
+        )
     )
     _write_tuple_rows(ctx, "analytics.config_graph_metrics_keys", config_metrics_result.key_rows)
     _write_tuple_rows(

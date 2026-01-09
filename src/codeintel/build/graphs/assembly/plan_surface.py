@@ -33,22 +33,40 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
+class ScanPlanRequest:
+    """Scan request inputs for graph plan construction."""
+
+    dataset: ds.Dataset
+    table_key: str | None = None
+    columns: Sequence[str] | Mapping[str, pc.Expression] | None = None
+    filter_expr: pc.Expression | None = None
+    implicit_ordering: bool | None = None
+    require_sequenced_output: bool | None = None
+    ctx: ExecutionContext | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HashJoinSpecRequest:
+    """Hash join settings for graph plan construction."""
+
+    how: JoinType
+    left_keys: Sequence[str]
+    right_keys: Sequence[str] | None = None
+    left_output: Sequence[str] | None = None
+    right_output: Sequence[str] | None = None
+    output_suffix_for_left: str | None = None
+    output_suffix_for_right: str | None = None
+    filter_expression: pc.Expression | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class GraphPlanSurface:
     """Plan helper surface for graph producers."""
 
-    expr: ExprVocab = E
+    expr: type[ExprVocab] = E
 
-    def scan(
-        self,
-        dataset: ds.Dataset,
-        *,
-        table_key: str | None = None,
-        columns: Sequence[str] | Mapping[str, pc.Expression] | None = None,
-        filter_expr: pc.Expression | None = None,
-        implicit_ordering: bool | None = None,
-        require_sequenced_output: bool | None = None,
-        ctx: ExecutionContext | None = None,
-    ) -> Plan:
+    @staticmethod
+    def scan(request: ScanPlanRequest) -> Plan:
         """Create a scan plan for graph assembly.
 
         Returns
@@ -57,33 +75,34 @@ class GraphPlanSurface:
             Scan plan for graph assembly inputs.
         """
         options = QueryPlanOptions(
-            implicit_ordering=implicit_ordering,
-            require_sequenced_output=require_sequenced_output,
+            implicit_ordering=request.implicit_ordering,
+            require_sequenced_output=request.require_sequenced_output,
         )
-        if table_key is not None:
+        if request.table_key is not None:
             return plan_from_schema_defaults(
                 schema_service=get_schema_service(),
                 request=SchemaPlanDefaultsRequest(
-                    table_key=table_key,
-                    dataset=dataset,
-                    predicate=filter_expr,
-                    columns=columns,
+                    table_key=request.table_key,
+                    dataset=request.dataset,
+                    predicate=request.filter_expr,
+                    columns=request.columns,
                     options=options,
-                    ctx=ctx,
+                    ctx=request.ctx,
                 ),
             )
         projection = projection_spec_from_columns(
-            columns,
-            default_columns=tuple(dataset.schema.names),
+            request.columns,
+            default_columns=tuple(request.dataset.schema.names),
         )
         query_spec = QuerySpec(
-            predicate=filter_expr,
-            pushdown_predicate=filter_expr,
+            predicate=request.filter_expr,
+            pushdown_predicate=request.filter_expr,
             projection=projection,
         )
-        return build_query_plan(dataset, spec=query_spec, options=options)
+        return build_query_plan(request.dataset, spec=query_spec, options=options)
 
-    def table(self, table: pa.Table) -> Plan:
+    @staticmethod
+    def table(table: pa.Table) -> Plan:
         """Create a plan from an in-memory table.
 
         Returns
@@ -93,18 +112,8 @@ class GraphPlanSurface:
         """
         return build_table_plan(table=table)
 
-    def hash_join_spec(
-        self,
-        *,
-        how: JoinType,
-        left_keys: Sequence[str],
-        right_keys: Sequence[str] | None = None,
-        left_output: Sequence[str] | None = None,
-        right_output: Sequence[str] | None = None,
-        output_suffix_for_left: str | None = None,
-        output_suffix_for_right: str | None = None,
-        filter_expression: pc.Expression | None = None,
-    ) -> HashJoinSpec:
+    @staticmethod
+    def hash_join_spec(request: HashJoinSpecRequest) -> HashJoinSpec:
         """Build a hash join spec with defaults for graph pipelines.
 
         Returns
@@ -113,18 +122,20 @@ class GraphPlanSurface:
             Hash join spec with default graph pipeline settings.
         """
         return HashJoinSpec(
-            left_keys=tuple(left_keys),
-            right_keys=tuple(right_keys) if right_keys is not None else tuple(left_keys),
-            how=how,
-            left_output=tuple(left_output) if left_output is not None else None,
-            right_output=tuple(right_output) if right_output is not None else None,
-            output_suffix_for_left=output_suffix_for_left,
-            output_suffix_for_right=output_suffix_for_right,
-            filter_expression=filter_expression,
+            left_keys=tuple(request.left_keys),
+            right_keys=tuple(request.right_keys)
+            if request.right_keys is not None
+            else tuple(request.left_keys),
+            how=request.how,
+            left_output=tuple(request.left_output) if request.left_output is not None else None,
+            right_output=tuple(request.right_output) if request.right_output is not None else None,
+            output_suffix_for_left=request.output_suffix_for_left,
+            output_suffix_for_right=request.output_suffix_for_right,
+            filter_expression=request.filter_expression,
         )
 
+    @staticmethod
     def order_by(
-        self,
         plan: Plan,
         *,
         sort_keys: Sequence[SortKey],
@@ -142,4 +153,9 @@ class GraphPlanSurface:
 
 graph_plan = GraphPlanSurface()
 
-__all__ = ["GraphPlanSurface", "graph_plan"]
+__all__ = [
+    "GraphPlanSurface",
+    "HashJoinSpecRequest",
+    "ScanPlanRequest",
+    "graph_plan",
+]

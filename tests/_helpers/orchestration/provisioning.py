@@ -666,7 +666,7 @@ def _build_provisioning_setup(
     discovery = FilesystemDiscoveryAdapter(repo_root)
     change_detection = HashChangeDetectionAdapter(
         dataset_root=build_paths.dataset_root_dir,
-        snapshot_id=ctx.snapshot.commit,
+        snapshot_id=ctx.commit,
     )
     tool_adapter = ToolRunnerAdapter(tool_service)
 

@@ -1521,8 +1521,11 @@ def _hash_join_block_targets(
             right_output=[output_column],
         ),
     )
-    sort_base = ("repo", "commit", "rel_path", "call_id", "callee_goid_h128")
-    sort_keys = [key for key in sort_base if key in left_exprs]
+    sort_keys = [
+        key
+        for key in ("repo", "commit", "rel_path", "call_id", "callee_goid_h128")
+        if key in left_exprs
+    ]
     if sort_keys:
         joined = joined.order_by(sort_keys=[(key, "ascending") for key in sort_keys])
     return _plan_to_table(joined)

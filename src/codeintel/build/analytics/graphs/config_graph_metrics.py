@@ -22,7 +22,13 @@ from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapsh
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
+from codeintel.build.graphs.rx.build_from_edges import (
+    BuildStoreOptions,
+    EdgeBuildSpec,
+    build_store_from_edge_tuples,
+)
 from codeintel.build.graphs.rx.iterators import iter_edge_id_payloads
+from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, DEFAULT_WEIGHT_POLICY
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.tabular.expr_vocab import E
@@ -294,14 +300,6 @@ def _config_reference_rowset(
     )
 
 
-def _add_bipartite_edge(graph: RxGraphStore, *, key: str, module: str) -> None:
-    key_node = ("c", key)
-    module_node = ("m", module)
-    graph.set_node_attrs(key_node, {"bipartite": 0})
-    graph.set_node_attrs(module_node, {"bipartite": 1})
-    graph.add_weighted_edge(key_node, module_node, weight=1.0)
-
-
 def _config_bipartite_from_rows(
     config_value_rows: Iterable[Mapping[str, object]],
     *,
@@ -309,7 +307,9 @@ def _config_bipartite_from_rows(
     repo: str | None,
     commit: str | None,
 ) -> RxGraphStore:
-    graph = RxGraphStore.undirected()
+    edge_rows: list[tuple[Hashable, Hashable, float]] = []
+    node_ids: set[Hashable] = set()
+    node_attrs: dict[Hashable, dict[str, object]] = {}
     for row in config_value_rows:
         if not _row_matches_scope(row, repo=repo, commit=commit):
             continue
@@ -325,8 +325,31 @@ def _config_bipartite_from_rows(
             continue
         key_value = str(key)
         for module_name in modules:
-            _add_bipartite_edge(graph, key=key_value, module=str(module_name))
-    return graph
+            key_node = ("c", key_value)
+            module_node = ("m", str(module_name))
+            node_ids.add(key_node)
+            node_ids.add(module_node)
+            node_attrs.setdefault(key_node, {"bipartite": 0})
+            node_attrs.setdefault(module_node, {"bipartite": 1})
+            edge_rows.append((key_node, module_node, 1.0))
+    if not edge_rows and not node_ids:
+        return RxGraphStore.undirected(
+            weight_policy=DEFAULT_WEIGHT_POLICY,
+            numeric_policy=DEFAULT_NUMERIC_POLICY,
+        )
+    spec = EdgeBuildSpec(
+        directed=False,
+        weight_policy=DEFAULT_WEIGHT_POLICY,
+        numeric_policy=DEFAULT_NUMERIC_POLICY,
+    )
+    options = BuildStoreOptions(
+        stable_nodes=True,
+        node_ids=node_ids or None,
+        node_attrs=node_attrs or None,
+        node_hint=len(node_ids) if node_ids else None,
+        edge_hint=len(edge_rows),
+    )
+    return build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
 
 
 def _rows_from_tabular(

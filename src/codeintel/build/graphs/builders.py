@@ -26,11 +26,22 @@ from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.iter import iter_array_values, iter_tuples
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
-from codeintel.core.columnar.plan_ops import Plan
+from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
+from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.data_models.ids import as_int, normalize_decimal_id
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
+from codeintel.core.schemas.service import get_schema_service
+
+CALL_GRAPH_EDGES_TABLE_KEY = "graph.call_graph_edges"
+CALL_GRAPH_NODES_TABLE_KEY = "graph.call_graph_nodes"
+IMPORT_GRAPH_EDGES_TABLE_KEY = "graph.import_graph_edges"
+IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
+SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
 
 
 def add_weighted_edge(
@@ -84,60 +95,13 @@ def build_call_graph_from_rows(
     RxGraphStore
         Directed call graph store populated from the provided rows.
     """
-    policy = weight_policy_for_kind(GraphKind.CALL_GRAPH)
-    edge_rows: list[tuple[int, int, float]] = []
-    node_ids: set[int] = set()
-    for row in call_graph_edges:
-        caller = normalize_decimal_id(row.get("caller_goid_h128"))
-        callee = normalize_decimal_id(row.get("callee_goid_h128"))
-        if caller is None or callee is None:
-            continue
-        node_ids.update((caller, callee))
-        edge_rows.append((caller, callee, 1.0))
-    node_attrs: dict[int, dict[str, object]] = {}
-    if call_graph_nodes is not None:
-        for row in call_graph_nodes:
-            node_id = normalize_decimal_id(row.get("goid_h128"))
-            if node_id is None:
-                continue
-            attrs: dict[str, object] = {}
-            kind = row.get("kind")
-            if kind is not None:
-                attrs["kind"] = str(kind)
-            node_attrs[node_id] = attrs
-            node_ids.add(node_id)
-    if not edge_rows and not node_ids:
-        store = RxGraphStore.directed(weight_policy=policy)
-        _apply_graph_metadata(
-            store,
-            graph_kind=GraphKind.CALL_GRAPH,
-            ordering_keys=("caller_goid_h128", "callee_goid_h128"),
-        )
-        return store
-    if edge_rows:
-        edge_rows.sort()
-    normalized_attrs = _normalize_node_attrs(node_attrs)
-    spec = EdgeBuildSpec(
-        directed=True,
-        weight_policy=policy,
-        numeric_policy=DEFAULT_NUMERIC_POLICY,
-        src_fn=normalize_decimal_id,
-        dst_fn=normalize_decimal_id,
+    edges_table = _finalize_rows_table(CALL_GRAPH_EDGES_TABLE_KEY, call_graph_edges)
+    nodes_table = (
+        _finalize_rows_table(CALL_GRAPH_NODES_TABLE_KEY, call_graph_nodes)
+        if call_graph_nodes is not None
+        else None
     )
-    options = BuildStoreOptions(
-        stable_nodes=True,
-        node_ids=node_ids or None,
-        node_attrs=normalized_attrs,
-        node_hint=len(node_ids) if node_ids else None,
-        edge_hint=len(edge_rows),
-    )
-    store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
-    _apply_graph_metadata(
-        store,
-        graph_kind=GraphKind.CALL_GRAPH,
-        ordering_keys=("caller_goid_h128", "callee_goid_h128"),
-    )
-    return store
+    return build_call_graph_from_tables(edges_table, nodes_table)
 
 
 def add_import_edges(
@@ -217,47 +181,19 @@ def build_import_graph_from_rows(
     RxGraphStore
         Directed import graph store populated from the provided rows.
     """
-    policy = weight_policy_for_kind(GraphKind.IMPORT_GRAPH)
-    edge_rows, node_ids, fallback_layer_by_module = _collect_import_edge_rows(
-        import_graph_edges,
-        coerce_int=coerce_int,
+    edges_table = _finalize_rows_table(
+        IMPORT_GRAPH_EDGES_TABLE_KEY,
+        _coerce_import_edge_rows(import_graph_edges, coerce_int=coerce_int),
     )
-    module_attrs = _collect_import_module_attrs(import_modules, coerce_int=coerce_int)
-    _apply_fallback_layers(module_attrs, fallback_layer_by_module)
-    if module_attrs:
-        node_ids.update(module_attrs.keys())
-    if not edge_rows and not node_ids:
-        store = RxGraphStore.directed(weight_policy=policy)
-        _apply_graph_metadata(
-            store,
-            graph_kind=GraphKind.IMPORT_GRAPH,
-            ordering_keys=("src_module", "dst_module"),
+    modules_table = (
+        _finalize_rows_table(
+            IMPORT_MODULES_TABLE_KEY,
+            _coerce_import_module_rows(import_modules or (), coerce_int=coerce_int),
         )
-        return store
-    if edge_rows:
-        edge_rows.sort()
-    normalized_attrs = _normalize_node_attrs(module_attrs)
-    spec = EdgeBuildSpec(
-        directed=True,
-        weight_policy=policy,
-        numeric_policy=DEFAULT_NUMERIC_POLICY,
-        src_fn=_coerce_str,
-        dst_fn=_coerce_str,
+        if import_modules is not None
+        else None
     )
-    options = BuildStoreOptions(
-        stable_nodes=True,
-        node_ids=node_ids or None,
-        node_attrs=normalized_attrs,
-        node_hint=len(node_ids) if node_ids else None,
-        edge_hint=len(edge_rows),
-    )
-    store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
-    _apply_graph_metadata(
-        store,
-        graph_kind=GraphKind.IMPORT_GRAPH,
-        ordering_keys=("src_module", "dst_module"),
-    )
-    return store
+    return build_import_graph_from_tables(edges_table, modules_table)
 
 
 def _map_path_to_module(value: object, module_by_path: Mapping[str, str]) -> str | None:
@@ -279,47 +215,13 @@ def build_symbol_module_graph(
     RxGraphStore
         Undirected symbol-module graph store populated from the provided rows.
     """
-    resolved_policy = policy or weight_policy_for_kind(GraphKind.SYMBOL_MODULE_GRAPH)
-    edge_rows: list[tuple[str, str, float]] = []
-    node_ids: set[str] = set()
-    for record in symbol_use_edges:
-        def_module = _map_path_to_module(record.get("def_path"), module_by_path)
-        use_module = _map_path_to_module(record.get("use_path"), module_by_path)
-        if def_module is None or use_module is None:
-            continue
-        if def_module == use_module:
-            continue
-        node_ids.update((use_module, def_module))
-        edge_rows.append((use_module, def_module, 1.0))
-    if not edge_rows:
-        store = RxGraphStore.undirected(weight_policy=resolved_policy)
-        _apply_graph_metadata(
-            store,
-            graph_kind=GraphKind.SYMBOL_MODULE_GRAPH,
-            ordering_keys=("use_module", "def_module"),
-        )
-        return store
-    edge_rows.sort()
-    spec = EdgeBuildSpec(
-        directed=False,
-        weight_policy=resolved_policy,
-        numeric_policy=DEFAULT_NUMERIC_POLICY,
-        src_fn=_coerce_str,
-        dst_fn=_coerce_str,
+    edges_table = _finalize_rows_table(SYMBOL_USE_EDGES_TABLE_KEY, symbol_use_edges)
+    module_table = _module_map_table(module_by_path)
+    return build_symbol_module_graph_from_tables(
+        edges_table,
+        module_table,
+        policy=policy,
     )
-    options = BuildStoreOptions(
-        stable_nodes=True,
-        node_ids=node_ids,
-        node_hint=len(node_ids),
-        edge_hint=len(edge_rows),
-    )
-    store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
-    _apply_graph_metadata(
-        store,
-        graph_kind=GraphKind.SYMBOL_MODULE_GRAPH,
-        ordering_keys=("use_module", "def_module"),
-    )
-    return store
 
 
 def build_symbol_function_graph(
@@ -334,53 +236,78 @@ def build_symbol_function_graph(
     RxGraphStore
         Undirected symbol-function graph store populated from the provided rows.
     """
-    resolved_policy = policy or weight_policy_for_kind(GraphKind.SYMBOL_FUNCTION_GRAPH)
-    edge_rows: list[tuple[int, int, float]] = []
-    node_ids: set[int] = set()
-    for record in symbol_use_edges:
-        def_goid = normalize_decimal_id(record.get("def_goid_h128"))
-        use_goid = normalize_decimal_id(record.get("use_goid_h128"))
-        if def_goid is None or use_goid is None:
-            continue
-        if def_goid == use_goid:
-            continue
-        node_ids.update((use_goid, def_goid))
-        edge_rows.append((use_goid, def_goid, 1.0))
-    if not edge_rows:
-        store = RxGraphStore.undirected(weight_policy=resolved_policy)
-        _apply_graph_metadata(
-            store,
-            graph_kind=GraphKind.SYMBOL_FUNCTION_GRAPH,
-            ordering_keys=("use_goid_h128", "def_goid_h128"),
-        )
-        return store
-    edge_rows.sort()
-    spec = EdgeBuildSpec(
-        directed=False,
-        weight_policy=resolved_policy,
-        numeric_policy=DEFAULT_NUMERIC_POLICY,
-        src_fn=normalize_decimal_id,
-        dst_fn=normalize_decimal_id,
-    )
-    options = BuildStoreOptions(
-        stable_nodes=True,
-        node_ids=node_ids,
-        node_hint=len(node_ids),
-        edge_hint=len(edge_rows),
-    )
-    store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
-    _apply_graph_metadata(
-        store,
-        graph_kind=GraphKind.SYMBOL_FUNCTION_GRAPH,
-        ordering_keys=("use_goid_h128", "def_goid_h128"),
-    )
-    return store
+    edges_table = _finalize_rows_table(SYMBOL_USE_EDGES_TABLE_KEY, symbol_use_edges)
+    return build_symbol_function_graph_from_tables(edges_table, policy=policy)
 
 
 def _coerce_str(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _determinism_for_table(table_key: str) -> DedupeTier:
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is not None:
+        policy = schema.finalize_policy
+        if policy is not None and policy.dedupe is not None and policy.dedupe.tier is not None:
+            return policy.dedupe.tier
+    canonical_keys = resolve_canonical_sort_keys(schema)
+    if canonical_keys == ():
+        return "throughput"
+    if canonical_keys:
+        return "canonical"
+    return "stable_set"
+
+
+def _ordering_keys_for_table(table_key: str) -> tuple[str, ...] | None:
+    schema = get_schema_service().get_table_schema(table_key)
+    keys = resolve_canonical_sort_keys(schema)
+    if not keys:
+        return None
+    return tuple(keys)
+
+
+def _finalize_rows_table(
+    table_key: str,
+    rows: Iterable[Mapping[str, object]],
+) -> pa.Table:
+    table, _row_count = table_for_rows(table_key, rows)
+    spec = finalize_spec_for_table(
+        table_key,
+        mode="tolerant",
+        determinism=_determinism_for_table(table_key),
+    )
+    return finalize_table(table, spec=spec).good
+
+
+def _finalize_table_for_key(
+    table_key: str,
+    table: pa.Table | None,
+) -> pa.Table | None:
+    if table is None:
+        return None
+    spec = finalize_spec_for_table(
+        table_key,
+        mode="tolerant",
+        determinism=_determinism_for_table(table_key),
+    )
+    return finalize_table(table, spec=spec).good
+
+
+def _module_map_table(module_by_path: Mapping[str, str]) -> pa.Table:
+    if not module_by_path:
+        return pa.Table.from_arrays(
+            [pa.array([], type=pa.string()), pa.array([], type=pa.string())],
+            names=["path", "module"],
+        )
+    items = sorted(module_by_path.items())
+    paths = [item[0] for item in items]
+    modules = [item[1] for item in items]
+    return pa.Table.from_arrays(
+        [pa.array(paths, type=pa.string()), pa.array(modules, type=pa.string())],
+        names=["path", "module"],
+    )
 
 
 def _node_ids_from_table(
@@ -667,10 +594,14 @@ def build_call_graph_from_tables(
     RxGraphStore
         Call graph store populated from the provided tables.
     """
-    edge_table = _call_graph_edge_table(call_graph_edges, repo=repo, commit=commit)
+    edges = _finalize_table_for_key(CALL_GRAPH_EDGES_TABLE_KEY, call_graph_edges)
+    nodes = _finalize_table_for_key(CALL_GRAPH_NODES_TABLE_KEY, call_graph_nodes)
+    if edges is None:
+        edges = call_graph_edges
+    edge_table = _call_graph_edge_table(edges, repo=repo, commit=commit)
     node_attrs: dict[int, dict[str, object]] = {}
-    if call_graph_nodes is not None and call_graph_nodes.num_rows > 0:
-        node_attrs = _call_graph_node_attrs(call_graph_nodes, repo=repo, commit=commit)
+    if nodes is not None and nodes.num_rows > 0:
+        node_attrs = _call_graph_node_attrs(nodes, repo=repo, commit=commit)
     normalized_attrs = _normalize_node_attrs(node_attrs)
     node_ids = _node_ids_from_table(
         edge_table,
@@ -693,6 +624,7 @@ def build_call_graph_from_tables(
         store,
         graph_kind=GraphKind.CALL_GRAPH,
         ordering_keys=("caller_goid_h128", "callee_goid_h128"),
+        table_key=CALL_GRAPH_EDGES_TABLE_KEY,
     )
     return store
 
@@ -711,11 +643,15 @@ def build_import_graph_from_tables(
     RxGraphStore
         Import graph store populated from the provided tables.
     """
-    edge_table = _import_graph_edge_table(import_graph_edges, repo=repo, commit=commit)
-    fallback_layers = _import_layer_fallback(import_graph_edges, repo=repo, commit=commit)
+    edges = _finalize_table_for_key(IMPORT_GRAPH_EDGES_TABLE_KEY, import_graph_edges)
+    modules = _finalize_table_for_key(IMPORT_MODULES_TABLE_KEY, import_modules)
+    if edges is None:
+        edges = import_graph_edges
+    edge_table = _import_graph_edge_table(edges, repo=repo, commit=commit)
+    fallback_layers = _import_layer_fallback(edges, repo=repo, commit=commit)
     module_attrs: dict[str, dict[str, int]] = {}
-    if import_modules is not None and import_modules.num_rows > 0:
-        module_attrs = _import_module_attrs(import_modules, repo=repo, commit=commit)
+    if modules is not None and modules.num_rows > 0:
+        module_attrs = _import_module_attrs(modules, repo=repo, commit=commit)
     _apply_fallback_layers(module_attrs, fallback_layers)
     normalized_attrs = _normalize_node_attrs(module_attrs)
     node_ids = _node_ids_from_table(
@@ -739,6 +675,197 @@ def build_import_graph_from_tables(
         store,
         graph_kind=GraphKind.IMPORT_GRAPH,
         ordering_keys=("src_module", "dst_module"),
+        table_key=IMPORT_GRAPH_EDGES_TABLE_KEY,
+    )
+    return store
+
+
+def _symbol_module_edge_table(
+    symbol_use_edges: pa.Table,
+    module_map: pa.Table,
+    *,
+    repo: str | None,
+    commit: str | None,
+) -> pa.Table:
+    missing_edges = [
+        name for name in ("def_path", "use_path") if name not in symbol_use_edges.column_names
+    ]
+    if missing_edges:
+        msg = f"Missing symbol use columns: {missing_edges}"
+        raise ValueError(msg)
+    missing_modules = [name for name in ("path", "module") if name not in module_map.column_names]
+    if missing_modules:
+        msg = f"Missing module map columns: {missing_modules}"
+        raise ValueError(msg)
+    filters: list[object] = [E.is_valid("def_path"), E.is_valid("use_path")]
+    _append_snapshot_filters(filters, table=symbol_use_edges, repo=repo, commit=commit)
+    plan = build_table_plan(
+        table=symbol_use_edges,
+        options=TablePlanOptions(
+            filter_expr=E.and_(*filters),
+            projection={"def_path": E.field("def_path"), "use_path": E.field("use_path")},
+        ),
+    )
+    module_filters: list[object] = [E.is_valid("path"), E.is_valid("module")]
+    _append_snapshot_filters(module_filters, table=module_map, repo=repo, commit=commit)
+    module_plan = build_table_plan(
+        table=module_map,
+        options=TablePlanOptions(
+            filter_expr=E.and_(*module_filters),
+            projection={"path": E.field("path"), "module": E.field("module")},
+            order_by=(("path", "ascending"), ("module", "ascending")),
+        ),
+    )
+    plan = plan.hash_join(
+        right=module_plan,
+        spec=HashJoinSpec(left_keys=("def_path",), right_keys=("path",), how="inner"),
+    )
+    plan = plan.project(
+        {
+            "def_path": E.field("def_path"),
+            "use_path": E.field("use_path"),
+            "def_module": E.field("module"),
+        }
+    )
+    plan = plan.hash_join(
+        right=module_plan,
+        spec=HashJoinSpec(left_keys=("use_path",), right_keys=("path",), how="inner"),
+    )
+    plan = plan.project(
+        {
+            "use_module": E.field("module"),
+            "def_module": E.field("def_module"),
+        }
+    )
+    plan = plan.filter(E.field("use_module") != E.field("def_module"))
+    plan = plan.aggregate(
+        keys=[E.field("use_module"), E.field("def_module")],
+        aggregates=[("use_module", "count", None, "weight")],
+    )
+    plan = plan.order_by(
+        sort_keys=(("use_module", "ascending"), ("def_module", "ascending")),
+    )
+    return _plan_to_table(plan)
+
+
+def _symbol_function_edge_table(
+    symbol_use_edges: pa.Table,
+    *,
+    repo: str | None,
+    commit: str | None,
+) -> pa.Table:
+    missing = [
+        name
+        for name in ("def_goid_h128", "use_goid_h128")
+        if name not in symbol_use_edges.column_names
+    ]
+    if missing:
+        msg = f"Missing symbol use columns: {missing}"
+        raise ValueError(msg)
+    filters: list[object] = [E.is_valid("def_goid_h128"), E.is_valid("use_goid_h128")]
+    _append_snapshot_filters(filters, table=symbol_use_edges, repo=repo, commit=commit)
+    plan = build_table_plan(
+        table=symbol_use_edges,
+        options=TablePlanOptions(
+            filter_expr=E.and_(*filters),
+            projection={
+                "src": E.field("use_goid_h128"),
+                "dst": E.field("def_goid_h128"),
+            },
+        ),
+    )
+    plan = plan.filter(E.field("src") != E.field("dst"))
+    plan = plan.aggregate(
+        keys=[E.field("src"), E.field("dst")],
+        aggregates=[("src", "count", None, "weight")],
+    )
+    plan = plan.order_by(sort_keys=(("src", "ascending"), ("dst", "ascending")))
+    return _plan_to_table(plan)
+
+
+def build_symbol_module_graph_from_tables(
+    symbol_use_edges: pa.Table,
+    module_map: pa.Table,
+    *,
+    policy: GraphWeightPolicy | None = None,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> RxGraphStore:
+    """Build an undirected symbol-module graph from Arrow tables.
+
+    Returns
+    -------
+    RxGraphStore
+        Undirected symbol-module graph store populated from the provided tables.
+    """
+    edges = _finalize_table_for_key(SYMBOL_USE_EDGES_TABLE_KEY, symbol_use_edges)
+    if edges is None:
+        edges = symbol_use_edges
+    edge_table = _symbol_module_edge_table(edges, module_map, repo=repo, commit=commit)
+    node_ids = _node_ids_from_table(
+        edge_table,
+        columns=("src", "dst"),
+        normalize=_coerce_str,
+    )
+    resolved_policy = policy or weight_policy_for_kind(GraphKind.SYMBOL_MODULE_GRAPH)
+    store = _build_store_from_edge_table(
+        edge_table,
+        spec=_EdgeTableBuildSpec(
+            directed=False,
+            weight_policy=resolved_policy,
+            normalize=_coerce_str,
+            node_ids=node_ids or None,
+            node_attrs=None,
+        ),
+    )
+    _apply_graph_metadata(
+        store,
+        graph_kind=GraphKind.SYMBOL_MODULE_GRAPH,
+        ordering_keys=("use_module", "def_module"),
+        table_key=SYMBOL_USE_EDGES_TABLE_KEY,
+    )
+    return store
+
+
+def build_symbol_function_graph_from_tables(
+    symbol_use_edges: pa.Table,
+    *,
+    policy: GraphWeightPolicy | None = None,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> RxGraphStore:
+    """Build an undirected symbol-function graph from Arrow tables.
+
+    Returns
+    -------
+    RxGraphStore
+        Undirected symbol-function graph store populated from the provided tables.
+    """
+    edges = _finalize_table_for_key(SYMBOL_USE_EDGES_TABLE_KEY, symbol_use_edges)
+    if edges is None:
+        edges = symbol_use_edges
+    edge_table = _symbol_function_edge_table(edges, repo=repo, commit=commit)
+    node_ids = _node_ids_from_table(
+        edge_table,
+        columns=("src", "dst"),
+        normalize=normalize_decimal_id,
+    )
+    resolved_policy = policy or weight_policy_for_kind(GraphKind.SYMBOL_FUNCTION_GRAPH)
+    store = _build_store_from_edge_table(
+        edge_table,
+        spec=_EdgeTableBuildSpec(
+            directed=False,
+            weight_policy=resolved_policy,
+            normalize=normalize_decimal_id,
+            node_ids=node_ids or None,
+            node_attrs=None,
+        ),
+    )
+    _apply_graph_metadata(
+        store,
+        graph_kind=GraphKind.SYMBOL_FUNCTION_GRAPH,
+        ordering_keys=("use_goid_h128", "def_goid_h128"),
+        table_key=SYMBOL_USE_EDGES_TABLE_KEY,
     )
     return store
 
@@ -755,13 +882,68 @@ def _apply_graph_metadata(
     *,
     graph_kind: GraphKind,
     ordering_keys: tuple[str, ...] | None,
+    table_key: str | None = None,
 ) -> None:
-    metadata = GraphMetadata(
-        weight_policy=store.weight_policy.name,
-        graph_kind=_graph_kind_name(graph_kind),
-        ordering_keys=ordering_keys,
-    )
+    resolved_ordering_keys = ordering_keys
+    if resolved_ordering_keys is None and table_key is not None:
+        resolved_ordering_keys = _ordering_keys_for_table(table_key)
+    determinism_tier = _determinism_for_table(table_key) if table_key is not None else None
+    if determinism_tier is None:
+        metadata = GraphMetadata(
+            weight_policy=store.weight_policy.name,
+            graph_kind=_graph_kind_name(graph_kind),
+            ordering_keys=resolved_ordering_keys,
+        )
+    else:
+        metadata = GraphMetadata(
+            weight_policy=store.weight_policy.name,
+            graph_kind=_graph_kind_name(graph_kind),
+            ordering_keys=resolved_ordering_keys,
+            determinism_tier=determinism_tier,
+        )
     apply_graph_metadata(store.graph, metadata)
+
+
+def _coerce_int_fields(
+    row: Mapping[str, object],
+    *,
+    fields: Sequence[str],
+    coerce_int: Callable[[object], int | None],
+) -> Mapping[str, object]:
+    updated: dict[str, int] = {}
+    for field in fields:
+        value = row.get(field)
+        if value is None:
+            continue
+        coerced = coerce_int(value)
+        if coerced is None or coerced == value:
+            continue
+        updated[field] = coerced
+    if not updated:
+        return row
+    normalized = dict(row)
+    normalized.update(updated)
+    return normalized
+
+
+def _coerce_import_edge_rows(
+    rows: Iterable[Mapping[str, object]],
+    *,
+    coerce_int: Callable[[object], int | None],
+) -> Iterable[Mapping[str, object]]:
+    fields = ("src_fan_out", "dst_fan_in", "cycle_group", "module_layer")
+    for row in rows:
+        yield _coerce_int_fields(row, fields=fields, coerce_int=coerce_int)
+
+
+def _coerce_import_module_rows(
+    rows: Iterable[Mapping[str, object]],
+    *,
+    coerce_int: Callable[[object], int | None],
+) -> Iterable[Mapping[str, object]]:
+    fields = ("scc_id", "component_size", "layer", "cycle_group")
+    for row in rows:
+        yield _coerce_int_fields(row, fields=fields, coerce_int=coerce_int)
 
 
 def _collect_import_edge_rows(
@@ -825,19 +1007,27 @@ def build_symbol_module_edges(
     tuple[set[str], dict[str, set[str]], dict[str, set[str]]]
         Modules, inbound adjacency, and outbound adjacency extracted from use edges.
     """
+    edges_table = _finalize_rows_table(SYMBOL_USE_EDGES_TABLE_KEY, symbol_use_edges)
+    edge_table = _symbol_module_edge_table(
+        edges_table,
+        _module_map_table(module_by_path),
+        repo=None,
+        commit=None,
+    )
     modules: set[str] = set()
     inbound: dict[str, set[str]] = {}
     outbound: dict[str, set[str]] = {}
-    for record in symbol_use_edges:
-        def_module = _map_path_to_module(record.get("def_path"), module_by_path)
-        use_module = _map_path_to_module(record.get("use_path"), module_by_path)
-        if def_module is None or use_module is None:
+    for src, dst, _weight in iter_tuples(
+        table_to_reader(edge_table),
+        columns=("src", "dst", "weight"),
+    ):
+        if src is None or dst is None:
             continue
-        if def_module == use_module:
-            continue
-        modules.update((use_module, def_module))
-        inbound.setdefault(def_module, set()).add(use_module)
-        outbound.setdefault(use_module, set()).add(def_module)
+        src_module = str(src)
+        dst_module = str(dst)
+        modules.update((src_module, dst_module))
+        inbound.setdefault(dst_module, set()).add(src_module)
+        outbound.setdefault(src_module, set()).add(dst_module)
     return modules, inbound, outbound
 
 
@@ -852,6 +1042,8 @@ __all__ = [
     "build_import_graph_from_rows",
     "build_import_graph_from_tables",
     "build_symbol_function_graph",
+    "build_symbol_function_graph_from_tables",
     "build_symbol_module_edges",
     "build_symbol_module_graph",
+    "build_symbol_module_graph_from_tables",
 ]

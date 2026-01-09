@@ -340,9 +340,7 @@ def _resolve_finalize_spec(
     ordering = spec.ordering or plan.ordering
     if determinism == spec.determinism and ordering == spec.ordering:
         return resolve_finalize_spec(spec)
-    return resolve_finalize_spec(
-        replace(spec, determinism=determinism, ordering=ordering)
-    )
+    return resolve_finalize_spec(replace(spec, determinism=determinism, ordering=ordering))
 
 
 def precheck_join_keys(

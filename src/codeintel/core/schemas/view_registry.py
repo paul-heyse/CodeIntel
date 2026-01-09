@@ -69,9 +69,7 @@ def build_view_schema_overrides(
         schema_name, table_name = _split_table_key(table_key)
         list_policies = _list_policies_for_columns(columns)
         join_safe_columns = _join_safe_columns_for_columns(columns)
-        finalize_policy = (
-            FinalizePolicy(list_policies=list_policies) if list_policies else None
-        )
+        finalize_policy = FinalizePolicy(list_policies=list_policies) if list_policies else None
         plan_policy = (
             PlanPolicy(
                 default_projection=tuple(column.name for column in columns),
@@ -139,9 +137,7 @@ def _list_policies_for_columns(
             paths = [column.name]
         for path in paths:
             null_policy = "error" if path == column.name and not column.nullable else "empty"
-            policies.append(
-                FinalizeListPolicySpec(column=path, null_policy=null_policy)
-            )
+            policies.append(FinalizeListPolicySpec(column=path, null_policy=null_policy))
     return tuple(policies)
 
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
@@ -15,12 +14,6 @@ from codeintel.core.columnar.plan_ops import (
     run_external_plan,
 )
 from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_batch_collector_for_table_key
-
-if TYPE_CHECKING:
-    type ReaderThunk = Callable[[], pa.RecordBatchReader]
-else:
-    type ReaderThunk = object
-
 
 RustworkxPlanBuilder = Callable[
     ...,
@@ -41,7 +34,7 @@ class RustworkxPlanPayload:
 def rustworkx_plan_runner(
     *,
     request: ExternalPlanRequest,
-) -> ReaderThunk:
+) -> pa.RecordBatchReader:
     """Execute rustworkx plans via ExternalPlanSpec payloads.
 
     Parameters
@@ -51,8 +44,8 @@ def rustworkx_plan_runner(
 
     Returns
     -------
-    Callable[[], pyarrow.RecordBatchReader]
-        Thunk returning record batch reader for plan results.
+    pyarrow.RecordBatchReader
+        Record batch reader for plan results.
 
     Raises
     ------
@@ -70,9 +63,7 @@ def rustworkx_plan_runner(
     if not isinstance(payload, RustworkxPlanPayload):
         msg = "Rustworkx plan payload must be RustworkxPlanPayload."
         raise TypeError(msg)
-    return lambda: _reader_from_result(
-        payload.builder(*payload.args, **dict(payload.kwargs))
-    )
+    return _reader_from_result(payload.builder(*payload.args, **dict(payload.kwargs)))
 
 
 def register_rustworkx_plan_runner(name: str = "rustworkx") -> None:

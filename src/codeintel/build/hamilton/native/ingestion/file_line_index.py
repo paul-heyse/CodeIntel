@@ -27,7 +27,6 @@ from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
@@ -66,14 +65,14 @@ def _resolve_module_paths(modules_table: pa.Table) -> dict[str, str | None]:
         )
     execution_ctx = resolve_execution_context(None)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    table = reader_to_table(reader)
     paths: dict[str, str | None] = {}
-    for row in iter_rows(table):
-        rel_path = row.get("path")
-        if not isinstance(rel_path, str) or not rel_path:
-            continue
-        language = row.get("language")
-        paths[rel_path] = language if isinstance(language, str) else None
+    for batch in reader:
+        for row in iter_rows(batch):
+            rel_path = row.get("path")
+            if not isinstance(rel_path, str) or not rel_path:
+                continue
+            language = row.get("language")
+            paths[rel_path] = language if isinstance(language, str) else None
     return paths
 
 

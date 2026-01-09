@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_schema_defaults
@@ -10,15 +11,18 @@ from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.service import get_schema_service
 
 
-def build_ingest_query_spec(
-    table_key: str,
-    *,
-    columns: Sequence[str] | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
-    rel_path: str | None = None,
-    available_columns: Sequence[str] | None = None,
-) -> QuerySpec:
+@dataclass(frozen=True, slots=True)
+class IngestQuerySpecRequest:
+    """Request inputs for ingestion QuerySpec construction."""
+
+    columns: Sequence[str] | None = None
+    repo: str | None = None
+    commit: str | None = None
+    rel_path: str | None = None
+    available_columns: Sequence[str] | None = None
+
+
+def build_ingest_query_spec(table_key: str, request: IngestQuerySpecRequest) -> QuerySpec:
     """Build an ingestion-friendly QuerySpec for repo/commit/rel_path scoping.
 
     Returns
@@ -29,17 +33,17 @@ def build_ingest_query_spec(
     table_schema = get_schema_service().get_table_schema(table_key)
     resolved_available = _resolve_available_columns(
         table_schema,
-        available_columns=available_columns,
-        columns=columns,
+        available_columns=request.available_columns,
+        columns=request.columns,
     )
     predicate = _ingest_scope_predicate(
         column_names=set(resolved_available),
-        repo=repo,
-        commit=commit,
-        rel_path=rel_path,
+        repo=request.repo,
+        commit=request.commit,
+        rel_path=request.rel_path,
     )
     projection = projection_spec_from_schema_defaults(
-        columns,
+        request.columns,
         table_schema=table_schema,
         available_columns=resolved_available,
     )
@@ -82,4 +86,4 @@ def _ingest_scope_predicate(
     return E.and_(*exprs)
 
 
-__all__ = ["build_ingest_query_spec"]
+__all__ = ["IngestQuerySpecRequest", "build_ingest_query_spec"]

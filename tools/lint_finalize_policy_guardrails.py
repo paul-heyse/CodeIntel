@@ -24,8 +24,7 @@ def _policy_has_list_guardrails(policy_invariants: object, policy_list_policies:
     if not policy_invariants:
         return False
     return any(
-        getattr(invariant, "kind", None) == "list_alignment"
-        for invariant in policy_invariants
+        getattr(invariant, "kind", None) == "list_alignment" for invariant in policy_invariants
     )
 
 
@@ -53,16 +52,13 @@ def main() -> int:
             )
         ):
             missing_list_policy.append(table_key)
-        if table_key in _DEDUPE_POLICY_REQUIRED and (
-            policy is None or policy.dedupe is None
-        ):
+        if table_key in _DEDUPE_POLICY_REQUIRED and (policy is None or policy.dedupe is None):
             missing_dedupe.append(table_key)
 
     errors: list[str] = []
     if missing_list_policy:
         errors.append(
-            "Finalize policy missing list guardrails for: "
-            + ", ".join(sorted(missing_list_policy))
+            "Finalize policy missing list guardrails for: " + ", ".join(sorted(missing_list_policy))
         )
     if missing_dedupe:
         errors.append(

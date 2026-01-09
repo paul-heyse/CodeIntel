@@ -63,7 +63,7 @@ def build_symbol_rows(
     Returns
     -------
     ColumnarRows
-        Columnar rows for storage (deduplicated).
+        Columnar rows for ingestion outputs (deduplicated).
     """
     buffer = columnar_buffer_for_table_key(SCIP_SYMBOLS_TABLE_KEY)
     for payload in iter_symbol_rows(documents, context):
@@ -90,7 +90,7 @@ def build_occurrence_rows(
     Returns
     -------
     ColumnarRows
-        Occurrence rows for storage (deduplicated).
+        Occurrence rows for ingestion outputs (deduplicated).
     """
     buffer = columnar_buffer_for_table_key(SCIP_OCCURRENCES_TABLE_KEY)
     for payload in iter_occurrence_rows(documents, context):

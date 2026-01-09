@@ -355,7 +355,7 @@ def cdg_edges(
     blocks_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
     block_columns = ("repo", "commit", "function_goid_h128", "block_id", "block_idx")
     for values in iter_tuples(blocks_table.to_reader(), columns=block_columns):
-        row = dict(zip(block_columns, values, strict=False))
+        row: dict[str, object] = dict(zip(block_columns, values, strict=False))
         function_goid = _coerce_goid(row.get("function_goid_h128"))
         if function_goid is None:
             missing_goids["blocks_missing_goid"] += 1
@@ -371,7 +371,7 @@ def cdg_edges(
         "edge_kind",
     )
     for values in iter_tuples(edges_table.to_reader(), columns=edge_columns):
-        row = dict(zip(edge_columns, values, strict=False))
+        row: dict[str, object] = dict(zip(edge_columns, values, strict=False))
         function_goid = _coerce_goid(row.get("function_goid_h128"))
         if function_goid is None:
             missing_goids["edges_missing_goid"] += 1

@@ -59,8 +59,6 @@ class DominanceMetrics:
     is_loop_header: bool
 
 
-
-
 def compute_dominator_tree(
     graph: GraphInput,
     entry: Hashable,
@@ -331,11 +329,7 @@ def cfg_longest_path_length(
 
     reachable_ids = descendants_by_id(store, entry_idx, include_source=True)
     ordered = sorted(
-        (
-            store.id_to_index[node_id]
-            for node_id in reachable_ids
-            if node_id in store.id_to_index
-        ),
+        (store.id_to_index[node_id] for node_id in reachable_ids if node_id in store.id_to_index),
         key=lambda idx: stable_key(store.index_to_id[idx]),
     )
     subgraph, _node_map = store.graph.subgraph_with_nodemap(ordered, preserve_attrs=True)

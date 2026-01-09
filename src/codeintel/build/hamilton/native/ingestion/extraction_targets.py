@@ -413,9 +413,7 @@ class SymtableToolOutput(ToolStepOutput):
         default_factory=lambda: empty_table_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY).to_reader()
     )
     namespace_edge_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_table_for_table(
-            PY_SYM_NAMESPACE_EDGES_TABLE_KEY
-        ).to_reader()
+        default_factory=lambda: empty_table_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY).to_reader()
     )
     function_partition_rows: pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(
@@ -426,9 +424,7 @@ class SymtableToolOutput(ToolStepOutput):
         default_factory=lambda: empty_table_for_table(PY_SYM_BINDINGS_TABLE_KEY).to_reader()
     )
     resolution_edge_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_table_for_table(
-            PY_SYM_RESOLUTION_EDGES_TABLE_KEY
-        ).to_reader()
+        default_factory=lambda: empty_table_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY).to_reader()
     )
     scope_row_count: int = 0
     symbol_row_count: int = 0
@@ -450,9 +446,7 @@ class BytecodeToolOutput(ToolStepOutput):
         default_factory=lambda: empty_table_for_table(PY_BC_CODE_UNITS_TABLE_KEY).to_reader()
     )
     instruction_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_table_for_table(
-            PY_BC_INSTRUCTIONS_TABLE_KEY
-        ).to_reader()
+        default_factory=lambda: empty_table_for_table(PY_BC_INSTRUCTIONS_TABLE_KEY).to_reader()
     )
     exception_rows: pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_BC_EXCEPTION_TABLE_KEY).to_reader()
@@ -810,16 +804,12 @@ def _coerce_symtable_output(
         scope_rows=empty_table_for_table(PY_SYM_SCOPES_TABLE_KEY).to_reader(),
         symbol_rows=empty_table_for_table(PY_SYM_SYMBOLS_TABLE_KEY).to_reader(),
         scope_edge_rows=empty_table_for_table(PY_SYM_SCOPE_EDGES_TABLE_KEY).to_reader(),
-        namespace_edge_rows=empty_table_for_table(
-            PY_SYM_NAMESPACE_EDGES_TABLE_KEY
-        ).to_reader(),
+        namespace_edge_rows=empty_table_for_table(PY_SYM_NAMESPACE_EDGES_TABLE_KEY).to_reader(),
         function_partition_rows=empty_table_for_table(
             PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY
         ).to_reader(),
         binding_rows=empty_table_for_table(PY_SYM_BINDINGS_TABLE_KEY).to_reader(),
-        resolution_edge_rows=empty_table_for_table(
-            PY_SYM_RESOLUTION_EDGES_TABLE_KEY
-        ).to_reader(),
+        resolution_edge_rows=empty_table_for_table(PY_SYM_RESOLUTION_EDGES_TABLE_KEY).to_reader(),
         scope_row_count=0,
         symbol_row_count=0,
         scope_edge_row_count=0,
@@ -962,13 +952,9 @@ def _coerce_inspect_output(
         signature_param_rows=empty_table_for_table(
             PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY
         ).to_reader(),
-        annotation_rows=empty_table_for_table(
-            PY_INSPECT_ANNOTATIONS_TABLE_KEY
-        ).to_reader(),
+        annotation_rows=empty_table_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY).to_reader(),
         source_rows=empty_table_for_table(PY_INSPECT_SOURCE_TABLE_KEY).to_reader(),
-        runtime_state_rows=empty_table_for_table(
-            PY_INSPECT_RUNTIME_STATE_TABLE_KEY
-        ).to_reader(),
+        runtime_state_rows=empty_table_for_table(PY_INSPECT_RUNTIME_STATE_TABLE_KEY).to_reader(),
         object_row_count=0,
         member_row_count=0,
         class_mro_row_count=0,

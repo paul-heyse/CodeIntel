@@ -248,12 +248,16 @@ class TestBuildSubsystemGraphRows:
             message="expected two subsystem rows",
         )
         # Results are in pagerank iteration order (api, core)
-        _require(condition=result[0]["subsystem_id"] == "api", message="first subsystem name mismatch")
+        _require(
+            condition=result[0]["subsystem_id"] == "api", message="first subsystem name mismatch"
+        )
         _require(
             condition=result[0]["import_pagerank"] == SUBSYSTEM_PAGERANK_API,
             message="first subsystem pagerank mismatch",
         )
-        _require(condition=result[1]["subsystem_id"] == "core", message="second subsystem name mismatch")
+        _require(
+            condition=result[1]["subsystem_id"] == "core", message="second subsystem name mismatch"
+        )
         _require(
             condition=result[1]["import_pagerank"] == SUBSYSTEM_PAGERANK_CORE,
             message="second subsystem pagerank mismatch",

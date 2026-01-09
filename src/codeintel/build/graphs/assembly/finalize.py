@@ -47,9 +47,7 @@ def finalize_graph_plan(
         Finalize result containing good rows, errors, and artifacts.
     """
     manifest_dir = _manifest_dir_for_artifacts(artifacts, table_key) if artifacts else None
-    manifest_options = (
-        _manifest_options_for_artifacts(artifacts, table_key) if artifacts else None
-    )
+    manifest_options = _manifest_options_for_artifacts(artifacts, table_key) if artifacts else None
     scan_telemetry = artifacts.scan_telemetry if artifacts is not None else None
     result = run_pipeline(
         plan=ExecutionPlan.from_plan(plan, determinism=determinism),
@@ -72,7 +70,7 @@ def finalize_graph_plan(
             base_table_key=table_key,
             result=result,
             run_metadata=artifacts.run_metadata,
-    )
+        )
     return result
 
 

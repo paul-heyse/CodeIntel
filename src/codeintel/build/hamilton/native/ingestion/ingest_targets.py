@@ -41,6 +41,7 @@ from codeintel.build.hamilton.helpers import (
     paths_to_modules,
 )
 from codeintel.build.hamilton.native.ingestion.manifesting import (
+    IngestManifestDetails,
     finalize_ingest_reader_with_manifest,
 )
 from codeintel.build.hamilton.native.ingestion.pipelines import (
@@ -994,7 +995,7 @@ def t__config_ingest__ingest(
         table_key=CONFIG_VALUES_TABLE_KEY,
         reader=t__config_ingest__run.rows,
         target_name=CONFIG_INGEST_TARGET_NAME,
-        manifest_extras=manifest_extras,
+        details=IngestManifestDetails(manifest_extras=manifest_extras),
     )
     payload = {CONFIG_VALUES_TABLE_KEY: config_table}
     table_counts = {CONFIG_VALUES_TABLE_KEY: config_table.num_rows}
@@ -1294,7 +1295,7 @@ def t__tests_ingest__ingest(
         table_key=TEST_CATALOG_TABLE_KEY,
         reader=t__tests_ingest__run.rows,
         target_name=TESTS_INGEST_TARGET_NAME,
-        manifest_extras=manifest_extras,
+        details=IngestManifestDetails(manifest_extras=manifest_extras),
     )
     payload = {TEST_CATALOG_TABLE_KEY: test_table}
     table_counts = {TEST_CATALOG_TABLE_KEY: test_table.num_rows}
@@ -1516,7 +1517,7 @@ def t__typing__ingest(
         table_key=STATIC_DIAGNOSTICS_TABLE_KEY,
         reader=t__typing__run.diagnostic_rows,
         target_name=TYPING_TARGET_NAME,
-        manifest_extras=manifest_extras,
+        details=IngestManifestDetails(manifest_extras=manifest_extras),
     )
     payload = {STATIC_DIAGNOSTICS_TABLE_KEY: diagnostics_table}
     table_counts = {STATIC_DIAGNOSTICS_TABLE_KEY: diagnostics_table.num_rows}

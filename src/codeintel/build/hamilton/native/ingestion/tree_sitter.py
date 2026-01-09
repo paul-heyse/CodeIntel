@@ -13,6 +13,7 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.ingestion.manifesting import (
+    IngestManifestDetails,
     finalize_ingest_reader_with_manifest,
 )
 from codeintel.build.hamilton.native.options.ingestion import TreeSitterIndexOptions
@@ -97,9 +98,7 @@ class TreeSitterToolOutput(ToolStepOutput):
         default_factory=lambda: empty_table_for_table(TS_TRIVIA_TABLE_KEY).to_reader()
     )
     language_metadata_rows: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_table_for_table(
-            TS_LANGUAGE_METADATA_TABLE_KEY
-        ).to_reader()
+        default_factory=lambda: empty_table_for_table(TS_LANGUAGE_METADATA_TABLE_KEY).to_reader()
     )
     parse_manifest_row_count: int = 0
     captures_row_count: int = 0
@@ -202,9 +201,7 @@ def _coerce_tree_sitter_output(
         changed_ranges_rows=empty_table_for_table(TS_CHANGED_RANGES_TABLE_KEY).to_reader(),
         tokens_rows=empty_table_for_table(TS_TOKENS_TABLE_KEY).to_reader(),
         trivia_rows=empty_table_for_table(TS_TRIVIA_TABLE_KEY).to_reader(),
-        language_metadata_rows=empty_table_for_table(
-            TS_LANGUAGE_METADATA_TABLE_KEY
-        ).to_reader(),
+        language_metadata_rows=empty_table_for_table(TS_LANGUAGE_METADATA_TABLE_KEY).to_reader(),
         parse_manifest_row_count=0,
         captures_row_count=0,
         nodes_row_count=0,
@@ -329,7 +326,7 @@ def t__tree_sitter_index__ingest(
             table_key=table_key,
             reader=reader,
             target_name=TREE_SITTER_TARGET_NAME,
-            mode=mode,
+            details=IngestManifestDetails(mode),
         )
 
     parse_manifest_table = _finalize_reader(

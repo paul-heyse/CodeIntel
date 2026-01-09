@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.analytics.graphs.config_graph_metrics import (
+    ConfigGraphMetricsRequest,
     compute_config_graph_metrics_result,
 )
 from codeintel.build.analytics.graphs.subsystem_agreement import (
@@ -182,10 +183,12 @@ def _write_config_graph_metrics(
     allowed_modules: set[str],
 ) -> None:
     config_rows = compute_config_graph_metrics_result(
-        repo=ctx.repo,
-        commit=ctx.commit,
-        config_value_rows=config_value_rows,
-        allowed_modules=allowed_modules,
+        ConfigGraphMetricsRequest(
+            repo=ctx.repo,
+            commit=ctx.commit,
+            config_value_rows=config_value_rows,
+            allowed_modules=allowed_modules,
+        )
     )
     _write_rows_for_snapshot(
         ctx.gateway,

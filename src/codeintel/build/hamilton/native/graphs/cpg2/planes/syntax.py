@@ -231,18 +231,48 @@ def cpg2_edges__syntax_edges(
     """
     if syntax_edges.num_rows == 0:
         return _empty_edge_table()
+    normalized_edges = _normalized_syntax_edges(syntax_edges)
+    if normalized_edges is None:
+        return _empty_edge_table()
+    anchor_plan = _syntax_anchor_plan(syntax_nodes)
+    parent_join = _parent_join_table(anchor_plan, normalized_edges)
+    if parent_join.num_rows == 0:
+        return _empty_edge_table()
+    child_join = _child_join_table(anchor_plan, parent_join)
+    if child_join.num_rows == 0:
+        return _empty_edge_table()
+    child_join = rename_table_columns(
+        child_join,
+        {"cpg_node_id_child": "dst_cpg_node_id", "child_ordinal": "ordinal"},
+    )
+    child_join = append_constant_columns(
+        child_join,
+        {
+            "edge_kind": "AST",
+            "edge_layer": "SYNTAX",
+            "extras": None,
+            "extras_kv": None,
+        },
+    )
+    selected = ensure_table_columns(child_join, _CPG_EDGE_COLUMNS)
+
+    expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+    filtered = plan_filter_or_fallback(selected, expr)
+    if diagnostics is not None:
+        resolved = filtered.num_rows
+        diagnostics["syntax_edges"] = SyntaxEdgeDiagnostics(
+            total_edges=selected.num_rows,
+            resolved_edges=resolved,
+            dropped_edges=selected.num_rows - resolved,
+        )
+    return filtered
+
+
+def _normalized_syntax_edges(syntax_edges: pa.Table) -> pa.Table | None:
     join_keys = lookup_keys(SYNTAX_NODES_TABLE_KEY, "full")
     required = set(join_keys) | {"parent_node_id", "child_node_id"}
     if not required.issubset(set(syntax_edges.column_names)):
-        return _empty_edge_table()
-    node_allowlist = _join_safe_allowlist(SYNTAX_NODES_TABLE_KEY)
-    anchor_map = join_safe_projection(
-        normalize_table_for_join(
-            _syntax_anchor_map(syntax_nodes, include_source_pk_json=False),
-            allowed_columns=node_allowlist,
-        ),
-        allowed_columns=node_allowlist,
-    )
+        return None
     edge_allowlist = _join_safe_allowlist("core.syntax_edges")
     normalized_edges = join_safe_projection(
         normalize_table_for_join(
@@ -264,8 +294,19 @@ def cpg2_edges__syntax_edges(
         target_name=CPG_TARGET_NAME,
         join_keys=join_keys,
     )
-    normalized_edges = precheck.good
-    anchor_plan = build_table_plan(
+    return precheck.good
+
+
+def _syntax_anchor_plan(syntax_nodes: pa.Table) -> Plan:
+    node_allowlist = _join_safe_allowlist(SYNTAX_NODES_TABLE_KEY)
+    anchor_map = join_safe_projection(
+        normalize_table_for_join(
+            _syntax_anchor_map(syntax_nodes, include_source_pk_json=False),
+            allowed_columns=node_allowlist,
+        ),
+        allowed_columns=node_allowlist,
+    )
+    return build_table_plan(
         table=anchor_map,
         options=TablePlanOptions(
             projection={
@@ -278,6 +319,9 @@ def cpg2_edges__syntax_edges(
             }
         ),
     )
+
+
+def _parent_join_table(anchor_plan: Plan, normalized_edges: pa.Table) -> pa.Table:
     parent_plan = build_table_plan(
         table=normalized_edges,
         options=TablePlanOptions(
@@ -319,9 +363,10 @@ def cpg2_edges__syntax_edges(
             ("child_ordinal", "ascending"),
         ]
     )
-    parent_join = _plan_to_table(parent_join, use_threads=True)
-    if parent_join.num_rows == 0:
-        return _empty_edge_table()
+    return _plan_to_table(parent_join, use_threads=True)
+
+
+def _child_join_table(anchor_plan: Plan, parent_join: pa.Table) -> pa.Table:
     child_plan = build_table_plan(
         table=parent_join,
         options=TablePlanOptions(
@@ -365,34 +410,7 @@ def cpg2_edges__syntax_edges(
             ("child_ordinal", "ascending"),
         ]
     )
-    child_join = _plan_to_table(child_join, use_threads=True)
-    if child_join.num_rows == 0:
-        return _empty_edge_table()
-    child_join = rename_table_columns(
-        child_join,
-        {"cpg_node_id_child": "dst_cpg_node_id", "child_ordinal": "ordinal"},
-    )
-    child_join = append_constant_columns(
-        child_join,
-        {
-            "edge_kind": "AST",
-            "edge_layer": "SYNTAX",
-            "extras": None,
-            "extras_kv": None,
-        },
-    )
-    selected = ensure_table_columns(child_join, _CPG_EDGE_COLUMNS)
-
-    expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-    filtered = plan_filter_or_fallback(selected, expr)
-    if diagnostics is not None:
-        resolved = filtered.num_rows
-        diagnostics["syntax_edges"] = SyntaxEdgeDiagnostics(
-            total_edges=selected.num_rows,
-            resolved_edges=resolved,
-            dropped_edges=selected.num_rows - resolved,
-        )
-    return filtered
+    return _plan_to_table(child_join, use_threads=True)
 
 
 def _count_valid(table: pa.Table, column: str) -> int:

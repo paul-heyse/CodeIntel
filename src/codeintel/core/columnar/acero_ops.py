@@ -85,8 +85,7 @@ def build_exec_plan(
         plan = plan.project(expressions, names=list(projections))
     if aggregations:
         aggregate_specs = [
-            (target, function, None, f"{target}_{function}")
-            for target, function in aggregations
+            (target, function, None, f"{target}_{function}") for target, function in aggregations
         ]
         key_exprs = [E.field(name) for name in keys]
         plan = plan.aggregate(keys=key_exprs, aggregates=aggregate_specs)

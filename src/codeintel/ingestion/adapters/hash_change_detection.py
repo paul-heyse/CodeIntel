@@ -210,8 +210,8 @@ class HashChangeDetectionAdapter:
 
         return state
 
+    @staticmethod
     def save_current_state(
-        self,
         repo: str,
         commit: str,
         language: str,
@@ -328,7 +328,8 @@ class HashChangeDetectionAdapter:
         rows = iter_tuples(reader, columns=columns)
         if not include_language:
             return cast("Iterable[tuple[object, object, object, object]]", rows)
-        return self._filter_language(rows, language=language)
+        filtered = cast("Iterable[tuple[object, object, object, object, object]]", rows)
+        return self._filter_language(filtered, language=language)
 
     @staticmethod
     def _filter_language(

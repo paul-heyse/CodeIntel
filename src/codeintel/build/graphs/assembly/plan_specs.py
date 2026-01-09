@@ -43,17 +43,7 @@ class GraphJoinSpec:
         )
 
 
-def graph_join_spec(
-    *,
-    how: JoinType,
-    left_keys: Sequence[str],
-    right_keys: Sequence[str] | None = None,
-    left_output: Sequence[str] | None = None,
-    right_output: Sequence[str] | None = None,
-    output_suffix_for_left: str | None = None,
-    output_suffix_for_right: str | None = None,
-    filter_expression: Expression | None = None,
-) -> HashJoinSpec:
+def graph_join_spec(spec: GraphJoinSpec) -> HashJoinSpec:
     """Create a HashJoinSpec for graph plan pipelines.
 
     Returns
@@ -61,16 +51,7 @@ def graph_join_spec(
     HashJoinSpec
         Hash join spec for graph assembly.
     """
-    return GraphJoinSpec(
-        left_keys=tuple(left_keys),
-        right_keys=tuple(right_keys) if right_keys is not None else tuple(left_keys),
-        how=how,
-        left_output=tuple(left_output) if left_output is not None else None,
-        right_output=tuple(right_output) if right_output is not None else None,
-        output_suffix_for_left=output_suffix_for_left,
-        output_suffix_for_right=output_suffix_for_right,
-        filter_expression=filter_expression,
-    ).to_hash_join_spec()
+    return spec.to_hash_join_spec()
 
 
 def projection_for_columns(columns: Sequence[str]) -> Mapping[str, Expression]:

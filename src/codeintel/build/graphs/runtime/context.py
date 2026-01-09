@@ -384,13 +384,9 @@ def _normalize_runtime_profile(
     use_threads = (
         profile.use_threads if profile.use_threads is not None else scan_settings.use_threads
     )
-    implicit_ordering = (
-        True if profile.implicit_ordering is None else profile.implicit_ordering
-    )
+    implicit_ordering = True if profile.implicit_ordering is None else profile.implicit_ordering
     require_sequenced_output = (
-        True
-        if profile.require_sequenced_output is None
-        else profile.require_sequenced_output
+        True if profile.require_sequenced_output is None else profile.require_sequenced_output
     )
     return replace(
         profile,

@@ -134,8 +134,10 @@ def group_by_max_join_back(
     if missing:
         msg = f"group_by_max_join_back missing columns: {missing}"
         raise ValueError(msg)
-    winners = table.select(required).group_by(list(spec.key_columns)).aggregate(
-        [(spec.score_column, "max")]
+    winners = (
+        table.select(required)
+        .group_by(list(spec.key_columns))
+        .aggregate([(spec.score_column, "max")])
     )
     score_max_name = f"{spec.score_column}_max"
     resolved_allowed = _resolve_join_safe_columns(

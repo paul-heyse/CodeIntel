@@ -409,3 +409,185 @@ options = BuildStoreOptions(node_hint=500_000, edge_hint=5_000_000, stable_nodes
 - `uv run python -m tools.quality_report --output build/quality-results/quality_report.json`
 - Targeted pytest subsets for modified analytics, ingestion, and graph modules.
 
+---
+
+## Remaining Scope Updates (From Codebase Review)
+The items below capture the remaining work identified during the in‑depth review.
+Each item includes a code pattern, a target file list, and an implementation checklist.
+
+### Remaining Scope A — Finalize‑Only Execution Boundary
+**Goal**
+Eliminate direct plan materialization outside finalize boundaries; standardize all
+materialization through `run_pipeline(...)` with `FinalizeSpec`.
+
+**Code pattern**
+```python
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, run_pipeline
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table
+
+result = run_pipeline(
+    plan=ExecutionPlan.from_plan(plan),
+    finalize=finalize_spec_for_table(table_key, mode="tolerant"),
+    options=PipelineRunOptions(ctx=execution_ctx),
+)
+table = result.good
+```
+
+**Target files**
+- `src/codeintel/build/analytics/functions/function_effects.py`
+- `src/codeintel/build/analytics/cfg_dfg/helpers.py`
+- `src/codeintel/build/analytics/py_cpg_quality_report.py`
+- `src/codeintel/build/graphs/builders.py`
+- `src/codeintel/build/graphs/engine/views.py`
+- `src/codeintel/build/hamilton/native/ingestion/syntax_augment.py`
+
+**Implementation checklist**
+- [ ] Replace `_materialize_plan(...)` helpers with `run_pipeline(...)`.
+- [ ] Ensure finalize policies come from `finalize_spec_for_table(...)` only.
+- [ ] Remove any remaining `Plan.to_table()` usage outside finalize.
+
+### Remaining Scope B — QuerySpec Control Plane Completion
+**Goal**
+Remove ad‑hoc `QuerySpec`/`ProjectionSpec` construction and rely on schema‑driven
+QuerySpec helpers that include provenance on canonical determinism.
+
+**Code pattern**
+```python
+from codeintel.core.columnar.plan_builder import SchemaPlanDefaultsRequest, plan_from_schema_defaults
+from codeintel.core.schemas.service import get_schema_service
+
+plan = plan_from_schema_defaults(
+    schema_service=get_schema_service(),
+    request=SchemaPlanDefaultsRequest(
+        table_key=table_key,
+        dataset=dataset,
+        predicate=predicate,
+        columns=spec.scan_columns(provenance=False),
+        ctx=execution_ctx,
+    ),
+)
+```
+
+**Target files**
+- `src/codeintel/build/hamilton/native/ingestion/scip.py`
+- `src/codeintel/build/hamilton/diagnostics.py`
+- `src/codeintel/build/hamilton/post_run_quality_outputs.py`
+- `src/codeintel/build/graphs/validation/runner.py`
+- `src/codeintel/build/graphs/assembly/plan_surface.py`
+
+**Implementation checklist**
+- [ ] Replace direct `QuerySpec(...)` construction with QuerySpec helpers.
+- [ ] Remove ad‑hoc projection lists when schema plan policy exists.
+- [ ] Ensure canonical determinism forces provenance inclusion.
+
+### Remaining Scope C — Run Manifests + Scan Telemetry Everywhere
+**Goal**
+Emit run manifests and scan telemetry for every finalize boundary, including
+serving, ingestion, and maintenance pipelines.
+
+**Code pattern**
+```python
+from codeintel.core.columnar.run_manifest import run_manifest_options_for_context
+from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
+
+telemetry = scan_telemetry_for_queryspec(dataset, spec=spec)
+options = PipelineRunOptions(
+    ctx=execution_ctx,
+    scan_telemetry=telemetry,
+    manifest_dir=manifest_dir,
+    manifest_options=run_manifest_options_for_context(
+        ctx=execution_ctx,
+        ordering=plan.ordering,
+        scan_telemetry=telemetry,
+    ),
+)
+```
+
+**Target files**
+- `src/codeintel/ingestion/compute/base.py`
+- `src/codeintel/serving/export/ndjson.py`
+- `src/codeintel/serving/http/streaming.py`
+- `src/codeintel/serving/semantic/duckdb_relation_builder.py`
+- `src/codeintel/storage/datasets/maintenance.py`
+- `src/codeintel/storage/tracking/build_tracking.py`
+- `src/codeintel/build/graphs/engine/datasets.py`
+
+**Implementation checklist**
+- [ ] Add `scan_telemetry` to `PipelineRunOptions` at each finalize boundary.
+- [ ] Emit run manifests consistently for all finalize paths.
+- [ ] Persist ordering metadata when determinism is canonical.
+
+### Remaining Scope D — Graph Builder Unification Cleanup
+**Goal**
+Remove residual per‑edge insertion loops and normalize to bulk edge builders
+with capacity hints and stable node ordering.
+
+**Code pattern**
+```python
+from codeintel.build.graphs.rx.build_from_edges import BuildStoreOptions, EdgeBuildSpec
+from codeintel.build.graphs.rx.build_from_edges import build_store_from_edge_tuples
+
+spec = EdgeBuildSpec(directed=True, weight_policy=policy, numeric_policy=numeric_policy)
+options = BuildStoreOptions(node_hint=len(node_ids), edge_hint=len(edge_rows), stable_nodes=True)
+store = build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
+```
+
+**Target files**
+- `src/codeintel/build/graphs/compute/metrics/dfg.py`
+- `src/codeintel/build/graphs/compute/metrics/cfg.py`
+- `src/codeintel/build/analytics/subsystems/affinity.py`
+- `src/codeintel/build/graphs/builders.py`
+
+**Implementation checklist**
+- [ ] Replace manual `add_weighted_edge(...)` loops with bulk builders.
+- [ ] Pass `node_ids` and `node_attrs` explicitly when available.
+- [ ] Provide capacity hints at all graph construction sites.
+
+### Remaining Scope E — Algorithm Wrapper Adoption
+**Goal**
+Adopt typed rustworkx wrappers (`hits_by_id`, `katz_centrality_by_id`, `transitivity_score`)
+where metrics code currently implements bespoke logic.
+
+**Code pattern**
+```python
+from codeintel.build.graphs.rx.algos import GraphAlgoConfig, hits_by_id, katz_centrality_by_id
+
+config = GraphAlgoConfig(weight_semantics="strength")
+hubs, authorities = hits_by_id(graph, algo_config=config)
+katz_scores = katz_centrality_by_id(graph, algo_config=config)
+```
+
+**Target files**
+- `src/codeintel/build/graphs/compute/metrics/community.py`
+- `src/codeintel/build/graphs/compute/metrics/statistics.py`
+- `src/codeintel/build/analytics/graphs/*`
+
+**Implementation checklist**
+- [ ] Replace bespoke graph computations with wrapper calls where available.
+- [ ] Normalize outputs with shared `sorted_mapping(...)` utilities.
+- [ ] Use resolved weight semantics for all weighted algorithms.
+
+### Remaining Scope F — Metadata Enforcement for Derived Graphs
+**Goal**
+Ensure graph metadata (determinism + ordering keys) is applied for derived
+graph outputs and serialization requires metadata.
+
+**Code pattern**
+```python
+from codeintel.build.graphs.rx.metadata import GraphMetadata, apply_graph_metadata
+
+apply_graph_metadata(
+    store.graph,
+    GraphMetadata(weight_policy=store.weight_policy.name, determinism_tier="canonical"),
+)
+```
+
+**Target files**
+- `src/codeintel/build/analytics/graphs/symbol_graph_metrics.py`
+- `src/codeintel/build/analytics/graphs/graph_metrics.py`
+- `src/codeintel/build/graphs/runtime/runtime.py`
+
+**Implementation checklist**
+- [ ] Apply metadata to derived graph stores before serialization.
+- [ ] Require metadata in node‑link serialization paths.
+- [ ] Validate ordering keys are preserved for cached graphs.

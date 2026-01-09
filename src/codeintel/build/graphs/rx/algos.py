@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import heapq
+import inspect
 import math
 import os
 import random
@@ -45,6 +46,7 @@ GraphInput = RxGraphStore | RxGraph
 
 _MIN_BETWEENNESS_NODES = 2
 _MIN_CLUSTERING_DEGREE = 2
+_HITS_RESULT_LENGTH = 2
 _RAYON_ENV_VAR = "RAYON_NUM_THREADS"
 _RAYON_THREADS_STATE: dict[str, int | None] = {"threads": None}
 
@@ -73,11 +75,29 @@ def _normalize_float_mapping(
 ) -> dict[Hashable, float]:
     normalized = normalize_mapping(mapping, nan_policy=nan_policy)
     if abs_tol == 0.0 and rel_tol == 0.0:
-        return normalized
-    return {
+        return sorted_mapping(normalized)
+    adjusted = {
         key: _apply_tolerance(value, abs_tol=abs_tol, rel_tol=rel_tol)
         for key, value in normalized.items()
     }
+    return sorted_mapping(adjusted)
+
+
+def _call_with_supported_kwargs(
+    fn: Callable[..., object],
+    *args: object,
+    **kwargs: object,
+) -> object:
+    try:
+        signature = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return fn(*args, **kwargs)
+    filtered = {
+        key: value
+        for key, value in kwargs.items()
+        if key in signature.parameters and value is not None
+    }
+    return fn(*args, **filtered)
 
 
 def _sorted_node_indices(store: RxGraphStore) -> list[int]:
@@ -122,9 +142,40 @@ class BetweennessOptions:
 
 
 @dataclass(frozen=True, slots=True)
+class EdgeBetweennessOptions:
+    """Options for edge betweenness centrality computation."""
+
+    normalized: bool = True
+    nan_policy: NanPolicy | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class EigenvectorOptions:
     """Options for eigenvector centrality computation."""
 
+    max_iter: int = 100
+    tol: float = 1e-6
+    weight: str | None = None
+    nan_policy: NanPolicy | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HitsOptions:
+    """Options for HITS computation."""
+
+    max_iter: int = 100
+    tol: float = 1e-6
+    normalized: bool = True
+    weight: str | None = None
+    nan_policy: NanPolicy | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class KatzOptions:
+    """Options for Katz centrality computation."""
+
+    alpha: float = 0.1
+    beta: float = 1.0
     max_iter: int = 100
     tol: float = 1e-6
     weight: str | None = None
@@ -762,6 +813,143 @@ def eigenvector_centrality_by_id(
     return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
 
 
+def _map_index_scores(
+    store: RxGraphStore,
+    scores: Mapping[object, float],
+) -> dict[Hashable, float]:
+    mapped: dict[Hashable, float] = {}
+    for idx, score in scores.items():
+        node_id = store.index_to_id.get(idx, idx) if isinstance(idx, int) else idx
+        mapped[node_id] = float(score)
+    return mapped
+
+
+def _require_hits_result(
+    raw: object,
+) -> tuple[Mapping[object, float], Mapping[object, float]]:
+    if isinstance(raw, tuple) and len(raw) == _HITS_RESULT_LENGTH:
+        hubs, authorities = raw
+        if isinstance(hubs, Mapping) and isinstance(authorities, Mapping):
+            return hubs, authorities
+    msg = "rustworkx HITS returned an unexpected result."
+    raise TypeError(msg)
+
+
+def hits_by_id(
+    graph: GraphInput,
+    *,
+    options: HitsOptions | None = None,
+    algo_config: GraphAlgoConfig | None = None,
+) -> tuple[dict[Hashable, float], dict[Hashable, float]]:
+    """Compute HITS hub/authority scores keyed by node id.
+
+    Returns
+    -------
+    tuple[dict[Hashable, float], dict[Hashable, float]]
+        Hub scores and authority scores keyed by node identifier.
+    """
+    resolved = options or HitsOptions()
+    store = ensure_directed_store(graph, weight=resolved.weight, nan_policy=resolved.nan_policy)
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=resolved.nan_policy,
+    )
+    resolved_nan_policy = weight_ctx.nan_policy
+    _apply_rayon_threads(algo_config)
+    if store.graph.num_nodes() == 0:
+        return {}, {}
+    hits_fn = getattr(rx, "hits", None)
+    if not callable(hits_fn):
+        msg = "rustworkx.hits is not available in this environment."
+        raise NotImplementedError(msg)
+    weight_fn: Callable[[object], float] | None = None
+    if resolved.weight is not None:
+        weight_fn = edge_strength_weight_fn(context=weight_ctx)
+    raw = _call_with_supported_kwargs(
+        hits_fn,
+        _directed_graph(store),
+        max_iter=resolved.max_iter,
+        tol=resolved.tol,
+        normalized=resolved.normalized,
+        weight_fn=weight_fn,
+    )
+    hubs_raw, authorities_raw = _require_hits_result(raw)
+    hubs = _normalize_float_mapping(
+        _map_index_scores(store, hubs_raw),
+        nan_policy=resolved_nan_policy,
+    )
+    authorities = _normalize_float_mapping(
+        _map_index_scores(store, authorities_raw),
+        nan_policy=resolved_nan_policy,
+    )
+    return hubs, authorities
+
+
+def _katz_fn_for_store(store: RxGraphStore) -> Callable[..., object]:
+    candidates = (
+        ("digraph_katz_centrality", "katz_centrality")
+        if store.is_directed
+        else ("graph_katz_centrality", "katz_centrality")
+    )
+    for name in candidates:
+        candidate = getattr(rx, name, None)
+        if callable(candidate):
+            return candidate
+    msg = "rustworkx Katz centrality is not available in this environment."
+    raise NotImplementedError(msg)
+
+
+def katz_centrality_by_id(
+    graph: GraphInput,
+    *,
+    options: KatzOptions | None = None,
+    algo_config: GraphAlgoConfig | None = None,
+) -> dict[Hashable, float]:
+    """Compute Katz centrality keyed by node id.
+
+    Returns
+    -------
+    dict[Hashable, float]
+        Katz centrality scores keyed by node identifier.
+
+    Raises
+    ------
+    TypeError
+        Raised when rustworkx returns an unexpected result type.
+    """
+    resolved = options or KatzOptions()
+    store = ensure_store(graph, weight=resolved.weight, nan_policy=resolved.nan_policy)
+    weight_ctx = resolve_weight_context(
+        store,
+        algo_config=algo_config,
+        nan_policy=resolved.nan_policy,
+    )
+    resolved_nan_policy = weight_ctx.nan_policy
+    _apply_rayon_threads(algo_config)
+    if store.graph.num_nodes() == 0:
+        return {}
+    weight_fn: Callable[[object], float] | None = None
+    if resolved.weight is not None:
+        weight_fn = edge_strength_weight_fn(context=weight_ctx)
+    katz_fn = _katz_fn_for_store(store)
+    graph_obj = _directed_graph(store) if store.is_directed else _undirected_graph(store)
+    raw = _call_with_supported_kwargs(
+        katz_fn,
+        graph_obj,
+        alpha=resolved.alpha,
+        beta=resolved.beta,
+        max_iter=resolved.max_iter,
+        tol=resolved.tol,
+        weight_fn=weight_fn,
+    )
+    if not isinstance(raw, Mapping):
+        msg = "rustworkx Katz centrality returned an unexpected result."
+        raise TypeError(msg)
+    mapped = _map_index_scores(store, raw)
+    return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
+
+
 def _closeness_unweighted(
     store: RxGraphStore,
     *,
@@ -1381,6 +1569,33 @@ def clustering_by_id(
     )
 
 
+def transitivity_score(graph: GraphInput) -> float:
+    """Compute global transitivity for an undirected view of the graph.
+
+    Returns
+    -------
+    float
+        Global transitivity (global clustering coefficient).
+    """
+    store = ensure_store(graph)
+    work_store = to_undirected_store(store)
+    if work_store.graph.num_nodes() == 0:
+        return 0.0
+    neighbors = _neighbor_map(work_store, include_self=False)
+    triangle_total = sum(_triangle_counts(neighbor_map=neighbors).values())
+    if triangle_total == 0:
+        return 0.0
+    triplets = 0.0
+    for neighbor_list in neighbors.values():
+        degree = len(neighbor_list)
+        if degree < _MIN_CLUSTERING_DEGREE:
+            continue
+        triplets += degree * (degree - 1) / 2
+    if triplets == 0.0:
+        return 0.0
+    return float(triangle_total) / triplets
+
+
 def _clustering_unweighted(
     store: RxGraphStore,
     neighbors: Mapping[int, Sequence[int]],
@@ -1783,9 +1998,7 @@ def connected_components_by_id(graph: GraphInput) -> list[set[Hashable]]:
     undirected_graph = _undirected_graph(work_store)
     components = [set(comp) for comp in rx.connected_components(undirected_graph)]
     sorted_components = sort_components(work_store, components)
-    return [
-        {work_store.index_to_id[idx] for idx in component} for component in sorted_components
-    ]
+    return [{work_store.index_to_id[idx] for idx in component} for component in sorted_components]
 
 
 def weakly_connected_components_by_id(graph: GraphInput) -> list[set[Hashable]]:
@@ -2280,6 +2493,8 @@ __all__ = [
     "EigenvectorOptions",
     "GraphAlgoConfig",
     "GraphInput",
+    "HitsOptions",
+    "KatzOptions",
     "PagerankOptions",
     "RxGraph",
     "WeightContext",
@@ -2314,11 +2529,13 @@ __all__ = [
     "graph_to_store",
     "graph_unweighted_average_shortest_path_length",
     "harmonic_centrality_by_id",
+    "hits_by_id",
     "immediate_dominators_by_id",
     "in_degree_by_id",
     "in_degree_centrality_by_id",
     "insert_node_on_out_edges_by_id",
     "is_directed_acyclic",
+    "katz_centrality_by_id",
     "out_degree_by_id",
     "out_degree_centrality_by_id",
     "pagerank_by_id",
@@ -2336,6 +2553,7 @@ __all__ = [
     "topological_generations_by_id",
     "topological_layers_by_id",
     "total_degree_by_id",
+    "transitivity_score",
     "triangles_by_id",
     "weakly_connected_components_by_id",
     "weighted_projection_store",

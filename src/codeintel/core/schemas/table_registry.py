@@ -62,9 +62,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("use_full_rebuild", "BOOLEAN"),
         ],
         finalize_policy=FinalizePolicy(
-            list_policies=(
-                FinalizeListPolicySpec(column="datasets", null_policy="empty"),
-            ),
+            list_policies=(FinalizeListPolicySpec(column="datasets", null_policy="empty"),),
         ),
         description="Per-step ingest run telemetry for control plane reporting.",
     ),
@@ -399,9 +397,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         primary_key=("run_id", "target_name", "table_key", "join_key_signature", "row_id"),
         indexes=(Index("idx_build_join_precheck_repo_commit", ("repo", "commit")),),
         finalize_policy=FinalizePolicy(
-            list_policies=(
-                FinalizeListPolicySpec(column="join_keys", null_policy="error"),
-            ),
+            list_policies=(FinalizeListPolicySpec(column="join_keys", null_policy="error"),),
         ),
         description="Join precheck failures captured during ingestion joins",
     ),
@@ -437,9 +433,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         primary_key=("run_id", "table_key"),
         indexes=(Index("idx_build_empty_dataset_repo_commit", ("repo", "commit")),),
         finalize_policy=FinalizePolicy(
-            list_policies=(
-                FinalizeListPolicySpec(column="dependency_chain", null_policy="error"),
-            ),
+            list_policies=(FinalizeListPolicySpec(column="dependency_chain", null_policy="error"),),
         ),
         description="Guardrail findings for critical empty datasets per build run",
     ),

@@ -27,7 +27,13 @@ from codeintel.build.graphs.compute.metrics.components import (
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
+from codeintel.build.graphs.rx.build_from_edges import (
+    BuildStoreOptions,
+    EdgeBuildSpec,
+    build_store_from_edge_tuples,
+)
 from codeintel.build.graphs.rx.iterators import iter_edge_id_weights
+from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, DEFAULT_WEIGHT_POLICY
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.columnar.rows import ColumnarRowBuffer
 
@@ -77,18 +83,34 @@ def _build_subsystem_graph(
     module_to_subsystem: dict[str, str] = {
         str(module): str(subsystem_id) for subsystem_id, module in membership_rows
     }
-    subsystem_graph = RxGraphStore.directed()
-    for subsystem_id, _ in membership_rows:
-        subsystem_graph.ensure_node(str(subsystem_id))
-
+    node_ids = {str(subsystem_id) for subsystem_id, _ in membership_rows}
     store = ensure_store(import_graph, weight=graph_ctx.betweenness_weight)
+    edge_rows: list[tuple[str, str, float]] = []
     for src_id, dst_id, weight in iter_edge_id_weights(store):
         src_sub = module_to_subsystem.get(str(src_id))
         dst_sub = module_to_subsystem.get(str(dst_id))
         if src_sub is None or dst_sub is None or src_sub == dst_sub:
             continue
-        subsystem_graph.add_weighted_edge(src_sub, dst_sub, weight=weight)
-    return subsystem_graph
+        edge_rows.append((src_sub, dst_sub, weight))
+        node_ids.add(src_sub)
+        node_ids.add(dst_sub)
+    if not edge_rows and not node_ids:
+        return RxGraphStore.directed(
+            weight_policy=DEFAULT_WEIGHT_POLICY,
+            numeric_policy=DEFAULT_NUMERIC_POLICY,
+        )
+    spec = EdgeBuildSpec(
+        directed=True,
+        weight_policy=DEFAULT_WEIGHT_POLICY,
+        numeric_policy=DEFAULT_NUMERIC_POLICY,
+    )
+    options = BuildStoreOptions(
+        stable_nodes=True,
+        node_ids=node_ids or None,
+        node_hint=len(node_ids) if node_ids else None,
+        edge_hint=len(edge_rows),
+    )
+    return build_store_from_edge_tuples(edge_rows, spec=spec, options=options)
 
 
 def _matches_optional_scope(value: object, expected: str) -> bool:

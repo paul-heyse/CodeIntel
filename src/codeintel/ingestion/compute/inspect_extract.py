@@ -104,9 +104,7 @@ class InspectExtractResult:
         ).to_reader()
     )
     annotation_rows_reader: pa.RecordBatchReader = field(
-        default_factory=lambda: empty_table_for_table(
-            PY_INSPECT_ANNOTATIONS_TABLE_KEY
-        ).to_reader()
+        default_factory=lambda: empty_table_for_table(PY_INSPECT_ANNOTATIONS_TABLE_KEY).to_reader()
     )
     source_rows_reader: pa.RecordBatchReader = field(
         default_factory=lambda: empty_table_for_table(PY_INSPECT_SOURCE_TABLE_KEY).to_reader()

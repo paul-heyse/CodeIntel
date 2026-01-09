@@ -18,7 +18,10 @@ from codeintel.core.columnar.plan_ops import (
     query_plan_options_for_context,
 )
 from codeintel.core.columnar.queryspec import QuerySpec
-from codeintel.ingestion.compute.queryspecs import build_ingest_query_spec
+from codeintel.ingestion.compute.queryspecs import (
+    IngestQuerySpecRequest,
+    build_ingest_query_spec,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,14 +46,14 @@ class IngestQuery:
         QuerySpec
             Query specification built from the ingestion query.
         """
-        return build_ingest_query_spec(
-            self.table_key,
+        request = IngestQuerySpecRequest(
             columns=self.columns,
             repo=self.repo,
             commit=self.commit,
             rel_path=self.rel_path,
             available_columns=available_columns,
         )
+        return build_ingest_query_spec(self.table_key, request)
 
 
 def ingest_plan_for_table(

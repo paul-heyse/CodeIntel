@@ -26,6 +26,7 @@ from codeintel.build.tabular.compute_masks import non_empty_string_expr
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -41,6 +42,7 @@ CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
 DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
 _FUNCTION_GOID_TYPE = pa.decimal128(38, 0)
 _ASCENDING: Literal["ascending"] = "ascending"
+_GOID_LANGUAGE_INDEX = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,41 +118,53 @@ def _collect_goids_by_path(
         filtered.to_reader(),
         columns=("kind", "rel_path", "qualname", "goid_h128", "start_line", "end_line", "language"),
     ):
-        kind = values[0]
-        if kind not in {"function", "method"}:
+        info = _goid_info_from_values(values, function_keys_by_path=function_keys_by_path)
+        if info is None:
             continue
-        language = values[6] if len(values) > 6 else None
-        if language not in {None, "python"}:
-            continue
-        rel_path = values[1]
-        qualname = values[2]
-        goid_raw = values[3]
-        start_line = values[4]
-        end_line = values[5]
-        if not isinstance(rel_path, str) or not isinstance(qualname, str):
-            continue
-        if not isinstance(start_line, int):
-            continue
-        name = qualname.split(".")[-1]
-        key_set = function_keys_by_path.get(rel_path)
-        if key_set is not None and (start_line, name) not in key_set:
-            continue
-        goid_value = normalize_decimal_id(goid_raw)
-        if goid_value is None:
-            continue
-        _, resolved_end = normalize_line_span(
-            start_line,
-            end_line if isinstance(end_line, int) else None,
-        )
-        info = _FunctionGoidInfo(
-            goid=int(goid_value),
-            rel_path=rel_path,
-            name=name,
-            start_line=start_line,
-            end_line=resolved_end,
-        )
-        goids_by_path.setdefault(rel_path, []).append(info)
+        goids_by_path.setdefault(info.rel_path, []).append(info)
     return goids_by_path
+
+
+def _goid_info_from_values(
+    values: tuple[object, ...],
+    *,
+    function_keys_by_path: dict[str, set[tuple[int, str]]],
+) -> _FunctionGoidInfo | None:
+    kind = values[0]
+    if kind not in {"function", "method"}:
+        return None
+    language = values[_GOID_LANGUAGE_INDEX] if len(values) > _GOID_LANGUAGE_INDEX else None
+    if language not in {None, "python"}:
+        return None
+    rel_path = values[1]
+    qualname = values[2]
+    goid_raw = values[3]
+    start_line = values[4]
+    end_line = values[5]
+    if (
+        not isinstance(rel_path, str)
+        or not isinstance(qualname, str)
+        or not isinstance(start_line, int)
+    ):
+        return None
+    name = qualname.split(".")[-1]
+    key_set = function_keys_by_path.get(rel_path)
+    if key_set is not None and (start_line, name) not in key_set:
+        return None
+    goid_value = normalize_decimal_id(goid_raw)
+    if goid_value is None:
+        return None
+    _, resolved_end = normalize_line_span(
+        start_line,
+        end_line if isinstance(end_line, int) else None,
+    )
+    return _FunctionGoidInfo(
+        goid=int(goid_value),
+        rel_path=rel_path,
+        name=name,
+        start_line=start_line,
+        end_line=resolved_end,
+    )
 
 
 def _build_cfg_dfg_rows(
@@ -489,4 +503,3 @@ __all__ = [
     "dfg_edges_empty",
     "dfg_edges_existing",
 ]
-from codeintel.core.columnar.iter import iter_tuples

@@ -113,9 +113,7 @@ def build_module_metric_ext_rows(
                 "import_harmonic": float(inputs.centralities["harmonic"].get(module, 0.0)),
                 "import_k_core": optional_int(inputs.structure["core_number"].get(module)),
                 "import_constraint": float(inputs.structure["constraint"].get(module, 0.0)),
-                "import_effective_size": float(
-                    inputs.structure["effective_size"].get(module, 0.0)
-                ),
+                "import_effective_size": float(inputs.structure["effective_size"].get(module, 0.0)),
                 "import_rich_club": bool(inputs.rich_club.get(module, False)),
                 "import_shell_index": optional_int(inputs.structure["core_number"].get(module)),
                 "import_community_id": optional_int(inputs.structure["community_id"].get(module)),

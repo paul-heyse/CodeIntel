@@ -1508,9 +1508,7 @@ def _resolve_order_by(
             required_keys = canonical_keys
             if not order_by:
                 order_by = tuple(_ascending_sort_keys(canonical_keys))
-        order_by = tuple(
-            _extend_with_tie_breakers(order_by, _provenance_tie_breakers(available))
-        )
+        order_by = tuple(_extend_with_tie_breakers(order_by, _provenance_tie_breakers(available)))
         _validate_order_by(
             order_by,
             required_keys=required_keys,

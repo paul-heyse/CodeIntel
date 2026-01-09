@@ -77,6 +77,7 @@ _TOLERANT_INGEST_TABLE_KEYS = frozenset(
     }
 )
 
+
 def _merge_normalization_options(
     options: NormalizationOptions | None,
     overrides: NormalizationOverrides,

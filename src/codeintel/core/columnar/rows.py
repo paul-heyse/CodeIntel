@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 
 import pyarrow as pa
 
@@ -74,24 +74,36 @@ class ColumnarRowBuffer(Sequence[Mapping[str, object]]):
         for index in range(self.row_count):
             yield self._row_at(index)
 
-    def __getitem__(self, index: int) -> Mapping[str, object]:
+    @overload
+    def __getitem__(self, index: int) -> Mapping[str, object]: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[Mapping[str, object]]: ...
+
+    def __getitem__(
+        self,
+        index: int | slice,
+    ) -> Mapping[str, object] | Sequence[Mapping[str, object]]:
         """Return the buffered row mapping at the requested index.
 
         Parameters
         ----------
         index
-            Row index (supports negative indexing).
+            Row index (supports negative indexing) or slice.
 
         Returns
         -------
-        Mapping[str, object]
-            Row mapping at the requested index.
+        Mapping[str, object] | Sequence[Mapping[str, object]]
+            Row mapping at the requested index, or a slice of row mappings.
 
         Raises
         ------
         IndexError
             If the index is out of bounds.
         """
+        if isinstance(index, slice):
+            start, stop, step = index.indices(self.row_count)
+            return [self._row_at(i) for i in range(start, stop, step)]
         if index < 0:
             index += self.row_count
         if index < 0 or index >= self.row_count:

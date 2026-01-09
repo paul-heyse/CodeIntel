@@ -156,11 +156,10 @@ def take_by_key(
     selected = take_array(normalize_array(values), safe_indices)
     if missing_policy == "null":
         nulls = pa.nulls(len(indices), type=values.type)
-        masked = require_array(
+        return require_array(
             call_compute("if_else", [missing_mask, nulls, selected]),
             name="if_else",
         )
-        return masked
     return selected
 
 
