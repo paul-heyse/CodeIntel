@@ -413,12 +413,12 @@ class BuildTracking:
                 strategy="first",
             ),
         )
-        finalized = run_pipeline(
-            plan=ExecutionPlan(inner=_read_table),
+        result = run_pipeline(
+            plan=ExecutionPlan(table_thunk=_read_table),
             finalize=finalize_spec,
             ctx=execution_ctx,
         )
-        return finalized if finalized.num_rows else None
+        return result.good if result.good.num_rows else None
 
     @staticmethod
     def _manifest_match_mask(

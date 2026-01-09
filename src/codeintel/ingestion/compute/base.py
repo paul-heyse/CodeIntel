@@ -21,7 +21,7 @@ from codeintel.core.columnar.finalize_ops import (
     FinalizeSpec,
     finalize_table,
 )
-from codeintel.core.columnar.plan_ops import build_query_plan, materialize_plan
+from codeintel.core.columnar.plan_ops import build_query_plan_for_context, materialize_plan
 from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
 from codeintel.core.query_results import records_from_arrow_table
 from codeintel.core.schemas.service import get_schema_service
@@ -214,7 +214,7 @@ def _apply_ingest_query_plan(table: pa.Table, *, table_key: str) -> pa.Table:
     spec = build_ingest_query_spec(table_key)
     try:
         dataset = ds.dataset(table)
-        plan = build_query_plan(dataset, spec=spec)
+        plan = build_query_plan_for_context(dataset, spec=spec, ctx=None)
         return materialize_plan(plan, use_threads=True)
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return table

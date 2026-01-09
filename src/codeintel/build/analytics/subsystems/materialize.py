@@ -24,10 +24,9 @@ from codeintel.build.analytics.subsystems.affinity import (
 from codeintel.build.analytics.subsystems.edge_stats import (
     compute_subsystem_edge_stats,
 )
+from codeintel.build.graphs.builders import build_import_graph_from_tables
 from codeintel.build.graphs.rx.algos import GraphInput
 from codeintel.build.graphs.rx.store import RxGraphStore
-from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import FilterExprContext
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.subsystems.affinity import (
@@ -173,6 +172,7 @@ def build_subsystem_rows(
         tags_by_module=tags_by_module,
         import_graph=_import_graph_from_frame(
             inputs.import_graph_edges_frame,
+            modules_frame=inputs.modules_frame,
             repo=snapshot.repo,
             commit=snapshot.commit,
         ),
@@ -257,33 +257,18 @@ def _subsystem_id(repo: str, modules: list[str]) -> str:
 def _import_graph_from_frame(
     frame: pa.Table | None,
     *,
+    modules_frame: pa.Table | None,
     repo: str,
     commit: str,
 ) -> GraphInput:
-    graph = RxGraphStore.directed()
     if frame is None or frame.num_rows == 0:
-        return graph
-    filtered = _rows_for_snapshot(frame, repo=repo, commit=commit)
-    for row in filtered:
-        src = row.get("src_module")
-        dst = row.get("dst_module")
-        if src is None or dst is None:
-            continue
-        src_mod = str(src)
-        dst_mod = str(dst)
-        graph.add_weighted_edge(src_mod, dst_mod, weight=1.0)
-    return graph
-
-
-def _rows_for_snapshot(
-    frame: pa.Table,
-    *,
-    repo: str,
-    commit: str,
-) -> list[dict[str, object]]:
-    context = FilterExprContext(repo=repo, commit=commit)
-    filtered = context.apply(frame)
-    return list(iter_rows(filtered))
+        return RxGraphStore.directed()
+    return build_import_graph_from_tables(
+        frame,
+        modules_frame,
+        repo=repo,
+        commit=commit,
+    )
 
 
 def _derive_name(modules: list[str], subsystem_id: str, dominant_role: str | None) -> str:

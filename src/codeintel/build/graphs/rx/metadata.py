@@ -7,16 +7,22 @@ from typing import Protocol
 
 from codeintel.build.graphs.rx.payloads import NODE_PAYLOAD_VERSION
 
+DEFAULT_GRAPH_CACHE_VERSION = "unknown"
+DEFAULT_GRAPH_ENGINE = "unknown"
+DEFAULT_GRAPH_KIND = "unknown"
+DEFAULT_GRAPH_DETERMINISM_TIER = "stable_set"
+
 
 @dataclass(frozen=True, slots=True)
 class GraphMetadata:
     """Metadata stored in rustworkx graph attributes."""
 
-    cache_version: str
-    engine: str
-    graph_kind: str
     weight_policy: str
+    cache_version: str = DEFAULT_GRAPH_CACHE_VERSION
+    engine: str = DEFAULT_GRAPH_ENGINE
+    graph_kind: str = DEFAULT_GRAPH_KIND
     node_payload_version: str = NODE_PAYLOAD_VERSION
+    determinism_tier: str = DEFAULT_GRAPH_DETERMINISM_TIER
 
     def as_attrs(self) -> dict[str, object]:
         """Return metadata as a JSON-compatible attribute mapping.
@@ -32,6 +38,7 @@ class GraphMetadata:
             "graph_kind": self.graph_kind,
             "weight_policy": self.weight_policy,
             "node_payload_version": self.node_payload_version,
+            "determinism_tier": self.determinism_tier,
         }
 
     @classmethod
@@ -45,19 +52,21 @@ class GraphMetadata:
         """
         if not isinstance(attrs, dict):
             return None
-        cache_version = _get_str(attrs, "cache_version")
-        engine = _get_str(attrs, "engine")
-        graph_kind = _get_str(attrs, "graph_kind")
+        cache_version = _get_str(attrs, "cache_version") or DEFAULT_GRAPH_CACHE_VERSION
+        engine = _get_str(attrs, "engine") or DEFAULT_GRAPH_ENGINE
+        graph_kind = _get_str(attrs, "graph_kind") or DEFAULT_GRAPH_KIND
         weight_policy = _get_str(attrs, "weight_policy")
         node_payload_version = _get_str(attrs, "node_payload_version") or NODE_PAYLOAD_VERSION
-        if cache_version is None or engine is None or graph_kind is None or weight_policy is None:
+        determinism_tier = _get_str(attrs, "determinism_tier") or DEFAULT_GRAPH_DETERMINISM_TIER
+        if weight_policy is None:
             return None
         return cls(
+            weight_policy=weight_policy,
             cache_version=cache_version,
             engine=engine,
             graph_kind=graph_kind,
-            weight_policy=weight_policy,
             node_payload_version=node_payload_version,
+            determinism_tier=determinism_tier,
         )
 
 
@@ -87,7 +96,9 @@ def metadata_from_graph(graph: GraphAttrs) -> GraphMetadata | None:
 
 def apply_graph_metadata(graph: GraphAttrs, metadata: GraphMetadata) -> None:
     """Attach metadata to a rustworkx graph."""
-    graph.attrs = metadata.as_attrs()
+    current = graph.attrs if isinstance(graph.attrs, dict) else {}
+    merged = {**current, **metadata.as_attrs()}
+    graph.attrs = merged
 
 
 __all__ = ["GraphAttrs", "GraphMetadata", "apply_graph_metadata", "metadata_from_graph"]

@@ -250,53 +250,88 @@ def _normalize_context(
     ctx: GraphContext,
     base_now: datetime,
 ) -> GraphContext:
-    updates = _context_updates(spec, ctx, base_now)
-    if not updates:
+    normalized = _apply_repo_commit(spec, ctx)
+    normalized = _apply_use_gpu(spec, normalized)
+    normalized = _apply_caps(spec, normalized)
+    normalized = _apply_weights(spec, normalized)
+    normalized = _apply_seed(spec, normalized)
+    normalized = _apply_parallel_threshold(spec, normalized)
+    normalized = _apply_rayon_threads(spec, normalized)
+    normalized = _apply_weight_semantics(spec, normalized)
+    normalized = _apply_now(normalized, base_now)
+    return _apply_community_limit(spec, normalized)
+
+
+def _apply_repo_commit(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    if ctx.repo == spec.repo and ctx.commit == spec.commit:
         return ctx
-    return replace(ctx, **updates)
+    return replace(ctx, repo=spec.repo, commit=spec.commit)
 
 
-def _context_updates(
-    spec: GraphContextSpec,
-    ctx: GraphContext,
-    base_now: datetime,
-) -> dict[str, object]:
-    updates: dict[str, object] = {}
-    if ctx.repo != spec.repo or ctx.commit != spec.commit:
-        updates["repo"] = spec.repo
-        updates["commit"] = spec.commit
-    if ctx.now is None:
-        updates["now"] = base_now
-    updates.update(_cap_updates(spec, ctx))
-    updates.update(_override_updates(spec, ctx))
-    return updates
+def _apply_use_gpu(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    if ctx.use_gpu == spec.use_gpu:
+        return ctx
+    return replace(ctx, use_gpu=spec.use_gpu)
 
 
-def _cap_updates(spec: GraphContextSpec, ctx: GraphContext) -> dict[str, object]:
-    updates: dict[str, object] = {}
-    if spec.betweenness_cap is not None and ctx.betweenness_sample > spec.betweenness_cap:
-        updates["betweenness_sample"] = spec.betweenness_cap
-    if spec.eigen_cap is not None and ctx.eigen_max_iter > spec.eigen_cap:
-        updates["eigen_max_iter"] = spec.eigen_cap
-    return updates
+def _apply_caps(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    updated = ctx
+    if spec.betweenness_cap is not None and updated.betweenness_sample > spec.betweenness_cap:
+        updated = replace(updated, betweenness_sample=spec.betweenness_cap)
+    if spec.eigen_cap is not None and updated.eigen_max_iter > spec.eigen_cap:
+        updated = replace(updated, eigen_max_iter=spec.eigen_cap)
+    return updated
 
 
-def _override_updates(spec: GraphContextSpec, ctx: GraphContext) -> dict[str, object]:
-    overrides: dict[str, object | None] = {
-        "use_gpu": spec.use_gpu,
-        "pagerank_weight": spec.pagerank_weight,
-        "betweenness_weight": spec.betweenness_weight,
-        "seed": spec.seed,
-        "parallel_threshold": spec.parallel_threshold,
-        "rayon_threads": spec.rayon_threads,
-        "weight_semantics": spec.weight_semantics,
-        "community_detection_limit": spec.community_detection_limit,
-    }
-    return {
-        key: value
-        for key, value in overrides.items()
-        if value is not None and getattr(ctx, key) != value
-    }
+def _apply_weights(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    updated = ctx
+    if spec.pagerank_weight is not None and updated.pagerank_weight != spec.pagerank_weight:
+        updated = replace(updated, pagerank_weight=spec.pagerank_weight)
+    if (
+        spec.betweenness_weight is not None
+        and updated.betweenness_weight != spec.betweenness_weight
+    ):
+        updated = replace(updated, betweenness_weight=spec.betweenness_weight)
+    return updated
+
+
+def _apply_seed(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    if spec.seed is None or ctx.seed == spec.seed:
+        return ctx
+    return replace(ctx, seed=spec.seed)
+
+
+def _apply_parallel_threshold(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    if spec.parallel_threshold is None or ctx.parallel_threshold == spec.parallel_threshold:
+        return ctx
+    return replace(ctx, parallel_threshold=spec.parallel_threshold)
+
+
+def _apply_rayon_threads(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    if spec.rayon_threads is None or ctx.rayon_threads == spec.rayon_threads:
+        return ctx
+    return replace(ctx, rayon_threads=spec.rayon_threads)
+
+
+def _apply_weight_semantics(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    if spec.weight_semantics is None or ctx.weight_semantics == spec.weight_semantics:
+        return ctx
+    return replace(ctx, weight_semantics=spec.weight_semantics)
+
+
+def _apply_now(ctx: GraphContext, base_now: datetime) -> GraphContext:
+    if ctx.now is not None:
+        return ctx
+    return replace(ctx, now=base_now)
+
+
+def _apply_community_limit(spec: GraphContextSpec, ctx: GraphContext) -> GraphContext:
+    if (
+        spec.community_detection_limit is None
+        or ctx.community_detection_limit == spec.community_detection_limit
+    ):
+        return ctx
+    return replace(ctx, community_detection_limit=spec.community_detection_limit)
 
 
 def load_prior_manifest(path: Path | None) -> dict[str, dict[str, object]] | None:

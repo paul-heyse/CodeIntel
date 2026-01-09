@@ -8,26 +8,31 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 from pyarrow import acero
 
-from codeintel.core.columnar.dedupe_ops import DedupeTier
+from codeintel.core.columnar.dedupe_ops import DedupeTier, normalize_dedupe_tier
 from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.finalize_ops import (
     FinalizeResult,
     FinalizeSpec,
     finalize_join_keys,
+    finalize_reader,
     finalize_table,
     record_join_precheck_errors,
 )
 from codeintel.core.columnar.kernels import SortKey, stable_sort_table
 from codeintel.core.columnar.normalization import normalize_table_for_compute
+from codeintel.core.columnar.ordering import OrderingSpec
 from codeintel.core.validation.schema_constraints import is_list_like
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     type TableThunk = Callable[[], pa.Table]
+    type ReaderThunk = Callable[[], pa.RecordBatchReader]
     type PostStep = Callable[[pa.Table], pa.Table]
 else:
     type TableThunk = object
+    type ReaderThunk = object
     type PostStep = object
 
 
@@ -48,22 +53,94 @@ class JoinPrecheckSpec:
 class ExecutionPlan:
     """Plan wrapper for Acero declarations or table callables."""
 
-    inner: acero.Declaration | pa.Table | TableThunk
+    decl: acero.Declaration | None = None
+    table_thunk: TableThunk | None = None
+    reader_thunk: ReaderThunk | None = None
+    ordering: OrderingSpec | None = None
 
-    def execute(self, *, ctx: ExecutionContext) -> pa.Table:
-        """Materialize the plan into a table.
+    @classmethod
+    def from_declaration(
+        cls,
+        declaration: acero.Declaration,
+        *,
+        ordering: OrderingSpec | None = None,
+    ) -> ExecutionPlan:
+        """Return an execution plan backed by an Acero declaration.
+
+        Returns
+        -------
+        ExecutionPlan
+            Plan wrapping the provided Acero declaration.
+        """
+        return cls(decl=declaration, ordering=ordering)
+
+    @classmethod
+    def from_table(
+        cls,
+        table: pa.Table,
+        *,
+        ordering: OrderingSpec | None = None,
+    ) -> ExecutionPlan:
+        """Return an execution plan backed by an in-memory table.
+
+        Returns
+        -------
+        ExecutionPlan
+            Plan wrapping the provided table.
+        """
+        return cls(table_thunk=lambda: table, ordering=ordering)
+
+    @classmethod
+    def from_reader(
+        cls,
+        reader: pa.RecordBatchReader,
+        *,
+        ordering: OrderingSpec | None = None,
+    ) -> ExecutionPlan:
+        """Return an execution plan backed by a record batch reader.
+
+        Returns
+        -------
+        ExecutionPlan
+            Plan wrapping the provided reader.
+        """
+        return cls(reader_thunk=lambda: reader, ordering=ordering)
+
+    def to_reader(self, *, ctx: ExecutionContext) -> pa.RecordBatchReader:
+        """Return a RecordBatchReader for the plan output.
+
+        Returns
+        -------
+        pyarrow.RecordBatchReader
+            Reader yielding plan output batches.
+
+        Raises
+        ------
+        RuntimeError
+            Raised when no declaration, reader, or table thunk is available.
+        """
+        if self.decl is not None:
+            return self.decl.to_reader(use_threads=ctx.use_threads)
+        if self.reader_thunk is not None:
+            return self.reader_thunk()
+        if self.table_thunk is not None:
+            return self.table_thunk().to_reader()
+        msg = "ExecutionPlan requires a declaration, reader, or table thunk."
+        raise RuntimeError(msg)
+
+    def to_table(self, *, ctx: ExecutionContext) -> pa.Table:
+        """Materialize the plan into a normalized table.
 
         Returns
         -------
         pyarrow.Table
-            Materialized result.
+            Normalized table for the plan output.
         """
-        if isinstance(self.inner, acero.Declaration):
-            table = self.inner.to_table(use_threads=ctx.use_threads)
-        elif isinstance(self.inner, pa.Table):
-            table = self.inner
+        if self.table_thunk is not None:
+            table = self.table_thunk()
         else:
-            table = self.inner()
+            reader = self.to_reader(ctx=ctx)
+            table = reader.read_all()
         return normalize_table_for_compute(table, combine_chunks=ctx.combine_chunks)
 
 
@@ -71,25 +148,41 @@ def run_pipeline(
     *,
     plan: ExecutionPlan,
     post: Sequence[PostStep] = (),
-    finalize: FinalizeSpec | PostStep | None = None,
+    finalize: FinalizeSpec,
+    ctx: ExecutionContext | None = None,
+) -> FinalizeResult:
+    """Execute a plan, apply post steps, and finalize.
+
+    Returns
+    -------
+    FinalizeResult
+        Finalized result containing good rows, errors, and artifacts.
+    """
+    resolved_ctx = ctx or ExecutionContext()
+    if post:
+        table = plan.to_table(ctx=resolved_ctx)
+        for step in post:
+            table = step(table)
+        return finalize_table(table, spec=finalize)
+    reader = plan.to_reader(ctx=resolved_ctx)
+    return finalize_reader(reader, spec=finalize)
+
+
+def run_pipeline_good(
+    *,
+    plan: ExecutionPlan,
+    post: Sequence[PostStep] = (),
+    finalize: FinalizeSpec,
     ctx: ExecutionContext | None = None,
 ) -> pa.Table:
-    """Execute a plan, apply post steps, and optionally finalize.
+    """Execute a plan and return only the finalized good rows.
 
     Returns
     -------
     pyarrow.Table
-        Finalized output table.
+        Finalized table of good rows.
     """
-    resolved_ctx = ctx or ExecutionContext()
-    table = plan.execute(ctx=resolved_ctx)
-    for step in post:
-        table = step(table)
-    if finalize is None:
-        return table
-    if isinstance(finalize, FinalizeSpec):
-        return finalize_table(table, spec=finalize).good
-    return finalize(table)
+    return run_pipeline(plan=plan, post=post, finalize=finalize, ctx=ctx).good
 
 
 def precheck_join_keys(
@@ -212,11 +305,40 @@ def join_safe_projection(
     return table.select(keep)
 
 
+def project_struct_fields(
+    struct_column: str,
+    fields: Sequence[str],
+    *,
+    prefix: str | None = None,
+) -> dict[str, Expression]:
+    """Return projection mapping for struct fields.
+
+    Parameters
+    ----------
+    struct_column
+        Name of the struct column to project from.
+    fields
+        Struct field names to project.
+    prefix
+        Optional prefix for projected column names.
+
+    Returns
+    -------
+    dict[str, Expression]
+        Mapping of output column names to struct field expressions.
+    """
+    output: dict[str, Expression] = {}
+    for name in fields:
+        output_name = f"{prefix}{name}" if prefix else name
+        output[output_name] = E.field((struct_column, name))
+    return output
+
+
 def apply_deterministic_order(
     table: pa.Table,
     *,
     sort_keys: Sequence[SortKey] = (),
-    determinism: DedupeTier = "throughput",
+    determinism: DedupeTier = "stable_set",
 ) -> pa.Table:
     """Apply deterministic ordering for canonical deterministic tiers.
 
@@ -241,7 +363,7 @@ def apply_deterministic_order(
     """
     if sort_keys:
         return stable_sort_table(table, sort_keys=sort_keys)
-    if determinism == "canonical":
+    if normalize_dedupe_tier(determinism) == "canonical":
         msg = "Canonical determinism requires sort_keys for stable ordering."
         raise ValueError(msg)
     return table
@@ -255,6 +377,8 @@ __all__ = [
     "join_safe_projection",
     "list_payload_columns",
     "precheck_join_keys",
+    "project_struct_fields",
     "require_join_safe_schema",
     "run_pipeline",
+    "run_pipeline_good",
 ]

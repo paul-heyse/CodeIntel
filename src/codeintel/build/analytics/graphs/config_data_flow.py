@@ -16,10 +16,12 @@ import rustworkx as rx
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.compute.row_builders import rows_to_tuples_for_table
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import FilterExprContext
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
@@ -258,14 +260,48 @@ def _matches_optional_scope(value: object, expected: str) -> bool:
     return str(value) == expected
 
 
-def _filter_table_by_scope(
+def _config_reference_rowset(
     table: pa.Table,
     *,
     repo: str,
     commit: str,
 ) -> pa.Table:
-    context = FilterExprContext(repo=repo, commit=commit)
-    return context.apply(table)
+    required = {"config_path", "key", "extras"}
+    missing = [name for name in required if name not in table.column_names]
+    if missing:
+        msg = f"Missing config reference columns: {missing}"
+        raise ValueError(msg)
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=("config_path", "key", "extras"))
+    plan = plan.filter(E.and_(E.is_valid("config_path"), E.is_valid("key")))
+    plan = plan.project(
+        {
+            "config_path": E.field("config_path"),
+            "key": E.field("key"),
+            "reference_paths": E.field(("extras", "reference_paths")),
+        }
+    )
+    plan = plan.aggregate(
+        keys=[E.field("config_path"), E.field("key")],
+        aggregates=[("reference_paths", "list", None, "reference_paths")],
+    )
+    plan = plan.order_by(sort_keys=[("config_path", "ascending"), ("key", "ascending")])
+    return materialize_plan(plan, use_threads=True)
+
+
+def _entrypoint_rowset(
+    table: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+) -> pa.Table:
+    if "handler_goid_h128" not in table.column_names:
+        msg = "Missing entrypoint column: handler_goid_h128"
+        raise ValueError(msg)
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=("handler_goid_h128",))
+    plan = plan.filter(E.is_valid("handler_goid_h128"))
+    plan = plan.aggregate(keys=[E.field("handler_goid_h128")], aggregates=[])
+    plan = plan.order_by(sort_keys=[("handler_goid_h128", "ascending")])
+    return materialize_plan(plan, use_threads=True)
 
 
 def _config_references_from_rows(
@@ -284,9 +320,8 @@ def _config_references_from_rows(
         key = row.get("key")
         if config_path is None or key is None:
             continue
-        extras = row.get("extras")
-        reference_paths = extras.get("reference_paths") if isinstance(extras, Mapping) else None
-        for rel_path in _coerce_paths(reference_paths):
+        reference_paths = _reference_paths_from_row(row)
+        for rel_path in reference_paths:
             refs.setdefault(rel_path, []).append((str(key), str(config_path)))
     return refs
 
@@ -394,7 +429,7 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
     ConfigDataFlowResult
         Container with config data flow rows.
     """
-    config_rows = _rows_from_tabular(
+    config_rows = _config_reference_rows_from_tabular(
         inputs.config_value_rows,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
@@ -412,7 +447,7 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
         )
         return ConfigDataFlowResult(rows=None)
 
-    entrypoint_rows = _rows_from_tabular(
+    entrypoint_rows = _entrypoint_rows_from_tabular(
         inputs.entrypoint_rows,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
@@ -503,13 +538,42 @@ def _build_config_flow_rows(
     return rows_to_tuples_for_table(CONFIG_DATA_FLOW_TABLE_KEY, row_dicts)
 
 
-def _rows_from_tabular(
+def _config_reference_rows_from_tabular(
     rows: Sequence[Mapping[str, object]] | pa.Table,
     *,
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
-        table = _filter_table_by_scope(cast("pa.Table", rows), repo=repo, commit=commit)
+        table = _config_reference_rowset(cast("pa.Table", rows), repo=repo, commit=commit)
         return [dict(row) for row in iter_rows(table)]
     return [dict(row) for row in rows]
+
+
+def _entrypoint_rows_from_tabular(
+    rows: Sequence[Mapping[str, object]] | pa.Table,
+    *,
+    repo: str,
+    commit: str,
+) -> list[dict[str, object]]:
+    if isinstance(rows, pa.Table):
+        table = _entrypoint_rowset(cast("pa.Table", rows), repo=repo, commit=commit)
+        return [dict(row) for row in iter_rows(table)]
+    return [dict(row) for row in rows]
+
+
+def _reference_paths_from_row(row: Mapping[str, object]) -> list[str]:
+    if "reference_paths" in row:
+        return _flatten_paths(row.get("reference_paths"))
+    extras = row.get("extras")
+    reference_paths = extras.get("reference_paths") if isinstance(extras, Mapping) else None
+    return _coerce_paths(reference_paths)
+
+
+def _flatten_paths(raw: object) -> list[str]:
+    if isinstance(raw, list):
+        paths: list[str] = []
+        for item in raw:
+            paths.extend(_coerce_paths(item))
+        return paths
+    return _coerce_paths(raw)

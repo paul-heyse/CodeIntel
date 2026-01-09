@@ -20,7 +20,9 @@ from codeintel.build.analytics.compute.semantic_roles import (
 )
 from codeintel.build.analytics.compute.semantic_roles.classification import decorator_names
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import FilterExprContext
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.core.columnar.dedupe_ops import dedupe_keep_first_after_sort
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.query_results import coerce_optional_int, coerce_optional_str, coerce_str
@@ -211,17 +213,17 @@ def _function_rows_from_frame(
         goid_column = "goid_h128"
     else:
         return []
-    filtered = _filter_table_by_snapshot(
+    table = _function_worklist_table(
         frame,
         repo=repo,
         commit=commit,
-        columns=[goid_column, "rel_path", "qualname", "start_line", "end_line"],
+        goid_column=goid_column,
     )
-    if filtered.num_rows == 0:
+    if table.num_rows == 0:
         return []
     result: list[tuple[int, str, str, int | None]] = []
     for row in iter_rows(
-        filtered,
+        table,
         [goid_column, "rel_path", "qualname", "start_line", "end_line"],
     ):
         goid_raw = row.get(goid_column)
@@ -246,6 +248,47 @@ def _function_rows_from_frame(
     return result
 
 
+def _function_worklist_table(
+    frame: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+    goid_column: str,
+) -> pa.Table:
+    required = {goid_column, "rel_path", "qualname", "start_line", "end_line"}
+    missing = [name for name in required if name not in frame.column_names]
+    if missing:
+        msg = f"Missing function worklist columns: {missing}"
+        raise ValueError(msg)
+    plan = _scoped_plan(frame, repo=repo, commit=commit)
+    plan = plan.project(
+        {
+            goid_column: E.field(goid_column),
+            "rel_path": E.field("rel_path"),
+            "qualname": E.field("qualname"),
+            "start_line": E.field("start_line"),
+            "end_line": E.field("end_line"),
+        }
+    )
+    plan = plan.aggregate(
+        keys=[E.field(goid_column)],
+        aggregates=[
+            ("rel_path", "min", None, "rel_path"),
+            ("qualname", "min", None, "qualname"),
+            ("start_line", "min", None, "start_line"),
+            ("end_line", "max", None, "end_line"),
+        ],
+    )
+    plan = plan.order_by(
+        sort_keys=[
+            (goid_column, "ascending"),
+            ("rel_path", "ascending"),
+            ("start_line", "ascending"),
+        ]
+    )
+    return materialize_plan(plan, use_threads=True)
+
+
 def _effects_from_frame(
     frame: pa.Table | None,
     *,
@@ -254,21 +297,33 @@ def _effects_from_frame(
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_table_by_snapshot(
-        frame,
-        repo=repo,
-        commit=commit,
-        columns=[
-            "function_goid_h128",
-            "touches_db",
-            "uses_io",
-            "uses_time",
-            "uses_randomness",
-            "modifies_globals",
-            "modifies_closure",
-            "spawns_threads_or_tasks",
+    plan = _scoped_plan(frame, repo=repo, commit=commit)
+    plan = plan.project(
+        {
+            "function_goid_h128": E.field("function_goid_h128"),
+            "touches_db": E.field("touches_db"),
+            "uses_io": E.field("uses_io"),
+            "uses_time": E.field("uses_time"),
+            "uses_randomness": E.field("uses_randomness"),
+            "modifies_globals": E.field("modifies_globals"),
+            "modifies_closure": E.field("modifies_closure"),
+            "spawns_threads_or_tasks": E.field("spawns_threads_or_tasks"),
+        }
+    )
+    plan = plan.aggregate(
+        keys=[E.field("function_goid_h128")],
+        aggregates=[
+            ("touches_db", "max", None, "touches_db"),
+            ("uses_io", "max", None, "uses_io"),
+            ("uses_time", "max", None, "uses_time"),
+            ("uses_randomness", "max", None, "uses_randomness"),
+            ("modifies_globals", "max", None, "modifies_globals"),
+            ("modifies_closure", "max", None, "modifies_closure"),
+            ("spawns_threads_or_tasks", "max", None, "spawns_threads_or_tasks"),
         ],
     )
+    plan = plan.order_by(sort_keys=[("function_goid_h128", "ascending")])
+    filtered = materialize_plan(plan, use_threads=True)
     if filtered.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, object]] = {}
@@ -316,20 +371,19 @@ def _contracts_from_frame(
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_table_by_snapshot(
+    table = _scoped_table(
         frame,
         repo=repo,
         commit=commit,
-        columns=[
-            "function_goid_h128",
-            "extras",
-        ],
+        columns=("function_goid_h128", "extras"),
+        order_by=("function_goid_h128",),
     )
-    if filtered.num_rows == 0:
+    if table.num_rows == 0:
         return {}
+    table = dedupe_keep_first_after_sort(table, key_columns=("function_goid_h128",))
     mapping: dict[int, dict[str, object]] = {}
     for row in iter_rows(
-        filtered,
+        table,
         [
             "function_goid_h128",
             "extras",
@@ -364,12 +418,23 @@ def _graph_metrics_from_frame(
 ) -> dict[int, dict[str, int]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_table_by_snapshot(
-        frame,
-        repo=repo,
-        commit=commit,
-        columns=["function_goid_h128", "call_fan_in", "call_fan_out"],
+    plan = _scoped_plan(frame, repo=repo, commit=commit)
+    plan = plan.project(
+        {
+            "function_goid_h128": E.field("function_goid_h128"),
+            "call_fan_in": E.field("call_fan_in"),
+            "call_fan_out": E.field("call_fan_out"),
+        }
     )
+    plan = plan.aggregate(
+        keys=[E.field("function_goid_h128")],
+        aggregates=[
+            ("call_fan_in", "max", None, "call_fan_in"),
+            ("call_fan_out", "max", None, "call_fan_out"),
+        ],
+    )
+    plan = plan.order_by(sort_keys=[("function_goid_h128", "ascending")])
+    filtered = materialize_plan(plan, use_threads=True)
     if filtered.num_rows == 0:
         return {}
     mapping: dict[int, dict[str, int]] = {}
@@ -398,16 +463,18 @@ def _module_meta_from_frame(
 ) -> dict[str, ModuleRecord]:
     if frame is None or frame.num_rows == 0:
         return {}
-    filtered = _filter_table_by_snapshot(
+    table = _scoped_table(
         frame,
         repo=repo,
         commit=commit,
-        columns=["module", "path", "tags"],
+        columns=("module", "path", "tags"),
+        order_by=("module",),
     )
-    if filtered.num_rows == 0:
+    if table.num_rows == 0:
         return {}
     meta: dict[str, ModuleRecord] = {}
-    for row in iter_rows(filtered, ["module", "path", "tags"]):
+    table = dedupe_keep_first_after_sort(table, key_columns=("module",))
+    for row in iter_rows(table, ["module", "path", "tags"]):
         module = row.get("module")
         path = row.get("path")
         tags = row.get("tags")
@@ -421,22 +488,38 @@ def _module_meta_from_frame(
     return meta
 
 
-def _filter_table_by_snapshot(
+def _scoped_plan(
     frame: pa.Table,
     *,
     repo: str,
     commit: str,
-    columns: Sequence[str] | None = None,
-) -> pa.Table:
+) -> Plan:
     missing = [name for name in ("repo", "commit") if name not in frame.column_names]
     if missing:
         msg = f"Missing snapshot columns: {missing}"
         raise ValueError(msg)
-    context = FilterExprContext(repo=repo, commit=commit)
-    filtered = context.apply(frame)
-    if columns is None:
-        return filtered
-    return filtered.select(list(columns))
+    return Plan.table(frame).filter(
+        E.and_(
+            E.field("repo") == E.scalar(repo),
+            E.field("commit") == E.scalar(commit),
+        )
+    )
+
+
+def _scoped_table(
+    frame: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+    columns: Sequence[str],
+    order_by: Sequence[str] | None = None,
+) -> pa.Table:
+    plan = _scoped_plan(frame, repo=repo, commit=commit)
+    project = {name: E.field(name) for name in columns}
+    plan = plan.project(project)
+    if order_by:
+        plan = plan.order_by(sort_keys=[(name, "ascending") for name in order_by])
+    return materialize_plan(plan, use_threads=True)
 
 
 def _coerce_json(value: object) -> object:

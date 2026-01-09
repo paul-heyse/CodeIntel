@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import base64
+import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import rustworkx as rx
 
 from codeintel.build.graphs.rx.metadata import metadata_from_graph
-from codeintel.core.serialization.payload import PayloadValue, decode_payload, encode_payload
+from codeintel.core.serialization.payload import PayloadValue, decode_payload
 
 RxGraph = rx.PyGraph | rx.PyDiGraph
 
-_CI_DATA_KEY = "ci_b64_msgpack"
+_LEGACY_DATA_KEY = "ci_b64_msgpack"
+_PAYLOAD_KEY = "payload"
 
 
 def _coerce_payload_value(value: object | None) -> PayloadValue | None:
@@ -22,46 +24,73 @@ def _coerce_payload_value(value: object | None) -> PayloadValue | None:
     if isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, Mapping):
-        return {str(key): item for key, item in value.items()}
+        return {str(key): _coerce_payload_value(item) for key, item in value.items()}
     if isinstance(value, Sequence) and not isinstance(
         value,
         (str, bytes, bytearray, memoryview),
     ):
-        return list(value)
+        return [_coerce_payload_value(item) for item in value]
     return str(value)
 
 
+def _encode_payload_json(value: object | None) -> str | None:
+    if value is None:
+        return None
+    sanitized = _coerce_payload_value(value)
+    try:
+        return json.dumps(
+            sanitized,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    except (TypeError, ValueError):
+        return json.dumps(
+            str(sanitized),
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
+
 def _pack_payload(value: object | None) -> dict[str, str]:
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        raw = encode_payload(value)
-    else:
-        raw = encode_payload(_coerce_payload_value(value))
-    if raw is None:
+    encoded = _encode_payload_json(value)
+    if encoded is None:
         return {}
-    encoded = base64.b64encode(raw).decode("ascii")
-    return {_CI_DATA_KEY: encoded}
+    return {_PAYLOAD_KEY: encoded}
 
 
 def _unpack_payload(data: Mapping[str, str] | None) -> object | None:
     if not data:
         return None
-    raw = data.get(_CI_DATA_KEY)
-    if raw is None:
-        return dict(data)
-    if not raw:
-        return None
-    try:
-        decoded = base64.b64decode(raw.encode("ascii"))
-    except ValueError:
-        return dict(data)
-    return decode_payload(decoded)
+    payload = data.get(_PAYLOAD_KEY)
+    if isinstance(payload, str):
+        try:
+            return json.loads(payload)
+        except json.JSONDecodeError:
+            return payload
+    raw = data.get(_LEGACY_DATA_KEY)
+    if isinstance(raw, str):
+        if not raw:
+            return None
+        try:
+            decoded = base64.b64decode(raw.encode("ascii"))
+        except ValueError:
+            return dict(data)
+        return decode_payload(decoded)
+    return dict(data)
+
+
+def _graph_attrs_in(attrs: Mapping[str, object] | None) -> dict[str, str]:
+    if not attrs:
+        return {}
+    return {str(key): str(value) for key, value in attrs.items()}
 
 
 def _graph_attrs_out(data: Mapping[str, str] | None) -> dict[str, object]:
-    unpacked = _unpack_payload(data)
-    if isinstance(unpacked, dict):
-        return dict(unpacked)
-    return {}
+    if not data:
+        return {}
+    return dict(data)
 
 
 def dumps_node_link_json(graph: RxGraph, *, require_metadata: bool = False) -> str:
@@ -82,7 +111,7 @@ def dumps_node_link_json(graph: RxGraph, *, require_metadata: bool = False) -> s
         raise ValueError(message)
     payload = rx.node_link_json(
         graph,
-        graph_attrs=_pack_payload,
+        graph_attrs=_graph_attrs_in,
         node_attrs=_pack_payload,
         edge_attrs=_pack_payload,
     )

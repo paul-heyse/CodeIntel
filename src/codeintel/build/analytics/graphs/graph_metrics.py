@@ -39,17 +39,25 @@ from codeintel.build.graphs.builders import (
     build_call_graph_from_rows as _build_call_graph_from_rows,
 )
 from codeintel.build.graphs.builders import (
+    build_call_graph_from_tables as _build_call_graph_from_tables,
+)
+from codeintel.build.graphs.builders import (
     build_import_graph_from_rows as _build_import_graph_from_rows,
+)
+from codeintel.build.graphs.builders import (
+    build_import_graph_from_tables as _build_import_graph_from_tables,
 )
 from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    import pyarrow as pa
 
     from codeintel.build.analytics.compute.graphs import ComponentBundle, NeighborStats
     from codeintel.build.analytics.graphs.orchestrator import GraphViews
@@ -64,29 +72,27 @@ ComponentMeta = Mapping[str, Mapping[str, int | bool]]
 
 def _filter_store(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphStore:
     store = ensure_store(graph)
-    if store.is_directed:
-        filtered = RxGraphStore.directed(
-            node_hint=store.graph.num_nodes(),
-            edge_hint=store.graph.num_edges(),
-        )
-    else:
-        filtered = RxGraphStore.undirected(
-            node_hint=store.graph.num_nodes(),
-            edge_hint=store.graph.num_edges(),
-        )
     allowed_set = set(allowed)
-    for node_id in store.node_ids():
-        if node_id in allowed_set:
-            filtered.set_node_attrs(node_id, store.get_node_attrs(node_id))
-    for src_idx, dst_idx in store.graph.edge_list():
-        src_id = store.index_to_id[src_idx]
-        dst_id = store.index_to_id[dst_idx]
-        if src_id not in allowed_set or dst_id not in allowed_set:
-            continue
-        payload = store.graph.get_edge_data(src_idx, dst_idx)
-        weight = edge_weight_from_payload(payload)
-        filtered.add_weighted_edge(src_id, dst_id, weight=weight)
-    return filtered
+    node_indices = [
+        store.id_to_index[node_id] for node_id in allowed_set if node_id in store.id_to_index
+    ]
+    if not node_indices:
+        if store.is_directed:
+            return RxGraphStore.directed(
+                weight_policy=store.weight_policy,
+                numeric_policy=store.numeric_policy,
+            )
+        return RxGraphStore.undirected(
+            weight_policy=store.weight_policy,
+            numeric_policy=store.numeric_policy,
+        )
+    node_indices.sort(key=lambda idx: stable_key(store.index_to_id[idx]))
+    subgraph, _ = store.graph.subgraph_with_nodemap(node_indices, preserve_attrs=True)
+    return RxGraphStore.from_rx_graph(
+        subgraph,
+        weight_policy=store.weight_policy,
+        numeric_policy=store.numeric_policy,
+    )
 
 
 @dataclass(frozen=True)
@@ -250,6 +256,28 @@ def build_call_graph_from_rows(
     return _build_call_graph_from_rows(call_graph_edges, call_graph_nodes)
 
 
+def build_call_graph_from_tables(
+    call_graph_edges: pa.Table,
+    call_graph_nodes: pa.Table | None = None,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> GraphInput:
+    """Build a call graph from Arrow tables with Acero aggregation.
+
+    Returns
+    -------
+    GraphInput
+        Directed call graph populated from the provided tables.
+    """
+    return _build_call_graph_from_tables(
+        call_graph_edges,
+        call_graph_nodes,
+        repo=repo,
+        commit=commit,
+    )
+
+
 def build_import_graph_from_rows(
     import_graph_edges: Iterable[Mapping[str, object]],
     import_modules: Iterable[Mapping[str, object]] | None = None,
@@ -262,6 +290,28 @@ def build_import_graph_from_rows(
         Directed import graph populated from the provided rows.
     """
     return _build_import_graph_from_rows(import_graph_edges, import_modules)
+
+
+def build_import_graph_from_tables(
+    import_graph_edges: pa.Table,
+    import_modules: pa.Table | None = None,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> GraphInput:
+    """Build an import graph from Arrow tables with Acero aggregation.
+
+    Returns
+    -------
+    GraphInput
+        Directed import graph populated from the provided tables.
+    """
+    return _build_import_graph_from_tables(
+        import_graph_edges,
+        import_modules,
+        repo=repo,
+        commit=commit,
+    )
 
 
 def build_graph_metrics_rows(

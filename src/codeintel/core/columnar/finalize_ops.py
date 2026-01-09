@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
 import pyarrow as pa
@@ -18,6 +18,7 @@ from codeintel.core.columnar.dedupe_ops import (
     DedupeStrategy,
     DedupeTier,
     dedupe_table_for_table,
+    normalize_dedupe_tier,
 )
 from codeintel.core.columnar.kernels import (
     SortKey,
@@ -29,6 +30,7 @@ from codeintel.core.columnar.nested_ops import (
     deep_cast_table_to_contract,
     unify_schemas_with_contract_first,
 )
+from codeintel.core.columnar.queryspec import PROVENANCE_FIELDS
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema_alignment import (
     align_table_to_contract,
@@ -43,6 +45,14 @@ from codeintel.core.columnar.type_normalization import (
     binary_view_cast_type,
     string_view_cast_type,
 )
+from codeintel.core.schemas.primitives import (
+    FinalizeDedupeSpec,
+    FinalizeInvariantSpec,
+    FinalizeListPolicySpec,
+    FinalizePolicy,
+    TableSchema,
+    resolve_stable_sort_keys,
+)
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.validation.schema_constraints import (
     is_list_like,
@@ -54,6 +64,9 @@ NullListPolicy = Literal["error", "empty"]
 
 ERROR_CODE_NULL_REQUIRED_LIST = "NULL_REQUIRED_LIST"
 ERROR_CODE_MISALIGNED_LIST_COLUMNS = "MISALIGNED_LIST_COLUMNS"
+_PROVENANCE_CONTEXT_FIELDS: tuple[str, ...] = tuple(
+    output_name for output_name, _source_name in PROVENANCE_FIELDS
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,38 +261,39 @@ def finalize_table(
     ValueError
         If strict mode detects errors.
     """
+    resolved_spec = _resolve_finalize_spec(spec)
     if table.num_rows == 0:
-        return _empty_finalize_result(spec)
+        return _empty_finalize_result(resolved_spec)
 
-    aligned_context, failure = _prepare_alignment(table, spec)
+    aligned_context, failure = _prepare_alignment(table, resolved_spec)
     if failure is not None:
         return failure
     if aligned_context is None:
-        return _missing_contract_result(table, spec, context_columns={})
+        return _missing_contract_result(table, resolved_spec, context_columns={})
     context = FinalizeContext(
         table=aligned_context.aligned,
         row_id=pa.arange(0, aligned_context.aligned.num_rows),
         context_columns=aligned_context.context_columns,
         context_fields=aligned_context.context_fields,
     )
-    invariants = _resolve_invariants(spec)
-    error_tables, masks = _collect_error_tables(context, spec, invariants=invariants)
+    invariants = _resolve_invariants(resolved_spec)
+    error_tables, masks = _collect_error_tables(context, resolved_spec, invariants=invariants)
     bad_mask = _combine_masks(masks)
     good = _filter_good_rows(context.table, bad_mask)
-    dedupe_spec = _dedupe_spec_from_finalize(spec)
-    good = _apply_dedupe(good, spec, dedupe_spec=dedupe_spec)
-    good = _apply_order_by(good, spec, dedupe_spec=dedupe_spec)
+    dedupe_spec = _dedupe_spec_from_finalize(resolved_spec)
+    good = _apply_dedupe(good, resolved_spec, dedupe_spec=dedupe_spec)
+    good = _apply_order_by(good, resolved_spec, dedupe_spec=dedupe_spec)
 
     errors = _concat_errors(
         error_tables,
         context.table,
-        key_fields=spec.key_fields,
+        key_fields=resolved_spec.key_fields,
         context_fields=context.context_fields,
         context_columns=context.context_columns,
     )
-    alignment, stats = _build_artifacts(aligned_context.report, errors, spec)
+    alignment, stats = _build_artifacts(aligned_context.report, errors, resolved_spec)
 
-    if spec.mode == "strict" and errors.num_rows:
+    if resolved_spec.mode == "strict" and errors.num_rows:
         msg = f"Finalize strict mode: {errors.num_rows} invalid rows"
         raise ValueError(msg)
 
@@ -738,7 +752,9 @@ def _contract_cast_schema(
 
 
 def _resolve_context_fields(spec: FinalizeSpec) -> tuple[str, ...]:
-    return _dedupe_field_names((*spec.key_fields, *spec.context_fields))
+    return _dedupe_field_names(
+        (*spec.key_fields, *spec.context_fields, *_PROVENANCE_CONTEXT_FIELDS)
+    )
 
 
 def _filter_context_fields(
@@ -810,6 +826,91 @@ def _resolve_invariants(spec: FinalizeSpec) -> tuple[FinalizeInvariant, ...]:
     seen = {(inv.kind, inv.column, inv.related) for inv in invariants}
     for alignment in list_alignment_specs_for_table_key(spec.table_key):
         invariant = FinalizeInvariant.list_alignment(alignment.column, alignment.related)
+        key = (invariant.kind, invariant.column, invariant.related)
+        if key in seen:
+            continue
+        invariants.append(invariant)
+        seen.add(key)
+    return tuple(invariants)
+
+
+def _resolve_finalize_spec(spec: FinalizeSpec) -> FinalizeSpec:
+    policy = _finalize_policy_for_table(spec.table_key)
+    if policy is None:
+        return spec
+    required_non_null = _dedupe_field_names((*policy.required_non_null, *spec.required_non_null))
+    list_policies = _merge_list_policies(spec.list_policies, policy.list_policies)
+    invariants = _merge_invariants(spec.invariants, policy.invariants)
+    dedupe = spec.dedupe or _dedupe_from_policy(policy.dedupe)
+    order_by = spec.order_by
+    if not order_by and policy.canonical_sort_keys is not None:
+        order_by = tuple((name, "ascending") for name in policy.canonical_sort_keys)
+    if (
+        required_non_null == spec.required_non_null
+        and list_policies == spec.list_policies
+        and invariants == spec.invariants
+        and dedupe == spec.dedupe
+        and order_by == spec.order_by
+    ):
+        return spec
+    return replace(
+        spec,
+        required_non_null=required_non_null,
+        list_policies=list_policies,
+        invariants=invariants,
+        dedupe=dedupe,
+        order_by=order_by,
+    )
+
+
+def _finalize_policy_for_table(table_key: str) -> FinalizePolicy | None:
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is None:
+        return None
+    return schema.finalize_policy
+
+
+def _dedupe_from_policy(policy: FinalizeDedupeSpec | None) -> FinalizeDedupe | None:
+    if policy is None:
+        return None
+    return FinalizeDedupe(
+        enabled=policy.enabled,
+        keys=policy.keys,
+        prefer_columns=policy.prefer_columns,
+        tie_breakers=policy.tie_breakers,
+        tier=policy.tier,
+        strategy=policy.strategy,
+    )
+
+
+def _merge_list_policies(
+    overrides: Sequence[FinalizeListPolicy],
+    defaults: Sequence[FinalizeListPolicySpec],
+) -> tuple[FinalizeListPolicy, ...]:
+    merged: dict[str, FinalizeListPolicy] = {
+        policy.column: FinalizeListPolicy(
+            column=policy.column,
+            null_policy=policy.null_policy,
+        )
+        for policy in defaults
+    }
+    for policy in overrides:
+        merged[policy.column] = policy
+    return tuple(merged.values())
+
+
+def _merge_invariants(
+    overrides: Sequence[FinalizeInvariant],
+    defaults: Sequence[FinalizeInvariantSpec],
+) -> tuple[FinalizeInvariant, ...]:
+    invariants = list(overrides)
+    seen = {(inv.kind, inv.column, inv.related) for inv in invariants}
+    for policy in defaults:
+        invariant = FinalizeInvariant(
+            kind=policy.kind,
+            column=policy.column,
+            related=policy.related,
+        )
         key = (invariant.kind, invariant.column, invariant.related)
         if key in seen:
             continue
@@ -942,7 +1043,7 @@ def _dedupe_spec_from_finalize(spec: FinalizeSpec) -> DedupeSpec | None:
         keys=dedupe.keys or (),
         prefer_columns=dedupe.prefer_columns,
         tie_breakers=dedupe.tie_breakers or (),
-        tier=dedupe.tier or "canonical",
+        tier=dedupe.tier or "stable_set",
         strategy=dedupe.strategy or "order_independent",
     )
 
@@ -976,12 +1077,50 @@ def _default_order_by(
     spec: FinalizeSpec,
     dedupe_spec: DedupeSpec,
 ) -> Sequence[SortKey]:
-    if dedupe_spec.keys:
-        return [(name, "ascending") for name in dedupe_spec.keys]
     schema = get_schema_service().get_table_schema(spec.table_key)
+    canonical_keys = _canonical_sort_keys_for_table(schema)
+    if canonical_keys is not None:
+        if not canonical_keys:
+            return ()
+        order_by = [(name, "ascending") for name in canonical_keys]
+        return _extend_with_tie_breakers(order_by, dedupe_spec.tie_breakers)
+    if dedupe_spec.keys:
+        order_by = [(name, "ascending") for name in dedupe_spec.keys]
+        return _extend_with_tie_breakers(order_by, dedupe_spec.tie_breakers)
     if schema is None or not schema.primary_key:
         return ()
-    return [(name, "ascending") for name in schema.primary_key if name in table.column_names]
+    order_by = [(name, "ascending") for name in schema.primary_key if name in table.column_names]
+    return _extend_with_tie_breakers(order_by, dedupe_spec.tie_breakers)
+
+
+def _canonical_sort_keys_for_table(
+    schema: TableSchema | None,
+) -> tuple[str, ...] | None:
+    if schema is None:
+        return None
+    finalize_policy = getattr(schema, "finalize_policy", None)
+    if (
+        isinstance(finalize_policy, FinalizePolicy)
+        and finalize_policy.canonical_sort_keys is not None
+    ):
+        return finalize_policy.canonical_sort_keys
+    return resolve_stable_sort_keys(schema)
+
+
+def _extend_with_tie_breakers(
+    order_by: Sequence[SortKey],
+    tie_breakers: Sequence[SortKey],
+) -> list[SortKey]:
+    if not tie_breakers:
+        return list(order_by)
+    seen = {name for name, _order in order_by}
+    merged = list(order_by)
+    for name, order in tie_breakers:
+        if name in seen:
+            continue
+        merged.append((name, order))
+        seen.add(name)
+    return merged
 
 
 def _apply_order_by(
@@ -1004,7 +1143,8 @@ def _apply_order_by(
             dedupe_spec=DedupeSpec(),
         )
         return stable_sort_table(table, sort_keys=fallback) if fallback else table
-    if dedupe_spec.tier != "canonical":
+    tier = normalize_dedupe_tier(dedupe_spec.tier)
+    if tier != "canonical":
         return table
     fallback = _default_order_by(table, spec=spec, dedupe_spec=dedupe_spec)
     if not fallback:
@@ -1018,7 +1158,7 @@ def _build_artifacts(
     errors: pa.Table,
     spec: FinalizeSpec,
 ) -> tuple[pa.Table, pa.Table]:
-    if spec.emit_artifacts:
+    if spec.emit_artifacts or spec.mode == "tolerant":
         return _alignment_table_from_report(report), _stats_table(errors)
     return _empty_alignment_table(), _empty_stats_table()
 

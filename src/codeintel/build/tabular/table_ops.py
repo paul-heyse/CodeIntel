@@ -9,7 +9,7 @@ import polars as pl
 import pyarrow as pa
 
 from codeintel.build.tabular.compute_columns import empty_table
-from codeintel.core.columnar.iter import iter_rows
+from codeintel.core.columnar.iter import iter_rows, iter_rows_limit
 
 
 def empty_table_for_columns(columns: Sequence[str]) -> pa.Table:
@@ -119,13 +119,19 @@ def rename_table_columns(table: pa.Table, mapping: Mapping[str, str]) -> pa.Tabl
     return table.rename_columns(names)
 
 
-def table_rows(table: pa.Table) -> list[dict[str, object]]:
+def table_rows(
+    table: pa.Table,
+    *,
+    limit: int | None = None,
+) -> list[dict[str, object]]:
     """Return table rows as a list of dictionaries.
 
     Parameters
     ----------
     table
         Source Arrow table.
+    limit
+        Optional row limit for bounded sampling.
 
     Returns
     -------
@@ -134,6 +140,8 @@ def table_rows(table: pa.Table) -> list[dict[str, object]]:
     """
     if table.num_rows == 0:
         return []
+    if limit is not None:
+        return list(iter_rows_limit(table, limit=limit))
     return list(iter_rows(table))
 
 

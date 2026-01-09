@@ -25,9 +25,8 @@ from codeintel.build.analytics.graphs.config_references import (
 )
 from codeintel.build.analytics.parsing.ast_cache import FunctionAst
 from codeintel.build.contracts.ref import contract_ref_for_table
+from codeintel.build.graphs.builders import build_call_graph_from_tables
 from codeintel.build.graphs.runtime import GraphRuntimeOptions, graph_runtime_options_from_env
-from codeintel.build.graphs.rx.algos import GraphInput
-from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.analytics.finalize_helpers import finalize_analytics_rows
@@ -41,6 +40,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.scopes.snapshot import SnapshotScope
+from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -205,44 +205,6 @@ def _group_goids_by_path(
     return grouped, missing
 
 
-def _call_graph_from_frames(
-    edges: list[dict[str, object]],
-    nodes: list[dict[str, object]],
-) -> GraphInput:
-    store = RxGraphStore.directed()
-    _add_call_graph_edges(store, edges)
-    _add_call_graph_nodes(store, nodes)
-    return store
-
-
-def _add_call_graph_edges(graph: RxGraphStore, edges: list[dict[str, object]]) -> None:
-    if not edges:
-        return
-    for row in edges:
-        caller = normalize_decimal_id(row.get("caller_goid_h128"))
-        callee = normalize_decimal_id(row.get("callee_goid_h128"))
-        if caller is None or callee is None:
-            continue
-        graph.add_weighted_edge(caller, callee, weight=1.0)
-
-
-def _add_call_graph_nodes(graph: RxGraphStore, nodes: list[dict[str, object]]) -> None:
-    if not nodes:
-        return
-    for row in nodes:
-        node = normalize_decimal_id(row.get("goid_h128"))
-        if node is None:
-            continue
-        attrs: dict[str, object] = {}
-        kind = row.get("kind")
-        if kind is not None:
-            attrs["kind"] = str(kind)
-        if attrs:
-            graph.set_node_attrs(node, attrs)
-        else:
-            graph.ensure_node(node)
-
-
 def _function_asts_from_goids(
     rows: list[dict[str, object]],
     *,
@@ -363,18 +325,14 @@ def config_data_flow__base(
         ("repo", "commit", "handler_goid_h128"),
         scope=scope,
     )
-    call_edge_rows = collect_scoped_rows(
-        config_data_flow_frames.call_graph_edges,
-        ("caller_goid_h128", "callee_goid_h128"),
-        scope=scope,
+    call_graph_edges = tabular_to_arrow_table(config_data_flow_frames.call_graph_edges)
+    call_graph_nodes = tabular_to_arrow_table(config_data_flow_frames.call_graph_nodes)
+    call_graph = build_call_graph_from_tables(
+        call_graph_edges,
+        call_graph_nodes,
+        repo=env.repo,
+        commit=env.commit,
     )
-    call_node_rows = collect_scoped_rows(
-        config_data_flow_frames.call_graph_nodes,
-        ("goid_h128", "kind"),
-        scope=scope,
-        require_scope_columns=False,
-    )
-    call_graph = _call_graph_from_frames(call_edge_rows, call_node_rows)
     goid_rows = collect_scoped_rows(
         config_data_flow_frames.goids,
         ("goid_h128", "rel_path", "qualname", "kind", "start_line", "end_line", "repo", "commit"),

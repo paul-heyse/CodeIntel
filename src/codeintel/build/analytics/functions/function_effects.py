@@ -15,12 +15,14 @@ import rustworkx as rx
 from codeintel.build.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.build.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.build.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.build.graphs.builders import build_call_graph_from_rows
+from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import FilterExprContext
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.query_results import coerce_int
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.parsing.ast_cache import FunctionAst
@@ -474,40 +476,18 @@ def _unresolved_call_counts_from_frame(
     counts: dict[int, int] = {}
     if edges_frame is None or edges_frame.num_rows == 0:
         return counts
-    if "callee_goid_h128" not in edges_frame.column_names:
-        return counts
-    if "caller_goid_h128" not in edges_frame.column_names:
-        return counts
-    context = FilterExprContext(repo=repo, commit=commit)
-    filtered = context.apply(edges_frame)
-    for row in iter_rows(filtered):
-        callee = row.get("callee_goid_h128")
-        if callee is not None and callee != -1:
-            continue
+    aggregated = _unresolved_call_rowset(edges_frame, repo=repo, commit=commit)
+    for row in iter_rows(aggregated, ("caller_goid_h128", "unresolved_call_count")):
         goid = normalize_decimal_id(row.get("caller_goid_h128"))
         if goid is None:
             continue
-        counts[goid] = counts.get(goid, 0) + 1
+        count_value = row.get("unresolved_call_count")
+        count = (
+            coerce_int(count_value, ctx="unresolved_call_count") if count_value is not None else 0
+        )
+        if count:
+            counts[goid] = count
     return counts
-
-
-def _filter_edges_rows(
-    edges_frame: pa.Table | None,
-    *,
-    repo: str,
-    commit: str,
-) -> list[dict[str, object]]:
-    if edges_frame is None or edges_frame.num_rows == 0:
-        return []
-    missing = [name for name in ("repo", "commit") if name not in edges_frame.column_names]
-    if missing:
-        msg = f"Missing snapshot columns: {missing}"
-        raise ValueError(msg)
-    context = FilterExprContext(repo=repo, commit=commit)
-    filtered = context.apply(edges_frame)
-    if filtered.num_rows == 0:
-        return []
-    return list(iter_rows(filtered))
 
 
 def _call_graph_from_frames(
@@ -517,11 +497,117 @@ def _call_graph_from_frames(
     repo: str,
     commit: str,
 ) -> GraphInput:
-    rows = _filter_edges_rows(edges_frame, repo=repo, commit=commit)
-    if not rows:
+    if edges_frame is None or edges_frame.num_rows == 0:
         return RxGraphStore.directed()
-    node_rows = iter_rows(nodes_frame) if nodes_frame is not None else None
-    return build_call_graph_from_rows(rows, node_rows)
+    rowset = _call_graph_rowset(edges_frame, repo=repo, commit=commit)
+    graph = RxGraphStore.directed()
+    for row in iter_rows(rowset, ("caller_goid_h128", "callee_goid_h128")):
+        caller = normalize_decimal_id(row.get("caller_goid_h128"))
+        if caller is None:
+            continue
+        callee_ids = _coerce_sorted_goids(row.get("callee_goid_h128"))
+        if not callee_ids:
+            continue
+        caller_id = int(caller)
+        for callee_id in callee_ids:
+            graph.add_weighted_edge(caller_id, callee_id, weight=1.0)
+
+    _ensure_call_graph_nodes(graph, nodes_frame, repo=repo, commit=commit)
+    return graph
+
+
+def _call_graph_rowset(
+    edges_frame: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+) -> pa.Table:
+    required = ("caller_goid_h128", "callee_goid_h128")
+    missing = [name for name in required if name not in edges_frame.column_names]
+    if missing:
+        msg = f"Missing call graph edge columns: {missing}"
+        raise ValueError(msg)
+    plan = snapshot_plan(edges_frame, repo=repo, commit=commit, columns=required)
+    plan = plan.filter(
+        E.and_(
+            E.is_valid("caller_goid_h128"),
+            E.is_valid("callee_goid_h128"),
+            E.field("callee_goid_h128") != E.scalar(-1),
+        )
+    )
+    plan = plan.aggregate(
+        keys=[E.field("caller_goid_h128")],
+        aggregates=[("callee_goid_h128", "list", None, "callee_goid_h128")],
+    )
+    plan = plan.order_by(sort_keys=[("caller_goid_h128", "ascending")])
+    return materialize_plan(plan, use_threads=True)
+
+
+def _unresolved_call_rowset(
+    edges_frame: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+) -> pa.Table:
+    required = ("caller_goid_h128", "callee_goid_h128")
+    missing = [name for name in required if name not in edges_frame.column_names]
+    if missing:
+        msg = f"Missing call graph edge columns: {missing}"
+        raise ValueError(msg)
+    plan = snapshot_plan(edges_frame, repo=repo, commit=commit, columns=required)
+    plan = plan.filter(
+        E.and_(
+            E.is_valid("caller_goid_h128"),
+            E.or_(
+                E.is_null("callee_goid_h128"),
+                E.field("callee_goid_h128") == E.scalar(-1),
+            ),
+        )
+    )
+    plan = plan.aggregate(
+        keys=[E.field("caller_goid_h128")],
+        aggregates=[("caller_goid_h128", "count", None, "unresolved_call_count")],
+    )
+    plan = plan.order_by(sort_keys=[("caller_goid_h128", "ascending")])
+    return materialize_plan(plan, use_threads=True)
+
+
+def _ensure_call_graph_nodes(
+    graph: RxGraphStore,
+    nodes_frame: pa.Table | None,
+    *,
+    repo: str,
+    commit: str,
+) -> None:
+    if nodes_frame is None or nodes_frame.num_rows == 0:
+        return
+    if "goid_h128" not in nodes_frame.column_names:
+        return
+    plan = snapshot_plan(nodes_frame, repo=repo, commit=commit, columns=("goid_h128",))
+    plan = plan.filter(E.is_valid("goid_h128"))
+    plan = plan.order_by(sort_keys=[("goid_h128", "ascending")])
+    table = materialize_plan(plan, use_threads=True)
+    for row in iter_rows(table, ("goid_h128",)):
+        goid = normalize_decimal_id(row.get("goid_h128"))
+        if goid is not None:
+            graph.ensure_node(int(goid))
+
+
+def _coerce_sorted_goids(raw: object) -> list[int]:
+    goids = [
+        int(goid)
+        for value in _list_values(raw)
+        if (goid := normalize_decimal_id(value)) is not None
+    ]
+    return sorted(goids)
+
+
+def _list_values(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
 
 
 def _purity_confidence(*, parsed: bool, unresolved_call_count: int) -> float:

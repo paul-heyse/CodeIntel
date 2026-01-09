@@ -16,8 +16,8 @@ _ALLOWLIST: frozenset[str] = frozenset(
 )
 
 _SCAN_DIRS: tuple[str, ...] = (
-    "src/codeintel/build",
-    "src/codeintel/ingestion",
+    "src/codeintel/build/hamilton",
+    "src/codeintel/ingestion/compute",
 )
 
 

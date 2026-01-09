@@ -25,8 +25,8 @@ from codeintel.build.graphs.compute.metrics.types import (
     DominanceMetrics as DominanceSummary,
 )
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
-from codeintel.build.graphs.rx.condensation import condensation_store
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, stable_key
+from codeintel.build.graphs.rx.iterators import iter_edge_weights
+from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
 if TYPE_CHECKING:
@@ -66,11 +66,9 @@ def _ensure_directed_store(graph: GraphInput) -> RxGraphStore:
     )
     for node_id in store.node_ids():
         directed.set_node_attrs(node_id, store.get_node_attrs(node_id))
-    for src_idx, dst_idx in store.graph.edge_list():
+    for src_idx, dst_idx, weight in iter_edge_weights(store):
         src_id = store.index_to_id[src_idx]
         dst_id = store.index_to_id[dst_idx]
-        payload = store.graph.get_edge_data(src_idx, dst_idx)
-        weight = edge_weight_from_payload(payload)
         directed.add_weighted_edge(src_id, dst_id, weight=weight)
         if src_id != dst_id:
             directed.add_weighted_edge(dst_id, src_id, weight=weight)
@@ -82,11 +80,6 @@ def _directed_graph(store: RxGraphStore) -> rx.PyDiGraph:
         message = "Expected a directed graph store"
         raise ValueError(message)
     return cast("rx.PyDiGraph", store.graph)
-
-
-def _condensation_store(store: RxGraphStore) -> RxGraphStore:
-    condensed, _ = condensation_store(store)
-    return condensed
 
 
 def compute_dominator_tree(
@@ -283,10 +276,9 @@ def compute_cfg_longest_path(
     except rx.NullGraph:
         return 0
 
-    condensed = _condensation_store(store)
-    if condensed.graph.num_nodes() == 0:
+    condensed_graph = rx.condensation(directed_graph)
+    if condensed_graph.num_nodes() == 0:
         return 0
-    condensed_graph = cast("rx.PyDiGraph", condensed.graph)
     try:
         return int(rx.dag_longest_path_length(condensed_graph))
     except (rx.DAGHasCycle, rx.NullGraph):

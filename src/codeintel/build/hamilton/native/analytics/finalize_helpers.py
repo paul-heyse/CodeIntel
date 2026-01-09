@@ -3,18 +3,32 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Final
 
 import pyarrow as pa
 
-from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
-from codeintel.core.columnar.kernels import SortKey
-from codeintel.core.columnar.rows import table_for_rows
-from codeintel.core.schemas.primitives import resolve_stable_sort_keys
+from codeintel.build.analytics.utilities.finalize import (
+    finalize_analytics_result as _finalize_analytics_result,
+)
+from codeintel.build.analytics.utilities.finalize import (
+    finalize_analytics_rows as _finalize_analytics_rows,
+)
+from codeintel.build.analytics.utilities.finalize import (
+    finalize_analytics_table as _finalize_analytics_table,
+)
+from codeintel.build.tabular.finalize_ops import FinalizeResult
 
 RowInput = Iterable[Mapping[str, object]] | Iterable[Sequence[object]]
-ORDER_ASC: Final = "ascending"
+
+
+def finalize_analytics_result(table_key: str, table: pa.Table) -> FinalizeResult:
+    """Finalize an analytics table against its contract in tolerant mode.
+
+    Returns
+    -------
+    FinalizeResult
+        Finalization result containing good and rejected rows.
+    """
+    return _finalize_analytics_result(table_key, table)
 
 
 def finalize_analytics_table(table_key: str, table: pa.Table) -> pa.Table:
@@ -25,12 +39,7 @@ def finalize_analytics_table(table_key: str, table: pa.Table) -> pa.Table:
     pyarrow.Table
         Contract-aligned analytics table.
     """
-    order_by = _stable_order_by(table_key)
-    result = finalize_table(
-        table,
-        spec=FinalizeSpec(table_key=table_key, mode="tolerant", order_by=order_by),
-    )
-    return result.good
+    return _finalize_analytics_table(table_key, table)
 
 
 def finalize_analytics_rows(table_key: str, rows: RowInput) -> pa.Table:
@@ -41,17 +50,11 @@ def finalize_analytics_rows(table_key: str, rows: RowInput) -> pa.Table:
     pyarrow.Table
         Contract-aligned analytics table built from row inputs.
     """
-    table, _ = table_for_rows(table_key, rows)
-    return finalize_analytics_table(table_key, table)
+    return _finalize_analytics_rows(table_key, rows)
 
 
-def _stable_order_by(table_key: str) -> tuple[SortKey, ...]:
-    schema_service = get_schema_service()
-    table_schema = schema_service.get_table_schema(table_key)
-    stable_sort_keys = resolve_stable_sort_keys(table_schema)
-    if not stable_sort_keys:
-        return ()
-    return tuple((key, ORDER_ASC) for key in stable_sort_keys)
-
-
-__all__ = ["finalize_analytics_rows", "finalize_analytics_table"]
+__all__ = [
+    "finalize_analytics_result",
+    "finalize_analytics_rows",
+    "finalize_analytics_table",
+]

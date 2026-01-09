@@ -8,7 +8,11 @@ from typing import cast
 
 import rustworkx as rx
 
-from codeintel.build.graphs.rx.metadata import metadata_from_graph
+from codeintel.build.graphs.rx.metadata import (
+    GraphMetadata,
+    apply_graph_metadata,
+    metadata_from_graph,
+)
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.payloads import decode_node_payload, encode_node_payload
 from codeintel.build.graphs.rx.policies import (
@@ -52,19 +56,22 @@ class RxGraphStore:
         RxGraphStore
             Directed graph store instance.
         """
+        resolved_weight_policy = weight_policy or DEFAULT_WEIGHT_POLICY
+        resolved_numeric_policy = numeric_policy or DEFAULT_NUMERIC_POLICY
         graph = rx.PyDiGraph(
             multigraph=False,
             node_count_hint=node_hint,
             edge_count_hint=edge_hint,
         )
+        apply_graph_metadata(graph, GraphMetadata(weight_policy=resolved_weight_policy.name))
         return cls(
             graph=graph,
             id_to_index={},
             index_to_id={},
             node_attrs={},
             is_directed=True,
-            weight_policy=weight_policy or DEFAULT_WEIGHT_POLICY,
-            numeric_policy=numeric_policy or DEFAULT_NUMERIC_POLICY,
+            weight_policy=resolved_weight_policy,
+            numeric_policy=resolved_numeric_policy,
         )
 
     @classmethod
@@ -83,19 +90,22 @@ class RxGraphStore:
         RxGraphStore
             Undirected graph store instance.
         """
+        resolved_weight_policy = weight_policy or DEFAULT_WEIGHT_POLICY
+        resolved_numeric_policy = numeric_policy or DEFAULT_NUMERIC_POLICY
         graph = rx.PyGraph(
             multigraph=False,
             node_count_hint=node_hint,
             edge_count_hint=edge_hint,
         )
+        apply_graph_metadata(graph, GraphMetadata(weight_policy=resolved_weight_policy.name))
         return cls(
             graph=graph,
             id_to_index={},
             index_to_id={},
             node_attrs={},
             is_directed=False,
-            weight_policy=weight_policy or DEFAULT_WEIGHT_POLICY,
-            numeric_policy=numeric_policy or DEFAULT_NUMERIC_POLICY,
+            weight_policy=resolved_weight_policy,
+            numeric_policy=resolved_numeric_policy,
         )
 
     @classmethod
@@ -122,17 +132,30 @@ class RxGraphStore:
             index_to_id[node_idx] = node_id
             node_attrs[node_id] = attrs
         resolved_policy = weight_policy
+        metadata = metadata_from_graph(graph)
+        if resolved_policy is None and metadata is not None:
+            resolved_policy = weight_policy_for_name(metadata.weight_policy)
         if resolved_policy is None:
-            metadata = metadata_from_graph(graph)
-            if metadata is not None:
-                resolved_policy = weight_policy_for_name(metadata.weight_policy)
+            resolved_policy = DEFAULT_WEIGHT_POLICY
+        if metadata is None:
+            metadata = GraphMetadata(weight_policy=resolved_policy.name)
+        elif metadata.weight_policy != resolved_policy.name:
+            metadata = GraphMetadata(
+                weight_policy=resolved_policy.name,
+                cache_version=metadata.cache_version,
+                engine=metadata.engine,
+                graph_kind=metadata.graph_kind,
+                node_payload_version=metadata.node_payload_version,
+                determinism_tier=metadata.determinism_tier,
+            )
+        apply_graph_metadata(graph, metadata)
         return cls(
             graph=graph,
             id_to_index=id_to_index,
             index_to_id=index_to_id,
             node_attrs=node_attrs,
             is_directed=isinstance(graph, rx.PyDiGraph),
-            weight_policy=resolved_policy or DEFAULT_WEIGHT_POLICY,
+            weight_policy=resolved_policy,
             numeric_policy=numeric_policy or DEFAULT_NUMERIC_POLICY,
         )
 

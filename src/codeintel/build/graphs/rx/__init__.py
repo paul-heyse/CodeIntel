@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from codeintel.build.graphs.rx.build_from_edges import (
+    BuildStoreOptions,
     BulkEdgeInserter,
     EdgeBuildSpec,
     build_store_from_edge_tuples,
@@ -61,6 +62,7 @@ from codeintel.build.graphs.rx.weights import (
 
 __all__ = [
     "DEFAULT_WEIGHT_EPSILON",
+    "BuildStoreOptions",
     "BulkEdgeInserter",
     "EdgeBuildSpec",
     "NanPolicy",

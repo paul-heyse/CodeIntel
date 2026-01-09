@@ -10,7 +10,11 @@ from typing import TYPE_CHECKING, cast
 
 import rustworkx as rx
 
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_directed_store
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    constant_weight_fn,
+    ensure_directed_store,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable
@@ -121,7 +125,7 @@ def compute_avg_shortest_path_from_source(
         lengths = rx.digraph_dijkstra_shortest_path_lengths(
             directed_graph,
             source_idx,
-            lambda _payload: 1.0,
+            constant_weight_fn(),
         )
     except (rx.InvalidNode, rx.NullGraph):
         return 0.0

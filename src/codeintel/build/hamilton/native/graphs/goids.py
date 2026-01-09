@@ -34,6 +34,7 @@ from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.kernels import hash_struct_goid
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.arrowdsl import join_safe_projection
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -256,7 +257,9 @@ def _joined_ast_nodes(
     filtered_ast = materialize_plan(ast_plan, use_threads=True)
     if filtered_ast.num_rows == 0:
         return pa.Table.from_pydict({})
+    filtered_ast = join_safe_projection(filtered_ast)
     filtered_ast = normalize_table_for_join(filtered_ast)
+    modules_table = join_safe_projection(modules_table)
     modules_table = normalize_table_for_join(modules_table)
     module_plan = Plan.table(modules_table).project(
         {

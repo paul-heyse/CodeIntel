@@ -20,10 +20,13 @@ from codeintel.build.graphs.rx.algos import (
     GraphInput,
     ensure_store,
     graph_node_count,
+    resolve_weight_epsilon,
+    resolve_weight_semantics,
 )
-from codeintel.build.graphs.rx.iterators import iter_edge_weights
+from codeintel.build.graphs.rx.iterators import iter_edge_payloads
 from codeintel.build.graphs.rx.normalize import sorted_mapping
 from codeintel.build.graphs.rx.store import RxGraphStore
+from codeintel.build.graphs.rx.weights import edge_strength_from_payload
 from codeintel.core.compute.centrality import compute_betweenness, compute_closeness
 
 if TYPE_CHECKING:
@@ -133,7 +136,16 @@ def projection_metrics(
 
     degree: dict[Any, int] = dict.fromkeys(proj_store.node_ids(), 0)
     weighted_degree: dict[Any, float] = dict.fromkeys(proj_store.node_ids(), 0.0)
-    for src_idx, dst_idx, weight_val in iter_edge_weights(proj_store):
+    resolved_nan_policy = proj_store.numeric_policy.nan_policy
+    semantics = resolve_weight_semantics(proj_store, algo_config)
+    epsilon = resolve_weight_epsilon(algo_config)
+    for src_idx, dst_idx, payload in iter_edge_payloads(proj_store):
+        weight_val = edge_strength_from_payload(
+            payload,
+            nan_policy=resolved_nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
         src_id = proj_store.index_to_id[src_idx]
         dst_id = proj_store.index_to_id[dst_idx]
         if src_idx == dst_idx:
@@ -187,10 +199,10 @@ def projection_metrics(
     return ProjectionMetrics(
         degree=sorted_mapping(degree),
         weighted_degree=sorted_mapping(weighted_degree),
-        clustering=clustering,
-        betweenness=betweenness,
-        closeness=closeness,
-        community_id=communities,
+        clustering=sorted_mapping(clustering),
+        betweenness=sorted_mapping(betweenness),
+        closeness=sorted_mapping(closeness),
+        community_id=sorted_mapping(communities),
     )
 
 

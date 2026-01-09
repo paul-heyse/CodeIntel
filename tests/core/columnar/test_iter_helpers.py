@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pyarrow as pa
 
-from codeintel.core.columnar.iter import iter_array_values, iter_rows, iter_tuples
+from codeintel.core.columnar.iter import (
+    iter_array_values,
+    iter_rows,
+    iter_rows_limit,
+    iter_tuples,
+)
 
 
 def test_iter_array_values_chunked() -> None:
@@ -27,3 +32,14 @@ def test_iter_tuples_reader() -> None:
     table = pa.table({"x": [1, 2], "y": [3, 4]})
     reader = table.to_reader()
     assert list(iter_tuples(reader, columns=("x",))) == [(1,), (2,)]
+
+
+def test_iter_rows_limit_reader_across_batches() -> None:
+    """Row limiting should stop across batch boundaries."""
+    table = pa.table({"a": [1, 2, 3, 4], "b": ["x", "y", "z", "w"]})
+    reader = table.to_reader(max_chunksize=2)
+    assert list(iter_rows_limit(reader, limit=3)) == [
+        {"a": 1, "b": "x"},
+        {"a": 2, "b": "y"},
+        {"a": 3, "b": "z"},
+    ]

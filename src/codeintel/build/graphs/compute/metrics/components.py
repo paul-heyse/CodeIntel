@@ -6,8 +6,9 @@ and structural properties without any database or file I/O.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import Any, TypedDict, cast
 
 import rustworkx as rx
 
@@ -28,12 +29,8 @@ from codeintel.build.graphs.rx.components import (
     component_membership_by_id,
     sort_components,
 )
-from codeintel.build.graphs.rx.condensation import condensation_store
-from codeintel.build.graphs.rx.normalize import sorted_mapping, stable_key
+from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, sorted_mapping, stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 
 @dataclass(frozen=True)
@@ -98,6 +95,63 @@ def _undirected_graph(store: RxGraphStore) -> rx.PyGraph:
     return cast("rx.PyGraph", store.graph)
 
 
+def _components_from_node_map(node_map: Sequence[object]) -> list[set[int]]:
+    max_id = -1
+    for comp_id in node_map:
+        if isinstance(comp_id, int):
+            max_id = max(max_id, comp_id)
+    if max_id < 0:
+        return []
+    components: list[set[int]] = [set() for _ in range(max_id + 1)]
+    for node_idx, comp_id in enumerate(node_map):
+        if isinstance(comp_id, int):
+            components[comp_id].add(node_idx)
+    return components
+
+
+def _condensation_store(
+    store: RxGraphStore,
+    *,
+    components: Sequence[set[int]],
+) -> RxGraphStore:
+    if store.graph.num_nodes() == 0:
+        return RxGraphStore.directed(weight_policy=store.weight_policy)
+    condensed = rx.condensation(_directed_graph(store))
+    node_map = condensed.attrs.get("node_map")
+    if not isinstance(node_map, Sequence) or isinstance(
+        node_map, (str, bytes, bytearray, memoryview)
+    ):
+        return RxGraphStore.directed(weight_policy=store.weight_policy)
+    old_components = _components_from_node_map(node_map)
+    if not old_components:
+        return RxGraphStore.directed(weight_policy=store.weight_policy)
+    component_keys = {
+        frozenset(store.index_to_id[idx] for idx in comp): new_id
+        for new_id, comp in enumerate(components)
+    }
+    old_to_new: dict[int, int] = {}
+    for old_id, comp in enumerate(old_components):
+        key = frozenset(store.index_to_id[idx] for idx in comp)
+        new_id = component_keys.get(key)
+        if new_id is not None:
+            old_to_new[old_id] = new_id
+    condensed_store = RxGraphStore.directed(
+        node_hint=len(components),
+        weight_policy=store.weight_policy,
+    )
+    for comp_id in range(len(components)):
+        condensed_store.ensure_node(comp_id)
+    for src_idx, dst_idx in condensed.edge_list():
+        src_new = old_to_new.get(src_idx)
+        dst_new = old_to_new.get(dst_idx)
+        if src_new is None or dst_new is None or src_new == dst_new:
+            continue
+        payload = condensed.get_edge_data(src_idx, dst_idx)
+        weight = edge_weight_from_payload(payload)
+        condensed_store.add_weighted_edge(src_new, dst_new, weight=weight)
+    return condensed_store
+
+
 def find_strongly_connected(
     graph: GraphInput,
     *,
@@ -145,11 +199,7 @@ def find_strongly_connected(
         )
     condensation = None
     if compute_condensation:
-        condensation, _ = condensation_store(
-            store,
-            components=sorted_sccs,
-            stable=False,
-        )
+        condensation = _condensation_store(store, components=sorted_sccs)
 
     return SCCResult(
         components=tuple(components),

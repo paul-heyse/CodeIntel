@@ -9,9 +9,10 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.build.analytics.cfg_dfg.helpers import (
+    cfg_blocks_rowset,
+    cfg_edges_rowset,
     degree_dict,
     parse_block_idx,
-    prefilter_table,
 )
 from codeintel.build.analytics.compute.graphs import (
     bounded_simple_path_count,
@@ -94,46 +95,12 @@ def _coerce_block_id(value: object) -> str | int | None:
     return None
 
 
-def _parse_block_row(
-    row: dict[str, object],
-) -> tuple[int, tuple[int, str, int, int]] | None:
-    fn_id = normalize_decimal_id(row.get("function_goid_h128"))
-    block_idx = normalize_decimal_id(row.get("block_idx"))
-    if fn_id is None or block_idx is None:
-        return None
-    kind = row.get("kind")
-    in_deg = normalize_decimal_id(row.get("in_degree")) or 0
-    out_deg = normalize_decimal_id(row.get("out_degree")) or 0
-    return (
-        int(fn_id),
-        (
-            int(block_idx),
-            str(kind) if kind is not None else "unknown",
-            int(in_deg),
-            int(out_deg),
-        ),
-    )
-
-
-def _parse_edge_row(
-    row: dict[str, object],
-) -> tuple[int, tuple[int, int, str]] | None:
-    fn_id = normalize_decimal_id(row.get("function_goid_h128"))
-    if fn_id is None:
-        return None
-    src_idx = parse_block_idx(_coerce_block_id(row.get("src_block_id")))
-    dst_idx = parse_block_idx(_coerce_block_id(row.get("dst_block_id")))
-    if src_idx is None or dst_idx is None:
-        return None
-    edge_kind = row.get("edge_kind")
-    return (
-        int(fn_id),
-        (
-            src_idx,
-            dst_idx,
-            str(edge_kind) if edge_kind is not None else "unknown",
-        ),
-    )
+def _list_values(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
 
 
 def load_cfg_blocks(
@@ -154,31 +121,59 @@ def load_cfg_blocks(
     blocks_by_fn: dict[int, list[tuple[int, str, int, int]]] = defaultdict(list)
     edges_by_fn: dict[int, list[tuple[int, int, str]]] = defaultdict(list)
 
-    filtered_blocks = prefilter_table(
-        cfg_blocks_frame,
-        repo=repo,
-        commit=commit,
-        require_valid=("function_goid_h128", "block_idx"),
-    )
-    for row in iter_rows(filtered_blocks):
-        parsed = _parse_block_row(row)
-        if parsed is None:
+    blocks_table = cfg_blocks_rowset(cfg_blocks_frame, repo=repo, commit=commit)
+    for row in iter_rows(blocks_table):
+        fn_id = normalize_decimal_id(row.get("function_goid_h128"))
+        if fn_id is None:
             continue
-        fn_id, payload = parsed
-        blocks_by_fn[fn_id].append(payload)
+        block_idx_values = _list_values(row.get("block_idx"))
+        kind_values = _list_values(row.get("kind"))
+        in_deg_values = _list_values(row.get("in_degree"))
+        out_deg_values = _list_values(row.get("out_degree"))
+        for block_idx_raw, kind_raw, in_deg_raw, out_deg_raw in zip(
+            block_idx_values,
+            kind_values,
+            in_deg_values,
+            out_deg_values,
+            strict=False,
+        ):
+            block_idx = normalize_decimal_id(block_idx_raw)
+            if block_idx is None:
+                continue
+            blocks_by_fn[int(fn_id)].append(
+                (
+                    int(block_idx),
+                    str(kind_raw) if kind_raw is not None else "unknown",
+                    int(normalize_decimal_id(in_deg_raw) or 0),
+                    int(normalize_decimal_id(out_deg_raw) or 0),
+                )
+            )
 
-    filtered_edges = prefilter_table(
-        cfg_edges_frame,
-        repo=repo,
-        commit=commit,
-        require_valid=("function_goid_h128", "src_block_id", "dst_block_id"),
-    )
-    for row in iter_rows(filtered_edges):
-        parsed = _parse_edge_row(row)
-        if parsed is None:
+    edges_table = cfg_edges_rowset(cfg_edges_frame, repo=repo, commit=commit)
+    for row in iter_rows(edges_table):
+        fn_id = normalize_decimal_id(row.get("function_goid_h128"))
+        if fn_id is None:
             continue
-        fn_id, payload = parsed
-        edges_by_fn[fn_id].append(payload)
+        src_values = _list_values(row.get("src_block_id"))
+        dst_values = _list_values(row.get("dst_block_id"))
+        kind_values = _list_values(row.get("edge_kind"))
+        for src_raw, dst_raw, kind_raw in zip(
+            src_values,
+            dst_values,
+            kind_values,
+            strict=False,
+        ):
+            src_idx = parse_block_idx(_coerce_block_id(src_raw))
+            dst_idx = parse_block_idx(_coerce_block_id(dst_raw))
+            if src_idx is None or dst_idx is None:
+                continue
+            edges_by_fn[int(fn_id)].append(
+                (
+                    src_idx,
+                    dst_idx,
+                    str(kind_raw) if kind_raw is not None else "unknown",
+                )
+            )
 
     return blocks_by_fn, edges_by_fn
 

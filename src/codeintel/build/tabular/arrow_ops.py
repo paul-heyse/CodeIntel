@@ -57,6 +57,9 @@ from codeintel.core.columnar.iter import (
 from codeintel.core.columnar.iter import (
     iter_rows as _iter_rows,
 )
+from codeintel.core.columnar.iter import (
+    iter_rows_limit as _iter_rows_limit,
+)
 from codeintel.core.columnar.normalization import (
     normalize_table_for_compute as _normalize_table_for_compute,
 )
@@ -1457,6 +1460,7 @@ def arrow_join_lazyframes(
 
 iter_array_values = _iter_array_values
 iter_rows = _iter_rows
+iter_rows_limit = _iter_rows_limit
 
 
 def group_list_or_polars(

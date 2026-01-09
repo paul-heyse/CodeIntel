@@ -26,7 +26,8 @@ import pyarrow as pa
 from codeintel.build.analytics.compute.entrypoints.detection import detect_entrypoints
 from codeintel.build.analytics.compute.row_builders import row_tuple_for_table
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import FilterExprContext
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
@@ -426,8 +427,17 @@ def _rows_for_snapshot(
     repo: str,
     commit: str,
 ) -> list[dict[str, object]]:
-    context = FilterExprContext(repo=repo, commit=commit)
-    filtered = context.apply(frame)
+    missing = [name for name in ("repo", "commit") if name not in frame.column_names]
+    if missing:
+        msg = f"Missing snapshot columns: {missing}"
+        raise ValueError(msg)
+    plan = Plan.table(frame).filter(
+        E.and_(
+            E.field("repo") == E.scalar(repo),
+            E.field("commit") == E.scalar(commit),
+        )
+    )
+    filtered = materialize_plan(plan, use_threads=True)
     return list(iter_rows(filtered))
 
 

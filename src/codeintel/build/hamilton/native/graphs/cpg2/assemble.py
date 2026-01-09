@@ -190,7 +190,7 @@ def emit_cpg_diagnostics(
         LOG.warning("build.cpg.diagnostics_failed error=%s", exc)
 
 
-def _order_table(table: pa.Table, *, sort_keys: Sequence[tuple[str, str]]) -> pa.Table:
+def _order_table(table: pa.Table, *, sort_keys: Sequence[SortKey]) -> pa.Table:
     if table.num_rows == 0:
         return table
     plan = Plan.table(table).order_by(sort_keys=list(sort_keys))

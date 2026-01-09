@@ -16,7 +16,6 @@ from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
     FinalizeSpec,
-    finalize_table,
 )
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.readers import empty_reader_from_schema
@@ -304,23 +303,13 @@ def _finalize_reader_for_maintenance(
             if batch.num_rows == 0:
                 continue
             table = pa.Table.from_batches([batch], schema=batch.schema)
-            captured_result: FinalizeResult | None = None
-
-            def _capture_finalize(input_table: pa.Table) -> pa.Table:
-                nonlocal captured_result
-                captured_result = finalize_table(input_table, spec=finalize_spec)
-                return captured_result.good
-
-            good = run_pipeline(
-                plan=ExecutionPlan(inner=table),
-                finalize=_capture_finalize,
+            result = run_pipeline(
+                plan=ExecutionPlan.from_table(table),
+                finalize=finalize_spec,
                 ctx=execution_ctx,
             )
-            if captured_result is None:
-                captured_result = finalize_table(table, spec=finalize_spec)
-                good = captured_result.good
-            _log_finalize_warnings(table_key, captured_result)
-            yield from good.to_batches(max_chunksize=batch.num_rows)
+            _log_finalize_warnings(table_key, result)
+            yield from result.good.to_batches(max_chunksize=batch.num_rows)
 
     finalized = record_batch_reader_from_iterable(_iter_batches(), empty_policy="none")
     if finalized is None:

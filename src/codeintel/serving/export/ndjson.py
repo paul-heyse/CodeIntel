@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
-from codeintel.core.columnar.finalize_ops import finalize_table
 from codeintel.core.exports.serialization import coerce_export_row
 from codeintel.storage.query_results import records_from_arrow_batch
 
@@ -171,27 +170,17 @@ def _finalize_batches(
 ) -> tuple[list[RecordBatch], FinalizeResult]:
     table = pa.Table.from_batches([batch], schema=batch.schema)
     resolved_ctx = execution_ctx or ExecutionContext()
-    captured_result: FinalizeResult | None = None
-
-    def _capture_finalize(input_table: pa.Table) -> pa.Table:
-        nonlocal captured_result
-        captured_result = finalize_table(input_table, spec=finalize_spec)
-        return captured_result.good
-
-    good = run_pipeline(
-        plan=ExecutionPlan(inner=table),
-        finalize=_capture_finalize,
+    result = run_pipeline(
+        plan=ExecutionPlan.from_table(table),
+        finalize=finalize_spec,
         ctx=resolved_ctx,
     )
-    if captured_result is None:
-        captured_result = finalize_table(table, spec=finalize_spec)
-        good = captured_result.good
-    if good.num_rows == 0:
-        return [], captured_result
-    batches = good.to_batches(max_chunksize=batch.num_rows)
+    if result.good.num_rows == 0:
+        return [], result
+    batches = result.good.to_batches(max_chunksize=batch.num_rows)
     if not batches:
-        return [], captured_result
-    return batches, captured_result
+        return [], result
+    return batches, result
 
 
 __all__ = [

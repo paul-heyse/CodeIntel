@@ -9,7 +9,7 @@ from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.graphs.graph_metrics import (
     build_graph_metric_filters_from_sets,
-    build_import_graph_from_rows,
+    build_import_graph_from_tables,
 )
 from codeintel.build.analytics.graphs.subsystem_graph_metrics import (
     SubsystemGraphMetricInputs,
@@ -27,6 +27,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.scopes.snapshot import SnapshotScope
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -68,17 +69,19 @@ def subsystem_graph_metrics__base(
         ("repo", "commit", "subsystem_id", "module"),
         scope=scope,
     )
-    import_edge_rows = collect_scoped_rows(
+    import_edges_table = tabular_to_scoped_table(
         q__graph__import_graph_edges,
-        ("src_module", "dst_module", "module_layer"),
+        columns=("src_module", "dst_module", "module_layer"),
         scope=scope,
+        require_scope_columns=True,
     )
-    import_module_rows = collect_scoped_rows(
+    import_modules_table = tabular_to_scoped_table(
         q__graph__import_modules,
-        ("module", "scc_id", "component_size", "layer"),
+        columns=("module", "scc_id", "component_size", "layer"),
         scope=scope,
+        require_scope_columns=True,
     )
-    import_graph = build_import_graph_from_rows(import_edge_rows, import_module_rows)
+    import_graph = build_import_graph_from_tables(import_edges_table, import_modules_table)
     subsystem_ids = {
         str(row["subsystem_id"]) for row in membership_rows if row.get("subsystem_id") is not None
     }

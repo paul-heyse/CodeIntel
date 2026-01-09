@@ -29,6 +29,7 @@ from codeintel.cli.resolution import resolve_from_params
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.core.schemas.service import clear_schema_service
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.gateway import (
@@ -634,6 +635,7 @@ def _run_runtime_guardrails(
             configure_contract_service(runtime=runtime_bundle)
         finally:
             inference_gateway.close()
+        clear_schema_service()
 
         def _seed_contract_catalog(con: DuckDBConnection) -> None:
             payload = build_contract_catalog_payload()

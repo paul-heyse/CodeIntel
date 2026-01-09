@@ -194,6 +194,21 @@ Checklist
 - [ ] Use Plan.order_by + FinalizeSpec for deterministic analytics outputs.
 - [ ] Remove `pa.Table.from_pylist` table builds in favor of Plan + kernels.
 
+Status
+- Partial: stable ordering + finalize is now enforced in
+  `src/codeintel/build/hamilton/native/analytics/finalize_helpers.py`; analytics parquet
+  writes finalize/order in `src/codeintel/build/analytics/utilities/datasets.py`; SCIP
+  diagnostics rollups now use Plan.aggregate/order_by in
+  `src/codeintel/build/analytics/scip_diagnostics_rollups.py` with finalized post-run
+  writes in `src/codeintel/build/hamilton/post_run_quality_outputs.py`.
+- Remaining: convert row-iteration analytics modules (e.g.
+  `src/codeintel/build/analytics/semantic_roles/core.py`,
+  `src/codeintel/build/analytics/functions/function_effects.py`,
+  `src/codeintel/build/analytics/functions/function_contracts.py`,
+  `src/codeintel/build/analytics/subsystems/*.py`,
+  `src/codeintel/build/analytics/entrypoints/*.py`,
+  `src/codeintel/build/analytics/graphs/*.py`) to plan-first aggregations where feasible.
+
 ---
 
 ### 6) Graph engine + validation: reader-first scans and plan-level checks
@@ -214,9 +229,18 @@ Target files
 - src/codeintel/build/graphs/validation/runner.py
 
 Checklist
-- [ ] Replace materialized table scans with Plan scans + reader streaming.
-- [ ] Push filters/projections into QuerySpec for deterministic semantics.
-- [ ] Attach scan telemetry via shared scan helpers.
+- [x] Replace materialized table scans with Plan scans + reader streaming.
+- [x] Push filters/projections into QuerySpec for deterministic semantics.
+- [x] Attach scan telemetry via shared scan helpers.
+
+Status
+- Complete: `src/codeintel/build/graphs/engine/datasets.py` now builds QuerySpec-backed
+  plans with telemetry; validation readers in
+  `src/codeintel/build/graphs/validation/runner.py` and
+  `src/codeintel/build/graphs/validation/checks/anomaly.py` consume reader-first
+  scans. `src/codeintel/build/graphs/engine/views.py` and other validation checks
+  inherit the plan-based scan path via `GraphViewFactory.load_reader` and
+  `scan_snapshot_reader`.
 
 ---
 
@@ -240,9 +264,18 @@ Target files
 - src/codeintel/build/hamilton/materializers/arrow_parquet_cache.py
 
 Checklist
-- [ ] Apply QuerySpec for projection/filter consistency in export paths.
-- [ ] Finalize outputs prior to writing artifacts.
+- [x] Apply QuerySpec for projection/filter consistency in export paths.
+- [x] Finalize outputs prior to writing artifacts.
 - [ ] Preserve canonical ordering for cached/exported datasets.
+
+Status
+- Partial: plan-first exports + finalize are in `src/codeintel/build/exports/common.py`;
+  materializer finalize is in `src/codeintel/build/hamilton/materializers/arrow_dataset_saver.py`;
+  cache finalize/order_by is in `src/codeintel/build/hamilton/materializers/arrow_parquet_cache.py`.
+- Remaining: extend stable ordering to any remaining export/materializer write paths
+  (notably `src/codeintel/build/exports/engine.py` and
+  `src/codeintel/build/exports/validation.py` if they bypass `build_export_reader`,
+  plus any materializers still writing without order_by).
 
 ---
 

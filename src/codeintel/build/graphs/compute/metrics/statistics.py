@@ -18,7 +18,6 @@ from codeintel.build.graphs.rx.algos import (
     ensure_store,
     to_undirected_store,
 )
-from codeintel.build.graphs.rx.condensation import condensation_store
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 
@@ -342,15 +341,14 @@ def compute_condensation_layer_count(graph: GraphInput) -> int | None:
     store = ensure_store(graph)
     if store.graph.num_nodes() == 0 or not store.is_directed:
         return None
-    condensed_store, _ = condensation_store(store)
-    directed_graph = cast("rx.PyDiGraph[object, float]", condensed_store.graph)
-    return _layer_count(directed_graph)
+    condensed_graph = rx.condensation(_directed_graph(store))
+    return _layer_count(condensed_graph)
 
 
 def _layer_count(graph: rx.PyDiGraph) -> int:
     if graph.num_nodes() == 0:
         return 0
-    return int(rx.dag_longest_path_length(graph)) + 1
+    return sum(1 for _ in rx.topological_generations(graph))
 
 
 def compute_graph_statistics(graph: GraphInput) -> GraphStatistics:

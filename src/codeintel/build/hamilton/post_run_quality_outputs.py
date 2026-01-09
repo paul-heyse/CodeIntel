@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 
 import pyarrow as pa
+import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 
 from codeintel.build.analytics.py_cpg_quality_report import (
     PY_CPG_QUALITY_REPORT_TABLE_KEY,
@@ -19,6 +22,7 @@ from codeintel.build.analytics.scip_diagnostics_rollups import (
     SCIP_DIAGNOSTICS_TOP_MESSAGES_TABLE_KEY,
     build_scip_diagnostics_rollups,
 )
+from codeintel.build.analytics.utilities.finalize import finalize_analytics_result
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.validation.runner import (
     GraphValidationRunRequest,
@@ -35,14 +39,20 @@ from codeintel.build.hamilton.native.graphs.cpg.constants import (
     PY_INSPECT_OBJECTS_TABLE_KEY,
     PY_SYM_SCOPES_TABLE_KEY,
 )
-from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.finalize_ops import FinalizeResult
 from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.dedupe_ops import DedupeTier
+from codeintel.core.columnar.expr_vocab import E, Expression
+from codeintel.core.columnar.ordering import OrderingSpec, SortDirection, SortKey
+from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan_for_context
+from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
 from codeintel.core.columnar.rows import table_for_rows
-from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
-from codeintel.core.datasets.scanning import (
-    ParquetScanOptions,
-    scan_parquet_dataset_with_telemetry,
+from codeintel.core.columnar.run_manifest import RunManifestOptions, write_run_manifest
+from codeintel.core.columnar.streaming import ScanTelemetry, scan_telemetry_for_queryspec
+from codeintel.core.datasets.arrow_store import (
+    ArrowDatasetWriteOptions,
+    scan_dataset,
+    write_dataset,
 )
 from codeintel.core.execution.ids import RUN_PREFIX_ANALYTICS, new_run_id
 from codeintel.core.schemas.hashing import schema_hash
@@ -64,6 +74,8 @@ _SCIP_DIAGNOSTICS_COLUMNS = (
     "code",
     "message",
 )
+
+ORDER_ASC: SortDirection = "ascending"
 
 _PY_CPG_COLUMNS_BY_TABLE: dict[str, tuple[str, ...]] = {
     PY_BC_INSTRUCTIONS_TABLE_KEY: ("repo", "commit", "span_start_byte"),
@@ -152,10 +164,7 @@ def persist_scip_diagnostics_rollups(*, env: BuildEnv) -> bool:
         log.info("SCIP diagnostics rollups skipped; source dataset unavailable.")
         return False
 
-    rows: list[dict[str, object]] = []
-    for batch in reader:
-        rows.extend(iter_rows(batch))
-    rollups = build_scip_diagnostics_rollups(repo=env.repo, commit=env.commit, rows=rows)
+    rollups = build_scip_diagnostics_rollups(repo=env.repo, commit=env.commit, rows=reader)
 
     summary_written = _write_dataset_table(
         env=env,
@@ -231,11 +240,8 @@ def _scan_snapshot_table(
     if reader is None:
         return None
     table = reader_to_table(reader)
-    finalized = finalize_table(
-        table,
-        spec=FinalizeSpec(table_key=table_key, mode="tolerant"),
-    )
-    return finalized.good
+    result = finalize_analytics_result(table_key, table)
+    return result.good
 
 
 def _scan_snapshot_reader(
@@ -244,37 +250,258 @@ def _scan_snapshot_reader(
     table_key: str,
     columns: Sequence[str] | None,
 ) -> pa.RecordBatchReader | None:
+    reader: pa.RecordBatchReader | None = None
     dataset_root = env.paths.dataset_root_dir
     if dataset_root is None:
         log.info("Post-run scan skipped; dataset_root_dir unavailable.")
+    else:
+        snapshot_id = env.commit.strip()
+        if not snapshot_id:
+            log.warning("Post-run scan skipped; snapshot_id missing.")
+        else:
+            dataset = _scan_snapshot_dataset(
+                dataset_root=dataset_root,
+                table_key=table_key,
+                snapshot_id=snapshot_id,
+            )
+            if dataset is None:
+                return None
+            resolved_columns = _resolve_snapshot_columns(dataset, columns)
+            if resolved_columns is None and columns is not None:
+                return None
+            predicate = _snapshot_predicate(dataset.schema, repo=env.repo, commit=env.commit)
+            query_spec = _query_spec_for_snapshot(
+                dataset,
+                columns=resolved_columns,
+                predicate=predicate,
+            )
+            telemetry = scan_telemetry_for_queryspec(dataset, spec=query_spec)
+            log.debug(
+                "Post-run scan telemetry: fragments=%s rows=%s",
+                telemetry.fragment_count,
+                telemetry.estimated_rows,
+            )
+            _emit_run_manifest(
+                env=env,
+                table_key=table_key,
+                telemetry=telemetry,
+                implicit_ordering=True,
+            )
+            options = QueryPlanOptions(
+                implicit_ordering=True,
+                require_sequenced_output=True,
+            )
+            try:
+                plan = build_query_plan_for_context(
+                    dataset,
+                    spec=query_spec,
+                    ctx=None,
+                    options=options,
+                )
+                reader = plan.to_reader(use_threads=True)
+            except (
+                pa.ArrowInvalid,
+                pa.ArrowNotImplementedError,
+                pa.ArrowTypeError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                log.warning("Post-run scan failed; table_key=%s error=%s", table_key, exc)
+                reader = None
+            if reader is not None:
+                missing = [name for name in ("repo", "commit") if name not in reader.schema.names]
+                if missing:
+                    log.warning(
+                        "Post-run scan missing scope columns: %s table_key=%s",
+                        missing,
+                        table_key,
+                    )
+                    reader = None
+    return reader
+
+
+def _scan_snapshot_dataset(
+    *,
+    dataset_root: Path,
+    table_key: str,
+    snapshot_id: str,
+) -> ds.Dataset | None:
+    try:
+        return scan_dataset(
+            dataset_root=dataset_root,
+            table_key=table_key,
+            snapshot_id=snapshot_id,
+        )
+    except FileNotFoundError:
+        log.warning("Post-run scan missing dataset: %s", table_key)
         return None
-    snapshot_id = env.commit.strip()
-    if not snapshot_id:
-        log.warning("Post-run scan skipped; snapshot_id missing.")
+    except (OSError, ValueError, pa.ArrowInvalid) as exc:
+        log.warning("Post-run scan failed; table_key=%s error=%s", table_key, exc)
         return None
 
-    reader, telemetry = scan_parquet_dataset_with_telemetry(
-        dataset_root=dataset_root,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
-        options=ParquetScanOptions(
-            columns=tuple(columns) if columns is not None else None,
-            repo=env.repo,
-            commit=env.commit,
-            implicit_ordering=True,
-            require_sequenced_output=True,
-            metrics_enabled=True,
+
+def _snapshot_predicate(
+    schema: pa.Schema,
+    *,
+    repo: str,
+    commit: str,
+) -> Expression | None:
+    names = set(schema.names)
+    expressions: list[Expression] = []
+    if "repo" in names:
+        expressions.append(E.field("repo") == E.scalar(repo))
+    if "commit" in names:
+        expressions.append(E.field("commit") == E.scalar(commit))
+    if not expressions:
+        return None
+    predicate = expressions[0]
+    for expr in expressions[1:]:
+        predicate &= expr
+    return predicate
+
+
+def _resolve_snapshot_columns(
+    dataset: ds.Dataset,
+    columns: Sequence[str] | None,
+) -> tuple[str, ...] | None:
+    if columns is None:
+        return None
+    available = set(dataset.schema.names)
+    missing = [name for name in columns if name not in available]
+    if missing:
+        log.warning(
+            "Post-run scan missing columns: %s table_key=%s",
+            ", ".join(missing),
+            dataset.schema,
+        )
+        return None
+    return tuple(columns)
+
+
+def _query_spec_for_snapshot(
+    dataset: ds.Dataset,
+    *,
+    columns: tuple[str, ...] | None,
+    predicate: Expression | None,
+) -> QuerySpec:
+    projection = _projection_spec_for_columns(dataset, columns)
+    return QuerySpec(
+        predicate=predicate,
+        pushdown_predicate=predicate,
+        projection=projection,
+    )
+
+
+def _projection_spec_for_columns(
+    dataset: ds.Dataset,
+    columns: tuple[str, ...] | None,
+) -> ProjectionSpec:
+    if columns is None:
+        return ProjectionSpec(base_cols=tuple(dataset.schema.names))
+    return ProjectionSpec(base_cols=columns)
+
+
+def _emit_run_manifest(
+    *,
+    env: BuildEnv,
+    table_key: str,
+    telemetry: ScanTelemetry,
+    implicit_ordering: bool,
+) -> None:
+    schema_service = get_schema_service()
+    table_schema = schema_service.get_table_schema(table_key)
+    stable_sort_keys = resolve_stable_sort_keys(table_schema)
+    ordering = _scan_ordering(
+        stable_sort_keys=stable_sort_keys,
+        implicit_ordering=implicit_ordering,
+    )
+    determinism = _determinism_for_stable_sort_keys(stable_sort_keys)
+    filename = f"run_manifest_{table_key.replace('.', '_')}.json"
+    write_run_manifest(
+        _post_run_output_dir(env),
+        options=RunManifestOptions(
+            determinism=determinism,
+            ordering=ordering,
+            scan_telemetry=telemetry,
+            profile_name=env.profile,
+            extras={"table_key": table_key, "snapshot_id": env.commit},
+            filename=filename,
         ),
     )
-    if telemetry is not None:
-        log.debug("Post-run scan telemetry: %s", telemetry.to_mapping())
-    if reader is None:
-        return None
-    missing = [name for name in ("repo", "commit") if name not in reader.schema.names]
-    if missing:
-        log.warning("Post-run scan missing scope columns: %s table_key=%s", missing, table_key)
-        return None
-    return reader
+
+
+def _determinism_for_stable_sort_keys(
+    stable_sort_keys: tuple[str, ...] | None,
+) -> DedupeTier | None:
+    if stable_sort_keys == ():
+        return "throughput"
+    if stable_sort_keys:
+        return "canonical"
+    return None
+
+
+def _scan_ordering(
+    *,
+    stable_sort_keys: tuple[str, ...] | None,
+    implicit_ordering: bool,
+) -> OrderingSpec | None:
+    if stable_sort_keys:
+        keys: list[SortKey] = [(key, ORDER_ASC) for key in stable_sort_keys]
+        return OrderingSpec.explicit(keys=keys, reason="stable sort keys")
+    if implicit_ordering:
+        return OrderingSpec.implicit(reason="implicit scan ordering")
+    return OrderingSpec.unordered(reason="scan unordered")
+
+
+def _emit_finalize_artifacts(
+    *,
+    env: BuildEnv,
+    table_key: str,
+    result: FinalizeResult,
+) -> None:
+    output_dir = _post_run_output_dir(env)
+    _write_artifact_table(
+        output_dir,
+        table_key=table_key,
+        artifact="errors",
+        table=result.errors,
+    )
+    _write_artifact_table(
+        output_dir,
+        table_key=table_key,
+        artifact="alignment",
+        table=result.alignment,
+    )
+    _write_artifact_table(
+        output_dir,
+        table_key=table_key,
+        artifact="stats",
+        table=result.stats,
+    )
+
+
+def _write_artifact_table(
+    output_dir: Path,
+    *,
+    table_key: str,
+    artifact: str,
+    table: pa.Table,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{table_key.replace('.', '_')}_{artifact}.parquet"
+    try:
+        pq.write_table(table, output_dir / filename)
+    except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError) as exc:
+        log.warning(
+            "Post-run artifact write failed; table_key=%s artifact=%s error=%s",
+            table_key,
+            artifact,
+            exc,
+        )
+
+
+def _post_run_output_dir(env: BuildEnv) -> Path:
+    return env.paths.build_dir / "quality-results" / "post_run_scans"
 
 
 def _write_dataset_table(
@@ -295,6 +522,9 @@ def _write_dataset_table(
     table, _ = table_for_rows(table_key, rows)
     schema_service = get_schema_service()
     table_schema = schema_service.require_table_schema(table_key)
+    result = finalize_analytics_result(table_key, table)
+    _emit_finalize_artifacts(env=env, table_key=table_key, result=result)
+    table = result.good
     options = ArrowDatasetWriteOptions(
         partition_columns=_partition_columns_for_schema(table_schema),
         schema_hash=schema_hash(table_schema),

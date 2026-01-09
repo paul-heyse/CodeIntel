@@ -55,6 +55,7 @@ from codeintel.build.tabular.kernels import hash_struct_goid
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_array_values
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
@@ -922,7 +923,7 @@ _OCCURRENCE_MATCH_KEYS: tuple[str, ...] = (
     "producer",
     "scip_occurrence_id",
 )
-_OCCURRENCE_MATCH_SORT_KEYS: tuple[tuple[str, str], ...] = tuple(
+_OCCURRENCE_MATCH_SORT_KEYS: tuple[SortKey, ...] = tuple(
     (key, "ascending") for key in _OCCURRENCE_MATCH_KEYS
 )
 _OCCURRENCE_SYNTAX_OUTPUT_COLUMNS: tuple[str, ...] = (

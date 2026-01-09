@@ -15,7 +15,7 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
-from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.execution_context import ExecutionContext, RuntimeProfile
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.readers import empty_reader_from_schema
@@ -536,11 +536,47 @@ def scan_options_for_queryspec_ctx(
     DatasetScanOptions
         Scan options reflecting query spec and execution context.
     """
+    resolved = options or DatasetScanOptions()
+    profile = ctx.runtime_profile if ctx is not None else None
+    resolved = _apply_runtime_profile_scan_defaults(resolved, profile=profile)
     provenance = ctx.provenance if ctx is not None else False
+    if profile is not None:
+        provenance = profile.resolve_provenance(default=provenance)
     return scan_options_for_queryspec(
         spec,
         provenance=provenance,
-        options=options,
+        options=resolved,
+    )
+
+
+def _apply_runtime_profile_scan_defaults(
+    options: DatasetScanOptions,
+    *,
+    profile: RuntimeProfile | None,
+) -> DatasetScanOptions:
+    if profile is None:
+        return options
+    resolved = options
+    if profile.scan_profile:
+        resolved = scan_profile_options(profile.scan_profile, base=resolved)
+    implicit_ordering = profile.resolve_implicit_ordering(default=resolved.implicit_ordering)
+    require_sequenced_output = profile.resolve_require_sequenced_output(
+        default=resolved.require_sequenced_output
+    )
+    use_threads = resolved.use_threads
+    if profile.use_threads is not None:
+        use_threads = profile.use_threads
+    if (
+        implicit_ordering == resolved.implicit_ordering
+        and require_sequenced_output == resolved.require_sequenced_output
+        and use_threads == resolved.use_threads
+    ):
+        return resolved
+    return replace(
+        resolved,
+        implicit_ordering=implicit_ordering,
+        require_sequenced_output=require_sequenced_output,
+        use_threads=use_threads,
     )
 
 

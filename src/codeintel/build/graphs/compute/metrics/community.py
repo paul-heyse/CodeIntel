@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from typing import Any, cast
 
 import rustworkx as rx
@@ -43,31 +43,47 @@ def _component_size_without_edge(
     return len(visited)
 
 
-def _components_without_edges(
-    neighbors: dict[int, list[int]],
-    node_order: Iterable[int],
+def _store_without_edges(
+    store: RxGraphStore,
     removed_edges: set[tuple[int, int]],
-) -> list[set[int]]:
-    visited: set[int] = set()
-    components: list[set[int]] = []
-    for node_idx in node_order:
-        if node_idx in visited:
+) -> RxGraphStore:
+    base_graph = cast("rx.PyGraph", store.graph)
+    edge_graph = rx.PyGraph(multigraph=False)
+    edge_nodes: dict[int, object] = {}
+    for src_idx, dst_idx in base_graph.edge_list():
+        if _edge_key(src_idx, dst_idx) in removed_edges:
             continue
-        component: set[int] = set()
-        stack = [node_idx]
-        while stack:
-            current = stack.pop()
-            if current in visited:
-                continue
-            visited.add(current)
-            component.add(current)
-            for neighbor in neighbors.get(current, []):
-                if _edge_key(current, neighbor) in removed_edges:
-                    continue
-                if neighbor not in visited:
-                    stack.append(neighbor)
-        components.append(component)
-    return components
+        edge_nodes[src_idx] = base_graph.get_node_data(src_idx)
+        edge_nodes[dst_idx] = base_graph.get_node_data(dst_idx)
+    idx_map: dict[int, int] = {}
+    ordered_edge_nodes = sorted(
+        edge_nodes,
+        key=lambda idx: stable_key(store.index_to_id.get(idx, idx)),
+    )
+    for old_idx in ordered_edge_nodes:
+        payload = edge_nodes[old_idx]
+        idx_map[old_idx] = edge_graph.add_node(payload)
+    for src_idx, dst_idx in base_graph.edge_list():
+        if _edge_key(src_idx, dst_idx) in removed_edges:
+            continue
+        src_new = idx_map.get(src_idx)
+        dst_new = idx_map.get(dst_idx)
+        if src_new is None or dst_new is None:
+            continue
+        payload = base_graph.get_edge_data(src_idx, dst_idx)
+        edge_graph.add_edge(src_new, dst_new, payload)
+    isolate_graph = rx.PyGraph(multigraph=False)
+    isolate_indices = sorted(
+        base_graph.node_indices(),
+        key=lambda idx: stable_key(store.index_to_id.get(idx, idx)),
+    )
+    isolate_graph.add_nodes_from([base_graph.get_node_data(idx) for idx in isolate_indices])
+    merged = rx.graph_union(edge_graph, isolate_graph, merge_nodes=True, merge_edges=True)
+    return RxGraphStore.from_rx_graph(
+        merged,
+        weight_policy=store.weight_policy,
+        numeric_policy=store.numeric_policy,
+    )
 
 
 def _assign_communities(
@@ -88,11 +104,10 @@ def _bridge_split_components(
     store: RxGraphStore,
     *,
     min_component_size: int,
-) -> list[set[int]]:
+) -> tuple[list[set[int]], RxGraphStore]:
     neighbors = _neighbor_map(store)
-    node_order = sorted(neighbors.keys(), key=lambda idx: stable_key(store.index_to_id[idx]))
     removed_edges: set[tuple[int, int]] = set()
-    total_nodes = len(node_order)
+    total_nodes = store.graph.num_nodes()
     undirected_graph = cast("rx.PyGraph", store.graph)
     for edge in rx.bridges(undirected_graph):
         src_idx, dst_idx = cast("tuple[int, int]", edge)
@@ -100,7 +115,12 @@ def _bridge_split_components(
         size_right = total_nodes - size_left
         if size_left >= min_component_size and size_right >= min_component_size:
             removed_edges.add(_edge_key(src_idx, dst_idx))
-    return _components_without_edges(neighbors, node_order, removed_edges)
+    merged_store = _store_without_edges(store, removed_edges)
+    if merged_store.graph.num_nodes() == 0:
+        return [], merged_store
+    merged_graph = cast("rx.PyGraph", merged_store.graph)
+    components = [set(comp) for comp in rx.connected_components(merged_graph)]
+    return components, merged_store
 
 
 def _detect_communities_bridge_split(
@@ -116,13 +136,16 @@ def _detect_communities_bridge_split(
     if work_store.graph.num_nodes() == 0:
         return {}
     adjusted_min_size = min_component_size if resolution >= 1.0 else max(1, min_component_size - 1)
-    components = _bridge_split_components(work_store, min_component_size=adjusted_min_size)
+    components, component_store = _bridge_split_components(
+        work_store,
+        min_component_size=adjusted_min_size,
+    )
     if not components:
         return {}
     if seed is not None:
         rng = random.Random(seed)
         rng.shuffle(components)
-    return _assign_communities(work_store, components, sort_components_flag=seed is None)
+    return _assign_communities(component_store, components, sort_components_flag=seed is None)
 
 
 def detect_communities_bridge_split(

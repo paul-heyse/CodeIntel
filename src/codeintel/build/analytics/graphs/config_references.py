@@ -13,8 +13,10 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.build.analytics.functions.parsing import parse_python_file
+from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import FilterExprContext
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.core.paths import normalize_path, safe_relpath
 
 if TYPE_CHECKING:
@@ -58,24 +60,20 @@ def compute_config_reference_rows(inputs: ConfigReferenceInputs) -> list[dict[st
     list[dict[str, object]]
         Rows for analytics.config_references.
     """
-    config_rows = _rows_from_tabular(
+    entries, keys = _config_entries_from_tabular(
         inputs.config_value_rows,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
     )
-    if not config_rows:
-        return []
-
-    entries, keys = _config_entries(config_rows)
     if not entries or not keys:
         return []
 
-    module_rows = _rows_from_tabular(
+    modules_by_path = _modules_by_path_from_tabular(
         inputs.module_rows,
         repo=inputs.snapshot.repo,
         commit=inputs.snapshot.commit,
+        repo_root=inputs.snapshot.repo_root,
     )
-    modules_by_path = _modules_by_path(module_rows, repo_root=inputs.snapshot.repo_root)
     references = _reference_map(
         keys=keys,
         modules_by_path=modules_by_path,
@@ -104,16 +102,15 @@ def compute_config_reference_rows(inputs: ConfigReferenceInputs) -> list[dict[st
     return rows
 
 
-def _rows_from_tabular(
+def _config_entries_from_tabular(
     rows: Sequence[Mapping[str, object]] | pa.Table,
     *,
     repo: str,
     commit: str,
-) -> list[dict[str, object]]:
+) -> tuple[list[_ConfigKeyEntry], set[str]]:
     if isinstance(rows, pa.Table):
-        table = _filter_table_by_scope(rows, repo=repo, commit=commit)
-        return [dict(row) for row in iter_rows(table)]
-
+        entry_table = _config_entry_rowset(rows, repo=repo, commit=commit)
+        return _config_entries_from_table(entry_table)
     filtered: list[dict[str, object]] = []
     for row in rows:
         if not _matches_optional_scope(row.get("repo"), repo):
@@ -121,7 +118,7 @@ def _rows_from_tabular(
         if not _matches_optional_scope(row.get("commit"), commit):
             continue
         filtered.append(dict(row))
-    return filtered
+    return _config_entries(filtered)
 
 
 def _matches_optional_scope(value: object, expected: str) -> bool:
@@ -132,14 +129,25 @@ def _matches_optional_scope(value: object, expected: str) -> bool:
     return str(value) == expected
 
 
-def _filter_table_by_scope(
+def _config_entry_rowset(
     table: pa.Table,
     *,
     repo: str,
     commit: str,
 ) -> pa.Table:
-    context = FilterExprContext(repo=repo, commit=commit)
-    return context.apply(table)
+    required = {"config_path", "key"}
+    missing = [name for name in required if name not in table.column_names]
+    if missing:
+        msg = f"Missing config value columns: {missing}"
+        raise ValueError(msg)
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=("config_path", "key"))
+    plan = plan.filter(E.and_(E.is_valid("config_path"), E.is_valid("key")))
+    plan = plan.aggregate(
+        keys=[E.field("config_path")],
+        aggregates=[("key", "list", None, "keys")],
+    )
+    plan = plan.order_by(sort_keys=[("config_path", "ascending")])
+    return materialize_plan(plan, use_threads=True)
 
 
 def _config_entries(
@@ -167,6 +175,40 @@ def _config_entries(
     return entries, keys
 
 
+def _config_entries_from_table(
+    table: pa.Table,
+) -> tuple[list[_ConfigKeyEntry], set[str]]:
+    entries: list[_ConfigKeyEntry] = []
+    keys: set[str] = set()
+    seen: set[tuple[str, str]] = set()
+    for row in iter_rows(table, ("config_path", "keys")):
+        config_path = row.get("config_path")
+        if config_path is None:
+            continue
+        normalized_path = normalize_path(str(config_path).strip())
+        if not normalized_path:
+            continue
+        for key in _list_values(row.get("keys")):
+            key_value = str(key).strip()
+            if not key_value:
+                continue
+            entry_key = (normalized_path, key_value)
+            if entry_key in seen:
+                continue
+            entries.append(_ConfigKeyEntry(config_path=normalized_path, key=key_value))
+            keys.add(key_value)
+            seen.add(entry_key)
+    return entries, keys
+
+
+def _list_values(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
 def _modules_by_path(
     rows: Sequence[Mapping[str, object]],
     *,
@@ -187,6 +229,67 @@ def _modules_by_path(
         if not rel_path:
             continue
         modules_by_path.setdefault(rel_path, set()).add(module.strip())
+    return modules_by_path
+
+
+def _modules_by_path_from_tabular(
+    rows: Sequence[Mapping[str, object]] | pa.Table,
+    *,
+    repo: str,
+    commit: str,
+    repo_root: Path,
+) -> dict[str, set[str]]:
+    if isinstance(rows, pa.Table):
+        table = _module_rowset(rows, repo=repo, commit=commit)
+        return _modules_by_path_from_table(table, repo_root=repo_root)
+    return _modules_by_path(rows, repo_root=repo_root)
+
+
+def _module_rowset(
+    table: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+) -> pa.Table:
+    required = {"path", "module"}
+    missing = [name for name in required if name not in table.column_names]
+    if missing:
+        msg = f"Missing module columns: {missing}"
+        raise ValueError(msg)
+    columns = ["path", "module"]
+    if "language" in table.column_names:
+        columns.append("language")
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=tuple(columns))
+    filters = [E.is_valid("path"), E.is_valid("module")]
+    if "language" in table.column_names:
+        filters.append(E.or_(E.is_null("language"), E.field("language") == E.scalar("python")))
+    plan = plan.filter(E.and_(*filters))
+    plan = plan.aggregate(
+        keys=[E.field("path")],
+        aggregates=[("module", "list", None, "modules")],
+    )
+    plan = plan.order_by(sort_keys=[("path", "ascending")])
+    return materialize_plan(plan, use_threads=True)
+
+
+def _modules_by_path_from_table(
+    table: pa.Table,
+    *,
+    repo_root: Path,
+) -> dict[str, set[str]]:
+    modules_by_path: dict[str, set[str]] = {}
+    for row in iter_rows(table, ("path", "modules")):
+        path = row.get("path")
+        if not isinstance(path, str) or not path.strip():
+            continue
+        rel_path = _normalize_module_path(path, repo_root=repo_root)
+        if not rel_path:
+            continue
+        for module in _list_values(row.get("modules")):
+            module_value = str(module).strip()
+            if not module_value:
+                continue
+            modules_by_path.setdefault(rel_path, set()).add(module_value)
     return modules_by_path
 
 

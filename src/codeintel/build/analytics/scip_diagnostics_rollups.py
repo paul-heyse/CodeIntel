@@ -6,10 +6,22 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+import pyarrow as pa
+import pyarrow.compute as pc
+
+from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.rows import table_for_rows
+from codeintel.core.query_results import coerce_int
+
 SCIP_DIAGNOSTICS_TABLE_KEY = "core.scip_diagnostics"
 SCIP_DIAGNOSTICS_SUMMARY_TABLE_KEY = "analytics.scip_diagnostics_summary"
 SCIP_DIAGNOSTICS_BY_FILE_TABLE_KEY = "analytics.scip_diagnostics_by_file"
 SCIP_DIAGNOSTICS_TOP_MESSAGES_TABLE_KEY = "analytics.scip_diagnostics_top_messages"
+
+type RollupSource = Sequence[Mapping[str, object]] | pa.Table | pa.RecordBatchReader
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,18 +33,11 @@ class ScipDiagnosticsRollups:
     top_message_rows: list[dict[str, object]]
 
 
-@dataclass(frozen=True, slots=True)
-class _ScipDiagnosticsCounts:
-    summary_counts: dict[tuple[str, str], int]
-    file_counts: dict[tuple[str, str, str], int]
-    message_counts: dict[tuple[str, str, str, str], int]
-
-
 def build_scip_diagnostics_rollups(
     *,
     repo: str,
     commit: str,
-    rows: Sequence[Mapping[str, object]],
+    rows: RollupSource,
 ) -> ScipDiagnosticsRollups:
     """Build rollup rows for SCIP diagnostics datasets.
 
@@ -41,108 +46,121 @@ def build_scip_diagnostics_rollups(
     ScipDiagnosticsRollups
         Rollup rows for summary, by-file, and top-message datasets.
     """
-    if not rows:
+    table = _diagnostics_table(rows)
+    if table is None or table.num_rows == 0:
         return ScipDiagnosticsRollups([], [], [])
-    counts = _collect_diagnostics_counts(rows)
     created_at = datetime.now(tz=UTC)
     return ScipDiagnosticsRollups(
-        summary_rows=_summary_rows(repo, commit, counts, created_at),
-        by_file_rows=_by_file_rows(repo, commit, counts, created_at),
-        top_message_rows=_top_message_rows(repo, commit, counts, created_at),
+        summary_rows=_aggregate_rollup_rows(
+            table,
+            repo=repo,
+            commit=commit,
+            created_at=created_at,
+            group_columns=("severity", "source"),
+        ),
+        by_file_rows=_aggregate_rollup_rows(
+            table,
+            repo=repo,
+            commit=commit,
+            created_at=created_at,
+            group_columns=("rel_path", "severity", "source"),
+        ),
+        top_message_rows=_aggregate_rollup_rows(
+            table,
+            repo=repo,
+            commit=commit,
+            created_at=created_at,
+            group_columns=("severity", "source", "code", "message"),
+        ),
     )
 
 
-def _normalize_text(value: object | None, *, default: str = "unknown") -> str:
+def _diagnostics_table(rows: RollupSource) -> pa.Table | None:
+    if isinstance(rows, pa.Table):
+        return rows
+    if isinstance(rows, pa.RecordBatchReader):
+        return reader_to_table(rows)
+    if not rows:
+        return None
+    table, _ = table_for_rows(SCIP_DIAGNOSTICS_TABLE_KEY, rows)
+    return table
+
+
+def _normalized_text_expr(column: str, *, columns: set[str]) -> pc.Expression:
+    if column not in columns:
+        return E.scalar("unknown")
+    expr = E.cast(E.field(column), "string")
+    trimmed = pc.call_function("utf8_trim", [expr])
+    non_empty = E.and_(E.is_valid(trimmed), trimmed != E.scalar(""))
+    return pc.call_function("if_else", [non_empty, trimmed, E.scalar("unknown")])
+
+
+def _aggregate_rollup_rows(
+    table: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+    created_at: datetime,
+    group_columns: Sequence[str],
+) -> list[dict[str, object]]:
+    if not group_columns:
+        return []
+    aggregated = _aggregate_rollup_table(
+        table,
+        repo=repo,
+        commit=commit,
+        group_columns=group_columns,
+    )
+    rows: list[dict[str, object]] = []
+    selected = [*group_columns, "diagnostic_count"]
+    for row in iter_rows(aggregated, selected):
+        payload: dict[str, object] = {
+            "repo": repo,
+            "commit": commit,
+            "created_at": created_at,
+        }
+        for column in group_columns:
+            payload[column] = _coerce_text(row.get(column))
+        count_value = row.get("diagnostic_count")
+        count = coerce_int(count_value, ctx="diagnostic_count") if count_value is not None else 0
+        payload["diagnostic_count"] = count
+        rows.append(payload)
+    return rows
+
+
+def _aggregate_rollup_table(
+    table: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+    group_columns: Sequence[str],
+) -> pa.Table:
+    column_names = set(table.column_names)
+    plan = Plan.table(table)
+    filters: list[pc.Expression] = []
+    if repo and "repo" in column_names:
+        filters.append(E.field("repo") == E.scalar(repo))
+    if commit and "commit" in column_names:
+        filters.append(E.field("commit") == E.scalar(commit))
+    if filters:
+        plan = plan.filter(E.and_(*filters))
+    project = {
+        column: _normalized_text_expr(column, columns=column_names) for column in group_columns
+    }
+    plan = plan.project(project)
+    plan = plan.aggregate(
+        keys=[E.field(column) for column in group_columns],
+        aggregates=[(group_columns[0], "count", None, "diagnostic_count")],
+    )
+    plan = plan.order_by(sort_keys=[(column, "ascending") for column in group_columns])
+    return materialize_plan(plan, use_threads=True)
+
+
+def _coerce_text(value: object | None, *, default: str = "unknown") -> str:
     if value is None:
         return default
-    text = str(value).strip()
+    text = str(value)
     return text if text else default
-
-
-def _collect_diagnostics_counts(
-    rows: Sequence[Mapping[str, object]],
-) -> _ScipDiagnosticsCounts:
-    summary_counts: dict[tuple[str, str], int] = {}
-    file_counts: dict[tuple[str, str, str], int] = {}
-    message_counts: dict[tuple[str, str, str, str], int] = {}
-    for row in rows:
-        severity = _normalize_text(row.get("severity"))
-        source = _normalize_text(row.get("source"))
-        code = _normalize_text(row.get("code"))
-        message = _normalize_text(row.get("message"))
-        rel_path = _normalize_text(row.get("rel_path"))
-        summary_counts[severity, source] = summary_counts.get((severity, source), 0) + 1
-        file_counts[rel_path, severity, source] = (
-            file_counts.get((rel_path, severity, source), 0) + 1
-        )
-        message_counts[severity, source, code, message] = (
-            message_counts.get((severity, source, code, message), 0) + 1
-        )
-    return _ScipDiagnosticsCounts(
-        summary_counts=summary_counts,
-        file_counts=file_counts,
-        message_counts=message_counts,
-    )
-
-
-def _summary_rows(
-    repo: str,
-    commit: str,
-    counts: _ScipDiagnosticsCounts,
-    created_at: datetime,
-) -> list[dict[str, object]]:
-    return [
-        {
-            "repo": repo,
-            "commit": commit,
-            "severity": severity,
-            "source": source,
-            "diagnostic_count": count,
-            "created_at": created_at,
-        }
-        for (severity, source), count in sorted(counts.summary_counts.items())
-    ]
-
-
-def _by_file_rows(
-    repo: str,
-    commit: str,
-    counts: _ScipDiagnosticsCounts,
-    created_at: datetime,
-) -> list[dict[str, object]]:
-    return [
-        {
-            "repo": repo,
-            "commit": commit,
-            "rel_path": rel_path,
-            "severity": severity,
-            "source": source,
-            "diagnostic_count": count,
-            "created_at": created_at,
-        }
-        for (rel_path, severity, source), count in sorted(counts.file_counts.items())
-    ]
-
-
-def _top_message_rows(
-    repo: str,
-    commit: str,
-    counts: _ScipDiagnosticsCounts,
-    created_at: datetime,
-) -> list[dict[str, object]]:
-    return [
-        {
-            "repo": repo,
-            "commit": commit,
-            "severity": severity,
-            "source": source,
-            "code": code,
-            "message": message,
-            "diagnostic_count": count,
-            "created_at": created_at,
-        }
-        for (severity, source, code, message), count in sorted(counts.message_counts.items())
-    ]
 
 
 __all__ = [

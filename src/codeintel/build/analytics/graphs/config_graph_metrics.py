@@ -18,13 +18,15 @@ from codeintel.build.analytics.compute.graphs import (
 )
 from codeintel.build.analytics.graphs.constants import MAX_BETWEENNESS_NODES
 from codeintel.build.analytics.utilities.datasets import validate_contract_rows
+from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import FilterExprContext
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.row_models import columns_for_table_key
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
@@ -198,12 +200,21 @@ def _parse_reference_modules(ref_modules: object) -> list[str]:
     return []
 
 
+def _flatten_reference_modules(raw: object) -> list[str]:
+    if isinstance(raw, list):
+        modules: list[str] = []
+        for item in raw:
+            modules.extend(_parse_reference_modules(item))
+        return modules
+    return _parse_reference_modules(raw)
+
+
 def _normalize_reference_modules(
     raw: object,
     *,
     allowed_modules: set[str] | None,
 ) -> list[str]:
-    modules = _parse_reference_modules(raw)
+    modules = _flatten_reference_modules(raw)
     if not modules:
         return []
     if allowed_modules is None:
@@ -223,14 +234,31 @@ def _row_matches_scope(
     )
 
 
-def _filter_table_by_scope(
+def _config_reference_rowset(
     table: pa.Table,
     *,
     repo: str | None,
     commit: str | None,
 ) -> pa.Table:
-    context = FilterExprContext(repo=repo, commit=commit)
-    return context.apply(table)
+    required = {"key", "extras"}
+    missing = [name for name in required if name not in table.column_names]
+    if missing:
+        msg = f"Missing config reference columns: {missing}"
+        raise ValueError(msg)
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=("key", "extras"))
+    plan = plan.filter(E.is_valid("key"))
+    plan = plan.project(
+        {
+            "key": E.field("key"),
+            "reference_modules": E.field(("extras", "reference_modules")),
+        }
+    )
+    plan = plan.aggregate(
+        keys=[E.field("key")],
+        aggregates=[("reference_modules", "list", None, "reference_modules")],
+    )
+    plan = plan.order_by(sort_keys=[("key", "ascending")])
+    return materialize_plan(plan, use_threads=True)
 
 
 def _add_bipartite_edge(graph: RxGraphStore, *, key: str, module: str) -> None:
@@ -255,8 +283,7 @@ def _config_bipartite_from_rows(
         key = row.get("key")
         if key is None:
             continue
-        extras = row.get("extras")
-        reference_modules = extras.get("reference_modules") if isinstance(extras, Mapping) else None
+        reference_modules = _reference_modules_from_row(row)
         modules = _normalize_reference_modules(
             reference_modules,
             allowed_modules=allowed_modules,
@@ -276,9 +303,18 @@ def _rows_from_tabular(
     commit: str | None,
 ) -> list[dict[str, object]]:
     if isinstance(rows, pa.Table):
-        table = _filter_table_by_scope(cast("pa.Table", rows), repo=repo, commit=commit)
+        table = _config_reference_rowset(cast("pa.Table", rows), repo=repo, commit=commit)
         return [dict(row) for row in iter_rows(table)]
     return [dict(row) for row in rows]
+
+
+def _reference_modules_from_row(row: Mapping[str, object]) -> object:
+    if "reference_modules" in row:
+        return row.get("reference_modules")
+    extras = row.get("extras")
+    if isinstance(extras, Mapping):
+        return extras.get("reference_modules")
+    return None
 
 
 def _partition_bipartite_nodes(store: RxGraphStore) -> tuple[set[Hashable], set[Hashable]]:

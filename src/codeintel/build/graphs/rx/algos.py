@@ -15,7 +15,6 @@ import rustworkx as rx
 
 from codeintel.build.graphs.rx.convert import store_from_rx
 from codeintel.build.graphs.rx.iterators import (
-    edge_weight_map,
     iter_edge_payloads,
     neighbors_by_index,
     weighted_neighbors_by_index,
@@ -83,6 +82,11 @@ def _sorted_node_indices(store: RxGraphStore) -> list[int]:
 
 def _constant_weight_fn(_payload: object) -> float:
     return 1.0
+
+
+def constant_weight_fn() -> Callable[[object], float]:
+    """Return a constant weight function for unweighted algorithms."""
+    return _constant_weight_fn
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +164,19 @@ def _resolve_weight_epsilon(config: GraphAlgoConfig | None) -> float:
     if config is None:
         return DEFAULT_WEIGHT_EPSILON
     return config.weight_epsilon
+
+
+def resolve_weight_semantics(
+    store: RxGraphStore,
+    config: GraphAlgoConfig | None,
+) -> WeightSemantics:
+    """Resolve the effective weight semantics for a store/config pair."""
+    return _resolve_weight_semantics(store, config)
+
+
+def resolve_weight_epsilon(config: GraphAlgoConfig | None) -> float:
+    """Resolve the effective epsilon used for weight conversions."""
+    return _resolve_weight_epsilon(config)
 
 
 def _edge_strength_fn(
@@ -514,8 +531,26 @@ def closeness_by_id(
     return _normalize_float_mapping(mapped, nan_policy=resolved_nan_policy)
 
 
-def _edge_weight_map(store: RxGraphStore, *, nan_policy: NanPolicy) -> dict[tuple[int, int], float]:
-    return edge_weight_map(store, nan_policy=nan_policy)
+def _edge_weight_map(
+    store: RxGraphStore,
+    *,
+    nan_policy: NanPolicy,
+    semantics: WeightSemantics,
+    epsilon: float,
+) -> dict[tuple[int, int], float]:
+    edge_map: dict[tuple[int, int], float] = {}
+    for src_idx, dst_idx, payload in iter_edge_payloads(store):
+        if store.is_directed:
+            key = (src_idx, dst_idx)
+        else:
+            key = (min(src_idx, dst_idx), max(src_idx, dst_idx))
+        edge_map[key] = edge_strength_from_payload(
+            payload,
+            nan_policy=nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
+    return edge_map
 
 
 def _edge_cost_map(
@@ -986,6 +1021,7 @@ def clustering_by_id(
     *,
     weight: str | None = None,
     nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Hashable, float]:
     """Compute clustering coefficients keyed by node id.
 
@@ -1004,7 +1040,15 @@ def clustering_by_id(
     if weight is None:
         result = _clustering_unweighted(work_store, neighbors)
         return _normalize_float_mapping(result, nan_policy=resolved_nan_policy)
-    result = _clustering_weighted(work_store, neighbors, nan_policy=resolved_nan_policy)
+    semantics = _resolve_weight_semantics(work_store, algo_config)
+    epsilon = _resolve_weight_epsilon(algo_config)
+    result = _clustering_weighted(
+        work_store,
+        neighbors,
+        nan_policy=resolved_nan_policy,
+        semantics=semantics,
+        epsilon=epsilon,
+    )
     return _normalize_float_mapping(
         result,
         nan_policy=resolved_nan_policy,
@@ -1034,8 +1078,15 @@ def _clustering_weighted(
     neighbors: Mapping[int, Sequence[int]],
     *,
     nan_policy: NanPolicy,
+    semantics: WeightSemantics,
+    epsilon: float,
 ) -> dict[Hashable, float]:
-    edge_weights = _edge_weight_map(store, nan_policy=nan_policy)
+    edge_weights = _edge_weight_map(
+        store,
+        nan_policy=nan_policy,
+        semantics=semantics,
+        epsilon=epsilon,
+    )
     max_weight = max(edge_weights.values(), default=1.0)
     result: dict[Hashable, float] = {}
     for node_idx, neighbor_list in neighbors.items():
@@ -1139,6 +1190,7 @@ def constraint_by_id(
     *,
     weight: str | None = None,
     nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Hashable, float]:
     """Compute Burt's constraint keyed by node id.
 
@@ -1154,7 +1206,14 @@ def constraint_by_id(
     if work_store.graph.num_nodes() == 0:
         return {}
     neighbors = _neighbor_sets_with_self(work_store)
-    edge_weights = _edge_weight_map(work_store, nan_policy=resolved_nan_policy)
+    semantics = _resolve_weight_semantics(work_store, algo_config)
+    epsilon = _resolve_weight_epsilon(algo_config)
+    edge_weights = _edge_weight_map(
+        work_store,
+        nan_policy=resolved_nan_policy,
+        semantics=semantics,
+        epsilon=epsilon,
+    )
     scale = _neighbor_scale(edge_weights, neighbors, norm=sum)
 
     result: dict[Hashable, float] = {}
@@ -1194,8 +1253,15 @@ def _effective_size_unweighted(
     neighbors: Mapping[int, Sequence[int]],
     *,
     nan_policy: NanPolicy,
+    semantics: WeightSemantics,
+    epsilon: float,
 ) -> dict[Hashable, float]:
-    edge_weights = _edge_weight_map(store, nan_policy=nan_policy)
+    edge_weights = _edge_weight_map(
+        store,
+        nan_policy=nan_policy,
+        semantics=semantics,
+        epsilon=epsilon,
+    )
     result: dict[Hashable, float] = {}
     for node_idx, node_neighbors in neighbors.items():
         node_id = store.index_to_id[node_idx]
@@ -1218,6 +1284,7 @@ def effective_size_by_id(
     *,
     weight: str | None = None,
     nan_policy: NanPolicy | None = None,
+    algo_config: GraphAlgoConfig | None = None,
 ) -> dict[Hashable, float]:
     """Compute effective size keyed by node id.
 
@@ -1233,8 +1300,16 @@ def effective_size_by_id(
     if work_store.graph.num_nodes() == 0:
         return {}
     neighbors = _neighbor_sets_with_self(work_store)
+    semantics = _resolve_weight_semantics(work_store, algo_config)
+    epsilon = _resolve_weight_epsilon(algo_config)
     if weight is None:
-        result = _effective_size_unweighted(work_store, neighbors, nan_policy=resolved_nan_policy)
+        result = _effective_size_unweighted(
+            work_store,
+            neighbors,
+            nan_policy=resolved_nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
         return _normalize_float_mapping(
             result,
             nan_policy=resolved_nan_policy,
@@ -1242,7 +1317,12 @@ def effective_size_by_id(
             rel_tol=numeric_policy.effective_rel_tol,
         )
 
-    edge_weights = _edge_weight_map(work_store, nan_policy=resolved_nan_policy)
+    edge_weights = _edge_weight_map(
+        work_store,
+        nan_policy=resolved_nan_policy,
+        semantics=semantics,
+        epsilon=epsilon,
+    )
     sum_scale = _neighbor_scale(edge_weights, neighbors, norm=sum)
     max_scale = _neighbor_scale(edge_weights, neighbors, norm=max)
 
@@ -1392,6 +1472,7 @@ __all__ = [
     "bipartite_degree_centrality_by_id",
     "closeness_by_id",
     "clustering_by_id",
+    "constant_weight_fn",
     "constraint_by_id",
     "core_number_by_id",
     "degree_centrality_by_id",
@@ -1406,6 +1487,8 @@ __all__ = [
     "in_degree_centrality_by_id",
     "out_degree_centrality_by_id",
     "pagerank_by_id",
+    "resolve_weight_epsilon",
+    "resolve_weight_semantics",
     "to_directed_store",
     "to_undirected_store",
     "triangles_by_id",

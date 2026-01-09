@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 import pyarrow as pa
@@ -37,8 +37,8 @@ from codeintel.build.analytics.graphs.symbol_graph_metrics import (
 )
 from codeintel.build.contracts.ref import contract_ref_for_table
 from codeintel.build.graphs.builders import (
-    build_call_graph_from_rows,
-    build_import_graph_from_rows,
+    build_call_graph_from_tables,
+    build_import_graph_from_tables,
     build_symbol_function_graph,
     build_symbol_module_edges,
     build_symbol_module_graph,
@@ -59,6 +59,8 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.scopes.snapshot import SnapshotScope
+from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.scoping import collect_scoped_rows
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -231,18 +233,19 @@ def _load_call_graph(
     nodes: InferableTabularInput,
 ) -> GraphInput:
     scope = SnapshotScope.from_snapshot(env.snapshot)
-    call_edge_rows = collect_scoped_rows(
+    call_edges_table = tabular_to_scoped_table(
         edges,
-        ("caller_goid_h128", "callee_goid_h128"),
+        columns=("caller_goid_h128", "callee_goid_h128"),
         scope=scope,
+        require_scope_columns=True,
     )
-    call_node_rows = collect_scoped_rows(
+    call_nodes_table = tabular_to_scoped_table(
         nodes,
-        ("goid_h128", "kind"),
+        columns=("goid_h128", "kind"),
         scope=scope,
         require_scope_columns=False,
     )
-    return _call_graph_from_rows(call_edge_rows, call_node_rows)
+    return _call_graph_from_tables(call_edges_table, call_nodes_table)
 
 
 def _load_import_graph(
@@ -251,40 +254,41 @@ def _load_import_graph(
     modules: InferableTabularInput,
 ) -> tuple[GraphInput, ComponentMeta | None]:
     scope = SnapshotScope.from_snapshot(env.snapshot)
-    import_edge_rows = collect_scoped_rows(
+    import_edges_table = tabular_to_scoped_table(
         edges,
-        ("src_module", "dst_module", "module_layer"),
+        columns=("src_module", "dst_module", "module_layer"),
         scope=scope,
+        require_scope_columns=True,
     )
-    import_module_rows = collect_scoped_rows(
+    import_modules_table = tabular_to_scoped_table(
         modules,
-        ("module", "scc_id", "component_size", "layer"),
+        columns=("module", "scc_id", "component_size", "layer"),
         scope=scope,
+        require_scope_columns=True,
     )
-    return _import_graph_from_rows(import_edge_rows, import_module_rows)
+    return _import_graph_from_tables(import_edges_table, import_modules_table)
 
 
-def _call_graph_from_rows(
-    edges: list[dict[str, object]],
-    nodes: list[dict[str, object]],
+def _call_graph_from_tables(
+    edges: pa.Table,
+    nodes: pa.Table,
 ) -> GraphInput:
-    return build_call_graph_from_rows(edges, nodes)
+    return build_call_graph_from_tables(edges, nodes)
 
 
-def _import_graph_from_rows(
-    edges: list[dict[str, object]],
-    modules: list[dict[str, object]],
+def _import_graph_from_tables(
+    edges: pa.Table,
+    modules: pa.Table,
 ) -> tuple[GraphInput, ComponentMeta | None]:
-    graph = build_import_graph_from_rows(edges, modules)
-    component_meta = _component_meta_from_import_rows(modules)
+    graph = build_import_graph_from_tables(edges, modules)
+    module_rows = iter_rows(modules, ("module", "scc_id", "component_size", "layer"))
+    component_meta = _component_meta_from_import_rows(module_rows)
     return graph, component_meta
 
 
 def _component_meta_from_import_rows(
-    rows: list[dict[str, object]],
+    rows: Iterable[Mapping[str, object]],
 ) -> ComponentMeta | None:
-    if not rows:
-        return None
     comp_id: dict[str, int] = {}
     in_cycle: dict[str, bool] = {}
     layer_by_module: dict[str, int] = {}

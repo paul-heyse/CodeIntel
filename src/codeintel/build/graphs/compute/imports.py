@@ -7,17 +7,19 @@ without any database or file I/O.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from codeintel.build.graphs.compute.metrics.components import topological_layers
-from codeintel.build.graphs.rx.condensation import condensation_store
+import rustworkx as rx
+
 from codeintel.build.graphs.rx.normalize import stable_key
+from codeintel.build.graphs.rx.payloads import encode_node_payload
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.data_models.rows import ImportEdgeRow, ImportModuleRow
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
     from collections.abc import Set as AbstractSet
 
 
@@ -89,26 +91,23 @@ def _build_import_store(
     modules: AbstractSet[str],
 ) -> RxGraphStore:
     store = RxGraphStore.directed(node_hint=len(modules), edge_hint=len(edges))
-    for module in sorted(modules, key=stable_key):
-        store.ensure_node(module)
-    for edge in edges:
+    for edge in sorted(
+        edges,
+        key=lambda item: (stable_key(item.src_module), stable_key(item.dst_module)),
+    ):
         store.add_weighted_edge(edge.src_module, edge.dst_module, weight=1.0)
-    return store
-
-
-def _components_from_scc_map(
-    store: RxGraphStore,
-    scc_map: Mapping[str, int],
-) -> list[set[int]]:
-    if not scc_map:
-        return []
-    max_id = max(scc_map.values())
-    components: list[set[int]] = [set() for _ in range(max_id + 1)]
-    for node_id, comp_id in scc_map.items():
-        node_idx = store.id_to_index.get(node_id)
-        if node_idx is not None:
-            components[comp_id].add(node_idx)
-    return components
+    missing = [module for module in modules if module not in store.id_to_index]
+    if not missing:
+        return store
+    isolate_graph = rx.PyDiGraph(multigraph=False)
+    for module in sorted(missing, key=stable_key):
+        isolate_graph.add_node(encode_node_payload(module, {}))
+    merged = rx.digraph_union(store.graph, isolate_graph, merge_nodes=True, merge_edges=True)
+    return RxGraphStore.from_rx_graph(
+        merged,
+        weight_policy=store.weight_policy,
+        numeric_policy=store.numeric_policy,
+    )
 
 
 def compute_scc(
@@ -134,8 +133,17 @@ def compute_scc(
     if store.graph.num_nodes() == 0:
         return {}
 
-    _condensed, membership = condensation_store(store)
-    return {str(node_id): comp_id for node_id, comp_id in membership.items()}
+    condensed = rx.condensation(cast("rx.PyDiGraph", store.graph))
+    node_map = condensed.attrs.get("node_map")
+    if not isinstance(node_map, Sequence) or isinstance(
+        node_map, (str, bytes, bytearray, memoryview)
+    ):
+        return {}
+    return {
+        str(store.index_to_id[node_idx]): comp_id
+        for node_idx, comp_id in enumerate(node_map)
+        if isinstance(comp_id, int)
+    }
 
 
 def compute_layers(
@@ -162,15 +170,15 @@ def compute_layers(
     if not modules:
         return {}
     store = _build_import_store(edges, modules)
-    components = _components_from_scc_map(store, scc_map)
-    if not components:
+    if store.graph.num_nodes() == 0:
         return {}
-    condensed_store, _membership = condensation_store(
-        store,
-        components=components,
-        stable=False,
-    )
-    comp_layers = topological_layers(condensed_store)
+    if not scc_map:
+        return {}
+    condensed = rx.condensation(cast("rx.PyDiGraph", store.graph))
+    comp_layers: dict[int, int] = {}
+    for layer, generation in enumerate(rx.topological_generations(condensed)):
+        for comp_id in generation:
+            comp_layers[comp_id] = layer
     return {node: comp_layers.get(scc_map.get(node, -1), 0) for node in modules}
 
 

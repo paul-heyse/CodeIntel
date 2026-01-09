@@ -59,6 +59,7 @@ from codeintel.core.columnar import (
     extras_policy_from_schema,
 )
 from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.config.settings import BuildSettings
@@ -705,7 +706,11 @@ def _write_dataset_from_reader(
     observation: SchemaObservationAccumulator | None,
 ) -> ArrowDatasetManifest:
     table = reader_to_table(reader)
-    result = finalize_table(table, spec=FinalizeSpec(table_key=ctx.table_key, mode="tolerant"))
+    order_by = _order_by_for_table(table, options=ctx.options)
+    result = finalize_table(
+        table,
+        spec=FinalizeSpec(table_key=ctx.table_key, mode="tolerant", order_by=order_by),
+    )
     if result.errors.num_rows:
         LOG.warning(
             "Finalize produced %d error rows for %s; persisting good rows only",
@@ -729,6 +734,20 @@ def _write_dataset_from_reader(
         data=reader,
         options=ctx.options,
     )
+
+
+def _order_by_for_table(
+    table: pa.Table,
+    *,
+    options: ArrowDatasetWriteOptions,
+) -> tuple[SortKey, ...]:
+    stable_keys = options.stable_sort_keys
+    if not stable_keys:
+        return ()
+    available = [name for name in stable_keys if name in table.column_names]
+    if not available:
+        return ()
+    return tuple((name, "ascending") for name in available)
 
 
 def _write_profiled_dataset(

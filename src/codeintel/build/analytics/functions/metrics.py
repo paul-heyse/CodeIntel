@@ -25,6 +25,8 @@ from codeintel.build.analytics.parsing.span_resolver import SpanResolutionError,
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 from codeintel.core.validation.reporters import FunctionValidationReporter
@@ -303,14 +305,31 @@ def _load_goids_from_frame(
         log.warning("core.goids is missing columns: %s", ", ".join(sorted(missing)))
         return {}
 
-    selected = goids_table.select(list(GOIDS_REQUIRED_COLUMNS))
-    rows = [
-        row
-        for row in iter_rows(selected)
-        if row.get("repo") == snapshot.repo
-        and row.get("commit") == snapshot.commit
-        and row.get("kind") in {"function", "method"}
+    plan = Plan.table(goids_table)
+    filters = [
+        E.field("repo") == E.scalar(snapshot.repo),
+        E.field("commit") == E.scalar(snapshot.commit),
+        E.in_("kind", ["function", "method"]),
     ]
+    plan = plan.filter(E.and_(*filters))
+    project = {name: E.field(name) for name in GOIDS_REQUIRED_COLUMNS}
+    plan = plan.project(project)
+    aggregates: list[tuple[str, str, None, str]] = []
+    for name in GOIDS_REQUIRED_COLUMNS:
+        if name == "goid_h128":
+            continue
+        agg_fn = "max" if name == "end_line" else "min"
+        aggregates.append((name, agg_fn, None, name))
+    plan = plan.aggregate(keys=[E.field("goid_h128")], aggregates=aggregates)
+    plan = plan.order_by(
+        sort_keys=[
+            ("rel_path", "ascending"),
+            ("start_line", "ascending"),
+            ("goid_h128", "ascending"),
+        ]
+    )
+    selected = materialize_plan(plan, use_threads=True)
+    rows = list(iter_rows(selected))
     if not rows:
         log.info("No function GOIDs found for repo=%s commit=%s", snapshot.repo, snapshot.commit)
         return {}

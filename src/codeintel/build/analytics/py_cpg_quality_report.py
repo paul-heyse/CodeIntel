@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pyarrow as pa
 
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.query_results import coerce_int
 
 PY_CPG_QUALITY_REPORT_TABLE_KEY = "analytics.py_cpg_quality_report"
 
@@ -100,8 +103,7 @@ def build_py_cpg_quality_report_rows(
     symtable_rate = _anchor_rate(inputs.scopes, anchor_column="anchor_ast_node_id")
     cfg_rate = _cfg_reachability(inputs.blocks, inputs.cfg_edges)
     defuse_event_count = _defuse_event_count(inputs.defuse_events)
-    node_kind_by_id = _node_kind_index(inputs.cpg_nodes)
-    edge_scan = _scan_cpg_edges(inputs.cpg_edges, node_kind_by_id=node_kind_by_id)
+    edge_scan = _scan_cpg_edges(inputs.cpg_edges, node_table=inputs.cpg_nodes)
     defuse_rate = _DefuseCoverage(
         event_count=defuse_event_count,
         edge_count=edge_scan.defuse_edge_count,
@@ -165,15 +167,35 @@ def _anchor_rate(
     *,
     anchor_column: str,
 ) -> _AnchorRate:
-    total = 0
-    anchored = 0
-    has_column = anchor_column in table.schema.names
-    for batch in table.to_batches():
-        total += batch.num_rows
-        if not has_column or batch.num_rows == 0:
-            continue
-        anchored += batch.num_rows - batch.column(anchor_column).null_count
-    return _AnchorRate(total=total, anchored=anchored)
+    total = table.num_rows
+    if anchor_column not in table.schema.names:
+        return _AnchorRate(total=total, anchored=0)
+    plan = Plan.table(table)
+    plan = plan.project(
+        {
+            "row_marker": E.scalar(1),
+            "anchor_value": E.field(anchor_column),
+        }
+    )
+    plan = plan.aggregate(
+        keys=[],
+        aggregates=[
+            ("row_marker", "count", None, "row_count"),
+            ("anchor_value", "count", None, "anchored_count"),
+        ],
+    )
+    aggregated = materialize_plan(plan, use_threads=True)
+    row = next(iter_rows(aggregated, ("row_count", "anchored_count")), None)
+    if row is None:
+        return _AnchorRate(total=0, anchored=0)
+    total_value = row.get("row_count")
+    anchored_value = row.get("anchored_count")
+    return _AnchorRate(
+        total=coerce_int(total_value, ctx="row_count") if total_value is not None else 0,
+        anchored=(
+            coerce_int(anchored_value, ctx="anchored_count") if anchored_value is not None else 0
+        ),
+    )
 
 
 def _cfg_reachability(
@@ -275,43 +297,41 @@ def _reachable_count(entry_block: str, adjacency: dict[str, set[str]]) -> int:
 def _defuse_event_count(reader: pa.Table) -> int:
     if not _reader_has_columns(reader, ("event_kind", "space")):
         return 0
-    count = 0
-    for row in _reader_rows(reader):
-        if row.get("event_kind") in {"DEF", "USE"} and row.get("space") in {
-            "local",
-            "free",
-            "global",
-        }:
-            count += 1
-    return count
+    plan = Plan.table(reader)
+    plan = plan.project({"event_kind": E.field("event_kind"), "space": E.field("space")})
+    plan = plan.filter(
+        E.and_(
+            E.in_("event_kind", ["DEF", "USE"]),
+            E.in_("space", ["local", "free", "global"]),
+        )
+    )
+    return _count_from_plan(plan, count_column="event_kind")
 
 
 def _scan_cpg_edges(
     reader: pa.Table,
     *,
-    node_kind_by_id: dict[int, str] | None = None,
+    node_table: pa.Table | None = None,
 ) -> _CpgEdgeScan:
     has_edge_kind = "edge_kind" in reader.schema.names
     if not has_edge_kind:
         return _CpgEdgeScan(0, set(), 0, 0, 0, 0)
-    kind_index = node_kind_by_id or {}
-    has_extras = "extras_kv" in reader.schema.names
     has_src = "src_cpg_node_id" in reader.schema.names
     has_dst = "dst_cpg_node_id" in reader.schema.names
     has_layer = "edge_layer" in reader.schema.names
-    defuse_edge_count = _defuse_edge_count(reader, has_extras=has_extras)
+    defuse_edge_count = _defuse_edge_count(reader)
     inspect_anchor_ids = _inspect_anchor_ids(reader, has_src=has_src)
     symbol_edge_count, external_symbol_edge_count = _symbol_edge_counts(
         reader,
-        kind_index=kind_index,
         has_dst=has_dst,
         has_layer=has_layer,
+        node_table=node_table,
     )
     binding_resolution_edge_count, binding_unresolved_edge_count = _binding_edge_counts(
         reader,
-        kind_index=kind_index,
         has_src=has_src,
         has_dst=has_dst,
+        node_table=node_table,
     )
     return _CpgEdgeScan(
         defuse_edge_count=defuse_edge_count,
@@ -323,47 +343,38 @@ def _scan_cpg_edges(
     )
 
 
-def _node_kind_index(reader: pa.Table) -> dict[int, str]:
-    if not _reader_has_columns(reader, ("cpg_node_id", "node_kind")):
-        return {}
-    tracked = {"SCIP_SYMBOL", "SCIP_SYMBOL_EXTERNAL", "BINDING", "BINDING_UNRESOLVED"}
-    node_kind_by_id: dict[int, str] = {}
-    for row in _reader_rows(reader):
-        node_kind = row.get("node_kind")
-        if not isinstance(node_kind, str) or node_kind not in tracked:
-            continue
-        node_id = normalize_decimal_id(row.get("cpg_node_id"))
-        if node_id is None:
-            continue
-        node_kind_by_id[node_id] = node_kind
-    return node_kind_by_id
-
-
-def _defuse_edge_count(reader: pa.Table, *, has_extras: bool) -> int:
-    if not has_extras:
+def _defuse_edge_count(reader: pa.Table) -> int:
+    if "extras_kv" not in reader.schema.names or "edge_kind" not in reader.schema.names:
         return 0
-    count = 0
-    for row in _reader_rows(reader):
-        edge_kind = row.get("edge_kind")
-        if edge_kind not in {"DEFINES_BINDING", "USES_BINDING"}:
-            continue
-        extras = row.get("extras_kv")
-        if not isinstance(extras, Mapping):
-            continue
-        space = extras.get("space")
-        if isinstance(space, str) and space in {"local", "free", "global"}:
-            count += 1
-    return count
+    space_expr = E.field(("extras_kv", "space"))
+    plan = Plan.table(reader)
+    plan = plan.project({"edge_kind": E.field("edge_kind"), "space": space_expr})
+    plan = plan.filter(
+        E.and_(
+            E.in_("edge_kind", ["DEFINES_BINDING", "USES_BINDING"]),
+            E.in_(space_expr, ["local", "free", "global"]),
+        )
+    )
+    return _count_from_plan(plan, count_column="edge_kind")
 
 
 def _inspect_anchor_ids(reader: pa.Table, *, has_src: bool) -> set[int]:
     if not has_src:
         return set()
+    plan = Plan.table(reader)
+    plan = plan.filter(
+        E.and_(
+            E.field("edge_kind") == E.scalar("INSPECT_ANCHORS_AST"),
+            E.is_valid("src_cpg_node_id"),
+        )
+    )
+    plan = plan.project({"src_id": E.field("src_cpg_node_id")})
+    plan = plan.aggregate(keys=[E.field("src_id")], aggregates=[])
+    plan = plan.order_by(sort_keys=[("src_id", "ascending")])
+    table = materialize_plan(plan, use_threads=True)
     anchor_ids: set[int] = set()
-    for row in _reader_rows(reader):
-        if row.get("edge_kind") != "INSPECT_ANCHORS_AST":
-            continue
-        src_id = normalize_decimal_id(row.get("src_cpg_node_id"))
+    for row in iter_rows(table, ("src_id",)):
+        src_id = normalize_decimal_id(row.get("src_id"))
         if src_id is not None:
             anchor_ids.add(src_id)
     return anchor_ids
@@ -372,50 +383,157 @@ def _inspect_anchor_ids(reader: pa.Table, *, has_src: bool) -> set[int]:
 def _symbol_edge_counts(
     reader: pa.Table,
     *,
-    kind_index: dict[int, str],
     has_dst: bool,
     has_layer: bool,
+    node_table: pa.Table | None,
 ) -> tuple[int, int]:
-    if not kind_index or not has_dst or not has_layer:
+    if node_table is None or node_table.num_rows == 0:
         return 0, 0
+    if not has_dst or not has_layer:
+        return 0, 0
+    if not _reader_has_columns(node_table, ("cpg_node_id", "node_kind")):
+        return 0, 0
+    edges_plan = Plan.table(reader)
+    edges_plan = edges_plan.filter(
+        E.and_(
+            E.field("edge_layer") == E.scalar("SYMBOL"),
+            E.is_valid("dst_cpg_node_id"),
+        )
+    )
+    edges_plan = edges_plan.project({"dst_id": E.field("dst_cpg_node_id")})
+
+    nodes_plan = Plan.table(node_table)
+    nodes_plan = nodes_plan.filter(
+        E.and_(
+            E.is_valid("cpg_node_id"),
+            E.in_("node_kind", ["SCIP_SYMBOL", "SCIP_SYMBOL_EXTERNAL"]),
+        )
+    )
+    nodes_plan = nodes_plan.project(
+        {
+            "dst_id": E.field("cpg_node_id"),
+            "node_kind": E.field("node_kind"),
+        }
+    )
+    joined = edges_plan.hash_join(
+        right=nodes_plan,
+        spec=HashJoinSpec(
+            left_keys=["dst_id"],
+            right_keys=["dst_id"],
+            how="inner",
+            left_output=["dst_id"],
+            right_output=["node_kind"],
+        ),
+    )
+    joined = joined.aggregate(
+        keys=[E.field("node_kind")],
+        aggregates=[("node_kind", "count", None, "edge_count")],
+    )
+    joined = joined.order_by(sort_keys=[("node_kind", "ascending")])
+    aggregated = materialize_plan(joined, use_threads=True)
     symbol_edge_count = 0
     external_symbol_edge_count = 0
-    for row in _reader_rows(reader):
-        if row.get("edge_layer") != "SYMBOL":
+    for row in iter_rows(aggregated, ("node_kind", "edge_count")):
+        kind = row.get("node_kind")
+        count_value = row.get("edge_count")
+        if kind is None or count_value is None:
             continue
-        dst_id = normalize_decimal_id(row.get("dst_cpg_node_id"))
-        dst_kind = kind_index.get(dst_id) if dst_id is not None else None
-        if dst_kind in {"SCIP_SYMBOL", "SCIP_SYMBOL_EXTERNAL"}:
-            symbol_edge_count += 1
-            if dst_kind == "SCIP_SYMBOL_EXTERNAL":
-                external_symbol_edge_count += 1
+        count = coerce_int(count_value, ctx="symbol_edge_count")
+        kind_text = str(kind)
+        if kind_text in {"SCIP_SYMBOL", "SCIP_SYMBOL_EXTERNAL"}:
+            symbol_edge_count += count
+        if kind_text == "SCIP_SYMBOL_EXTERNAL":
+            external_symbol_edge_count += count
     return symbol_edge_count, external_symbol_edge_count
 
 
 def _binding_edge_counts(
     reader: pa.Table,
     *,
-    kind_index: dict[int, str],
     has_src: bool,
     has_dst: bool,
+    node_table: pa.Table | None,
 ) -> tuple[int, int]:
-    if not kind_index or not has_src or not has_dst:
+    if node_table is None or node_table.num_rows == 0:
         return 0, 0
-    binding_resolution_edge_count = 0
-    binding_unresolved_edge_count = 0
-    for row in _reader_rows(reader):
-        if row.get("edge_kind") != "RESOLVES_TO":
-            continue
-        src_id = normalize_decimal_id(row.get("src_cpg_node_id"))
-        src_kind = kind_index.get(src_id) if src_id is not None else None
-        if src_kind != "BINDING":
-            continue
-        binding_resolution_edge_count += 1
-        dst_id = normalize_decimal_id(row.get("dst_cpg_node_id"))
-        dst_kind = kind_index.get(dst_id) if dst_id is not None else None
-        if dst_kind == "BINDING_UNRESOLVED":
-            binding_unresolved_edge_count += 1
+    if not has_src or not has_dst:
+        return 0, 0
+    if not _reader_has_columns(node_table, ("cpg_node_id", "node_kind")):
+        return 0, 0
+    edges_plan = Plan.table(reader)
+    edges_plan = edges_plan.filter(
+        E.and_(
+            E.field("edge_kind") == E.scalar("RESOLVES_TO"),
+            E.is_valid("src_cpg_node_id"),
+            E.is_valid("dst_cpg_node_id"),
+        )
+    )
+    edges_plan = edges_plan.project(
+        {
+            "src_id": E.field("src_cpg_node_id"),
+            "dst_id": E.field("dst_cpg_node_id"),
+        }
+    )
+
+    src_nodes = Plan.table(node_table)
+    src_nodes = src_nodes.filter(
+        E.and_(
+            E.is_valid("cpg_node_id"),
+            E.field("node_kind") == E.scalar("BINDING"),
+        )
+    )
+    src_nodes = src_nodes.project({"src_id": E.field("cpg_node_id")})
+
+    joined_src = edges_plan.hash_join(
+        right=src_nodes,
+        spec=HashJoinSpec(
+            left_keys=["src_id"],
+            right_keys=["src_id"],
+            how="inner",
+            left_output=["src_id", "dst_id"],
+            right_output=[],
+        ),
+    )
+    binding_resolution_edge_count = _count_from_plan(joined_src, count_column="src_id")
+
+    dst_nodes = Plan.table(node_table)
+    dst_nodes = dst_nodes.filter(
+        E.and_(
+            E.is_valid("cpg_node_id"),
+            E.field("node_kind") == E.scalar("BINDING_UNRESOLVED"),
+        )
+    )
+    dst_nodes = dst_nodes.project({"dst_id": E.field("cpg_node_id")})
+
+    joined_dst = joined_src.hash_join(
+        right=dst_nodes,
+        spec=HashJoinSpec(
+            left_keys=["dst_id"],
+            right_keys=["dst_id"],
+            how="inner",
+            left_output=["dst_id"],
+            right_output=[],
+        ),
+    )
+    binding_unresolved_edge_count = _count_from_plan(joined_dst, count_column="dst_id")
     return binding_resolution_edge_count, binding_unresolved_edge_count
+
+
+def _count_from_plan(plan: Plan, *, count_column: str) -> int:
+    aggregated = plan.aggregate(
+        keys=[],
+        aggregates=[(count_column, "count", None, "row_count")],
+    )
+    table = materialize_plan(aggregated, use_threads=True)
+    return _count_from_table(table, column="row_count")
+
+
+def _count_from_table(table: pa.Table, *, column: str) -> int:
+    row = next(iter_rows(table, (column,)), None)
+    if row is None:
+        return 0
+    value = row.get(column)
+    return coerce_int(value, ctx=column) if value is not None else 0
 
 
 __all__ = [

@@ -312,6 +312,16 @@ def is_allowed_column_promotion(source: ColumnType, target: ColumnType) -> bool:
 
 WriteMode = Literal["append", "replace", "upsert"]
 ReplaceScope = Literal["snapshot", "table"]
+FinalizeNullListPolicy = Literal["error", "empty"]
+FinalizeInvariantKind = Literal["list_alignment", "struct_required"]
+FinalizeDedupeTier = Literal["canonical", "stable_set", "best_effort", "throughput"]
+FinalizeDedupeStrategy = Literal[
+    "order_independent",
+    "first",
+    "keep_best_by_score",
+    "keep_arbitrary",
+]
+SortDirection = Literal["ascending", "descending"]
 
 
 @dataclass(frozen=True)
@@ -347,6 +357,109 @@ class TableWritePolicy:
     use_staging: bool = False
     stable_sort_keys: tuple[str, ...] | None = None
     combine_chunks: bool | None = None
+
+
+@dataclass(frozen=True)
+class FinalizeListPolicySpec:
+    """Finalize policy for list null handling."""
+
+    column: str
+    null_policy: FinalizeNullListPolicy = "error"
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable representation of this policy.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable policy payload.
+        """
+        return {"column": self.column, "null_policy": self.null_policy}
+
+
+@dataclass(frozen=True)
+class FinalizeInvariantSpec:
+    """Finalize invariant policy for table validation."""
+
+    kind: FinalizeInvariantKind
+    column: str
+    related: tuple[str, ...]
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable representation of this invariant.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable invariant payload.
+        """
+        return {
+            "kind": self.kind,
+            "column": self.column,
+            "related": list(self.related),
+        }
+
+
+@dataclass(frozen=True)
+class FinalizeDedupeSpec:
+    """Finalize policy for dedupe behavior."""
+
+    enabled: bool = True
+    keys: tuple[str, ...] = ()
+    prefer_columns: tuple[str, ...] = ()
+    tie_breakers: tuple[tuple[str, SortDirection], ...] = ()
+    tier: FinalizeDedupeTier | None = None
+    strategy: FinalizeDedupeStrategy | None = None
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable representation of this dedupe policy.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable dedupe payload.
+        """
+        payload: dict[str, object] = {
+            "enabled": self.enabled,
+            "keys": list(self.keys),
+            "prefer_columns": list(self.prefer_columns),
+            "tie_breakers": [list(item) for item in self.tie_breakers],
+        }
+        if self.tier is not None:
+            payload["tier"] = self.tier
+        if self.strategy is not None:
+            payload["strategy"] = self.strategy
+        return payload
+
+
+@dataclass(frozen=True)
+class FinalizePolicy:
+    """Finalize policy defaults for a table schema."""
+
+    required_non_null: tuple[str, ...] = ()
+    list_policies: tuple[FinalizeListPolicySpec, ...] = ()
+    invariants: tuple[FinalizeInvariantSpec, ...] = ()
+    dedupe: FinalizeDedupeSpec | None = None
+    canonical_sort_keys: tuple[str, ...] | None = None
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable representation of this finalize policy.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable finalize policy payload.
+        """
+        payload: dict[str, object] = {
+            "required_non_null": list(self.required_non_null),
+            "list_policies": [policy.to_json_obj() for policy in self.list_policies],
+            "invariants": [inv.to_json_obj() for inv in self.invariants],
+        }
+        if self.dedupe is not None:
+            payload["dedupe"] = self.dedupe.to_json_obj()
+        if self.canonical_sort_keys is not None:
+            payload["canonical_sort_keys"] = list(self.canonical_sort_keys)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -446,6 +559,7 @@ class TableSchema:
     indexes: tuple[Index, ...] = ()
     description: str | None = None
     write_policy: TableWritePolicy | None = None
+    finalize_policy: FinalizePolicy | None = None
 
     @property
     def table_key(self) -> str:
@@ -497,6 +611,9 @@ class TableSchema:
             "columns": [col.to_json_obj() for col in self.columns],
         }
         if self.write_policy is None:
+            if self.finalize_policy is None:
+                return payload
+            payload["finalize_policy"] = self.finalize_policy.to_json_obj()
             return payload
         write_policy_payload: dict[str, object] = {
             "mode": self.write_policy.mode,
@@ -509,6 +626,8 @@ class TableSchema:
         if self.write_policy.stable_sort_keys is not None:
             write_policy_payload["stable_sort_keys"] = list(self.write_policy.stable_sort_keys)
         payload["write_policy"] = write_policy_payload
+        if self.finalize_policy is not None:
+            payload["finalize_policy"] = self.finalize_policy.to_json_obj()
         return payload
 
 
@@ -518,7 +637,8 @@ def resolve_stable_sort_keys(table_schema: TableSchema | None) -> tuple[str, ...
     Returns
     -------
     tuple[str, ...] | None
-        Stable sort keys, or None when no deterministic ordering is configured.
+        Stable sort keys. An empty tuple explicitly disables canonical ordering, and
+        None indicates no explicit ordering policy is configured.
     """
     if table_schema is None:
         return None
@@ -535,8 +655,17 @@ __all__ = [
     "Column",
     "ColumnType",
     "ColumnTypeRegistry",
+    "FinalizeDedupeSpec",
+    "FinalizeDedupeStrategy",
+    "FinalizeDedupeTier",
+    "FinalizeInvariantKind",
+    "FinalizeInvariantSpec",
+    "FinalizeListPolicySpec",
+    "FinalizeNullListPolicy",
+    "FinalizePolicy",
     "Index",
     "ReplaceScope",
+    "SortDirection",
     "TableSchema",
     "TableWritePolicy",
     "WriteMode",

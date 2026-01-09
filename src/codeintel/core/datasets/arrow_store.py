@@ -20,7 +20,6 @@ from codeintel.core.columnar.arrowdsl import (
     ExecutionContext,
     ExecutionPlan,
     apply_deterministic_order,
-    run_pipeline,
 )
 from codeintel.core.columnar.compute_helpers import call_compute, combine_table_chunks
 from codeintel.core.columnar.conversion import reader_to_table
@@ -731,9 +730,9 @@ def _apply_schema_metadata(
 
 def _execution_plan_for_input(data: ArrowDatasetInput) -> ExecutionPlan | None:
     if isinstance(data, pa.Table):
-        return ExecutionPlan(inner=data)
+        return ExecutionPlan.from_table(data)
     if isinstance(data, pa.RecordBatchReader):
-        return ExecutionPlan(inner=lambda: reader_to_table(data))
+        return ExecutionPlan.from_reader(data)
     return None
 
 
@@ -784,7 +783,10 @@ def _prepare_write_data(
             combine_chunks=execution_ctx.combine_chunks,
         ),
     ]
-    return run_pipeline(plan=plan, post=post, ctx=execution_ctx)
+    table = plan.to_table(ctx=execution_ctx)
+    for step in post:
+        table = step(table)
+    return table
 
 
 def _apply_stable_sort(

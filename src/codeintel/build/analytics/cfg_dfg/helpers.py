@@ -11,12 +11,13 @@ from typing import cast
 
 import pyarrow as pa
 
+from codeintel.build.analytics.utilities.snapshot import snapshot_plan
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import equal_expr, is_in_expr, is_valid_expr
-from codeintel.build.tabular.expr_vocab import Expression
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -124,6 +125,133 @@ def prefilter_table(
         return safe_filter_expr(table, expr)
 
 
+def cfg_blocks_rowset(
+    table: pa.Table,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> pa.Table:
+    """Build a grouped rowset of CFG blocks by function.
+
+    Returns
+    -------
+    pyarrow.Table
+        Aggregated CFG block rows keyed by function.
+    """
+    required = (
+        "function_goid_h128",
+        "block_idx",
+        "kind",
+        "in_degree",
+        "out_degree",
+    )
+    if not set(required).issubset(table.column_names):
+        return pa.Table.from_pylist([])
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required)
+    plan = plan.filter(
+        E.and_(
+            E.is_valid("function_goid_h128"),
+            E.is_valid("block_idx"),
+        )
+    )
+    plan = plan.aggregate(
+        keys=[E.field("function_goid_h128")],
+        aggregates=[
+            ("block_idx", "list", None, "block_idx"),
+            ("kind", "list", None, "kind"),
+            ("in_degree", "list", None, "in_degree"),
+            ("out_degree", "list", None, "out_degree"),
+        ],
+    )
+    plan = plan.order_by(sort_keys=[("function_goid_h128", "ascending")])
+    return materialize_plan(plan, use_threads=True)
+
+
+def cfg_edges_rowset(
+    table: pa.Table,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> pa.Table:
+    """Build a grouped rowset of CFG edges by function.
+
+    Returns
+    -------
+    pyarrow.Table
+        Aggregated CFG edge rows keyed by function.
+    """
+    required = ("function_goid_h128", "src_block_id", "dst_block_id", "edge_kind")
+    if not set(required).issubset(table.column_names):
+        return pa.Table.from_pylist([])
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required)
+    plan = plan.filter(
+        E.and_(
+            E.is_valid("function_goid_h128"),
+            E.is_valid("src_block_id"),
+            E.is_valid("dst_block_id"),
+        )
+    )
+    plan = plan.aggregate(
+        keys=[E.field("function_goid_h128")],
+        aggregates=[
+            ("src_block_id", "list", None, "src_block_id"),
+            ("dst_block_id", "list", None, "dst_block_id"),
+            ("edge_kind", "list", None, "edge_kind"),
+        ],
+    )
+    plan = plan.order_by(sort_keys=[("function_goid_h128", "ascending")])
+    return materialize_plan(plan, use_threads=True)
+
+
+def dfg_edges_rowset(
+    table: pa.Table,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> pa.Table:
+    """Build a grouped rowset of DFG edges by function.
+
+    Returns
+    -------
+    pyarrow.Table
+        Aggregated DFG edge rows keyed by function.
+    """
+    required = (
+        "function_goid_h128",
+        "src_block_id",
+        "dst_block_id",
+        "src_var",
+        "dst_var",
+        "via_phi",
+        "use_kind",
+    )
+    if not set(required).issubset(table.column_names):
+        return pa.Table.from_pylist([])
+    plan = snapshot_plan(table, repo=repo, commit=commit, columns=required)
+    plan = plan.filter(
+        E.and_(
+            E.is_valid("function_goid_h128"),
+            E.is_valid("src_block_id"),
+            E.is_valid("dst_block_id"),
+            E.is_valid("src_var"),
+            E.is_valid("dst_var"),
+        )
+    )
+    plan = plan.aggregate(
+        keys=[E.field("function_goid_h128")],
+        aggregates=[
+            ("src_block_id", "list", None, "src_block_id"),
+            ("dst_block_id", "list", None, "dst_block_id"),
+            ("src_var", "list", None, "src_var"),
+            ("dst_var", "list", None, "dst_var"),
+            ("via_phi", "list", None, "via_phi"),
+            ("use_kind", "list", None, "use_kind"),
+        ],
+    )
+    plan = plan.order_by(sort_keys=[("function_goid_h128", "ascending")])
+    return materialize_plan(plan, use_threads=True)
+
+
 def load_function_metadata(
     goids_frame: pa.Table,
     modules_frame: pa.Table,
@@ -150,27 +278,16 @@ def load_function_metadata(
         Mapping of GOID -> (rel_path, module, qualname).
     """
     module_by_path: dict[str, str] = {}
-    filtered_modules = prefilter_table(
-        modules_frame,
-        repo=repo,
-        commit=commit,
-        require_valid=("path", "module"),
-    )
-    for row in iter_rows(filtered_modules):
+    filtered_modules = _module_metadata_table(modules_frame, repo=repo, commit=commit)
+    for row in iter_rows(filtered_modules, ("path", "module")):
         path = row.get("path")
         module = row.get("module")
         if isinstance(path, str) and isinstance(module, str):
             module_by_path[path] = module
 
     metadata: dict[int, tuple[str, str | None, str | None]] = {}
-    filtered_goids = prefilter_table(
-        goids_frame,
-        repo=repo,
-        commit=commit,
-        kinds=("function", "method"),
-        require_valid=("goid_h128", "rel_path"),
-    )
-    for row in iter_rows(filtered_goids):
+    filtered_goids = _goid_metadata_table(goids_frame, repo=repo, commit=commit)
+    for row in iter_rows(filtered_goids, ("goid_h128", "rel_path", "qualname")):
         goid = normalize_decimal_id(row.get("goid_h128"))
         if goid is None:
             continue
@@ -187,8 +304,66 @@ def load_function_metadata(
     return metadata
 
 
+def _module_metadata_table(
+    table: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+) -> pa.Table:
+    if "path" not in table.column_names or "module" not in table.column_names:
+        return pa.Table.from_batches([], schema=table.schema)
+    plan = snapshot_plan(table, repo=repo, commit=commit)
+    plan = plan.filter(E.and_(E.is_valid("path"), E.is_valid("module")))
+    plan = plan.project({"path": E.field("path"), "module": E.field("module")})
+    plan = plan.aggregate(
+        keys=[E.field("path")],
+        aggregates=[("module", "min", None, "module")],
+    )
+    plan = plan.order_by(sort_keys=[("path", "ascending")])
+    return materialize_plan(plan, use_threads=True)
+
+
+def _goid_metadata_table(
+    table: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+) -> pa.Table:
+    required = {"goid_h128", "rel_path"}
+    if not required.issubset(table.column_names):
+        return pa.Table.from_batches([], schema=table.schema)
+    plan = snapshot_plan(table, repo=repo, commit=commit)
+    filters: list[Expression] = []
+    if "kind" in table.column_names:
+        filters.append(E.in_("kind", ["function", "method"]))
+    filters.append(E.is_valid("goid_h128"))
+    filters.append(E.is_valid("rel_path"))
+    plan = plan.filter(E.and_(*filters))
+    project = {
+        "goid_h128": E.field("goid_h128"),
+        "rel_path": E.field("rel_path"),
+    }
+    if "qualname" in table.column_names:
+        project["qualname"] = E.field("qualname")
+    else:
+        project["qualname"] = E.scalar(None)
+    plan = plan.project(project)
+    plan = plan.aggregate(
+        keys=[E.field("goid_h128")],
+        aggregates=[
+            ("rel_path", "min", None, "rel_path"),
+            ("qualname", "min", None, "qualname"),
+        ],
+    )
+    plan = plan.order_by(sort_keys=[("goid_h128", "ascending")])
+    return materialize_plan(plan, use_threads=True)
+
+
 __all__ = [
+    "cfg_blocks_rowset",
+    "cfg_edges_rowset",
     "degree_dict",
+    "dfg_edges_rowset",
     "load_function_metadata",
     "parse_block_idx",
     "prefilter_table",

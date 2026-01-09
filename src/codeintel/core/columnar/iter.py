@@ -55,6 +55,32 @@ def iter_rows(
         }
 
 
+def iter_rows_limit(
+    source: pa.Table | pa.RecordBatch | pa.RecordBatchReader,
+    *,
+    limit: int,
+    columns: Sequence[str] | None = None,
+) -> Iterator[dict[str, object]]:
+    """Yield at most ``limit`` row dicts without materializing a list.
+
+    Yields
+    ------
+    dict[str, object]
+        Row dictionaries up to the requested limit.
+    """
+    if limit <= 0:
+        return
+
+    column_names = _resolve_column_names(source, columns=columns)
+    if not column_names:
+        return
+    yield from _iter_rows_limit_batches(
+        _iter_batches_from_source(source),
+        column_names=column_names,
+        limit=limit,
+    )
+
+
 def iter_tuples(
     source: pa.RecordBatchReader | pa.RecordBatch,
     *,
@@ -80,6 +106,59 @@ def iter_tuples(
     arrays = [batch.column(name) for name in column_names]
     for row_index in range(batch.num_rows):
         yield tuple(array[row_index].as_py() for array in arrays)
+
+
+def _iter_batch_rows(
+    batch: pa.RecordBatch,
+    column_names: Sequence[str],
+    remaining: int,
+) -> Iterator[dict[str, object]]:
+    if remaining <= 0:
+        return
+    arrays = [batch.column(column_name) for column_name in column_names]
+    max_rows = min(batch.num_rows, remaining)
+    for row_index in range(max_rows):
+        yield {
+            column_name: arrays[idx][row_index].as_py()
+            for idx, column_name in enumerate(column_names)
+        }
+
+
+def _iter_rows_limit_batches(
+    batches: Iterator[pa.RecordBatch],
+    *,
+    column_names: Sequence[str],
+    limit: int,
+) -> Iterator[dict[str, object]]:
+    remaining = limit
+    for batch in batches:
+        if remaining <= 0:
+            break
+        yield from _iter_batch_rows(batch, column_names, remaining)
+        remaining -= min(batch.num_rows, remaining)
+
+
+def _resolve_column_names(
+    source: pa.Table | pa.RecordBatch | pa.RecordBatchReader,
+    *,
+    columns: Sequence[str] | None,
+) -> list[str]:
+    if columns is not None:
+        return list(columns)
+    if isinstance(source, pa.Table):
+        return list(source.column_names)
+    return list(source.schema.names)
+
+
+def _iter_batches_from_source(
+    source: pa.Table | pa.RecordBatch | pa.RecordBatchReader,
+) -> Iterator[pa.RecordBatch]:
+    if isinstance(source, pa.RecordBatchReader):
+        yield from source
+    elif isinstance(source, pa.Table):
+        yield from source.to_batches()
+    else:
+        yield source
 
 
 def iter_batches(
@@ -114,5 +193,6 @@ __all__ = [
     "iter_array_values",
     "iter_batches",
     "iter_rows",
+    "iter_rows_limit",
     "iter_tuples",
 ]

@@ -19,8 +19,9 @@ from typing import TYPE_CHECKING, TypedDict
 
 import pyarrow as pa
 
-from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.expr_vocab import E, Expression
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.query_results import coerce_int, coerce_optional_int
 
 if TYPE_CHECKING:
@@ -156,22 +157,8 @@ class FunctionGoidLoader:
         FunctionGoid
             Each function GOID in the snapshot.
         """
-        frame = _filter_table_by_snapshot(self._goids_frame, self._snapshot)
-        selected = frame.select(
-            "goid_h128",
-            "urn",
-            "repo",
-            "commit",
-            "rel_path",
-            "language",
-            "kind",
-            "qualname",
-            "start_line",
-            "end_line",
-        )
-        for record in iter_rows(selected):
-            if record.get("kind") not in {"function", "method"}:
-                continue
+        frame = _worklist_table(self._goids_frame, self._snapshot)
+        for record in iter_rows(frame):
             goid_row: GoidRow = {
                 "goid_h128": coerce_int(record["goid_h128"], ctx="goid_h128"),
                 "urn": str(record["urn"]),
@@ -215,9 +202,49 @@ class FunctionGoidLoader:
         return (self._snapshot.repo_root / goid.rel_path).resolve()
 
 
-def _filter_table_by_snapshot(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
-    scope = SnapshotScope.from_snapshot(snapshot)
-    return scope.filter_arrow_table(frame, require_columns=True)
+def _worklist_table(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
+    required = (
+        "goid_h128",
+        "urn",
+        "repo",
+        "commit",
+        "rel_path",
+        "language",
+        "kind",
+        "qualname",
+        "start_line",
+        "end_line",
+    )
+    missing = [name for name in required if name not in frame.column_names]
+    if missing:
+        msg = f"Missing core.goids columns: {missing}"
+        raise ValueError(msg)
+    plan = Plan.table(frame)
+    filters: list[Expression] = []
+    if "repo" in frame.column_names:
+        filters.append(E.field("repo") == E.scalar(snapshot.repo))
+    if "commit" in frame.column_names:
+        filters.append(E.field("commit") == E.scalar(snapshot.commit))
+    if "kind" in frame.column_names:
+        filters.append(E.in_("kind", ["function", "method"]))
+    if filters:
+        plan = plan.filter(E.and_(*filters))
+    plan = plan.project({name: E.field(name) for name in required})
+    aggregates: list[tuple[str, str, None, str]] = []
+    for name in required:
+        if name == "goid_h128":
+            continue
+        agg_fn = "max" if name == "end_line" else "min"
+        aggregates.append((name, agg_fn, None, name))
+    plan = plan.aggregate(keys=[E.field("goid_h128")], aggregates=aggregates)
+    plan = plan.order_by(
+        sort_keys=[
+            ("rel_path", "ascending"),
+            ("start_line", "ascending"),
+            ("goid_h128", "ascending"),
+        ]
+    )
+    return materialize_plan(plan, use_threads=True)
 
 
 __all__ = [

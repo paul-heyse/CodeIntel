@@ -21,6 +21,7 @@ from codeintel.core.schemas.arrow_gen import (
     EXTRAS_POLICIES,
 )
 from codeintel.core.schemas.primitives import Column, TableSchema, column_type_base
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.validation.profiles import (
     ValidationProfile,
     normalize_validation_profile,
@@ -449,6 +450,19 @@ def list_alignment_specs_for_table_key(table_key: str) -> tuple[ListAlignmentSpe
     tuple[ListAlignmentSpec, ...]
         List alignment specifications for the table key.
     """
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        schema = None
+    policy = schema.finalize_policy if schema is not None else None
+    if policy is not None and policy.invariants:
+        resolved = tuple(
+            ListAlignmentSpec(inv.column, inv.related)
+            for inv in policy.invariants
+            if inv.kind == "list_alignment"
+        )
+        if resolved:
+            return resolved
     return _LIST_ALIGNMENT_SPECS.get(table_key, ())
 
 

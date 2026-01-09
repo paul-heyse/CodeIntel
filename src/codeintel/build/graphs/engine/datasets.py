@@ -14,10 +14,11 @@ import pyarrow.dataset as ds
 
 from codeintel.build.graphs.assembly import iter_normalized_tuples
 from codeintel.build.scopes.snapshot import SnapshotScanContext
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_reader
-from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan
+from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan_for_context
 from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
-from codeintel.core.columnar.streaming import scan_telemetry
+from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.runtime.loader import load_runtime_settings
@@ -53,6 +54,7 @@ class SnapshotScanRequest:
     implicit_ordering: bool | None = True
     require_sequenced_output: bool | None = True
     metrics_enabled: bool = True
+    execution_ctx: ExecutionContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,13 +257,6 @@ def scan_snapshot_reader(
         settings=load_runtime_settings().build.arrow_scan,
     )
     filter_expression = scan_ctx.filter_expr(dataset.schema) if request.apply_filter else None
-    if request.metrics_enabled:
-        _log_scan_telemetry(
-            dataset,
-            table_key=request.table_key,
-            snapshot_id=request.snapshot_id,
-            filter_expression=filter_expression,
-        )
     resolved_columns = _resolve_columns(dataset, request.columns)
     if resolved_columns is None and request.columns is not None:
         return None
@@ -270,13 +265,25 @@ def scan_snapshot_reader(
         columns=resolved_columns,
         predicate=filter_expression,
     )
+    if request.metrics_enabled:
+        _log_scan_telemetry(
+            dataset,
+            table_key=request.table_key,
+            snapshot_id=request.snapshot_id,
+            query_spec=query_spec,
+        )
     options = QueryPlanOptions(
         provenance=request.provenance,
         implicit_ordering=request.implicit_ordering,
         require_sequenced_output=request.require_sequenced_output,
     )
-    plan = build_query_plan(dataset, spec=query_spec, options=options)
-    use_threads = request.use_threads if request.use_threads is not None else True
+    plan = build_query_plan_for_context(
+        dataset,
+        spec=query_spec,
+        ctx=request.execution_ctx,
+        options=options,
+    )
+    use_threads = _resolve_use_threads(request)
     return plan.to_reader(use_threads=use_threads)
 
 
@@ -381,17 +388,30 @@ def _log_scan_telemetry(
     *,
     table_key: str,
     snapshot_id: str,
-    filter_expression: pc.Expression | None,
+    query_spec: QuerySpec,
 ) -> None:
-    telemetry = scan_telemetry(dataset, filter_expression=filter_expression)
+    telemetry = scan_telemetry_for_queryspec(dataset, spec=query_spec)
     LOG.debug(
         "Dataset scan telemetry table=%s snapshot=%s fragments=%s rows=%s filter=%s",
         table_key,
         snapshot_id,
         telemetry.fragment_count,
         telemetry.estimated_rows,
-        filter_expression,
+        query_spec.pushdown_predicate or query_spec.predicate,
     )
+
+
+def _resolve_use_threads(request: SnapshotScanRequest) -> bool:
+    if request.use_threads is not None:
+        return request.use_threads
+    ctx = request.execution_ctx
+    if ctx is None:
+        return True
+    resolved = ctx.use_threads
+    profile = ctx.runtime_profile
+    if profile is not None:
+        resolved = profile.resolve_use_threads(default=resolved)
+    return resolved
 
 
 __all__ = [

@@ -818,12 +818,13 @@ def _finalize_reader_table(
         ),
     )
     try:
-        return run_pipeline(
-            plan=ExecutionPlan(inner=_read_table),
+        result = run_pipeline(
+            plan=ExecutionPlan(table_thunk=_read_table),
             post=[_with_engine_context],
             finalize=finalize_spec,
             ctx=execution_ctx,
         )
+        return result.good
     except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         return None
 

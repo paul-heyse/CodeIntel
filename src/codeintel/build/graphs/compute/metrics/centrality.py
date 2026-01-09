@@ -15,8 +15,12 @@ from codeintel.build.graphs.rx.algos import (
     constraint_by_id,
     ensure_store,
     graph_node_count,
+    resolve_weight_epsilon,
+    resolve_weight_semantics,
 )
-from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
+from codeintel.build.graphs.rx.iterators import iter_edge_payloads
+from codeintel.build.graphs.rx.normalize import sorted_mapping
+from codeintel.build.graphs.rx.weights import edge_strength_from_payload
 from codeintel.core.compute.centrality import (
     compute_betweenness,
     compute_closeness,
@@ -65,11 +69,12 @@ def _betweenness_sample(graph: GraphInput, ctx: GraphContext) -> int | None:
     return ctx.betweenness_sample
 
 
-def _coerce_edge_weight(value: object) -> int:
-    return int(edge_weight_from_payload(value))
-
-
-def neighbor_stats(graph: GraphInput, *, weight: str | None = None) -> NeighborStats:
+def neighbor_stats(
+    graph: GraphInput,
+    *,
+    weight: str | None = None,
+    algo_config: GraphAlgoConfig | None = None,
+) -> NeighborStats:
     """Accumulate neighbor sets and weighted edge counts.
 
     Returns
@@ -83,11 +88,19 @@ def neighbor_stats(graph: GraphInput, *, weight: str | None = None) -> NeighborS
     in_counts: dict[Any, int] = {}
     out_counts: dict[Any, int] = {}
 
-    for src_idx, dst_idx in store.graph.edge_list():
+    resolved_nan_policy = store.numeric_policy.nan_policy
+    semantics = resolve_weight_semantics(store, algo_config)
+    epsilon = resolve_weight_epsilon(algo_config)
+    for src_idx, dst_idx, payload in iter_edge_payloads(store):
+        edge_weight = edge_strength_from_payload(
+            payload,
+            nan_policy=resolved_nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
+        weight_val = int(edge_weight)
         src_id = store.index_to_id[src_idx]
         dst_id = store.index_to_id[dst_idx]
-        payload = store.graph.get_edge_data(src_idx, dst_idx)
-        weight_val = _coerce_edge_weight(payload)
         out_neighbors.setdefault(src_id, set()).add(dst_id)
         in_neighbors.setdefault(dst_id, set()).add(src_id)
         out_counts[src_id] = out_counts.get(src_id, 0) + weight_val
@@ -150,11 +163,11 @@ def centrality_directed(
             log.warning("Eigenvector centrality did not converge for graph=%s", graph)
 
     return CentralityBundle(
-        pagerank=pagerank,
-        betweenness=betweenness,
-        closeness=closeness,
-        harmonic=harmonic,
-        eigenvector=eigenvector,
+        pagerank=sorted_mapping(pagerank),
+        betweenness=sorted_mapping(betweenness),
+        closeness=sorted_mapping(closeness),
+        harmonic=sorted_mapping(harmonic),
+        eigenvector=sorted_mapping(eigenvector),
     )
 
 
@@ -213,11 +226,11 @@ def centrality_undirected(
             log.warning("Structural holes calculation failed for graph=%s", graph)
 
     return CentralityBundle(
-        pagerank=pagerank,
-        betweenness=betweenness,
-        closeness=closeness,
-        harmonic=harmonic,
-        eigenvector=eigenvector,
+        pagerank=sorted_mapping(pagerank),
+        betweenness=sorted_mapping(betweenness),
+        closeness=sorted_mapping(closeness),
+        harmonic=sorted_mapping(harmonic),
+        eigenvector=sorted_mapping(eigenvector),
     )
 
 

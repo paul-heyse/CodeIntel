@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -17,7 +17,9 @@ from codeintel.build.analytics.utilities.ast import (
     literal_value,
     safe_unparse,
 )
+from codeintel.build.analytics.utilities.snapshot import snapshot_table
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.core.columnar.dedupe_ops import dedupe_keep_first_after_sort
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
@@ -188,14 +190,22 @@ def _doc_map_from_frame(
 ) -> dict[tuple[str, str], dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    has_repo = "repo" in frame.column_names
-    has_commit = "commit" in frame.column_names
+    required = {"rel_path", "qualname"}
+    if not required.issubset(frame.column_names):
+        return {}
+    columns = ("rel_path", "qualname", "params", "returns")
+    table = _scoped_table(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=columns,
+        order_by=("rel_path", "qualname"),
+    )
+    if table.num_rows == 0:
+        return {}
+    table = dedupe_keep_first_after_sort(table, key_columns=("rel_path", "qualname"))
     mapping: dict[tuple[str, str], dict[str, object]] = {}
-    for row in iter_rows(frame):
-        if has_repo and row.get("repo") != repo:
-            continue
-        if has_commit and row.get("commit") != commit:
-            continue
+    for row in iter_rows(table, columns):
         rel_path = row.get("rel_path")
         qualname = row.get("qualname")
         if not isinstance(rel_path, str) or not isinstance(qualname, str):
@@ -217,14 +227,25 @@ def _type_map_from_frame(
 ) -> dict[int, dict[str, object]]:
     if frame is None or frame.num_rows == 0:
         return {}
-    has_repo = "repo" in frame.column_names
-    has_commit = "commit" in frame.column_names
+    if "function_goid_h128" not in frame.column_names:
+        return {}
+    columns = ["function_goid_h128", "return_type"]
+    if "extras" in frame.column_names:
+        columns.append("extras")
+    if "param_types" in frame.column_names:
+        columns.append("param_types")
+    table = _scoped_table(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=tuple(columns),
+        order_by=("function_goid_h128",),
+    )
+    if table.num_rows == 0:
+        return {}
+    table = dedupe_keep_first_after_sort(table, key_columns=("function_goid_h128",))
     mapping: dict[int, dict[str, object]] = {}
-    for row in iter_rows(frame):
-        if has_repo and row.get("repo") != repo:
-            continue
-        if has_commit and row.get("commit") != commit:
-            continue
+    for row in iter_rows(table, columns):
         goid = normalize_decimal_id(row.get("function_goid_h128"))
         if goid is None:
             continue
@@ -239,6 +260,23 @@ def _type_map_from_frame(
             "param_types": _coerce_json(param_types) or {},
         }
     return mapping
+
+
+def _scoped_table(
+    frame: pa.Table,
+    *,
+    repo: str,
+    commit: str,
+    columns: Sequence[str],
+    order_by: Sequence[str] | None,
+) -> pa.Table:
+    return snapshot_table(
+        frame,
+        repo=repo,
+        commit=commit,
+        columns=columns,
+        order_by=order_by,
+    )
 
 
 def _coerce_json(value: object) -> object:

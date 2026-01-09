@@ -12,32 +12,30 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 from sqlglot import exp
 
-from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.core.columnar.conversion import record_batch_reader_from_iterable, table_to_reader
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
-from codeintel.core.columnar.kernels import SortKey
-from codeintel.core.columnar.readers import empty_reader_from_schema
-from codeintel.core.columnar.rows import table_for_rows
-
-if TYPE_CHECKING:
-    from codeintel.build.analytics.utilities.persistence import DeleteScope
-    from codeintel.core.gateway import BuildGateway
-    from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.core.schemas.primitives import ColumnType, TableSchema
-    from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
-
+from codeintel.build.analytics.utilities.finalize import finalize_analytics_result
+from codeintel.build.analytics.utilities.snapshot import (
+    snapshot_plan as _snapshot_plan,
+)
+from codeintel.build.analytics.utilities.snapshot import (
+    snapshot_table as _snapshot_table,
+)
 from codeintel.build.schemas import (
     ContractResolutionMode,
     ContractResolutionSettings,
     get_contract_for_table_key,
 )
+from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.plan_ops import Plan
 from codeintel.build.validation.columnar import ColumnarValidationContext, validate_table
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.core.columnar.conversion import record_batch_reader_from_iterable, table_to_reader
+from codeintel.core.columnar.readers import empty_reader_from_schema
+from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
@@ -48,10 +46,57 @@ from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.validation.profiles import ValidationProfile
 
+if TYPE_CHECKING:
+    from codeintel.build.analytics.utilities.persistence import DeleteScope
+    from codeintel.core.gateway import BuildGateway
+    from codeintel.core.schemas.contract_primitives import DatasetContract
+    from codeintel.core.schemas.primitives import ColumnType, TableSchema
+    from codeintel.core.schemas.schema_catalog_models import SchemaObservationRecord
+
 LOG = logging.getLogger(__name__)
-ORDER_ASC: Final = "ascending"
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
+
+
+def snapshot_plan(
+    table: pa.Table,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+    columns: Sequence[str] | None = None,
+) -> Plan:
+    """Return a snapshot-scoped Plan for analytics tables.
+
+    Returns
+    -------
+    Plan
+        Snapshot-scoped plan with optional projection applied.
+    """
+    return _snapshot_plan(table, repo=repo, commit=commit, columns=columns)
+
+
+def snapshot_table(
+    table: pa.Table,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+    columns: Sequence[str] | None = None,
+    order_by: Sequence[str] | None = None,
+) -> pa.Table:
+    """Materialize a snapshot-scoped Plan with optional ordering.
+
+    Returns
+    -------
+    pyarrow.Table
+        Snapshot-scoped table, optionally ordered.
+    """
+    return _snapshot_table(
+        table,
+        repo=repo,
+        commit=commit,
+        columns=columns,
+        order_by=order_by,
+    )
 
 
 def _table_supports_snapshot_delete(table_key: str) -> bool:
@@ -298,15 +343,7 @@ def _finalize_rows_for_parquet(
 ) -> tuple[pa.RecordBatchReader, tuple[str, ...] | None]:
     table, _ = table_for_rows(table_key, rows)
     stable_sort_keys = resolve_stable_sort_keys(table_schema)
-    order_by = _order_by_for_keys(stable_sort_keys)
-    result = finalize_table(
-        table,
-        spec=FinalizeSpec(
-            table_key=table_key,
-            mode="tolerant",
-            order_by=order_by,
-        ),
-    )
+    result = finalize_analytics_result(table_key, table)
     if result.errors.num_rows:
         LOG.warning(
             "Finalize produced %d error rows for %s; persisting good rows only",
@@ -346,14 +383,6 @@ def _parquet_write_options(
         schema_metadata=metadata,
         stable_sort_keys=stable_sort_keys,
     )
-
-
-def _order_by_for_keys(
-    stable_sort_keys: tuple[str, ...] | None,
-) -> tuple[SortKey, ...]:
-    if not stable_sort_keys:
-        return ()
-    return tuple((key, ORDER_ASC) for key in stable_sort_keys)
 
 
 def insert_analytics_rows(
@@ -545,5 +574,7 @@ __all__ = [
     "get_delete_sql_by_table",
     "get_function_ast_features_contract",
     "insert_analytics_rows",
+    "snapshot_plan",
+    "snapshot_table",
     "validate_contract_rows",
 ]

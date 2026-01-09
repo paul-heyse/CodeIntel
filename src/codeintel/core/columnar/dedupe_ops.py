@@ -21,8 +21,14 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 DedupeDeterminism = Literal["best_effort", "stable", "order_independent"]
-DedupeTier = Literal["canonical", "throughput"]
-DedupeStrategy = Literal["order_independent", "first"]
+DedupeTier = Literal["canonical", "stable_set", "best_effort", "throughput"]
+DedupeTierNormalized = Literal["canonical", "stable_set", "best_effort"]
+DedupeStrategy = Literal[
+    "order_independent",
+    "first",
+    "keep_best_by_score",
+    "keep_arbitrary",
+]
 _HASH_ORDINAL_MODULUS = 2**31 - 1
 
 
@@ -33,7 +39,7 @@ class DedupeSpec:
     keys: Sequence[str] = ()
     prefer_columns: Sequence[str] = ()
     tie_breakers: Sequence[SortKey] = ()
-    tier: DedupeTier = "canonical"
+    tier: DedupeTier = "stable_set"
     strategy: DedupeStrategy = "order_independent"
 
 
@@ -242,11 +248,28 @@ def _require_key_columns(
 
 
 def _determinism_for_spec(spec: DedupeSpec) -> DedupeDeterminism:
+    if spec.strategy == "keep_arbitrary":
+        return "best_effort"
     if spec.strategy == "order_independent":
         return "order_independent"
-    if spec.tie_breakers:
+    if spec.tie_breakers or spec.prefer_columns:
         return "stable"
     return "best_effort"
+
+
+def normalize_dedupe_tier(tier: DedupeTier | None) -> DedupeTierNormalized:
+    """Return a normalized dedupe tier for policy enforcement.
+
+    Returns
+    -------
+    DedupeTierNormalized
+        Normalized tier value used by enforcement logic.
+    """
+    if tier is None:
+        return "stable_set"
+    if tier == "throughput":
+        return "stable_set"
+    return tier
 
 
 def _dedupe_table_via_compute(
@@ -275,6 +298,80 @@ def _dedupe_table_via_compute(
         return None
 
 
+def _dedupe_with_spec(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+    spec: DedupeSpec,
+) -> pa.Table:
+    resolved_keys = list(spec.keys) if spec.keys else list(key_columns)
+    _require_key_columns(table, key_columns=resolved_keys)
+    prefer = tuple(name for name in spec.prefer_columns if name in table.column_names)
+    tie_breakers: tuple[SortKey, ...] = tuple(spec.tie_breakers)
+    determinism = _determinism_for_spec(spec)
+    resolved_tier = normalize_dedupe_tier(spec.tier)
+    if spec.strategy in {"first", "keep_best_by_score"}:
+        if spec.strategy == "keep_best_by_score" and not (prefer or tie_breakers):
+            msg = "keep_best_by_score requires prefer_columns or tie_breakers."
+            raise ValueError(msg)
+        return dedupe_keep_first_after_sort(
+            table,
+            key_columns=resolved_keys,
+            prefer_columns=prefer,
+            tie_breakers=tie_breakers,
+            require_tie_breakers=resolved_tier == "canonical",
+        )
+    if spec.strategy == "keep_arbitrary":
+        return _drop_duplicates(table, key_columns=resolved_keys)
+    if determinism != "best_effort":
+        sort_keys = _dedupe_sort_keys(
+            table,
+            key_columns=resolved_keys,
+            prefer_columns=prefer,
+            tie_breakers=tie_breakers,
+        )
+        table = _stable_sort_for_dedupe(
+            table,
+            sort_keys=sort_keys,
+            hash_tiebreaker=determinism == "order_independent",
+        )
+    elif prefer:
+        table = _sort_table_for_preference(table, prefer)
+    return _drop_duplicates(table, key_columns=resolved_keys)
+
+
+def _dedupe_with_legacy(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+    legacy: DedupeLegacy,
+) -> pa.Table:
+    _require_key_columns(table, key_columns=key_columns)
+    if legacy.determinism != "best_effort":
+        resolved_tie_breakers = _require_tie_breakers(
+            table,
+            tie_breakers=_ascending_sort_keys(legacy.tie_breaker_columns),
+        )
+        prefer = tuple(name for name in legacy.prefer_columns if name in table.column_names)
+        sort_keys = _dedupe_sort_keys(
+            table,
+            key_columns=key_columns,
+            prefer_columns=prefer,
+            tie_breakers=resolved_tie_breakers,
+        )
+        table = _stable_sort_for_dedupe(
+            table,
+            sort_keys=sort_keys,
+            hash_tiebreaker=legacy.determinism == "order_independent",
+        )
+    elif legacy.prefer_columns:
+        column_set = set(table.column_names)
+        prefer = [name for name in legacy.prefer_columns if name in column_set]
+        if prefer:
+            table = _sort_table_for_preference(table, prefer)
+    return _drop_duplicates(table, key_columns=key_columns)
+
+
 def dedupe_table_for_table(
     table_key: str,
     table: pa.Table,
@@ -288,6 +385,7 @@ def dedupe_table_for_table(
     -------
     pa.Table
         Table with duplicate primary-key rows removed.
+
     """
     schema_service = get_schema_service()
     schema = schema_service.get_table_schema(table_key)
@@ -295,62 +393,9 @@ def dedupe_table_for_table(
         return table
     key_columns = list(schema.primary_key)
     if spec is not None:
-        key_columns = list(spec.keys) if spec.keys else key_columns
-        _require_key_columns(table, key_columns=key_columns)
-        prefer = tuple(name for name in spec.prefer_columns if name in table.column_names)
-        tie_breakers: tuple[SortKey, ...] = tuple(spec.tie_breakers)
-        determinism = _determinism_for_spec(spec)
-        if spec.strategy == "first":
-            return dedupe_keep_first_after_sort(
-                table,
-                key_columns=key_columns,
-                prefer_columns=prefer,
-                tie_breakers=tie_breakers,
-                require_tie_breakers=spec.tier == "canonical",
-            )
-        if determinism != "best_effort":
-            sort_keys = _dedupe_sort_keys(
-                table,
-                key_columns=key_columns,
-                prefer_columns=prefer,
-                tie_breakers=tie_breakers,
-            )
-            table = _stable_sort_for_dedupe(
-                table,
-                sort_keys=sort_keys,
-                hash_tiebreaker=determinism == "order_independent",
-            )
-        elif prefer:
-            table = _sort_table_for_preference(table, prefer)
-        return _drop_duplicates(table, key_columns=key_columns)
-    _require_key_columns(table, key_columns=key_columns)
+        return _dedupe_with_spec(table, key_columns=key_columns, spec=spec)
     resolved_legacy = legacy or DedupeLegacy()
-    if resolved_legacy.determinism != "best_effort":
-        resolved_tie_breakers = _require_tie_breakers(
-            table,
-            tie_breakers=_ascending_sort_keys(resolved_legacy.tie_breaker_columns),
-        )
-        prefer = tuple(
-            name for name in resolved_legacy.prefer_columns if name in table.column_names
-        )
-        sort_keys = _dedupe_sort_keys(
-            table,
-            key_columns=key_columns,
-            prefer_columns=prefer,
-            tie_breakers=resolved_tie_breakers,
-        )
-        table = _stable_sort_for_dedupe(
-            table,
-            sort_keys=sort_keys,
-            hash_tiebreaker=resolved_legacy.determinism == "order_independent",
-        )
-    elif resolved_legacy.prefer_columns:
-        prefer = [
-            name for name in resolved_legacy.prefer_columns if name in set(table.column_names)
-        ]
-        if prefer:
-            table = _sort_table_for_preference(table, prefer)
-    return _drop_duplicates(table, key_columns=key_columns)
+    return _dedupe_with_legacy(table, key_columns=key_columns, legacy=resolved_legacy)
 
 
 def _drop_duplicates(
@@ -383,6 +428,8 @@ __all__ = [
     "DedupeSpec",
     "DedupeStrategy",
     "DedupeTier",
+    "DedupeTierNormalized",
     "dedupe_keep_first_after_sort",
     "dedupe_table_for_table",
+    "normalize_dedupe_tier",
 ]

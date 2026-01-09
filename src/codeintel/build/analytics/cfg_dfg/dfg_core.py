@@ -12,8 +12,8 @@ import rustworkx as rx
 
 from codeintel.build.analytics.cfg_dfg.helpers import (
     degree_dict,
+    dfg_edges_rowset,
     parse_block_idx,
-    prefilter_table,
 )
 from codeintel.build.analytics.compute.graphs import (
     bounded_simple_path_count,
@@ -100,35 +100,42 @@ def load_dfg_edges(
         Mapping of GOID -> edge tuples.
     """
     edges_by_fn: dict[int, list[tuple[int, int, str, str, bool, str]]] = defaultdict(list)
-    filtered_edges = prefilter_table(
-        dfg_edges_frame,
-        repo=repo,
-        commit=commit,
-        require_valid=("function_goid_h128", "src_block_id", "dst_block_id", "src_var", "dst_var"),
-    )
-    for row in iter_rows(filtered_edges):
+    edges_table = dfg_edges_rowset(dfg_edges_frame, repo=repo, commit=commit)
+    for row in iter_rows(edges_table):
         fn_id = normalize_decimal_id(row.get("function_goid_h128"))
         if fn_id is None:
             continue
-        src_idx = parse_block_idx(_coerce_block_id(row.get("src_block_id")))
-        dst_idx = parse_block_idx(_coerce_block_id(row.get("dst_block_id")))
-        if src_idx is None or dst_idx is None:
-            continue
-        src_var = row.get("src_var")
-        dst_var = row.get("dst_var")
-        if not isinstance(src_var, str) or not isinstance(dst_var, str):
-            continue
-        use_kind = row.get("use_kind")
-        edges_by_fn[int(fn_id)].append(
-            (
-                src_idx,
-                dst_idx,
-                src_var,
-                dst_var,
-                bool(row.get("via_phi")),
-                str(use_kind) if use_kind is not None else "unknown",
+        src_values = _list_values(row.get("src_block_id"))
+        dst_values = _list_values(row.get("dst_block_id"))
+        src_vars = _list_values(row.get("src_var"))
+        dst_vars = _list_values(row.get("dst_var"))
+        via_phi_values = _list_values(row.get("via_phi"))
+        use_kinds = _list_values(row.get("use_kind"))
+        for src_raw, dst_raw, src_var, dst_var, via_phi, use_kind in zip(
+            src_values,
+            dst_values,
+            src_vars,
+            dst_vars,
+            via_phi_values,
+            use_kinds,
+            strict=False,
+        ):
+            src_idx = parse_block_idx(_coerce_block_id(src_raw))
+            dst_idx = parse_block_idx(_coerce_block_id(dst_raw))
+            if src_idx is None or dst_idx is None:
+                continue
+            if not isinstance(src_var, str) or not isinstance(dst_var, str):
+                continue
+            edges_by_fn[int(fn_id)].append(
+                (
+                    src_idx,
+                    dst_idx,
+                    src_var,
+                    dst_var,
+                    bool(via_phi),
+                    str(use_kind) if use_kind is not None else "unknown",
+                )
             )
-        )
     return edges_by_fn
 
 
@@ -136,6 +143,14 @@ def _coerce_block_id(value: object) -> str | int | None:
     if isinstance(value, (str, int)):
         return value
     return None
+
+
+def _list_values(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
 
 
 def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:

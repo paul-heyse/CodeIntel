@@ -12,9 +12,9 @@ from codeintel.build.hamilton.native.graphs.cpg.constants import (
     CPG_TARGET_NAME,
 )
 from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
-from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.core.columnar.arrowdsl import project_struct_fields
 from codeintel.core.columnar.rows import empty_table_for_table
 
 SortDirection = Literal["ascending", "descending"]
@@ -90,18 +90,17 @@ def finalize_cpg_edge_rows(
     if exploded.good.num_rows == 0:
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
 
-    projection = {name: E.field(("edge", name)) for name in _CPG_EDGE_FIELDS}
+    projection = project_struct_fields("edge", _CPG_EDGE_FIELDS)
     plan = Plan.table(exploded.good).project(projection)
-    resolved_sort_keys = sort_keys if sort_keys is not None else _DEFAULT_SORT_KEYS
-    if resolved_sort_keys:
-        plan = plan.order_by(sort_keys=list(resolved_sort_keys))
     edges = materialize_plan(plan, use_threads=True)
+    resolved_sort_keys = sort_keys if sort_keys is not None else _DEFAULT_SORT_KEYS
 
     result = finalize_table(
         edges,
         spec=FinalizeSpec(
             table_key=CPG_EDGES_TABLE_KEY,
             mode="strict",
+            order_by=resolved_sort_keys,
             target_name=CPG_TARGET_NAME,
         ),
     )

@@ -14,6 +14,7 @@ from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.normalization import normalize_table_for_compute
+from codeintel.core.columnar.ordering import OrderingSpec, SortKey
 from codeintel.core.columnar.queryspec import QuerySpec
 
 if TYPE_CHECKING:
@@ -55,6 +56,10 @@ class Plan:
 
     declaration: acero.Declaration
     schema: pa.Schema | None = None
+    ordering: OrderingSpec | None = None
+
+    def _resolved_ordering(self) -> OrderingSpec:
+        return self.ordering or OrderingSpec.unordered(reason="unspecified")
 
     @classmethod
     def scan(
@@ -97,7 +102,11 @@ class Plan:
             kwargs["require_sequenced_output"] = require_sequenced_output
         options = acero.ScanNodeOptions(dataset, **kwargs)
         decl = acero.Declaration("scan", options)
-        return cls(decl, schema=dataset.schema)
+        if implicit_ordering:
+            ordering = OrderingSpec.implicit(reason="scan implicit ordering")
+        else:
+            ordering = OrderingSpec.unordered(reason="scan unordered")
+        return cls(decl, schema=dataset.schema, ordering=ordering)
 
     @classmethod
     def table(cls, table: pa.Table) -> Plan:
@@ -114,7 +123,8 @@ class Plan:
             Plan seeded with a table_source declaration.
         """
         decl = acero.Declaration("table_source", acero.TableSourceNodeOptions(table))
-        return cls(decl, schema=table.schema)
+        ordering = OrderingSpec.implicit(reason="table source ordering")
+        return cls(decl, schema=table.schema, ordering=ordering)
 
     @classmethod
     def from_sequence(cls, plans: Sequence[Plan]) -> Plan:
@@ -132,7 +142,8 @@ class Plan:
         """
         declarations = [plan.declaration for plan in plans]
         decl = acero.Declaration.from_sequence(declarations)
-        return cls(decl)
+        ordering = plans[-1].ordering if plans else None
+        return cls(decl, ordering=ordering)
 
     def project(
         self,
@@ -161,7 +172,7 @@ class Plan:
             expr_list = list(expressions)
         options = acero.ProjectNodeOptions(expr_list, names=names)
         decl = acero.Declaration("project", options, inputs=[self.declaration])
-        return Plan(decl)
+        return Plan(decl, ordering=self._resolved_ordering())
 
     def filter(self, expr: pc.Expression) -> Plan:
         """Filter rows by an expression.
@@ -178,7 +189,7 @@ class Plan:
         """
         options = acero.FilterNodeOptions(expr)
         decl = acero.Declaration("filter", options, inputs=[self.declaration])
-        return Plan(decl)
+        return Plan(decl, ordering=self._resolved_ordering())
 
     def aggregate(
         self,
@@ -202,7 +213,11 @@ class Plan:
         """
         options = acero.AggregateNodeOptions(aggregates=list(aggregates), keys=keys)
         decl = acero.Declaration("aggregate", options, inputs=[self.declaration])
-        return Plan(decl)
+        ordering = OrderingSpec.unordered(
+            reason="aggregate pipeline breaker",
+            pipeline_breaker=True,
+        )
+        return Plan(decl, ordering=ordering)
 
     def hash_join(
         self,
@@ -239,12 +254,13 @@ class Plan:
             options,
             inputs=[self.declaration, right.declaration],
         )
-        return Plan(decl)
+        ordering = OrderingSpec.unordered(reason="hash join output")
+        return Plan(decl, ordering=ordering)
 
     def order_by(
         self,
         *,
-        sort_keys: Sequence[tuple[str, str]],
+        sort_keys: Sequence[SortKey],
         null_placement: str = "at_end",
     ) -> Plan:
         """Apply an order_by node for deterministic ordering.
@@ -266,7 +282,12 @@ class Plan:
             null_placement=null_placement,
         )
         decl = acero.Declaration("order_by", options, inputs=[self.declaration])
-        return Plan(decl)
+        ordering = OrderingSpec.explicit(
+            keys=sort_keys,
+            reason="order_by explicit ordering",
+            pipeline_breaker=True,
+        )
+        return Plan(decl, ordering=ordering)
 
     def to_table(self, *, use_threads: bool = True) -> pa.Table:
         """Materialize the plan as an Arrow table.
@@ -334,7 +355,7 @@ class ScanPlanOptions:
     filter_expr: pc.Expression | None = None
     implicit_ordering: bool | None = None
     require_sequenced_output: bool | None = None
-    order_by: Sequence[tuple[str, str]] | None = None
+    order_by: Sequence[SortKey] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -344,7 +365,7 @@ class QueryPlanOptions:
     provenance: bool = False
     implicit_ordering: bool | None = None
     require_sequenced_output: bool | None = None
-    order_by: Sequence[tuple[str, str]] | None = None
+    order_by: Sequence[SortKey] | None = None
 
 
 def query_plan_options_for_context(
@@ -362,9 +383,28 @@ def query_plan_options_for_context(
     resolved = options or QueryPlanOptions()
     if ctx is None:
         return resolved
-    if resolved.provenance or not ctx.provenance:
+    provenance = resolved.provenance or ctx.provenance
+    implicit_ordering = resolved.implicit_ordering
+    require_sequenced_output = resolved.require_sequenced_output
+    profile = ctx.runtime_profile
+    if profile is not None:
+        provenance = profile.resolve_provenance(default=provenance)
+        implicit_ordering = profile.resolve_implicit_ordering(default=implicit_ordering)
+        require_sequenced_output = profile.resolve_require_sequenced_output(
+            default=require_sequenced_output
+        )
+    if (
+        provenance == resolved.provenance
+        and implicit_ordering == resolved.implicit_ordering
+        and require_sequenced_output == resolved.require_sequenced_output
+    ):
         return resolved
-    return replace(resolved, provenance=True)
+    return replace(
+        resolved,
+        provenance=provenance,
+        implicit_ordering=implicit_ordering,
+        require_sequenced_output=require_sequenced_output,
+    )
 
 
 def build_scan_plan(

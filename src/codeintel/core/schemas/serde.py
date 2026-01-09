@@ -8,8 +8,17 @@ from typing import cast, get_args
 from codeintel.core.schemas.primitives import (
     Column,
     ColumnType,
+    FinalizeDedupeSpec,
+    FinalizeDedupeStrategy,
+    FinalizeDedupeTier,
+    FinalizeInvariantKind,
+    FinalizeInvariantSpec,
+    FinalizeListPolicySpec,
+    FinalizeNullListPolicy,
+    FinalizePolicy,
     Index,
     ReplaceScope,
+    SortDirection,
     TableSchema,
     TableWritePolicy,
     WriteMode,
@@ -70,6 +79,8 @@ def table_schema_to_json_obj(schema: TableSchema) -> dict[str, object]:
         payload["description"] = schema.description
     if schema.write_policy is not None:
         payload["write_policy"] = _write_policy_to_json_obj(schema.write_policy)
+    if schema.finalize_policy is not None:
+        payload["finalize_policy"] = schema.finalize_policy.to_json_obj()
     return payload
 
 
@@ -177,6 +188,188 @@ def _parse_write_policy(value: object) -> TableWritePolicy:
     )
 
 
+def _parse_sort_direction(value: object, *, field: str) -> SortDirection:
+    direction = _require_str(value, field=field)
+    if direction not in cast("tuple[str, ...]", get_args(SortDirection)):
+        msg = f"Unsupported sort direction: {direction}"
+        raise ValueError(msg)
+    return cast("SortDirection", direction)
+
+
+def _parse_finalize_null_policy(value: object, *, field: str) -> FinalizeNullListPolicy:
+    policy = _require_str(value, field=field)
+    if policy not in cast("tuple[str, ...]", get_args(FinalizeNullListPolicy)):
+        msg = f"Unsupported null list policy: {policy}"
+        raise ValueError(msg)
+    return cast("FinalizeNullListPolicy", policy)
+
+
+def _parse_finalize_invariant_kind(value: object, *, field: str) -> FinalizeInvariantKind:
+    kind = _require_str(value, field=field)
+    if kind not in cast("tuple[str, ...]", get_args(FinalizeInvariantKind)):
+        msg = f"Unsupported invariant kind: {kind}"
+        raise ValueError(msg)
+    return cast("FinalizeInvariantKind", kind)
+
+
+def _parse_finalize_dedupe_tier(value: object, *, field: str) -> FinalizeDedupeTier:
+    tier = _require_str(value, field=field)
+    if tier not in cast("tuple[str, ...]", get_args(FinalizeDedupeTier)):
+        msg = f"Unsupported dedupe tier: {tier}"
+        raise ValueError(msg)
+    return cast("FinalizeDedupeTier", tier)
+
+
+def _parse_finalize_dedupe_strategy(
+    value: object,
+    *,
+    field: str,
+) -> FinalizeDedupeStrategy:
+    strategy = _require_str(value, field=field)
+    if strategy not in cast("tuple[str, ...]", get_args(FinalizeDedupeStrategy)):
+        msg = f"Unsupported dedupe strategy: {strategy}"
+        raise ValueError(msg)
+    return cast("FinalizeDedupeStrategy", strategy)
+
+
+def _parse_finalize_list_policies(value: object) -> tuple[FinalizeListPolicySpec, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        msg = "Expected list for finalize_policy.list_policies"
+        raise TypeError(msg)
+    policies: list[FinalizeListPolicySpec] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            msg = "Expected object for finalize_policy.list_policies[]"
+            raise TypeError(msg)
+        column = _require_str(item.get("column"), field="finalize_policy.list_policies[].column")
+        null_policy = _parse_finalize_null_policy(
+            item.get("null_policy", "error"),
+            field="finalize_policy.list_policies[].null_policy",
+        )
+        policies.append(FinalizeListPolicySpec(column=column, null_policy=null_policy))
+    return tuple(policies)
+
+
+def _parse_finalize_invariants(value: object) -> tuple[FinalizeInvariantSpec, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        msg = "Expected list for finalize_policy.invariants"
+        raise TypeError(msg)
+    invariants: list[FinalizeInvariantSpec] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            msg = "Expected object for finalize_policy.invariants[]"
+            raise TypeError(msg)
+        kind = _parse_finalize_invariant_kind(
+            item.get("kind"),
+            field="finalize_policy.invariants[].kind",
+        )
+        column = _require_str(item.get("column"), field="finalize_policy.invariants[].column")
+        related_obj = item.get("related", [])
+        if not isinstance(related_obj, list):
+            msg = "Expected list for finalize_policy.invariants[].related"
+            raise TypeError(msg)
+        related = tuple(
+            _require_str(rel, field="finalize_policy.invariants[].related[]") for rel in related_obj
+        )
+        invariants.append(FinalizeInvariantSpec(kind=kind, column=column, related=related))
+    return tuple(invariants)
+
+
+def _parse_finalize_dedupe(value: object) -> FinalizeDedupeSpec | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        msg = "Expected object for finalize_policy.dedupe"
+        raise TypeError(msg)
+    enabled_obj = value.get("enabled", True)
+    enabled = _require_bool(enabled_obj, field="finalize_policy.dedupe.enabled")
+    keys_obj = value.get("keys", [])
+    if not isinstance(keys_obj, list):
+        msg = "Expected list for finalize_policy.dedupe.keys"
+        raise TypeError(msg)
+    prefer_obj = value.get("prefer_columns", [])
+    if not isinstance(prefer_obj, list):
+        msg = "Expected list for finalize_policy.dedupe.prefer_columns"
+        raise TypeError(msg)
+    tie_obj = value.get("tie_breakers", [])
+    if not isinstance(tie_obj, list):
+        msg = "Expected list for finalize_policy.dedupe.tie_breakers"
+        raise TypeError(msg)
+    tie_breakers: list[tuple[str, SortDirection]] = []
+    for item in tie_obj:
+        if not isinstance(item, list) or len(item) != 2 or not isinstance(item[0], str):
+            msg = "Expected [column, direction] for finalize_policy.dedupe.tie_breakers[]"
+            raise TypeError(msg)
+        tie_breakers.append(
+            (
+                _require_str(item[0], field="finalize_policy.dedupe.tie_breakers[].column"),
+                _parse_sort_direction(
+                    item[1],
+                    field="finalize_policy.dedupe.tie_breakers[].direction",
+                ),
+            )
+        )
+    tier_value = value.get("tier")
+    tier = (
+        _parse_finalize_dedupe_tier(tier_value, field="finalize_policy.dedupe.tier")
+        if tier_value is not None
+        else None
+    )
+    strategy_value = value.get("strategy")
+    strategy = (
+        _parse_finalize_dedupe_strategy(strategy_value, field="finalize_policy.dedupe.strategy")
+        if strategy_value is not None
+        else None
+    )
+    return FinalizeDedupeSpec(
+        enabled=enabled,
+        keys=tuple(_require_str(item, field="finalize_policy.dedupe.keys[]") for item in keys_obj),
+        prefer_columns=tuple(
+            _require_str(item, field="finalize_policy.dedupe.prefer_columns[]")
+            for item in prefer_obj
+        ),
+        tie_breakers=tuple(tie_breakers),
+        tier=tier,
+        strategy=strategy,
+    )
+
+
+def _parse_finalize_policy(value: object) -> FinalizePolicy | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        msg = "Expected object for finalize_policy"
+        raise TypeError(msg)
+    required_obj = value.get("required_non_null", [])
+    if not isinstance(required_obj, list):
+        msg = "Expected list for finalize_policy.required_non_null"
+        raise TypeError(msg)
+    canonical_obj = value.get("canonical_sort_keys")
+    if canonical_obj is None:
+        canonical_sort_keys = None
+    else:
+        if not isinstance(canonical_obj, list):
+            msg = "Expected list for finalize_policy.canonical_sort_keys"
+            raise TypeError(msg)
+        canonical_sort_keys = tuple(
+            _require_str(item, field="finalize_policy.canonical_sort_keys[]")
+            for item in canonical_obj
+        )
+    return FinalizePolicy(
+        required_non_null=tuple(
+            _require_str(item, field="finalize_policy.required_non_null[]") for item in required_obj
+        ),
+        list_policies=_parse_finalize_list_policies(value.get("list_policies")),
+        invariants=_parse_finalize_invariants(value.get("invariants")),
+        dedupe=_parse_finalize_dedupe(value.get("dedupe")),
+        canonical_sort_keys=canonical_sort_keys,
+    )
+
+
 def column_from_json_obj(obj: Mapping[str, object]) -> Column:
     """Parse a Column from a JSON object.
 
@@ -277,6 +470,7 @@ def table_schema_from_json_obj(obj: Mapping[str, object]) -> TableSchema:
     description = description_obj if isinstance(description_obj, str) else None
     write_policy_obj = obj.get("write_policy")
     write_policy = _parse_write_policy(write_policy_obj) if write_policy_obj is not None else None
+    finalize_policy = _parse_finalize_policy(obj.get("finalize_policy"))
 
     return TableSchema(
         schema=schema,
@@ -286,6 +480,7 @@ def table_schema_from_json_obj(obj: Mapping[str, object]) -> TableSchema:
         indexes=indexes,
         description=description,
         write_policy=write_policy,
+        finalize_policy=finalize_policy,
     )
 
 

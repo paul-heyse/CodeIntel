@@ -238,6 +238,56 @@ def main() -> int:
             ],
         ),
         CommandSpec(
+            name="dsl_raw_pyarrow_compute",
+            args=[
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "tools.lint_no_raw_pyarrow_compute_in_nodes",
+            ],
+        ),
+        CommandSpec(
+            name="dsl_no_materialize_nodes",
+            args=[
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "tools.lint_no_materialize_in_nodes",
+            ],
+        ),
+        CommandSpec(
+            name="analytics_rowset_guardrails",
+            args=[
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "tools.lint_analytics_rowset_guardrails",
+            ],
+        ),
+        CommandSpec(
+            name="analytics_finalize_writes",
+            args=[
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "tools.lint_analytics_finalize_writes",
+            ],
+        ),
+        CommandSpec(
+            name="analytics_iter_rows_guardrail",
+            args=[
+                "uv",
+                "run",
+                "python",
+                "-m",
+                "tools.lint_analytics_iter_rows",
+            ],
+        ),
+        CommandSpec(
             name="schema_diff",
             args=["uv", "run", "python", "-m", "tools.schema_diff"],
         ),
