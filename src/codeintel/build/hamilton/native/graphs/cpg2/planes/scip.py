@@ -22,14 +22,14 @@ from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cp
 from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
+from codeintel.build.tabular.compute_masks import is_valid_expr
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
-    FinalizeSpec,
     finalize_join_keys,
+    finalize_spec_for_table,
     finalize_table,
     record_join_precheck_errors,
 )
@@ -162,8 +162,8 @@ def _precheck_join_table(
     else:
         result = finalize_table(
             table,
-            spec=FinalizeSpec(
-                table_key=table_key,
+            spec=finalize_spec_for_table(
+                table_key,
                 mode="tolerant",
                 required_non_null=join_keys,
                 key_fields=join_keys,
@@ -584,24 +584,14 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
     if not required.issubset(set(table.column_names)):
         return table
 
-    def _mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
-        return and_kleene(
-            is_valid_mask(target.column("src_cpg_node_id")),
-            is_valid_mask(target.column("dst_cpg_node_id")),
-        )
-
     expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-    return plan_filter_or_fallback(table, expr, fallback_mask=_mask)
+    return plan_filter_or_fallback(table, expr)
 
 
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     if "cpg_node_id" not in table.column_names:
         return table
-
-    def _mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
-        return is_valid_mask(target.column("cpg_node_id"))
-
-    return plan_filter_or_fallback(table, is_valid_expr("cpg_node_id"), fallback_mask=_mask)
+    return plan_filter_or_fallback(table, is_valid_expr("cpg_node_id"))
 
 
 def _symbol_key_set(table: pa.Table) -> set[tuple[str, str, str]]:

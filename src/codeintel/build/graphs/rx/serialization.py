@@ -64,21 +64,27 @@ def _unpack_payload(data: Mapping[str, str] | None) -> object | None:
     if not data:
         return None
     payload = data.get(_PAYLOAD_KEY)
+    result: object | None
     if isinstance(payload, str):
         try:
-            return json.loads(payload)
+            result = json.loads(payload)
         except json.JSONDecodeError:
-            return payload
-    raw = data.get(_LEGACY_DATA_KEY)
-    if isinstance(raw, str):
-        if not raw:
-            return None
-        try:
-            decoded = base64.b64decode(raw.encode("ascii"))
-        except ValueError:
-            return dict(data)
-        return decode_payload(decoded)
-    return dict(data)
+            result = payload
+    else:
+        raw = data.get(_LEGACY_DATA_KEY)
+        if isinstance(raw, str):
+            if not raw:
+                result = None
+            else:
+                try:
+                    decoded = base64.b64decode(raw.encode("ascii"))
+                except ValueError:
+                    result = dict(data)
+                else:
+                    result = decode_payload(decoded)
+        else:
+            result = dict(data)
+    return result
 
 
 def _graph_attrs_in(attrs: Mapping[str, object] | None) -> dict[str, str]:

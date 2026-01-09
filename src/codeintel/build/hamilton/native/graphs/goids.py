@@ -20,6 +20,7 @@ from codeintel.build.graphs.compute.goid import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.graphs.cpg.constants import AST_NODES_TABLE_KEY
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     MultiTableTargetContext,
@@ -31,6 +32,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import iter_rows, normalize_table_for_join
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
+from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.kernels import hash_struct_goid
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
@@ -47,6 +49,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 GOIDS_TARGET_NAME = "goids"
 GOIDS_TABLE_KEY = "core.goids"
 GOID_CROSSWALK_TABLE_KEY = "core.goid_crosswalk"
+MODULES_TABLE_KEY = "core.modules"
 
 LOG = logging.getLogger(__name__)
 
@@ -259,8 +262,38 @@ def _joined_ast_nodes(
         return pa.Table.from_pydict({})
     filtered_ast = join_safe_projection(filtered_ast)
     filtered_ast = normalize_table_for_join(filtered_ast)
+    left_precheck = finalize_join_keys(
+        filtered_ast,
+        required_non_null=["path"],
+        key_fields=["path"],
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        left_precheck,
+        table_key=AST_NODES_TABLE_KEY,
+        target_name=GOIDS_TARGET_NAME,
+        join_keys=["path"],
+    )
+    filtered_ast = left_precheck.good
+    if filtered_ast.num_rows == 0:
+        return pa.Table.from_pydict({})
     modules_table = join_safe_projection(modules_table)
     modules_table = normalize_table_for_join(modules_table)
+    right_precheck = finalize_join_keys(
+        modules_table,
+        required_non_null=["path"],
+        key_fields=["path"],
+        stage="join_precheck",
+    )
+    record_join_precheck_errors(
+        right_precheck,
+        table_key=MODULES_TABLE_KEY,
+        target_name=GOIDS_TARGET_NAME,
+        join_keys=["path"],
+    )
+    modules_table = right_precheck.good
+    if modules_table.num_rows == 0:
+        return pa.Table.from_pydict({})
     module_plan = Plan.table(modules_table).project(
         {
             "path": E.cast(E.field("path"), "string"),

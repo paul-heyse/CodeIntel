@@ -15,6 +15,7 @@ from codeintel.core.columnar.finalize_ops import (
     drain_join_precheck_reports,
     finalize_join_keys,
     finalize_reader,
+    finalize_spec_for_table,
     finalize_table,
     record_join_precheck_errors,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "drain_join_precheck_reports",
     "finalize_join_keys",
     "finalize_reader",
+    "finalize_spec_for_table",
     "finalize_table",
     "record_join_precheck_errors",
 ]

@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, cast, get_args
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -20,7 +20,12 @@ from codeintel.core.schemas.arrow_gen import (
     DEFAULT_EXTRAS_COLUMN,
     EXTRAS_POLICIES,
 )
-from codeintel.core.schemas.primitives import Column, TableSchema, column_type_base
+from codeintel.core.schemas.primitives import (
+    Column,
+    FinalizeDedupeTier,
+    TableSchema,
+    column_type_base,
+)
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.validation.profiles import (
     ValidationProfile,
@@ -437,11 +442,6 @@ def _struct_field(
     return require_array(result, name="struct_field")
 
 
-_LIST_ALIGNMENT_SPECS: dict[str, tuple[ListAlignmentSpec, ...]] = {
-    "core.cst_nodes": (ListAlignmentSpec("span.start", ("span.end",)),),
-}
-
-
 def list_alignment_specs_for_table_key(table_key: str) -> tuple[ListAlignmentSpec, ...]:
     """Return list-alignment specs for known tables.
 
@@ -463,7 +463,7 @@ def list_alignment_specs_for_table_key(table_key: str) -> tuple[ListAlignmentSpe
         )
         if resolved:
             return resolved
-    return _LIST_ALIGNMENT_SPECS.get(table_key, ())
+    return ()
 
 
 def observation_errors_for_table(
@@ -633,6 +633,24 @@ def _schema_metadata_type_errors(metadata: Mapping[str, object]) -> list[str]:
             "Arrow schema metadata codeintel.primary_key must be a sequence of strings, "
             f"got {type(primary_key)}"
         )
+    ordering_keys = metadata.get("codeintel.ordering_keys")
+    if ordering_keys is not None and not _is_str_sequence(ordering_keys):
+        errors.append(
+            "Arrow schema metadata codeintel.ordering_keys must be a sequence of strings, "
+            f"got {type(ordering_keys)}"
+        )
+    determinism_tier = metadata.get("codeintel.determinism_tier")
+    if determinism_tier is not None:
+        if not isinstance(determinism_tier, str):
+            errors.append(
+                "Arrow schema metadata codeintel.determinism_tier must be a string, "
+                f"got {type(determinism_tier)}"
+            )
+        elif determinism_tier not in get_args(FinalizeDedupeTier):
+            errors.append(
+                "Arrow schema metadata codeintel.determinism_tier must be one of "
+                f"{sorted(get_args(FinalizeDedupeTier))}, got {determinism_tier!r}"
+            )
     errors.extend(
         _mapping_metadata_errors(
             metadata,

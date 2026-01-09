@@ -12,7 +12,7 @@ from sqlglot import exp
 
 from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
 from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec
+from codeintel.core.columnar.finalize_ops import FinalizeDedupe, finalize_spec_for_table
 from codeintel.core.columnar.plan_ops import (
     ExternalPlanRequest,
     ScanPlanOptions,
@@ -806,8 +806,8 @@ def _finalize_reader_table(
         determinism="throughput",
         combine_chunks=True,
     )
-    finalize_spec = FinalizeSpec(
-        table_key=table_key,
+    finalize_spec = finalize_spec_for_table(
+        table_key,
         mode="tolerant",
         context_fields=context_fields,
         dedupe=FinalizeDedupe(
@@ -824,9 +824,10 @@ def _finalize_reader_table(
             finalize=finalize_spec,
             ctx=execution_ctx,
         )
-        return result.good
     except (TypeError, ValueError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         return None
+    else:
+        return result.good
 
 
 def _scan_aligned_sources(

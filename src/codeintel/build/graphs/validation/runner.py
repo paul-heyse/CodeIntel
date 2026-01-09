@@ -54,7 +54,25 @@ from codeintel.build.graphs.validation.findings import (
     persist_findings,
     resolve_validation_options,
 )
-from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.scopes.snapshot import SnapshotScanContext
+from codeintel.build.settings import get_arrow_scan_settings, get_columnar_runtime_settings
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext as ColumnarExecutionContext,
+)
+from codeintel.core.columnar.execution_context import (
+    RuntimeProfile,
+    runtime_profile_from_settings,
+)
+from codeintel.core.columnar.iter import iter_rows_limit
+from codeintel.core.columnar.ordering import OrderingSpec, SortKey
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
+from codeintel.core.columnar.run_manifest import RunManifestOptions, write_run_manifest
+from codeintel.core.columnar.runtime import apply_runtime_profile
+from codeintel.core.columnar.streaming import ScanTelemetry, scan_telemetry_for_queryspec
+from codeintel.core.constants import DEFAULT_ARROW_USE_THREADS
+from codeintel.core.datasets.arrow_store import scan_dataset
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.validation.runner import ValidationRunner
 
 if TYPE_CHECKING:
@@ -70,6 +88,15 @@ if TYPE_CHECKING:
 # =============================================================================
 # Check Registration
 # =============================================================================
+
+
+_ROW_FILTER_LIMIT = 1_000_000
+_MANIFEST_TABLE_CANDIDATES: tuple[str, ...] = (
+    "graph.call_graph_nodes",
+    "graph.call_graph_edges",
+    "core.modules",
+    "core.goids",
+)
 
 
 def create_validation_runner(
@@ -125,6 +152,8 @@ class GraphValidationRunRequest:
     catalog_provider: FunctionCatalogProvider | None = None
     options: GraphValidationOptions | None = None
     dataset_root_dir: Path | None = None
+    execution_ctx: ColumnarExecutionContext | None = None
+    output_dir: Path | None = None
 
 
 def run_graph_validations_with_runner(
@@ -159,11 +188,19 @@ def run_graph_validations_with_runner(
     active_log = logging.getLogger(__name__)
 
     dataset_root_dir = resolve_dataset_root(snapshot, request.dataset_root_dir)
-    log_db_snapshot(dataset_root_dir, snapshot.repo, snapshot.commit, active_log)
+    execution_ctx = _resolve_columnar_ctx(request)
+    log_db_snapshot(
+        dataset_root_dir,
+        snapshot.repo,
+        snapshot.commit,
+        active_log,
+        execution_ctx=execution_ctx,
+    )
 
     catalog_provider = request.catalog_provider or _catalog_provider_from_dataset(
         dataset_root_dir=dataset_root_dir,
         snapshot=snapshot,
+        execution_ctx=execution_ctx,
     )
     catalog = catalog_provider.catalog() if catalog_provider is not None else None
 
@@ -193,6 +230,11 @@ def run_graph_validations_with_runner(
 
     # Persist findings
     persist_findings(dataset_root_dir, report.findings, snapshot.repo, snapshot.commit)
+    _emit_validation_run_manifest(
+        request=request,
+        dataset_root_dir=dataset_root_dir,
+        execution_ctx=execution_ctx,
+    )
 
     active_log.info(
         "Graph validation completed for %s@%s: %d finding(s), %d checks run, %d skipped, %d failed",
@@ -277,10 +319,172 @@ def _scan_snapshot_reader(request: SnapshotScanRequest) -> pa.RecordBatchReader 
     return scan_snapshot_reader(request)
 
 
+def _resolve_columnar_ctx(
+    request: GraphValidationRunRequest,
+) -> ColumnarExecutionContext:
+    if request.execution_ctx is not None:
+        return request.execution_ctx
+    scan_settings = get_arrow_scan_settings()
+    resolved_use_threads = (
+        DEFAULT_ARROW_USE_THREADS
+        if scan_settings.use_threads is None
+        else scan_settings.use_threads
+    )
+    runtime_profile = runtime_profile_from_settings(get_columnar_runtime_settings())
+    if runtime_profile is None:
+        runtime_profile = RuntimeProfile(name="graph_validation")
+    scan_profile = runtime_profile.scan_profile or scan_settings.profile
+    use_threads = (
+        runtime_profile.use_threads
+        if runtime_profile.use_threads is not None
+        else scan_settings.use_threads
+    )
+    implicit_ordering = (
+        True if runtime_profile.implicit_ordering is None else runtime_profile.implicit_ordering
+    )
+    require_sequenced_output = (
+        True
+        if runtime_profile.require_sequenced_output is None
+        else runtime_profile.require_sequenced_output
+    )
+    runtime_profile = replace(
+        runtime_profile,
+        name=runtime_profile.name or "graph_validation",
+        scan_profile=scan_profile,
+        implicit_ordering=implicit_ordering,
+        require_sequenced_output=require_sequenced_output,
+        use_threads=use_threads,
+    )
+    return ColumnarExecutionContext(
+        use_threads=resolved_use_threads,
+        runtime_profile=runtime_profile,
+    )
+
+
+def _emit_validation_run_manifest(
+    *,
+    request: GraphValidationRunRequest,
+    dataset_root_dir: Path | None,
+    execution_ctx: ColumnarExecutionContext,
+) -> None:
+    output_dir = request.output_dir
+    snapshot_id = request.snapshot.commit
+    if output_dir is None or dataset_root_dir is None or not snapshot_id:
+        return
+    table_key = _manifest_table_key(dataset_root_dir, snapshot_id)
+    if table_key is None:
+        return
+    telemetry = _scan_telemetry_for_manifest(
+        dataset_root_dir=dataset_root_dir,
+        table_key=table_key,
+        snapshot=request.snapshot,
+    )
+    ordering = _manifest_ordering(table_key, execution_ctx=execution_ctx)
+    threading_snapshot = apply_runtime_profile(
+        execution_ctx.runtime_profile,
+        settings=get_arrow_scan_settings(),
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        write_run_manifest(
+            output_dir,
+            options=RunManifestOptions(
+                determinism=execution_ctx.determinism,
+                ordering=ordering,
+                scan_telemetry=telemetry,
+                profile_name=_profile_name(execution_ctx),
+                scan_profile=_scan_profile_name(execution_ctx),
+                extras={
+                    "table_key": table_key,
+                    "snapshot_id": snapshot_id,
+                    "repo": request.snapshot.repo,
+                    "arrow_threading": threading_snapshot.to_mapping(),
+                },
+                filename="run_manifest_graph_validation.json",
+            ),
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        logging.getLogger(__name__).warning(
+            "Graph validation manifest emission failed: %s", exc
+        )
+
+
+def _manifest_table_key(dataset_root_dir: Path, snapshot_id: str) -> str | None:
+    for table_key in _MANIFEST_TABLE_CANDIDATES:
+        if dataset_snapshot_exists(dataset_root_dir, table_key, snapshot_id):
+            return table_key
+    return None
+
+
+def _scan_telemetry_for_manifest(
+    *,
+    dataset_root_dir: Path,
+    table_key: str,
+    snapshot: SnapshotRef,
+) -> ScanTelemetry:
+    try:
+        dataset = scan_dataset(
+            dataset_root=dataset_root_dir,
+            table_key=table_key,
+            snapshot_id=snapshot.commit,
+        )
+    except (FileNotFoundError, OSError, ValueError, pa.ArrowInvalid):
+        return _empty_scan_telemetry()
+    scan_ctx = SnapshotScanContext.from_snapshot(snapshot)
+    predicate = scan_ctx.filter_expr(dataset.schema)
+    projection = projection_spec_from_columns(
+        None,
+        default_columns=tuple(dataset.schema.names),
+    )
+    spec = QuerySpec(
+        predicate=predicate,
+        pushdown_predicate=predicate,
+        projection=projection,
+    )
+    return scan_telemetry_for_queryspec(dataset, spec=spec)
+
+
+def _empty_scan_telemetry() -> ScanTelemetry:
+    return ScanTelemetry(fragment_count=None, estimated_rows=None)
+
+
+def _manifest_ordering(
+    table_key: str,
+    *,
+    execution_ctx: ColumnarExecutionContext,
+) -> OrderingSpec | None:
+    implicit_ordering = True
+    profile = execution_ctx.runtime_profile
+    if profile is not None:
+        implicit_ordering = profile.resolve_implicit_ordering(default=implicit_ordering)
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        schema = None
+    sort_keys = resolve_canonical_sort_keys(schema)
+    if sort_keys:
+        keys: list[SortKey] = [(key, "ascending") for key in sort_keys]
+        return OrderingSpec.explicit(keys=keys, reason="canonical sort keys")
+    if implicit_ordering:
+        return OrderingSpec.implicit(reason="implicit scan ordering")
+    return OrderingSpec.unordered(reason="scan unordered")
+
+
+def _profile_name(execution_ctx: ColumnarExecutionContext) -> str | None:
+    profile = execution_ctx.runtime_profile
+    return None if profile is None else profile.name
+
+
+def _scan_profile_name(execution_ctx: ColumnarExecutionContext) -> str | None:
+    profile = execution_ctx.runtime_profile
+    return None if profile is None else profile.scan_profile
+
+
 def _catalog_provider_from_dataset(
     *,
     dataset_root_dir: Path | None,
     snapshot: SnapshotRef,
+    execution_ctx: ColumnarExecutionContext | None = None,
 ) -> FunctionCatalogProvider | None:
     if dataset_root_dir is None:
         return None
@@ -302,6 +506,7 @@ def _catalog_provider_from_dataset(
             ),
             repo=snapshot.repo,
             commit=snapshot.commit,
+            execution_ctx=execution_ctx,
         )
     )
     modules_reader = _scan_snapshot_reader(
@@ -312,6 +517,7 @@ def _catalog_provider_from_dataset(
             columns=("path", "module", "repo", "commit"),
             repo=snapshot.repo,
             commit=snapshot.commit,
+            execution_ctx=execution_ctx,
         )
     )
     if goids_reader is None or modules_reader is None:
@@ -372,6 +578,8 @@ def log_db_snapshot(
     repo: str,
     commit: str,
     log: logging.Logger,
+    *,
+    execution_ctx: ColumnarExecutionContext | None = None,
 ) -> None:
     """Record table counts to aid debugging validation state."""
 
@@ -390,6 +598,7 @@ def log_db_snapshot(
                 columns=None,
                 repo=repo,
                 commit=commit,
+                execution_ctx=execution_ctx,
             )
         )
         if reader is None:
@@ -397,10 +606,9 @@ def log_db_snapshot(
         if row_filter is None:
             return sum(batch.num_rows for batch in reader)
         count = 0
-        for batch in reader:
-            for row in iter_rows(batch):
-                if row_filter(row):
-                    count += 1
+        for row in iter_rows_limit(reader, limit=_ROW_FILTER_LIMIT):
+            if row_filter(row):
+                count += 1
         return count
 
     def _kind_matches(values: set[str]) -> Callable[[dict[str, object]], bool]:

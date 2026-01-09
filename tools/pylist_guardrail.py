@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from tools.lint_file_utils import find_literal_candidates
+
 
 def _scan_file(path: Path) -> list[str]:
     """Return guardrail match lines for a single file.
@@ -25,6 +27,15 @@ def _scan_file(path: Path) -> list[str]:
     return matches
 
 
+def _candidate_paths(repo_root: Path) -> list[Path]:
+    candidates = find_literal_candidates(
+        repo_root,
+        patterns=("to_pylist(",),
+        include_globs=("src/codeintel/build/**/*.py",),
+    )
+    return sorted(candidates)
+
+
 def main() -> int:
     """Run the guardrail and return the exit status.
 
@@ -39,7 +50,7 @@ def main() -> int:
         sys.stderr.write(f"Guardrail: missing target root {target_root}\n")
         return 1
     violations: list[str] = []
-    for path in sorted(target_root.rglob("*.py")):
+    for path in _candidate_paths(repo_root):
         violations.extend(_scan_file(path))
     if violations:
         sys.stderr.write("Guardrail: to_pylist usage is not allowed in build code.\n")

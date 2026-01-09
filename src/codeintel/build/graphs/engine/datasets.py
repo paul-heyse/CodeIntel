@@ -14,14 +14,22 @@ import pyarrow.dataset as ds
 
 from codeintel.build.graphs.assembly import iter_normalized_tuples
 from codeintel.build.scopes.snapshot import SnapshotScanContext
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.execution_context import ExecutionContext
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_reader
-from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan_for_context
-from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
+from codeintel.core.columnar.finalize_ops import finalize_reader, finalize_spec_for_table
+from codeintel.core.columnar.ordering import SortDirection, SortKey
+from codeintel.core.columnar.plan_ops import (
+    Plan,
+    QueryPlanOptions,
+    build_query_plan_for_context,
+)
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
 from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
 from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -66,6 +74,7 @@ class GraphViewScanOptions:
     require_sequenced_output: bool | None = True
     metrics_enabled: bool = True
     provenance: bool = False
+    execution_ctx: ExecutionContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,8 +160,57 @@ class GraphViewFactory:
             implicit_ordering=resolved_scan_options.implicit_ordering,
             require_sequenced_output=resolved_scan_options.require_sequenced_output,
             metrics_enabled=resolved_scan_options.metrics_enabled,
+            execution_ctx=resolved_scan_options.execution_ctx,
         )
         return scan_snapshot_reader(request)
+
+    def load_plan(
+        self,
+        *,
+        table_key: str,
+        columns: Sequence[str] | Mapping[str, pc.Expression] | None = None,
+        scan_options: GraphViewScanOptions | None = None,
+    ) -> Plan | None:
+        """Return a scan plan for a snapshot table.
+
+        Parameters
+        ----------
+        table_key
+            Dataset table key.
+        columns
+            Optional column selection for the scan.
+        scan_options
+            Optional scan overrides (filter, ordering, metrics).
+
+        Returns
+        -------
+        Plan | None
+            Plan for the dataset snapshot or None when missing.
+        """
+        resolved_scan_options = scan_options or GraphViewScanOptions()
+        resolved_columns: tuple[str, ...] | Mapping[str, pc.Expression] | None
+        if isinstance(columns, Mapping):
+            resolved_columns = columns
+        elif columns is None:
+            resolved_columns = None
+        else:
+            resolved_columns = tuple(columns)
+        request = SnapshotScanRequest(
+            dataset_root=self.dataset_root,
+            table_key=table_key,
+            snapshot_id=self.snapshot_id,
+            columns=resolved_columns,
+            provenance=resolved_scan_options.provenance,
+            repo=self.scan_context.repo,
+            commit=self.scan_context.commit,
+            scan_context=self.scan_context,
+            apply_filter=resolved_scan_options.apply_filter,
+            implicit_ordering=resolved_scan_options.implicit_ordering,
+            require_sequenced_output=resolved_scan_options.require_sequenced_output,
+            metrics_enabled=resolved_scan_options.metrics_enabled,
+            execution_ctx=resolved_scan_options.execution_ctx,
+        )
+        return scan_snapshot_plan(request)
 
     @staticmethod
     def iter_tuples(
@@ -233,10 +291,8 @@ def dataset_snapshot_exists(
     return snapshot_dir.is_dir()
 
 
-def scan_snapshot_reader(
-    request: SnapshotScanRequest,
-) -> pa.RecordBatchReader | None:
-    """Return a RecordBatchReader for a dataset snapshot or None when missing.
+def scan_snapshot_plan(request: SnapshotScanRequest) -> Plan | None:
+    """Return a scan plan for a dataset snapshot or None when missing.
 
     Parameters
     ----------
@@ -245,8 +301,8 @@ def scan_snapshot_reader(
 
     Returns
     -------
-    pyarrow.RecordBatchReader | None
-        Reader for the dataset snapshot or None when missing.
+    Plan | None
+        Plan for the dataset snapshot or None when missing.
     """
     dataset = _scan_dataset(request.dataset_root, request.table_key, request.snapshot_id)
     if dataset is None:
@@ -277,14 +333,36 @@ def scan_snapshot_reader(
         implicit_ordering=request.implicit_ordering,
         require_sequenced_output=request.require_sequenced_output,
     )
-    plan = build_query_plan_for_context(
+    options = _apply_canonical_order_by(request, options=options)
+    return build_query_plan_for_context(
         dataset,
         spec=query_spec,
         ctx=request.execution_ctx,
         options=options,
     )
+
+
+def scan_snapshot_reader(
+    request: SnapshotScanRequest,
+) -> pa.RecordBatchReader | None:
+    """Return a RecordBatchReader for a dataset snapshot or None when missing.
+
+    Parameters
+    ----------
+    request
+        Snapshot scan request describing the dataset and filters.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader | None
+        Reader for the dataset snapshot or None when missing.
+    """
+    plan = scan_snapshot_plan(request)
+    if plan is None:
+        return None
     use_threads = _resolve_use_threads(request)
-    return plan.to_reader(use_threads=use_threads)
+    execution_ctx = _resolve_execution_context(request, use_threads=use_threads)
+    return ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
 
 
 def scan_snapshot_reader_with_columns(
@@ -318,7 +396,7 @@ def scan_snapshot_table(
         return None
     result = finalize_reader(
         reader,
-        spec=FinalizeSpec(table_key=request.table_key, mode="tolerant"),
+        spec=finalize_spec_for_table(request.table_key, mode="tolerant"),
     )
     return result.good
 
@@ -358,29 +436,40 @@ def _resolve_columns(
     return columns
 
 
+def _apply_canonical_order_by(
+    request: SnapshotScanRequest,
+    *,
+    options: QueryPlanOptions,
+) -> QueryPlanOptions:
+    if options.order_by is not None:
+        return options
+    ctx = request.execution_ctx
+    if ctx is None or ctx.resolve_determinism() != "canonical":
+        return options
+    schema = get_schema_service().get_table_schema(request.table_key)
+    canonical_keys = resolve_canonical_sort_keys(schema)
+    if not canonical_keys:
+        return options
+    direction: SortDirection = "ascending"
+    order_by: tuple[SortKey, ...] = tuple((key, direction) for key in canonical_keys)
+    return replace(options, order_by=order_by)
+
+
 def _query_spec_for_request(
     dataset: ds.Dataset,
     *,
     columns: tuple[str, ...] | Mapping[str, pc.Expression] | None,
     predicate: pc.Expression | None,
 ) -> QuerySpec:
-    projection = _projection_spec_for_columns(dataset, columns)
+    projection = projection_spec_from_columns(
+        columns,
+        default_columns=tuple(dataset.schema.names),
+    )
     return QuerySpec(
         predicate=predicate,
         pushdown_predicate=predicate,
         projection=projection,
     )
-
-
-def _projection_spec_for_columns(
-    dataset: ds.Dataset,
-    columns: tuple[str, ...] | Mapping[str, pc.Expression] | None,
-) -> ProjectionSpec:
-    if columns is None:
-        return ProjectionSpec(base_cols=tuple(dataset.schema.names))
-    if isinstance(columns, Mapping):
-        return ProjectionSpec(base_cols=(), computed=tuple(columns.items()))
-    return ProjectionSpec(base_cols=tuple(columns))
 
 
 def _log_scan_telemetry(
@@ -397,7 +486,7 @@ def _log_scan_telemetry(
         snapshot_id,
         telemetry.fragment_count,
         telemetry.estimated_rows,
-        query_spec.pushdown_predicate or query_spec.predicate,
+        query_spec.scan_filter_expression(),
     )
 
 
@@ -407,11 +496,20 @@ def _resolve_use_threads(request: SnapshotScanRequest) -> bool:
     ctx = request.execution_ctx
     if ctx is None:
         return True
-    resolved = ctx.use_threads
-    profile = ctx.runtime_profile
-    if profile is not None:
-        resolved = profile.resolve_use_threads(default=resolved)
-    return resolved
+    return ctx.resolve_use_threads()
+
+
+def _resolve_execution_context(
+    request: SnapshotScanRequest,
+    *,
+    use_threads: bool,
+) -> ExecutionContext:
+    execution_ctx = request.execution_ctx
+    if execution_ctx is None:
+        return ExecutionContext(use_threads=use_threads)
+    if request.use_threads is None:
+        return execution_ctx
+    return replace(execution_ctx, use_threads=use_threads)
 
 
 __all__ = [
@@ -419,6 +517,7 @@ __all__ = [
     "SnapshotScanRequest",
     "dataset_snapshot_exists",
     "resolve_dataset_root",
+    "scan_snapshot_plan",
     "scan_snapshot_reader",
     "scan_snapshot_table",
 ]

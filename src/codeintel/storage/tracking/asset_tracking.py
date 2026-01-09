@@ -14,7 +14,7 @@ from sqlglot import exp
 
 from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
 from codeintel.core.columnar.expr_vocab import E
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
@@ -271,7 +271,7 @@ class AssetTracking:
         table = reader_to_table(reader)
         finalized = finalize_table(
             table,
-            spec=FinalizeSpec(table_key=entry.manifest.table_key, mode="tolerant"),
+            spec=finalize_spec_for_table(entry.manifest.table_key, mode="tolerant"),
         )
         return finalized.good
 

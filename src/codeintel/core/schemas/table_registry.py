@@ -25,6 +25,7 @@ from codeintel.core.schemas.output_registry import (
     SUBSYSTEM_EXTRAS_STRUCT,
     TAGS_INDEX_EXTRAS_STRUCT,
 )
+from codeintel.core.schemas.primitives import FinalizeDedupeSpec, FinalizePolicy
 from codeintel.core.schemas.view_registry import build_view_schema_overrides
 
 if TYPE_CHECKING:
@@ -67,6 +68,11 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("extras", TAGS_INDEX_EXTRAS_STRUCT),
         ],
         primary_key=("tag",),
+        finalize_policy=FinalizePolicy(
+            required_non_null=("tag",),
+            dedupe=FinalizeDedupeSpec(keys=("tag",)),
+            canonical_sort_keys=("tag",),
+        ),
         description="Path classification rules",
     ),
     "analytics.subsystem_profile_cache": TableSchema(

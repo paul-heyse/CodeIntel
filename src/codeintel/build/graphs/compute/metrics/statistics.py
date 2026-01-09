@@ -341,7 +341,7 @@ def compute_condensation_layer_count(graph: GraphInput) -> int | None:
     store = ensure_store(graph)
     if store.graph.num_nodes() == 0 or not store.is_directed:
         return None
-    condensed_graph = rx.condensation(_directed_graph(store))
+    condensed_graph = cast("rx.PyDiGraph", rx.condensation(_directed_graph(store)))
     return _layer_count(condensed_graph)
 
 

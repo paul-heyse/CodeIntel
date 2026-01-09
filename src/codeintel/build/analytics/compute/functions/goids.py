@@ -237,13 +237,6 @@ def _worklist_table(frame: pa.Table, snapshot: SnapshotRef) -> pa.Table:
         agg_fn = "max" if name == "end_line" else "min"
         aggregates.append((name, agg_fn, None, name))
     plan = plan.aggregate(keys=[E.field("goid_h128")], aggregates=aggregates)
-    plan = plan.order_by(
-        sort_keys=[
-            ("rel_path", "ascending"),
-            ("start_line", "ascending"),
-            ("goid_h128", "ascending"),
-        ]
-    )
     return materialize_plan(plan, use_threads=True)
 
 

@@ -648,6 +648,26 @@ def resolve_stable_sort_keys(table_schema: TableSchema | None) -> tuple[str, ...
     return table_schema.primary_key or None
 
 
+def resolve_canonical_sort_keys(table_schema: TableSchema | None) -> tuple[str, ...] | None:
+    """Resolve canonical sort keys for finalization/ordering metadata.
+
+    Returns
+    -------
+    tuple[str, ...] | None
+        Canonical sort keys. An empty tuple explicitly disables canonical ordering,
+        and None indicates no ordering policy is configured.
+    """
+    if table_schema is None:
+        return None
+    write_policy = table_schema.write_policy
+    if write_policy is not None and write_policy.stable_sort_keys is not None:
+        return write_policy.stable_sort_keys
+    finalize_policy = table_schema.finalize_policy
+    if finalize_policy is not None and finalize_policy.canonical_sort_keys is not None:
+        return finalize_policy.canonical_sort_keys
+    return resolve_stable_sort_keys(table_schema)
+
+
 __all__ = [
     "COLUMN_TYPE_BASE_VALUES",
     "COLUMN_TYPE_REGISTRY",
@@ -673,5 +693,6 @@ __all__ = [
     "column_type_is_nested",
     "is_allowed_column_promotion",
     "normalize_column_type",
+    "resolve_canonical_sort_keys",
     "resolve_stable_sort_keys",
 ]

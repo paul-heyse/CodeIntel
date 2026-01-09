@@ -61,6 +61,13 @@ class ArrowScanSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ColumnarRuntimeSettings:
+    """Columnar runtime profile settings."""
+
+    profile: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class BuildSettings:
     """Build runtime settings injected into build execution."""
 
@@ -430,6 +437,7 @@ __all__ = [
     "BatchProcessorSettings",
     "BuildSettings",
     "CliSettings",
+    "ColumnarRuntimeSettings",
     "ExportAuditSettings",
     "GrpcObservabilitySettings",
     "HamiltonExecutionSettings",

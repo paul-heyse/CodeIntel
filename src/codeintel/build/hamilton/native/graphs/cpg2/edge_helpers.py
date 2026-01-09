@@ -12,7 +12,7 @@ from codeintel.build.hamilton.native.graphs.cpg.constants import (
     CPG_TARGET_NAME,
 )
 from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.columnar.arrowdsl import project_struct_fields
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -97,8 +97,8 @@ def finalize_cpg_edge_rows(
 
     result = finalize_table(
         edges,
-        spec=FinalizeSpec(
-            table_key=CPG_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CPG_EDGES_TABLE_KEY,
             mode="strict",
             order_by=resolved_sort_keys,
             target_name=CPG_TARGET_NAME,

@@ -13,7 +13,7 @@ from sqlglot import exp
 
 from codeintel.core.columnar.compute_helpers import combine_table_chunks
 from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import SortKey, hash_struct_ordinal, stable_sort_indices
 from codeintel.core.columnar.nested_ops import deep_cast_table_to_contract
 from codeintel.core.columnar.schema_alignment import (
@@ -387,8 +387,8 @@ def _dataset_read_parquet_relation(
         table = reader_to_table(aligned)
         finalized = finalize_table(
             table,
-            spec=FinalizeSpec(
-                table_key=manifest.table_key,
+            spec=finalize_spec_for_table(
+                manifest.table_key,
                 mode="tolerant",
             ),
         )

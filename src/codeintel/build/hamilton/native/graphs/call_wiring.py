@@ -38,14 +38,13 @@ from codeintel.build.tabular.arrow_ops import (
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
 from codeintel.build.tabular.compute_helpers import cast_array
-from codeintel.build.tabular.compute_masks import equal_mask
 from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeResult,
-    FinalizeSpec,
     finalize_join_keys,
     finalize_reader,
+    finalize_spec_for_table,
     finalize_table,
     record_join_precheck_errors,
 )
@@ -681,8 +680,8 @@ def _order_by_for_table(table_key: str) -> tuple[SortKey, ...]:
 def _table_to_reader(table_key: str, table: pa.Table) -> pa.Table:
     result = finalize_table(
         table,
-        spec=FinalizeSpec(
-            table_key=table_key,
+        spec=finalize_spec_for_table(
+            table_key,
             mode="strict",
             key_fields=_key_fields_for_table(table_key),
             order_by=_order_by_for_table(table_key),
@@ -1360,8 +1359,10 @@ def _entry_blocks(cfg_blocks: pa.Table) -> pa.Table:
     if cfg_blocks.num_rows == 0 or not required.issubset(set(cfg_blocks.column_names)):
         return _empty_table(["function_goid_h128", "entry_block_id"])
     try:
-        kind_mask = equal_mask(cfg_blocks.column("kind"), pa.scalar("entry"))
-        filtered = cfg_blocks.filter(kind_mask)
+        filtered = materialize_plan(
+            Plan.table(cfg_blocks).filter(E.field("kind") == E.scalar("entry")),
+            use_threads=True,
+        )
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _empty_table(["function_goid_h128", "entry_block_id"])
     if filtered.num_rows == 0:
@@ -1375,8 +1376,10 @@ def _exit_blocks(cfg_blocks: pa.Table) -> pa.Table:
     if cfg_blocks.num_rows == 0 or not required.issubset(set(cfg_blocks.column_names)):
         return _empty_table(["function_goid_h128", "exit_block_id"])
     try:
-        kind_mask = equal_mask(cfg_blocks.column("kind"), pa.scalar("exit"))
-        filtered = cfg_blocks.filter(kind_mask)
+        filtered = materialize_plan(
+            Plan.table(cfg_blocks).filter(E.field("kind") == E.scalar("exit")),
+            use_threads=True,
+        )
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return _empty_table(["function_goid_h128", "exit_block_id"])
     if filtered.num_rows == 0:
@@ -2468,8 +2471,8 @@ def cpg_edges_calls(
     )
     result = finalize_reader(
         ordered.to_reader(use_threads=True),
-        spec=FinalizeSpec(
-            table_key=CPG_CALL_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CPG_CALL_EDGES_TABLE_KEY,
             mode="strict",
             key_fields=_key_fields_for_table(CPG_CALL_EDGES_TABLE_KEY),
             order_by=_order_by_for_table(CPG_CALL_EDGES_TABLE_KEY),
@@ -2946,8 +2949,8 @@ def cpg_edges_arg_to_param(
     )
     result = finalize_reader(
         ordered.to_reader(use_threads=True),
-        spec=FinalizeSpec(
-            table_key=CPG_ARG_TO_PARAM_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CPG_ARG_TO_PARAM_EDGES_TABLE_KEY,
             mode="strict",
             key_fields=_key_fields_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY),
             order_by=_order_by_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY),
@@ -3055,8 +3058,8 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
     )
     result = finalize_reader(
         ordered.to_reader(use_threads=True),
-        spec=FinalizeSpec(
-            table_key=CPG_RET_TO_CALL_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CPG_RET_TO_CALL_EDGES_TABLE_KEY,
             mode="strict",
             key_fields=_key_fields_for_table(CPG_RET_TO_CALL_EDGES_TABLE_KEY),
             order_by=_order_by_for_table(CPG_RET_TO_CALL_EDGES_TABLE_KEY),

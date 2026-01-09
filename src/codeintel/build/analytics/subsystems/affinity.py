@@ -19,6 +19,7 @@ from codeintel.build.graphs.rx.build_from_edges import (
 )
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload, stable_key
 from codeintel.build.graphs.rx.policies import DEFAULT_NUMERIC_POLICY, DEFAULT_WEIGHT_POLICY
+from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
@@ -300,7 +301,6 @@ def _module_rowset(
         keys=[E.field("module")],
         aggregates=[("tags", "list", None, "tags")],
     )
-    plan = plan.order_by(sort_keys=[("module", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -332,7 +332,6 @@ def _module_lookup_table(
         keys=[E.field("path")],
         aggregates=[("module", "min", None, "module")],
     )
-    plan = plan.order_by(sort_keys=[("path", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -406,9 +405,6 @@ def _symbol_module_edge_table(
         keys=[E.field("use_module"), E.field("def_module")],
         aggregates=[("edge_count", "sum", None, "edge_count")],
     )
-    use_join = use_join.order_by(
-        sort_keys=[("use_module", "ascending"), ("def_module", "ascending")]
-    )
     return materialize_plan(use_join, use_threads=True)
 
 
@@ -429,7 +425,6 @@ def _symbol_edge_rowset(
         keys=[E.field("use_path"), E.field("def_path")],
         aggregates=[("use_path", "count", None, "edge_count")],
     )
-    plan = plan.order_by(sort_keys=[("use_path", "ascending"), ("def_path", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -450,7 +445,6 @@ def _import_edge_rowset(
         keys=[E.field("src_module"), E.field("dst_module")],
         aggregates=[("src_module", "count", None, "edge_count")],
     )
-    plan = plan.order_by(sort_keys=[("src_module", "ascending"), ("dst_module", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -478,7 +472,6 @@ def _config_module_rowset(
         keys=[E.field("config_path"), E.field("key")],
         aggregates=[("reference_modules", "list", None, "reference_modules")],
     )
-    plan = plan.order_by(sort_keys=[("config_path", "ascending"), ("key", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -497,6 +490,13 @@ def _list_values(value: object) -> list[object]:
     if isinstance(value, tuple):
         return list(value)
     return []
+
+
+def add_graph_weight(graph: RxGraphStore, left: str, right: str, weight: float) -> None:
+    """Accumulate symmetric edge weights on an undirected graph."""
+    if weight <= 0 or left == right:
+        return
+    graph.add_weighted_edge(left, right, weight=weight)
 
 
 def graph_to_adjacency(graph: GraphInput) -> dict[str, dict[str, float]]:

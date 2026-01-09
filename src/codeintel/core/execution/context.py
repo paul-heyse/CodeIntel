@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from codeintel.core.config.settings import (
         BuildSettings,
         CliSettings,
+        ColumnarRuntimeSettings,
         HamiltonExecutionSettings,
         ObservabilitySettings,
         ServingSettings,
@@ -180,6 +181,11 @@ class ExecutionContext:
     def execution_settings(self) -> HamiltonExecutionSettings:
         """Hamilton execution settings for the run."""
         return self.settings.execution
+
+    @property
+    def columnar_settings(self) -> ColumnarRuntimeSettings:
+        """Columnar runtime settings for the execution."""
+        return self.settings.columnar
 
     @property
     def serving_settings(self) -> ServingSettings:

@@ -22,7 +22,6 @@ from codeintel.build.analytics.compute.semantic_roles.classification import deco
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
-from codeintel.core.columnar.dedupe_ops import dedupe_keep_first_after_sort
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.paths import normalize_path
 from codeintel.core.query_results import coerce_optional_int, coerce_optional_str, coerce_str
@@ -279,13 +278,6 @@ def _function_worklist_table(
             ("end_line", "max", None, "end_line"),
         ],
     )
-    plan = plan.order_by(
-        sort_keys=[
-            (goid_column, "ascending"),
-            ("rel_path", "ascending"),
-            ("start_line", "ascending"),
-        ]
-    )
     return materialize_plan(plan, use_threads=True)
 
 
@@ -322,7 +314,6 @@ def _effects_from_frame(
             ("spawns_threads_or_tasks", "max", None, "spawns_threads_or_tasks"),
         ],
     )
-    plan = plan.order_by(sort_keys=[("function_goid_h128", "ascending")])
     filtered = materialize_plan(plan, use_threads=True)
     if filtered.num_rows == 0:
         return {}
@@ -376,11 +367,9 @@ def _contracts_from_frame(
         repo=repo,
         commit=commit,
         columns=("function_goid_h128", "extras"),
-        order_by=("function_goid_h128",),
     )
     if table.num_rows == 0:
         return {}
-    table = dedupe_keep_first_after_sort(table, key_columns=("function_goid_h128",))
     mapping: dict[int, dict[str, object]] = {}
     for row in iter_rows(
         table,
@@ -433,7 +422,6 @@ def _graph_metrics_from_frame(
             ("call_fan_out", "max", None, "call_fan_out"),
         ],
     )
-    plan = plan.order_by(sort_keys=[("function_goid_h128", "ascending")])
     filtered = materialize_plan(plan, use_threads=True)
     if filtered.num_rows == 0:
         return {}
@@ -468,12 +456,10 @@ def _module_meta_from_frame(
         repo=repo,
         commit=commit,
         columns=("module", "path", "tags"),
-        order_by=("module",),
     )
     if table.num_rows == 0:
         return {}
     meta: dict[str, ModuleRecord] = {}
-    table = dedupe_keep_first_after_sort(table, key_columns=("module",))
     for row in iter_rows(table, ["module", "path", "tags"]):
         module = row.get("module")
         path = row.get("path")
@@ -512,13 +498,10 @@ def _scoped_table(
     repo: str,
     commit: str,
     columns: Sequence[str],
-    order_by: Sequence[str] | None = None,
 ) -> pa.Table:
     plan = _scoped_plan(frame, repo=repo, commit=commit)
     project = {name: E.field(name) for name in columns}
     plan = plan.project(project)
-    if order_by:
-        plan = plan.order_by(sort_keys=[(name, "ascending") for name in order_by])
     return materialize_plan(plan, use_threads=True)
 
 

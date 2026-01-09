@@ -7,7 +7,13 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
 
-from codeintel.core.columnar.compute_helpers import array_from_compute, call_compute, sort_options
+from codeintel.core import columnar
+from codeintel.core.columnar.compute_helpers import (
+    array_from_compute,
+    call_compute,
+    require_array,
+    sort_options,
+)
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.kernels import (
     SortKey,
@@ -15,6 +21,7 @@ from codeintel.core.columnar.kernels import (
     stable_sort_indices,
     stable_sort_table,
 )
+from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
@@ -109,6 +116,133 @@ def _stable_sort_for_dedupe(
     return table.take(indices)
 
 
+def _hash_columns_for_ties(sort_keys: Sequence[SortKey]) -> list[str]:
+    seen: set[str] = set()
+    columns: list[str] = []
+    for name, _order in sort_keys:
+        if name in seen:
+            continue
+        seen.add(name)
+        columns.append(name)
+    return columns
+
+
+def _hash_ordinal_for_ties(
+    table: pa.Table,
+    *,
+    columns: Sequence[str],
+) -> pa.Array | pa.ChunkedArray | None:
+    available = [name for name in columns if name in table.column_names]
+    if not available:
+        return None
+    try:
+        return hash_struct_ordinal(
+            table,
+            columns=available,
+            modulus=_HASH_ORDINAL_MODULUS,
+        )
+    except (RuntimeError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError, TypeError):
+        return None
+
+
+def _score_for_keep_best_by_score(
+    table: pa.Table,
+    *,
+    sort_keys: Sequence[SortKey],
+    hash_tiebreaker: bool,
+) -> pa.Array | pa.ChunkedArray:
+    if not sort_keys:
+        msg = "keep_best_by_score requires ordering keys."
+        raise ValueError(msg)
+    sort_table = table
+    resolved_sort_keys: list[SortKey] = list(sort_keys)
+    if hash_tiebreaker:
+        ordinal = _hash_ordinal_for_ties(
+            table,
+            columns=_hash_columns_for_ties(sort_keys),
+        )
+        if ordinal is not None:
+            temp_name = _row_index_name(table, base="__dedupe_score_ordinal")
+            sort_table = table.append_column(temp_name, ordinal)
+            temp_key: SortKey = (temp_name, "ascending")
+            resolved_sort_keys.append(temp_key)
+    try:
+        indices = stable_sort_indices(sort_table, sort_keys=resolved_sort_keys)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        msg = "Order-independent dedupe scoring requires stable sorting."
+        raise RuntimeError(msg) from None
+    rank = require_array(call_compute("inverse_permutation", [indices]), name="inverse_permutation")
+    total = pa.scalar(sort_table.num_rows, type=pa.int64())
+    return require_array(call_compute("subtract", [total, rank]), name="subtract")
+
+
+def _join_safe_projection(
+    table: pa.Table,
+    *,
+    allowed_columns: Sequence[str],
+) -> pa.Table:
+    return columnar.join_safe_projection(table, allowed_columns=allowed_columns)
+
+
+def _score_table_for_best_by_score(
+    table: pa.Table,
+    *,
+    sort_keys: Sequence[SortKey],
+    hash_tiebreaker: bool,
+) -> tuple[pa.Table, str, str]:
+    score = _score_for_keep_best_by_score(
+        table,
+        sort_keys=sort_keys,
+        hash_tiebreaker=hash_tiebreaker,
+    )
+    row_id = _row_index_array(table.num_rows)
+    if row_id is None:
+        msg = "Order-independent dedupe requires a row index."
+        raise RuntimeError(msg)
+    score_name = _row_index_name(table, base="__dedupe_score")
+    row_id_name = _row_index_name(table, base="__dedupe_row_id")
+    scored = table.append_column(score_name, score).append_column(row_id_name, row_id)
+    return scored, score_name, row_id_name
+
+
+def _winner_indices_for_best_by_score(
+    scored: pa.Table,
+    *,
+    key_columns: Sequence[str],
+    score_name: str,
+    row_id_name: str,
+) -> pa.Array | pa.ChunkedArray:
+    score_table = scored.select([*key_columns, score_name])
+    try:
+        winners = score_table.group_by(list(key_columns)).aggregate([(score_name, "max")])
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
+        msg = "Order-independent dedupe failed to compute winner scores."
+        raise RuntimeError(msg) from None
+    score_max_name = f"{score_name}_max"
+    join_left = _join_safe_projection(
+        scored,
+        allowed_columns=(*key_columns, score_name, row_id_name),
+    )
+    join_right = _join_safe_projection(
+        winners,
+        allowed_columns=(*key_columns, score_max_name),
+    )
+    join_spec = HashJoinSpec(
+        left_keys=[*key_columns, score_name],
+        right_keys=[*key_columns, score_max_name],
+        left_output=list(join_left.column_names),
+        right_output=(),
+    )
+    selected = Plan.table(join_left).hash_join(
+        right=Plan.table(join_right),
+        spec=join_spec,
+    ).to_table(use_threads=True)
+    if row_id_name not in selected.column_names:
+        msg = "Order-independent dedupe failed to retain row identifiers."
+        raise RuntimeError(msg)
+    return selected[row_id_name]
+
+
 def dedupe_keep_first_after_sort(
     table: pa.Table,
     *,
@@ -148,6 +282,43 @@ def dedupe_keep_first_after_sort(
     )
     ordered = stable_sort_table(table, sort_keys=sort_keys) if sort_keys else table
     return _dedupe_keep_first(ordered, key_columns=key_columns)
+
+
+def _dedupe_keep_best_by_score(
+    table: pa.Table,
+    *,
+    key_columns: Sequence[str],
+    prefer_columns: Sequence[str],
+    tie_breakers: Sequence[SortKey],
+    require_tie_breakers: bool,
+) -> pa.Table:
+    key_columns = _require_key_columns(table, key_columns=key_columns)
+    if table.num_rows <= 1:
+        return table
+    if require_tie_breakers:
+        tie_breakers = _require_tie_breakers(table, tie_breakers=tie_breakers)
+    if not prefer_columns and not tie_breakers:
+        msg = "keep_best_by_score requires prefer_columns or tie_breakers."
+        raise ValueError(msg)
+    sort_keys = _dedupe_sort_keys(
+        table,
+        key_columns=key_columns,
+        prefer_columns=prefer_columns,
+        tie_breakers=tie_breakers,
+    )
+    scored, score_name, row_id_name = _score_table_for_best_by_score(
+        table,
+        sort_keys=sort_keys,
+        hash_tiebreaker=not tie_breakers,
+    )
+    indices = _winner_indices_for_best_by_score(
+        scored,
+        key_columns=key_columns,
+        score_name=score_name,
+        row_id_name=row_id_name,
+    )
+    deduped = scored.take(indices)
+    return deduped.drop([score_name, row_id_name])
 
 
 def _dedupe_keep_first(
@@ -248,6 +419,8 @@ def _require_key_columns(
 
 
 def _determinism_for_spec(spec: DedupeSpec) -> DedupeDeterminism:
+    if spec.tier == "throughput":
+        return "best_effort"
     if spec.strategy == "keep_arbitrary":
         return "best_effort"
     if spec.strategy == "order_independent":
@@ -310,10 +483,15 @@ def _dedupe_with_spec(
     tie_breakers: tuple[SortKey, ...] = tuple(spec.tie_breakers)
     determinism = _determinism_for_spec(spec)
     resolved_tier = normalize_dedupe_tier(spec.tier)
-    if spec.strategy in {"first", "keep_best_by_score"}:
-        if spec.strategy == "keep_best_by_score" and not (prefer or tie_breakers):
-            msg = "keep_best_by_score requires prefer_columns or tie_breakers."
-            raise ValueError(msg)
+    if spec.strategy == "keep_best_by_score":
+        return _dedupe_keep_best_by_score(
+            table,
+            key_columns=resolved_keys,
+            prefer_columns=prefer,
+            tie_breakers=tie_breakers,
+            require_tie_breakers=resolved_tier == "canonical",
+        )
+    if spec.strategy == "first":
         return dedupe_keep_first_after_sort(
             table,
             key_columns=resolved_keys,

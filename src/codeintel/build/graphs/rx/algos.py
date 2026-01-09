@@ -85,7 +85,13 @@ def _constant_weight_fn(_payload: object) -> float:
 
 
 def constant_weight_fn() -> Callable[[object], float]:
-    """Return a constant weight function for unweighted algorithms."""
+    """Return a constant weight function for unweighted algorithms.
+
+    Returns
+    -------
+    Callable[[object], float]
+        Weight function that always returns 1.0.
+    """
     return _constant_weight_fn
 
 
@@ -170,12 +176,24 @@ def resolve_weight_semantics(
     store: RxGraphStore,
     config: GraphAlgoConfig | None,
 ) -> WeightSemantics:
-    """Resolve the effective weight semantics for a store/config pair."""
+    """Resolve the effective weight semantics for a store/config pair.
+
+    Returns
+    -------
+    WeightSemantics
+        Effective weight semantics for the store/config pair.
+    """
     return _resolve_weight_semantics(store, config)
 
 
 def resolve_weight_epsilon(config: GraphAlgoConfig | None) -> float:
-    """Resolve the effective epsilon used for weight conversions."""
+    """Resolve the effective epsilon used for weight conversions.
+
+    Returns
+    -------
+    float
+        Effective epsilon for weight conversions.
+    """
     return _resolve_weight_epsilon(config)
 
 

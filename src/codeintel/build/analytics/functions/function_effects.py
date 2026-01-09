@@ -539,7 +539,6 @@ def _call_graph_rowset(
         keys=[E.field("caller_goid_h128")],
         aggregates=[("callee_goid_h128", "list", None, "callee_goid_h128")],
     )
-    plan = plan.order_by(sort_keys=[("caller_goid_h128", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -568,7 +567,6 @@ def _unresolved_call_rowset(
         keys=[E.field("caller_goid_h128")],
         aggregates=[("caller_goid_h128", "count", None, "unresolved_call_count")],
     )
-    plan = plan.order_by(sort_keys=[("caller_goid_h128", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -585,7 +583,6 @@ def _ensure_call_graph_nodes(
         return
     plan = snapshot_plan(nodes_frame, repo=repo, commit=commit, columns=("goid_h128",))
     plan = plan.filter(E.is_valid("goid_h128"))
-    plan = plan.order_by(sort_keys=[("goid_h128", "ascending")])
     table = materialize_plan(plan, use_threads=True)
     for row in iter_rows(table, ("goid_h128",)):
         goid = normalize_decimal_id(row.get("goid_h128"))

@@ -276,7 +276,7 @@ def compute_cfg_longest_path(
     except rx.NullGraph:
         return 0
 
-    condensed_graph = rx.condensation(directed_graph)
+    condensed_graph = cast("rx.PyDiGraph", rx.condensation(directed_graph))
     if condensed_graph.num_nodes() == 0:
         return 0
     try:

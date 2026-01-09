@@ -96,13 +96,6 @@ def build_subsystem_profile_cache_frame(
             ),
         )
     )
-    joined_plan = joined_plan.order_by(
-        sort_keys=[
-            ("repo", "ascending"),
-            ("commit", "ascending"),
-            ("subsystem_id", "ascending"),
-        ]
-    )
     joined = materialize_plan(joined_plan, use_threads=True)
     columns = _profile_cache_columns()
     return _ensure_columns(joined, columns)

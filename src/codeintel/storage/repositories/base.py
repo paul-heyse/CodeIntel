@@ -29,7 +29,10 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_reader_batches
+from codeintel.core.columnar.finalize_ops import (
+    finalize_reader_batches,
+    finalize_spec_for_table,
+)
 from codeintel.core.queries.context import QueryContext
 from codeintel.core.repository import PagedResult
 from codeintel.core.schemas.resolution import resolve_table_schema
@@ -148,10 +151,7 @@ class BaseRepository:
             return records_from_arrow_reader(reader)
         finalized = finalize_reader_batches(
             reader,
-            spec=FinalizeSpec(
-                table_key=table_key,
-                mode="tolerant",
-            ),
+            spec=finalize_spec_for_table(table_key, mode="tolerant"),
         )
         return records_from_arrow_reader(finalized)
 
@@ -171,10 +171,7 @@ class BaseRepository:
             return iter_records_from_arrow_reader(reader)
         finalized = finalize_reader_batches(
             reader,
-            spec=FinalizeSpec(
-                table_key=table_key,
-                mode="tolerant",
-            ),
+            spec=finalize_spec_for_table(table_key, mode="tolerant"),
         )
         return iter_records_from_arrow_reader(finalized)
 

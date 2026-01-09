@@ -27,7 +27,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_reader
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.kernels import SortKey
@@ -246,8 +246,8 @@ def symbol_use_edges_compute(
     reader = table_to_reader(table, batch_size=None)
     result = finalize_reader(
         reader,
-        spec=FinalizeSpec(
-            table_key=SYMBOL_USE_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            SYMBOL_USE_EDGES_TABLE_KEY,
             mode="strict",
             order_by=SYMBOL_USE_EDGES_SORT_KEYS,
             target_name=SYMBOL_USES_TARGET_NAME,

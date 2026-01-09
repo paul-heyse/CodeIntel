@@ -16,6 +16,7 @@ from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.columnar.ordering import OrderingSpec, SortKey
 from codeintel.core.columnar.queryspec import QuerySpec
+from codeintel.core.columnar.streaming import configure_arrow_threading
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -172,7 +173,12 @@ class Plan:
             expr_list = list(expressions)
         options = acero.ProjectNodeOptions(expr_list, names=names)
         decl = acero.Declaration("project", options, inputs=[self.declaration])
-        return Plan(decl, ordering=self._resolved_ordering())
+        ordering = _project_ordering(
+            self._resolved_ordering(),
+            expressions=expr_list,
+            names=names,
+        )
+        return Plan(decl, ordering=ordering)
 
     def filter(self, expr: pc.Expression) -> Plan:
         """Filter rows by an expression.
@@ -302,6 +308,7 @@ class Plan:
         pyarrow.Table
             Materialized table result.
         """
+        configure_arrow_threading()
         reader = self.declaration.to_reader(use_threads=use_threads)
         return normalize_table_for_compute(reader_to_table(reader))
 
@@ -318,7 +325,62 @@ class Plan:
         pyarrow.RecordBatchReader
             RecordBatchReader for the plan result.
         """
+        configure_arrow_threading()
         return self.declaration.to_reader(use_threads=use_threads)
+
+
+def _field_name_for_expression(expr: pc.Expression) -> str | None:
+    candidate = str(expr)
+    if expr.equals(pc.field(candidate)):
+        return candidate
+    return None
+
+
+def _project_output_names(
+    expressions: Sequence[pc.Expression],
+    *,
+    names: Sequence[str] | None,
+) -> list[str | None]:
+    if names is not None:
+        return list(names)
+    return [_field_name_for_expression(expr) for expr in expressions]
+
+
+def _project_field_mapping(
+    expressions: Sequence[pc.Expression],
+    *,
+    names: Sequence[str] | None,
+) -> dict[str, str]:
+    output_names = _project_output_names(expressions, names=names)
+    mapping: dict[str, str] = {}
+    for expr, output_name in zip(expressions, output_names, strict=True):
+        if output_name is None:
+            continue
+        field_name = _field_name_for_expression(expr)
+        if field_name is None:
+            continue
+        mapping[field_name] = output_name
+    return mapping
+
+
+def _project_ordering(
+    ordering: OrderingSpec,
+    *,
+    expressions: Sequence[pc.Expression],
+    names: Sequence[str] | None,
+) -> OrderingSpec:
+    if ordering.level == "unordered" or not ordering.keys:
+        return ordering
+    mapping = _project_field_mapping(expressions, names=names)
+    if not mapping:
+        return OrderingSpec.unordered(reason="project drops ordering")
+    new_keys: list[SortKey] = []
+    for name, direction in ordering.keys:
+        output_name = mapping.get(name)
+        if output_name is None:
+            return OrderingSpec.unordered(reason="project drops ordering")
+        new_keys.append((output_name, direction))
+    return replace(ordering, keys=tuple(new_keys))
 
 
 def materialize_plan(
@@ -386,6 +448,7 @@ def query_plan_options_for_context(
     provenance = resolved.provenance or ctx.provenance
     implicit_ordering = resolved.implicit_ordering
     require_sequenced_output = resolved.require_sequenced_output
+    determinism = ctx.resolve_determinism()
     profile = ctx.runtime_profile
     if profile is not None:
         provenance = profile.resolve_provenance(default=provenance)
@@ -393,6 +456,8 @@ def query_plan_options_for_context(
         require_sequenced_output = profile.resolve_require_sequenced_output(
             default=require_sequenced_output
         )
+    if determinism == "canonical":
+        provenance = True
     if (
         provenance == resolved.provenance
         and implicit_ordering == resolved.implicit_ordering
@@ -468,15 +533,17 @@ def build_query_plan(
         Compiled scan/filter/project plan.
     """
     resolved = options or QueryPlanOptions()
+    scan_filter = spec.scan_filter_expression()
     plan = Plan.scan(
         dataset,
         columns=spec.scan_columns(provenance=resolved.provenance),
-        filter_expr=spec.pushdown_predicate,
+        filter_expr=scan_filter,
         implicit_ordering=resolved.implicit_ordering,
         require_sequenced_output=resolved.require_sequenced_output,
     )
-    if spec.predicate is not None:
-        plan = plan.filter(spec.predicate)
+    post_filter = spec.post_filter_expression()
+    if post_filter is not None:
+        plan = plan.filter(post_filter)
     projection = spec.project_expressions(provenance=resolved.provenance)
     if projection:
         plan = plan.project(projection)

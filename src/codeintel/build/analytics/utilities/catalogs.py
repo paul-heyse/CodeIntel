@@ -35,7 +35,7 @@ def module_map_from_frame(
         repo=repo,
         commit=commit,
         columns=("path", "module"),
-        order_by=("path",),
+        order_by=None,
     )
     for row in _iter_rows_from_source(source):
         path = row.get("path")
@@ -133,13 +133,6 @@ def _goids_source(
         return source
     plan = snapshot_plan(source, repo=repo, commit=commit, columns=required)
     plan = plan.filter(E.in_("kind", sorted(_FUNCTION_KINDS)))
-    plan = plan.order_by(
-        sort_keys=[
-            ("rel_path", "ascending"),
-            ("start_line", "ascending"),
-            ("goid_h128", "ascending"),
-        ]
-    )
     return materialize_plan(plan, use_threads=True)
 
 

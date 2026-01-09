@@ -198,14 +198,33 @@ def parse_args() -> Path:
 
 
 async def run_suite(commands: list[CommandSpec], repo_root: Path) -> list[CommandResult]:
-    """Execute each command sequentially and capture results.
+    """Execute ruff first, then run remaining commands concurrently.
 
     Returns
     -------
     list[CommandResult]
         Captured results for each command.
     """
-    return [await run_command(command, repo_root) for command in commands]
+    ruff_index = next(
+        (index for index, command in enumerate(commands) if command.name == "ruff_check"),
+        None,
+    )
+    if ruff_index is None:
+        return [await run_command(command, repo_root) for command in commands]
+
+    ruff_result = await run_command(commands[ruff_index], repo_root)
+    other_commands = [command for index, command in enumerate(commands) if index != ruff_index]
+    other_results = await asyncio.gather(
+        *(run_command(command, repo_root) for command in other_commands)
+    )
+    results: list[CommandResult] = []
+    other_iter = iter(other_results)
+    for index, _command in enumerate(commands):
+        if index == ruff_index:
+            results.append(ruff_result)
+        else:
+            results.append(next(other_iter))
+    return results
 
 
 def main() -> int:
@@ -221,6 +240,13 @@ def main() -> int:
     if not (repo_root / "pyproject.toml").exists():
         sys.stderr.write("Error: run this script from the repository context.\n")
         return 1
+
+    schema_actual_path = (
+        repo_root / "build" / "serving" / "artifacts" / "schema_manifest.current.json"
+    )
+    schema_diff_args = ["uv", "run", "python", "-m", "tools.schema_diff"]
+    if schema_actual_path.is_file():
+        schema_diff_args.extend(["--actual", str(schema_actual_path)])
 
     commands = [
         CommandSpec(
@@ -238,59 +264,36 @@ def main() -> int:
             ],
         ),
         CommandSpec(
-            name="dsl_raw_pyarrow_compute",
+            name="finalize_policy_guardrails",
             args=[
                 "uv",
                 "run",
                 "python",
                 "-m",
-                "tools.lint_no_raw_pyarrow_compute_in_nodes",
+                "tools.lint_finalize_policy_guardrails",
             ],
         ),
         CommandSpec(
-            name="dsl_no_materialize_nodes",
+            name="build_ingestion_guardrails",
             args=[
                 "uv",
                 "run",
                 "python",
                 "-m",
-                "tools.lint_no_materialize_in_nodes",
+                "tools.lint_build_ingestion_guardrails",
             ],
         ),
         CommandSpec(
-            name="analytics_rowset_guardrails",
+            name="analytics_guardrails",
             args=[
                 "uv",
                 "run",
                 "python",
                 "-m",
-                "tools.lint_analytics_rowset_guardrails",
+                "tools.lint_analytics_guardrails",
             ],
         ),
-        CommandSpec(
-            name="analytics_finalize_writes",
-            args=[
-                "uv",
-                "run",
-                "python",
-                "-m",
-                "tools.lint_analytics_finalize_writes",
-            ],
-        ),
-        CommandSpec(
-            name="analytics_iter_rows_guardrail",
-            args=[
-                "uv",
-                "run",
-                "python",
-                "-m",
-                "tools.lint_analytics_iter_rows",
-            ],
-        ),
-        CommandSpec(
-            name="schema_diff",
-            args=["uv", "run", "python", "-m", "tools.schema_diff"],
-        ),
+        CommandSpec(name="schema_diff", args=schema_diff_args),
         CommandSpec(
             name="cli_registry_preflight",
             args=[

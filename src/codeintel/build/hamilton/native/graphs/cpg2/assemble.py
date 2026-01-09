@@ -111,7 +111,7 @@ from codeintel.build.tabular.compute_masks import (
     is_in_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -214,8 +214,8 @@ def assemble_cpg_nodes(tables: Sequence[pa.Table]) -> pa.Table:
     combined = _order_table(combined, sort_keys=_CPG_NODE_SORT_KEYS)
     result = finalize_table(
         combined,
-        spec=FinalizeSpec(
-            table_key=CPG_NODES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CPG_NODES_TABLE_KEY,
             mode="strict",
             order_by=_CPG_NODE_SORT_KEYS,
             target_name=CPG_TARGET_NAME,
@@ -241,8 +241,8 @@ def assemble_cpg_edges(tables: Sequence[pa.Table]) -> pa.Table:
     combined = _order_table(combined, sort_keys=_CPG_EDGE_SORT_KEYS)
     result = finalize_table(
         combined,
-        spec=FinalizeSpec(
-            table_key=CPG_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CPG_EDGES_TABLE_KEY,
             mode="strict",
             order_by=_CPG_EDGE_SORT_KEYS,
             target_name=CPG_TARGET_NAME,

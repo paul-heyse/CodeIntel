@@ -13,15 +13,9 @@ import pyarrow as pa
 from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_masks import (
-    and_kleene,
-    is_valid_expr,
-    is_valid_mask,
-    non_empty_string_expr,
-    non_empty_string_mask,
-)
+from codeintel.build.tabular.compute_masks import is_valid_expr, non_empty_string_expr
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -305,17 +299,10 @@ def _prefilter_cdg_blocks(blocks_table: pa.Table) -> pa.Table:
     if not required.issubset(set(blocks_table.column_names)):
         return blocks_table
 
-    def _mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
-        goid_mask = is_valid_mask(table.column("function_goid_h128"))
-        block_id_mask = is_valid_mask(table.column("block_id"))
-        block_idx_mask = is_valid_mask(table.column("block_idx"))
-        combined = and_kleene(goid_mask, block_id_mask)
-        return and_kleene(combined, block_idx_mask)
-
     expr = (
         is_valid_expr("function_goid_h128") & is_valid_expr("block_id") & is_valid_expr("block_idx")
     )
-    return plan_filter_or_fallback(blocks_table, expr, fallback_mask=_mask)
+    return plan_filter_or_fallback(blocks_table, expr)
 
 
 def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
@@ -325,13 +312,8 @@ def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
     if not required.issubset(set(edges_table.column_names)):
         return edges_table
 
-    def _mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
-        goid_mask = is_valid_mask(table.column("function_goid_h128"))
-        kind_mask = non_empty_string_mask(table.column("edge_kind"))
-        return and_kleene(goid_mask, kind_mask)
-
     expr = is_valid_expr("function_goid_h128") & non_empty_string_expr("edge_kind")
-    return plan_filter_or_fallback(edges_table, expr, fallback_mask=_mask)
+    return plan_filter_or_fallback(edges_table, expr)
 
 
 def cdg_edges(
@@ -416,8 +398,8 @@ def cdg_edges(
     table, _ = table_for_rows(CDG_EDGES_TABLE_KEY, rows)
     result = finalize_table(
         table,
-        spec=FinalizeSpec(
-            table_key=CDG_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CDG_EDGES_TABLE_KEY,
             mode="strict",
             key_fields=_key_fields_for_table(CDG_EDGES_TABLE_KEY),
             order_by=_order_by_for_table(CDG_EDGES_TABLE_KEY),

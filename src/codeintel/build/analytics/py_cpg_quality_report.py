@@ -370,7 +370,6 @@ def _inspect_anchor_ids(reader: pa.Table, *, has_src: bool) -> set[int]:
     )
     plan = plan.project({"src_id": E.field("src_cpg_node_id")})
     plan = plan.aggregate(keys=[E.field("src_id")], aggregates=[])
-    plan = plan.order_by(sort_keys=[("src_id", "ascending")])
     table = materialize_plan(plan, use_threads=True)
     anchor_ids: set[int] = set()
     for row in iter_rows(table, ("src_id",)):
@@ -429,7 +428,6 @@ def _symbol_edge_counts(
         keys=[E.field("node_kind")],
         aggregates=[("node_kind", "count", None, "edge_count")],
     )
-    joined = joined.order_by(sort_keys=[("node_kind", "ascending")])
     aggregated = materialize_plan(joined, use_threads=True)
     symbol_edge_count = 0
     external_symbol_edge_count = 0

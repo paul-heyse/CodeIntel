@@ -7,7 +7,7 @@ import pyarrow as pa
 from codeintel.build.graphs.assembly import tabular_to_table
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.conversion import table_to_reader
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_reader
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -81,8 +81,8 @@ def pdg_edges(
     reader = table_to_reader(combined, batch_size=None)
     result = finalize_reader(
         reader,
-        spec=FinalizeSpec(
-            table_key=PDG_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            PDG_EDGES_TABLE_KEY,
             mode="strict",
             order_by=PDG_SORT_KEYS,
             target_name=PDG_TARGET_NAME,

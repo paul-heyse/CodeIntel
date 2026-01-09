@@ -16,7 +16,7 @@ from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_reader
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.kernels import SortKey
@@ -396,8 +396,8 @@ def call_graph_nodes_compute(
     reader = table_to_reader(table, batch_size=None)
     result = finalize_reader(
         reader,
-        spec=FinalizeSpec(
-            table_key=CALL_GRAPH_NODES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CALL_GRAPH_NODES_TABLE_KEY,
             mode="strict",
             order_by=CALL_GRAPH_NODES_SORT_KEYS,
         ),
@@ -453,8 +453,8 @@ def call_graph_edges_compute(
     reader = table_to_reader(table, batch_size=None)
     result = finalize_reader(
         reader,
-        spec=FinalizeSpec(
-            table_key=CALL_GRAPH_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CALL_GRAPH_EDGES_TABLE_KEY,
             mode="strict",
             order_by=CALL_GRAPH_EDGES_SORT_KEYS,
         ),

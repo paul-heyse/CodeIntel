@@ -15,7 +15,7 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
 from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or_fallback
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_masks import is_valid_expr, is_valid_mask
+from codeintel.build.tabular.compute_masks import is_valid_expr
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.kernels import stable_sort_indices
@@ -171,15 +171,7 @@ def cpg2_nodes__goids(
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     if "cpg_node_id" not in table.column_names:
         return table
-
-    def _mask(value_table: pa.Table) -> pa.Array | pa.ChunkedArray:
-        return is_valid_mask(value_table.column("cpg_node_id"))
-
-    return plan_filter_or_fallback(
-        table,
-        is_valid_expr("cpg_node_id"),
-        fallback_mask=_mask,
-    )
+    return plan_filter_or_fallback(table, is_valid_expr("cpg_node_id"))
 
 
 __all__ = ["GoidNodeDiagnostics", "cpg2_nodes__goids"]

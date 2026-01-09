@@ -136,6 +136,8 @@ def load_dfg_edges(
                     str(use_kind) if use_kind is not None else "unknown",
                 )
             )
+    for edges in edges_by_fn.values():
+        edges.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[5], item[4]))
     return edges_by_fn
 
 

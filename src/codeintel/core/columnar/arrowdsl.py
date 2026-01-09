@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -22,6 +22,8 @@ from codeintel.core.columnar.finalize_ops import (
 from codeintel.core.columnar.kernels import SortKey, stable_sort_table
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.columnar.ordering import OrderingSpec
+from codeintel.core.columnar.plan_ops import ExternalPlanRequest, Plan, run_external_plan
+from codeintel.core.columnar.streaming import configure_arrow_threading_for_context
 from codeintel.core.validation.schema_constraints import is_list_like
 
 if TYPE_CHECKING:
@@ -51,12 +53,14 @@ class JoinPrecheckSpec:
 
 @dataclass(frozen=True, slots=True)
 class ExecutionPlan:
-    """Plan wrapper for Acero declarations or table callables."""
+    """Plan wrapper for Acero declarations, external plans, or table callables."""
 
     decl: acero.Declaration | None = None
     table_thunk: TableThunk | None = None
     reader_thunk: ReaderThunk | None = None
+    external_request: ExternalPlanRequest | None = None
     ordering: OrderingSpec | None = None
+    determinism: DedupeTier | None = None
 
     @classmethod
     def from_declaration(
@@ -64,6 +68,7 @@ class ExecutionPlan:
         declaration: acero.Declaration,
         *,
         ordering: OrderingSpec | None = None,
+        determinism: DedupeTier | None = None,
     ) -> ExecutionPlan:
         """Return an execution plan backed by an Acero declaration.
 
@@ -72,7 +77,7 @@ class ExecutionPlan:
         ExecutionPlan
             Plan wrapping the provided Acero declaration.
         """
-        return cls(decl=declaration, ordering=ordering)
+        return cls(decl=declaration, ordering=ordering, determinism=determinism)
 
     @classmethod
     def from_table(
@@ -80,6 +85,7 @@ class ExecutionPlan:
         table: pa.Table,
         *,
         ordering: OrderingSpec | None = None,
+        determinism: DedupeTier | None = None,
     ) -> ExecutionPlan:
         """Return an execution plan backed by an in-memory table.
 
@@ -88,7 +94,7 @@ class ExecutionPlan:
         ExecutionPlan
             Plan wrapping the provided table.
         """
-        return cls(table_thunk=lambda: table, ordering=ordering)
+        return cls(table_thunk=lambda: table, ordering=ordering, determinism=determinism)
 
     @classmethod
     def from_reader(
@@ -96,6 +102,7 @@ class ExecutionPlan:
         reader: pa.RecordBatchReader,
         *,
         ordering: OrderingSpec | None = None,
+        determinism: DedupeTier | None = None,
     ) -> ExecutionPlan:
         """Return an execution plan backed by a record batch reader.
 
@@ -104,7 +111,44 @@ class ExecutionPlan:
         ExecutionPlan
             Plan wrapping the provided reader.
         """
-        return cls(reader_thunk=lambda: reader, ordering=ordering)
+        return cls(reader_thunk=lambda: reader, ordering=ordering, determinism=determinism)
+
+    @classmethod
+    def from_external_plan(
+        cls,
+        request: ExternalPlanRequest,
+        *,
+        ordering: OrderingSpec | None = None,
+        determinism: DedupeTier | None = None,
+    ) -> ExecutionPlan:
+        """Return an execution plan backed by an external plan request.
+
+        Returns
+        -------
+        ExecutionPlan
+            Plan wrapping the external plan runner request.
+        """
+        return cls(external_request=request, ordering=ordering, determinism=determinism)
+
+    @classmethod
+    def from_plan(
+        cls,
+        plan: Plan,
+        *,
+        determinism: DedupeTier | None = None,
+    ) -> ExecutionPlan:
+        """Return an execution plan backed by an Acero Plan.
+
+        Returns
+        -------
+        ExecutionPlan
+            Plan wrapper retaining ordering metadata from the DSL plan.
+        """
+        return cls(
+            decl=plan.declaration,
+            ordering=plan.ordering,
+            determinism=determinism,
+        )
 
     def to_reader(self, *, ctx: ExecutionContext) -> pa.RecordBatchReader:
         """Return a RecordBatchReader for the plan output.
@@ -119,13 +163,20 @@ class ExecutionPlan:
         RuntimeError
             Raised when no declaration, reader, or table thunk is available.
         """
+        configure_arrow_threading_for_context(ctx=ctx)
+        resolved_use_threads = ctx.resolve_use_threads()
         if self.decl is not None:
-            return self.decl.to_reader(use_threads=ctx.use_threads)
+            return self.decl.to_reader(use_threads=resolved_use_threads)
+        if self.external_request is not None:
+            request = self.external_request
+            if request.use_threads is None:
+                request = replace(request, use_threads=resolved_use_threads)
+            return run_external_plan(request)
         if self.reader_thunk is not None:
             return self.reader_thunk()
         if self.table_thunk is not None:
             return self.table_thunk().to_reader()
-        msg = "ExecutionPlan requires a declaration, reader, or table thunk."
+        msg = "ExecutionPlan requires a declaration, external plan, reader, or table thunk."
         raise RuntimeError(msg)
 
     def to_table(self, *, ctx: ExecutionContext) -> pa.Table:
@@ -136,6 +187,7 @@ class ExecutionPlan:
         pyarrow.Table
             Normalized table for the plan output.
         """
+        configure_arrow_threading_for_context(ctx=ctx)
         if self.table_thunk is not None:
             table = self.table_thunk()
         else:
@@ -159,13 +211,14 @@ def run_pipeline(
         Finalized result containing good rows, errors, and artifacts.
     """
     resolved_ctx = ctx or ExecutionContext()
+    finalize_spec = _resolve_finalize_spec(finalize, plan=plan, ctx=resolved_ctx)
     if post:
         table = plan.to_table(ctx=resolved_ctx)
         for step in post:
             table = step(table)
-        return finalize_table(table, spec=finalize)
+        return finalize_table(table, spec=finalize_spec)
     reader = plan.to_reader(ctx=resolved_ctx)
-    return finalize_reader(reader, spec=finalize)
+    return finalize_reader(reader, spec=finalize_spec)
 
 
 def run_pipeline_good(
@@ -183,6 +236,21 @@ def run_pipeline_good(
         Finalized table of good rows.
     """
     return run_pipeline(plan=plan, post=post, finalize=finalize, ctx=ctx).good
+
+
+def _resolve_finalize_spec(
+    spec: FinalizeSpec,
+    *,
+    plan: ExecutionPlan,
+    ctx: ExecutionContext,
+) -> FinalizeSpec:
+    determinism = spec.determinism
+    if determinism is None:
+        determinism = plan.determinism or ctx.resolve_determinism()
+    ordering = spec.ordering or plan.ordering
+    if determinism == spec.determinism and ordering == spec.ordering:
+        return spec
+    return replace(spec, determinism=determinism, ordering=ordering)
 
 
 def precheck_join_keys(

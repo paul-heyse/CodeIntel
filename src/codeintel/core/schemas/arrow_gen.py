@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Literal
+from typing import Literal, get_args
 
 import pyarrow as pa
 from sqlglot import exp
@@ -17,9 +17,11 @@ from codeintel.core.schemas.primitives import (
     COMPLEX_TYPE_BASES,
     Column,
     ColumnType,
+    FinalizeDedupeTier,
     TableSchema,
     column_type_base,
     normalize_column_type,
+    resolve_stable_sort_keys,
 )
 
 _DECIMAL_PATTERN = re.compile(r"^DECIMAL\\((\\d+),(\\d+)\\)$")
@@ -39,10 +41,12 @@ ARROW_SCHEMA_METADATA_KEYS: tuple[str, ...] = (
     "codeintel.schema_hash",
     "codeintel.schema_digest",
     "codeintel.primary_key",
+    "codeintel.determinism_tier",
     "codeintel.schema_contract_version",
     "codeintel.extras_policy",
     "codeintel.extras_column",
     "codeintel.extras_schema",
+    "codeintel.ordering_keys",
     "codeintel.description",
     "codeintel.provenance",
     "codeintel.domain",
@@ -239,6 +243,8 @@ class ArrowSchemaMetadata:
     provenance: ArrowSchemaProvenance | None = None
     column_lineage: Mapping[str, Iterable[tuple[str, str]]] | None = None
     pii_by_column: Mapping[str, str] | None = None
+    determinism_tier: FinalizeDedupeTier | None = None
+    ordering_keys: tuple[str, ...] | None = None
     contract_version: str | None = None
     extras_policy: ExtrasPolicy | None = None
     extras_column: str | None = None
@@ -261,6 +267,8 @@ class _SchemaMetadataContext:
     schema_hash_value: str
     schema_digest: str
     provenance_payload: Mapping[str, str]
+    determinism_tier: FinalizeDedupeTier
+    ordering_keys: tuple[str, ...] | None
     contract_version: str
     extras_policy: ExtrasPolicy
     extras_column: str
@@ -297,13 +305,42 @@ def _normalize_contract_metadata(
     _validate_extras_policy(extras_policy)
     extras_column = resolved.extras_column or DEFAULT_EXTRAS_COLUMN
     extras_schema = _normalize_extras_schema(resolved.extras_schema)
+    determinism_tier = _normalize_determinism_tier(resolved.determinism_tier)
+    ordering_keys = _normalize_ordering_keys(resolved.ordering_keys)
     return replace(
         resolved,
         contract_version=contract_version,
         extras_policy=extras_policy,
         extras_column=extras_column,
         extras_schema=extras_schema,
+        determinism_tier=determinism_tier,
+        ordering_keys=ordering_keys,
     )
+
+
+def _normalize_determinism_tier(
+    tier: FinalizeDedupeTier | None,
+) -> FinalizeDedupeTier | None:
+    if tier is None:
+        return None
+    if tier not in get_args(FinalizeDedupeTier):
+        msg = f"Unsupported determinism tier: {tier!r}"
+        raise ValueError(msg)
+    return tier
+
+
+def _normalize_ordering_keys(
+    ordering_keys: tuple[str, ...] | Sequence[str] | None,
+) -> tuple[str, ...] | None:
+    if ordering_keys is None:
+        return None
+    normalized: list[str] = []
+    for key in ordering_keys:
+        if not isinstance(key, str):
+            msg = f"Ordering key must be a string, got {type(key)}"
+            raise TypeError(msg)
+        normalized.append(key)
+    return tuple(normalized)
 
 
 def _arrow_decimal_type(normalized: str) -> pa.DataType:
@@ -557,6 +594,23 @@ def _provenance_payload(provenance: ArrowSchemaProvenance | None) -> dict[str, s
     return provenance.to_payload()
 
 
+def _ordering_keys_for_schema(table_schema: TableSchema) -> tuple[str, ...] | None:
+    policy = table_schema.finalize_policy
+    if policy is not None and policy.canonical_sort_keys is not None:
+        return policy.canonical_sort_keys
+    return resolve_stable_sort_keys(table_schema)
+
+
+def _determinism_for_ordering_keys(
+    ordering_keys: tuple[str, ...] | None,
+) -> FinalizeDedupeTier:
+    if ordering_keys == ():
+        return "throughput"
+    if ordering_keys:
+        return "canonical"
+    return "stable_set"
+
+
 def _field_metadata(
     column: Column,
     context: _FieldMetadataContext,
@@ -591,10 +645,13 @@ def _schema_metadata(context: _SchemaMetadataContext) -> dict[str, object]:
         "codeintel.schema_hash": context.schema_hash_value,
         "codeintel.schema_digest": context.schema_digest,
         "codeintel.primary_key": list(context.table_schema.primary_key),
+        "codeintel.determinism_tier": context.determinism_tier,
         "codeintel.schema_contract_version": context.contract_version,
         "codeintel.extras_policy": context.extras_policy,
         "codeintel.extras_column": context.extras_column,
     }
+    if context.ordering_keys is not None:
+        schema_metadata["codeintel.ordering_keys"] = list(context.ordering_keys)
     if context.extras_schema:
         schema_metadata["codeintel.extras_schema"] = dict(context.extras_schema)
     if context.table_schema.description is not None:
@@ -627,6 +684,16 @@ def arrow_schema_from_table_schema(
     resolved_hash = resolved_metadata.schema_hash or schema_hash(table_schema)
     resolved_digest = resolved_metadata.schema_digest or fingerprint(table_schema.to_json_obj())
     provenance_payload = _provenance_payload(resolved_metadata.provenance)
+    ordering_keys = (
+        resolved_metadata.ordering_keys
+        if resolved_metadata.ordering_keys is not None
+        else _ordering_keys_for_schema(table_schema)
+    )
+    determinism_tier = (
+        resolved_metadata.determinism_tier
+        if resolved_metadata.determinism_tier is not None
+        else _determinism_for_ordering_keys(ordering_keys)
+    )
     key_roles = _key_roles(table_schema)
     field_context = _FieldMetadataContext(
         schema_hash_value=resolved_hash,
@@ -651,6 +718,8 @@ def arrow_schema_from_table_schema(
         schema_hash_value=resolved_hash,
         schema_digest=resolved_digest,
         provenance_payload=provenance_payload,
+        determinism_tier=determinism_tier,
+        ordering_keys=ordering_keys,
         contract_version=resolved_metadata.contract_version or ARROW_SCHEMA_CONTRACT_VERSION,
         extras_policy=resolved_metadata.extras_policy or DEFAULT_EXTRAS_POLICY,
         extras_column=resolved_metadata.extras_column or DEFAULT_EXTRAS_COLUMN,

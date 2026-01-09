@@ -25,6 +25,8 @@ from codeintel.core.schemas.primitives import (
     normalize_column_type,
 )
 
+_TIE_BREAKER_FIELD_COUNT = 2
+
 
 def column_to_json_obj(column: Column) -> dict[str, object]:
     """Serialize a Column into a JSON object.
@@ -301,7 +303,11 @@ def _parse_finalize_dedupe(value: object) -> FinalizeDedupeSpec | None:
         raise TypeError(msg)
     tie_breakers: list[tuple[str, SortDirection]] = []
     for item in tie_obj:
-        if not isinstance(item, list) or len(item) != 2 or not isinstance(item[0], str):
+        if (
+            not isinstance(item, list)
+            or len(item) != _TIE_BREAKER_FIELD_COUNT
+            or not isinstance(item[0], str)
+        ):
             msg = "Expected [column, direction] for finalize_policy.dedupe.tie_breakers[]"
             raise TypeError(msg)
         tie_breakers.append(

@@ -3,71 +3,63 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from codeintel.core.columnar.dedupe_ops import DedupeTier
+from codeintel.core.columnar import compute_config as columnar_compute_config
+from codeintel.core.columnar import profiles as columnar_profiles
+
+if TYPE_CHECKING:
+    from codeintel.core.columnar.dedupe_ops import DedupeTier
+    from codeintel.core.config.settings import ColumnarRuntimeSettings
 
 
-@dataclass(frozen=True, slots=True)
-class RuntimeProfile:
-    """Defaults for scan/runtime behavior across columnar pipelines."""
+RuntimeProfile = columnar_profiles.RuntimeProfile
 
-    name: str | None = None
-    scan_profile: str | None = None
-    implicit_ordering: bool | None = None
-    require_sequenced_output: bool | None = None
-    determinism: DedupeTier | None = None
-    use_threads: bool | None = None
-    provenance: bool | None = None
 
-    def resolve_use_threads(self, *, default: bool) -> bool:
-        """Return the resolved use_threads value.
+DEV_FAST = columnar_profiles.DEV_FAST
+DEV_DETERMINISTIC = columnar_profiles.DEV_DETERMINISTIC
+CI_STABLE = columnar_profiles.CI_STABLE
+PROD_THROUGHPUT = columnar_profiles.PROD_THROUGHPUT
 
-        Returns
-        -------
-        bool
-            Effective use_threads toggle.
-        """
-        return default if self.use_threads is None else self.use_threads
 
-    def resolve_determinism(self, default: DedupeTier) -> DedupeTier:
-        """Return the resolved determinism tier.
+def runtime_profile_registry() -> dict[str, RuntimeProfile]:
+    """Return the runtime profile registry.
 
-        Returns
-        -------
-        DedupeTier
-            Effective determinism tier.
-        """
-        return default if self.determinism is None else self.determinism
+    Returns
+    -------
+    dict[str, RuntimeProfile]
+        Mapping of profile names to RuntimeProfile defaults.
+    """
+    return columnar_profiles.runtime_profile_registry()
 
-    def resolve_provenance(self, *, default: bool) -> bool:
-        """Return the resolved provenance toggle.
 
-        Returns
-        -------
-        bool
-            Effective provenance toggle.
-        """
-        return default if self.provenance is None else self.provenance
+def resolve_runtime_profile(name: str | None) -> RuntimeProfile | None:
+    """Resolve a runtime profile by name.
 
-    def resolve_implicit_ordering(self, *, default: bool | None) -> bool | None:
-        """Return the resolved implicit ordering default.
+    Parameters
+    ----------
+    name
+        Runtime profile name (case-insensitive).
 
-        Returns
-        -------
-        bool | None
-            Effective implicit ordering toggle.
-        """
-        return default if self.implicit_ordering is None else self.implicit_ordering
+    Returns
+    -------
+    RuntimeProfile | None
+        Runtime profile when resolved, otherwise None.
+    """
+    return columnar_profiles.resolve_runtime_profile(name)
 
-    def resolve_require_sequenced_output(self, *, default: bool | None) -> bool | None:
-        """Return the resolved sequenced output default.
 
-        Returns
-        -------
-        bool | None
-            Effective sequenced output toggle.
-        """
-        return default if self.require_sequenced_output is None else self.require_sequenced_output
+def runtime_profile_from_settings(
+    settings: ColumnarRuntimeSettings | None,
+) -> RuntimeProfile | None:
+    """Return the runtime profile derived from columnar runtime settings.
+
+    Returns
+    -------
+    RuntimeProfile | None
+        Resolved runtime profile when configured.
+    """
+    return columnar_compute_config.resolve_runtime_profile_from_settings(settings)
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,3 +71,31 @@ class ExecutionContext:
     combine_chunks: bool = True
     provenance: bool = False
     runtime_profile: RuntimeProfile | None = None
+
+    def resolve_use_threads(self) -> bool:
+        """Return the resolved plan use_threads setting.
+
+        Returns
+        -------
+        bool
+            Effective plan use_threads toggle.
+        """
+        resolved = self.use_threads
+        profile = self.runtime_profile
+        if profile is not None:
+            resolved = profile.resolve_plan_use_threads(default=resolved)
+        return resolved
+
+    def resolve_determinism(self) -> DedupeTier:
+        """Return the resolved determinism tier.
+
+        Returns
+        -------
+        DedupeTier
+            Effective determinism tier after applying runtime profile defaults.
+        """
+        resolved = self.determinism
+        profile = self.runtime_profile
+        if profile is not None:
+            resolved = profile.resolve_determinism(default=resolved)
+        return resolved

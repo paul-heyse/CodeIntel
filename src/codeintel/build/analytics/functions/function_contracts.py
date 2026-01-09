@@ -19,7 +19,6 @@ from codeintel.build.analytics.utilities.ast import (
 )
 from codeintel.build.analytics.utilities.snapshot import snapshot_table
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.core.columnar.dedupe_ops import dedupe_keep_first_after_sort
 from codeintel.core.data_models.ids import normalize_decimal_id
 
 if TYPE_CHECKING:
@@ -199,11 +198,9 @@ def _doc_map_from_frame(
         repo=repo,
         commit=commit,
         columns=columns,
-        order_by=("rel_path", "qualname"),
     )
     if table.num_rows == 0:
         return {}
-    table = dedupe_keep_first_after_sort(table, key_columns=("rel_path", "qualname"))
     mapping: dict[tuple[str, str], dict[str, object]] = {}
     for row in iter_rows(table, columns):
         rel_path = row.get("rel_path")
@@ -239,11 +236,9 @@ def _type_map_from_frame(
         repo=repo,
         commit=commit,
         columns=tuple(columns),
-        order_by=("function_goid_h128",),
     )
     if table.num_rows == 0:
         return {}
-    table = dedupe_keep_first_after_sort(table, key_columns=("function_goid_h128",))
     mapping: dict[int, dict[str, object]] = {}
     for row in iter_rows(table, columns):
         goid = normalize_decimal_id(row.get("function_goid_h128"))
@@ -268,14 +263,12 @@ def _scoped_table(
     repo: str,
     commit: str,
     columns: Sequence[str],
-    order_by: Sequence[str] | None,
 ) -> pa.Table:
     return snapshot_table(
         frame,
         repo=repo,
         commit=commit,
         columns=columns,
-        order_by=order_by,
     )
 
 

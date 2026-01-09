@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, cast
 import msgspec
 
 from codeintel.build.graphs.runtime import GraphRuntime
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
@@ -178,7 +178,7 @@ def _persist_findings_parquet(
     table, _ = table_for_rows(GRAPH_VALIDATION_TABLE_KEY, normalized_rows)
     result = finalize_table(
         table,
-        spec=FinalizeSpec(table_key=GRAPH_VALIDATION_TABLE_KEY, mode="tolerant"),
+        spec=finalize_spec_for_table(GRAPH_VALIDATION_TABLE_KEY, mode="tolerant"),
     )
     table = result.good
     table_schema = table_schema_from_arrow_schema(

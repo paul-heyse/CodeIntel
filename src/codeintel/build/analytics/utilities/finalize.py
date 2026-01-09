@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Final
 
 import pyarrow as pa
 
-from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.finalize_ops import FinalizeResult, FinalizeSpec, finalize_table
-from codeintel.core.columnar.kernels import SortKey
+from codeintel.build.tabular.finalize_ops import (
+    FinalizeResult,
+    finalize_reader,
+    finalize_spec_for_table,
+    finalize_table,
+)
 from codeintel.core.columnar.rows import table_for_rows
-from codeintel.core.schemas.primitives import resolve_stable_sort_keys
 
 RowInput = Iterable[Mapping[str, object]] | Iterable[Sequence[object]]
-ORDER_ASC: Final = "ascending"
 
 
 def finalize_analytics_result(table_key: str, table: pa.Table) -> FinalizeResult:
@@ -25,10 +25,31 @@ def finalize_analytics_result(table_key: str, table: pa.Table) -> FinalizeResult
     FinalizeResult
         Finalization result containing good and rejected rows.
     """
-    order_by = _stable_order_by(table_key)
     return finalize_table(
         table,
-        spec=FinalizeSpec(table_key=table_key, mode="tolerant", order_by=order_by),
+        spec=finalize_spec_for_table(
+            table_key,
+            mode="tolerant",
+            emit_artifacts=True,
+        ),
+    )
+
+
+def finalize_analytics_reader(table_key: str, reader: pa.RecordBatchReader) -> FinalizeResult:
+    """Finalize an analytics reader against its contract in tolerant mode.
+
+    Returns
+    -------
+    FinalizeResult
+        Finalization result containing good and rejected rows.
+    """
+    return finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            table_key,
+            mode="tolerant",
+            emit_artifacts=True,
+        ),
     )
 
 
@@ -55,17 +76,37 @@ def finalize_analytics_rows(table_key: str, rows: RowInput) -> pa.Table:
     return finalize_analytics_table(table_key, table)
 
 
-def _stable_order_by(table_key: str) -> tuple[SortKey, ...]:
-    schema_service = get_schema_service()
-    table_schema = schema_service.get_table_schema(table_key)
-    stable_sort_keys = resolve_stable_sort_keys(table_schema)
-    if not stable_sort_keys:
-        return ()
-    return tuple((key, ORDER_ASC) for key in stable_sort_keys)
+def finalize_artifact_table_key(table_key: str, artifact: str) -> str:
+    """Return the companion dataset key for finalize artifacts.
+
+    Returns
+    -------
+    str
+        Artifact table key with the artifact suffix applied.
+    """
+    return f"{table_key}__{artifact}"
+
+
+def finalize_artifact_counts(result: FinalizeResult) -> dict[str, int]:
+    """Return row counts for finalize artifacts.
+
+    Returns
+    -------
+    dict[str, int]
+        Row counts for errors, alignment, and stats artifacts.
+    """
+    return {
+        "errors": result.errors.num_rows,
+        "alignment": result.alignment.num_rows,
+        "stats": result.stats.num_rows,
+    }
 
 
 __all__ = [
+    "finalize_analytics_reader",
     "finalize_analytics_result",
     "finalize_analytics_rows",
     "finalize_analytics_table",
+    "finalize_artifact_counts",
+    "finalize_artifact_table_key",
 ]

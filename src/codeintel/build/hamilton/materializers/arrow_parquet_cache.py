@@ -13,7 +13,7 @@ import pyarrow.parquet as pq
 from hamilton import registry
 from hamilton.io.data_adapters import DataLoader, DataSaver
 
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.parquet_metadata import read_parquet_metadata, read_parquet_schema
@@ -83,8 +83,8 @@ def _finalize_cache_table(table: pa.Table) -> pa.Table:
     order_by = _order_by_for_keys(stable_sort_keys)
     result = finalize_table(
         table,
-        spec=FinalizeSpec(
-            table_key=table_schema.table_key,
+        spec=finalize_spec_for_table(
+            table_schema.table_key,
             mode="tolerant",
             order_by=order_by,
         ),

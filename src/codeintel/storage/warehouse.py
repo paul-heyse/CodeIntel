@@ -36,7 +36,7 @@ from codeintel.core.columnar import (
 )
 from codeintel.core.columnar.compute_helpers import combine_table_chunks
 from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import SortKey, hash_struct_ordinal, stable_sort_indices
 from codeintel.core.filters import FilterSpecInput
 from codeintel.core.queries.filter_compiler import (
@@ -1063,8 +1063,8 @@ def _write_tabular(
                 table = deep_cast_table_to_contract(table, contract_schema)
         finalized = finalize_table(
             table,
-            spec=FinalizeSpec(
-                table_key=table_key,
+            spec=finalize_spec_for_table(
+                table_key,
                 mode=_finalize_mode(validation_mode),
             ),
         )

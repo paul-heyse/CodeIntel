@@ -146,7 +146,6 @@ def _config_entry_rowset(
         keys=[E.field("config_path")],
         aggregates=[("key", "list", None, "keys")],
     )
-    plan = plan.order_by(sort_keys=[("config_path", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -268,7 +267,6 @@ def _module_rowset(
         keys=[E.field("path")],
         aggregates=[("module", "list", None, "modules")],
     )
-    plan = plan.order_by(sort_keys=[("path", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,11 +32,30 @@ from codeintel.build.hamilton.observability import (
     export_dag_mermaid,
 )
 from codeintel.build.schemas import get_schema_provider
-from codeintel.build.settings import get_arrow_scan_settings
-from codeintel.core.columnar.iter import iter_rows
+from codeintel.build.scopes.snapshot import SnapshotScanContext
+from codeintel.build.settings import get_arrow_scan_settings, get_columnar_runtime_settings
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
+from codeintel.core.columnar.execution_context import (
+    ExecutionContext as ColumnarExecutionContext,
+)
+from codeintel.core.columnar.execution_context import (
+    RuntimeProfile,
+    runtime_profile_from_settings,
+)
+from codeintel.core.columnar.expr_vocab import E, Expression
+from codeintel.core.columnar.iter import iter_rows_limit
+from codeintel.core.columnar.ordering import OrderingSpec, SortKey
+from codeintel.core.columnar.plan_ops import build_query_plan_for_context
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
 from codeintel.core.columnar.rows import table_for_rows
-from codeintel.core.columnar.streaming import DatasetScanOptions
-from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.core.columnar.run_manifest import RunManifestOptions, write_run_manifest
+from codeintel.core.columnar.runtime import apply_runtime_profile
+from codeintel.core.columnar.streaming import (
+    ScanTelemetry,
+    build_scanner_for_queryspec_ctx,
+    scan_telemetry_for_queryspec,
+)
+from codeintel.core.constants import DEFAULT_ARROW_USE_THREADS
 from codeintel.core.datasets.arrow_store import (
     ArrowDatasetWriteOptions,
     scan_dataset,
@@ -44,21 +63,22 @@ from codeintel.core.datasets.arrow_store import (
 )
 from codeintel.core.datasets.manifests import load_dataset_manifest
 from codeintel.core.datasets.paths import dataset_snapshot_dir
-from codeintel.core.datasets.scanner_ops import build_scanner
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.query_results import coerce_optional_int
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.core.schemas.primitives import TableSchema, resolve_stable_sort_keys
+from codeintel.core.schemas.primitives import TableSchema, resolve_canonical_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.core.hamilton.records import NodeExecutionRecord
     from codeintel.runtime.runtime_bundle import HamiltonRuntimeBundle
 
 log = logging.getLogger(__name__)
 CACHE_LOG_KEY_TUPLE_LEN = 2
 CONTRACT_ALIGNMENT_SUMMARY_TABLE_KEY = "analytics.contract_alignment_summary"
+_DIAGNOSTIC_ROW_LIMIT = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -107,6 +127,7 @@ def diagnostics_dir(build_dir: Path) -> Path:
 def emit_diagnostics(inputs: DiagnosticsInputs) -> None:
     """Emit Hamilton-native diagnostics artifacts under build/diagnostics."""
     diag_dir = _ensure_dir(diagnostics_dir(inputs.env.paths.build_dir))
+    execution_ctx = _diagnostics_execution_ctx(inputs.env)
     summary = RunSummary(
         run_id=inputs.run_id,
         repo=inputs.env.repo,
@@ -125,10 +146,13 @@ def emit_diagnostics(inputs: DiagnosticsInputs) -> None:
     table_keys = _table_keys_for_targets(inputs.runtime, inputs.targets.requested)
     null_payload = _write_null_inventory(
         diag_dir=diag_dir,
-        env=inputs.env,
-        runtime=inputs.runtime,
-        table_keys=table_keys,
-        run_id=inputs.run_id,
+        request=_NullInventoryRequest(
+            env=inputs.env,
+            runtime=inputs.runtime,
+            table_keys=table_keys,
+            run_id=inputs.run_id,
+            execution_ctx=execution_ctx,
+        ),
     )
     drift_payload = _write_schema_drift(
         diag_dir=diag_dir,
@@ -152,16 +176,25 @@ def emit_diagnostics(inputs: DiagnosticsInputs) -> None:
         diag_dir=diag_dir,
         env=inputs.env,
         run_id=inputs.run_id,
+        execution_ctx=execution_ctx,
     )
     _write_empty_dataset_issues(
         diag_dir=diag_dir,
         env=inputs.env,
         run_id=inputs.run_id,
+        execution_ctx=execution_ctx,
     )
     _write_target_duration_summary(
         output_path=diag_dir / "target_durations.json",
         runtime=inputs.runtime,
         records=inputs.telemetry_records or (),
+    )
+    _emit_diagnostics_run_manifest(
+        diag_dir=diag_dir,
+        env=inputs.env,
+        table_keys=table_keys,
+        run_id=inputs.run_id,
+        execution_ctx=execution_ctx,
     )
     if inputs.cache_adapter is None:
         return
@@ -199,6 +232,213 @@ def emit_diagnostics(inputs: DiagnosticsInputs) -> None:
     )
 
 
+def _diagnostics_execution_ctx(env: BuildEnv) -> ColumnarExecutionContext:
+    scan_settings = get_arrow_scan_settings()
+    resolved_use_threads = (
+        DEFAULT_ARROW_USE_THREADS
+        if scan_settings.use_threads is None
+        else scan_settings.use_threads
+    )
+    runtime_profile = runtime_profile_from_settings(get_columnar_runtime_settings())
+    if runtime_profile is None:
+        runtime_profile = RuntimeProfile(name=env.profile)
+    scan_profile = runtime_profile.scan_profile or scan_settings.profile
+    use_threads = (
+        runtime_profile.use_threads
+        if runtime_profile.use_threads is not None
+        else scan_settings.use_threads
+    )
+    implicit_ordering = (
+        True if runtime_profile.implicit_ordering is None else runtime_profile.implicit_ordering
+    )
+    require_sequenced_output = (
+        True
+        if runtime_profile.require_sequenced_output is None
+        else runtime_profile.require_sequenced_output
+    )
+    runtime_profile = replace(
+        runtime_profile,
+        name=runtime_profile.name or env.profile,
+        scan_profile=scan_profile,
+        implicit_ordering=implicit_ordering,
+        require_sequenced_output=require_sequenced_output,
+        use_threads=use_threads,
+    )
+    return ColumnarExecutionContext(
+        use_threads=resolved_use_threads,
+        runtime_profile=runtime_profile,
+    )
+
+
+def _reader_for_query_spec(
+    dataset: ds.Dataset,
+    *,
+    spec: QuerySpec,
+    execution_ctx: ColumnarExecutionContext,
+) -> pa.RecordBatchReader:
+    try:
+        plan = build_query_plan_for_context(dataset, spec=spec, ctx=execution_ctx)
+        return ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    except (
+        pa.ArrowInvalid,
+        pa.ArrowNotImplementedError,
+        pa.ArrowTypeError,
+        TypeError,
+        ValueError,
+    ):
+        scanner = build_scanner_for_queryspec_ctx(dataset, spec=spec, ctx=execution_ctx)
+        return scanner.to_reader()
+
+
+def _query_spec_for_columns(
+    *,
+    columns: Sequence[str],
+    predicate: Expression | None,
+) -> QuerySpec:
+    projection = projection_spec_from_columns(tuple(columns), default_columns=None)
+    return QuerySpec(
+        predicate=predicate,
+        pushdown_predicate=predicate,
+        projection=projection,
+    )
+
+
+def _query_spec_for_run_id(
+    *,
+    columns: Sequence[str],
+    run_id: str,
+) -> QuerySpec:
+    predicate = None
+    if run_id:
+        predicate = E.field("run_id") == E.scalar(run_id)
+    return _query_spec_for_columns(columns=columns, predicate=predicate)
+
+
+def _emit_diagnostics_run_manifest(
+    *,
+    diag_dir: Path,
+    env: BuildEnv,
+    table_keys: Sequence[str],
+    run_id: str,
+    execution_ctx: ColumnarExecutionContext,
+) -> None:
+    dataset_root = env.paths.dataset_root_dir
+    snapshot_id = env.commit.strip()
+    if dataset_root is None or not snapshot_id:
+        return
+    table_key, telemetry = _scan_telemetry_for_manifest(
+        dataset_root=dataset_root,
+        table_keys=table_keys,
+        snapshot=env.snapshot,
+    )
+    if table_key is None:
+        return
+    ordering = _manifest_ordering(table_key, execution_ctx=execution_ctx)
+    threading_snapshot = apply_runtime_profile(
+        execution_ctx.runtime_profile,
+        settings=get_arrow_scan_settings(),
+    )
+    try:
+        write_run_manifest(
+            diag_dir,
+            options=RunManifestOptions(
+                determinism=execution_ctx.determinism,
+                ordering=ordering,
+                scan_telemetry=telemetry,
+                profile_name=_profile_name(execution_ctx),
+                scan_profile=_scan_profile_name(execution_ctx),
+                extras={
+                    "table_key": table_key,
+                    "snapshot_id": snapshot_id,
+                    "run_id": run_id,
+                    "repo": env.repo,
+                    "arrow_threading": threading_snapshot.to_mapping(),
+                },
+                filename="run_manifest_diagnostics.json",
+            ),
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        log.warning("build.diagnostics.run_manifest_failed run_id=%s error=%s", run_id, exc)
+
+
+def _scan_telemetry_for_manifest(
+    *,
+    dataset_root: Path,
+    table_keys: Sequence[str],
+    snapshot: SnapshotRef,
+) -> tuple[str | None, ScanTelemetry | None]:
+    for table_key in table_keys:
+        telemetry = _scan_telemetry_for_table(
+            dataset_root=dataset_root,
+            table_key=table_key,
+            snapshot=snapshot,
+        )
+        if telemetry is not None:
+            return table_key, telemetry
+    return None, None
+
+
+def _scan_telemetry_for_table(
+    *,
+    dataset_root: Path,
+    table_key: str,
+    snapshot: SnapshotRef,
+) -> ScanTelemetry | None:
+    try:
+        dataset = scan_dataset(
+            dataset_root=dataset_root,
+            table_key=table_key,
+            snapshot_id=snapshot.commit,
+        )
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError, pa.ArrowInvalid):
+        return _empty_scan_telemetry()
+    scan_ctx = SnapshotScanContext.from_snapshot(snapshot)
+    predicate = scan_ctx.filter_expr(dataset.schema)
+    spec = _query_spec_for_columns(
+        columns=tuple(dataset.schema.names),
+        predicate=predicate,
+    )
+    return scan_telemetry_for_queryspec(dataset, spec=spec)
+
+
+def _empty_scan_telemetry() -> ScanTelemetry:
+    return ScanTelemetry(fragment_count=None, estimated_rows=None)
+
+
+def _manifest_ordering(
+    table_key: str,
+    *,
+    execution_ctx: ColumnarExecutionContext,
+) -> OrderingSpec | None:
+    implicit_ordering = True
+    profile = execution_ctx.runtime_profile
+    if profile is not None:
+        implicit_ordering = profile.resolve_implicit_ordering(default=implicit_ordering)
+    try:
+        schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        schema = None
+    sort_keys = resolve_canonical_sort_keys(schema)
+    if sort_keys:
+        keys: list[SortKey] = [(key, "ascending") for key in sort_keys]
+        return OrderingSpec.explicit(keys=keys, reason="canonical sort keys")
+    if implicit_ordering:
+        return OrderingSpec.implicit(reason="implicit scan ordering")
+    return OrderingSpec.unordered(reason="scan unordered")
+
+
+def _profile_name(execution_ctx: ColumnarExecutionContext) -> str | None:
+    profile = execution_ctx.runtime_profile
+    return None if profile is None else profile.name
+
+
+def _scan_profile_name(execution_ctx: ColumnarExecutionContext) -> str | None:
+    profile = execution_ctx.runtime_profile
+    return None if profile is None else profile.scan_profile
+
+
 def _write_run_summary(path: Path, summary: RunSummary) -> None:
     payload: dict[str, object] = {
         "run_id": summary.run_id,
@@ -232,21 +472,28 @@ def _write_dag_exports(
         log.warning("build.diagnostics.dag_export_failed error=%s", exc)
 
 
+@dataclass(frozen=True, slots=True)
+class _NullInventoryRequest:
+    env: BuildEnv
+    runtime: HamiltonRuntimeBundle
+    table_keys: Sequence[str]
+    run_id: str
+    execution_ctx: ColumnarExecutionContext
+
+
 def _write_null_inventory(
     *,
     diag_dir: Path,
-    env: BuildEnv,
-    runtime: HamiltonRuntimeBundle,
-    table_keys: Sequence[str],
-    run_id: str,
+    request: _NullInventoryRequest,
 ) -> dict[str, object] | None:
-    if not table_keys:
+    if not request.table_keys:
         return None
     payload = _null_inventory_payload(
-        env=env,
-        runtime=runtime,
-        run_id=run_id,
-        table_keys=table_keys,
+        env=request.env,
+        runtime=request.runtime,
+        run_id=request.run_id,
+        table_keys=request.table_keys,
+        execution_ctx=request.execution_ctx,
     )
     if payload is None:
         return None
@@ -275,8 +522,13 @@ def _write_contract_alignment_summary(
     diag_dir: Path,
     env: BuildEnv,
     run_id: str,
+    execution_ctx: ColumnarExecutionContext,
 ) -> None:
-    payload = _contract_alignment_payload(env=env, run_id=run_id)
+    payload = _contract_alignment_payload(
+        env=env,
+        run_id=run_id,
+        execution_ctx=execution_ctx,
+    )
     _write_json(diag_dir / "contract_alignment_summary.json", payload)
 
 
@@ -331,7 +583,7 @@ def persist_contract_alignment_summary(
         partition_columns=partition_columns,
         schema_hash=schema_hash_value,
         manifest_extras={"table_schema": table_schema.to_json_obj()},
-        stable_sort_keys=resolve_stable_sort_keys(table_schema),
+        stable_sort_keys=resolve_canonical_sort_keys(table_schema),
     )
     write_dataset(
         dataset_root=dataset_root,
@@ -356,7 +608,9 @@ def _contract_alignment_payload(
     *,
     env: BuildEnv,
     run_id: str,
+    execution_ctx: ColumnarExecutionContext | None = None,
 ) -> dict[str, object]:
+    resolved_ctx = execution_ctx or _diagnostics_execution_ctx(env)
     payload = _contract_alignment_base_payload(env=env, run_id=run_id)
     dataset, status = _load_contract_alignment_dataset(env=env)
     payload.update(status)
@@ -368,7 +622,12 @@ def _contract_alignment_payload(
     if "run_id" not in columns:
         payload["status"] = "missing_columns"
         return payload
-    issues, totals = _contract_alignment_scan(dataset, run_id=run_id, columns=columns)
+    issues, totals = _contract_alignment_scan(
+        dataset,
+        run_id=run_id,
+        columns=columns,
+        execution_ctx=resolved_ctx,
+    )
     payload.update(_contract_alignment_summary_payload(issues=issues, totals=totals))
     return payload
 
@@ -442,10 +701,16 @@ def _contract_alignment_scan(
     *,
     run_id: str,
     columns: Sequence[str],
+    execution_ctx: ColumnarExecutionContext,
 ) -> tuple[list[dict[str, object]], _ContractAlignmentTotals]:
     issues: list[dict[str, object]] = []
     totals = _ContractAlignmentTotals()
-    for row in _iter_contract_alignment_rows(dataset, run_id=run_id, columns=columns):
+    for row in _iter_contract_alignment_rows(
+        dataset,
+        run_id=run_id,
+        columns=columns,
+        execution_ctx=execution_ctx,
+    ):
         issue, counts = _contract_alignment_issue(row)
         issues.append(issue)
         _update_contract_alignment_totals(totals, issue, counts)
@@ -510,30 +775,15 @@ def _iter_contract_alignment_rows(
     *,
     run_id: str,
     columns: Sequence[str],
+    execution_ctx: ColumnarExecutionContext,
 ) -> Iterable[Mapping[str, object]]:
-    scanner = _contract_alignment_scanner(dataset, columns=columns)
-    for batch in scanner.to_batches():
-        for row in iter_rows(batch, columns):
-            run_id_value = row.get("run_id")
-            if run_id_value is None or str(run_id_value) != run_id:
-                continue
-            yield row
-
-
-def _contract_alignment_scanner(
-    dataset: ds.Dataset,
-    *,
-    columns: Sequence[str],
-) -> ds.Scanner:
-    scan_settings = get_arrow_scan_settings()
-    return build_scanner(
-        dataset,
-        options=DatasetScanOptions(
-            batch_size=scan_settings.batch_size or DEFAULT_ARROW_BATCH_SIZE,
-            columns=columns,
-            unify_schemas=True,
-        ),
-    )
+    spec = _query_spec_for_run_id(columns=columns, run_id=run_id)
+    reader = _reader_for_query_spec(dataset, spec=spec, execution_ctx=execution_ctx)
+    for row in iter_rows_limit(reader, limit=_DIAGNOSTIC_ROW_LIMIT, columns=columns):
+        run_id_value = row.get("run_id")
+        if run_id_value is None or str(run_id_value) != run_id:
+            continue
+        yield row
 
 
 def _string_value(value: object | None) -> str | None:
@@ -568,8 +818,13 @@ def _write_empty_dataset_issues(
     diag_dir: Path,
     env: BuildEnv,
     run_id: str,
+    execution_ctx: ColumnarExecutionContext,
 ) -> None:
-    payload = _empty_dataset_issues_payload(env=env, run_id=run_id)
+    payload = _empty_dataset_issues_payload(
+        env=env,
+        run_id=run_id,
+        execution_ctx=execution_ctx,
+    )
     _write_json(diag_dir / "empty_dataset_issues.json", payload)
 
 
@@ -577,7 +832,9 @@ def _empty_dataset_issues_payload(
     *,
     env: BuildEnv,
     run_id: str,
+    execution_ctx: ColumnarExecutionContext | None = None,
 ) -> dict[str, object]:
+    resolved_ctx = execution_ctx or _diagnostics_execution_ctx(env)
     payload = _empty_dataset_issues_base_payload(env=env, run_id=run_id)
     dataset, status = _load_empty_dataset_issues_dataset(env=env)
     payload.update(status)
@@ -589,7 +846,12 @@ def _empty_dataset_issues_payload(
     if "run_id" not in columns:
         payload["status"] = "missing_columns"
         return payload
-    issues = _empty_dataset_issues_scan(dataset, run_id=run_id, columns=columns)
+    issues = _empty_dataset_issues_scan(
+        dataset,
+        run_id=run_id,
+        columns=columns,
+        execution_ctx=resolved_ctx,
+    )
     payload["issue_count"] = len(issues)
     payload["issues"] = issues
     return payload
@@ -662,10 +924,16 @@ def _empty_dataset_issues_scan(
     *,
     run_id: str,
     columns: Sequence[str],
+    execution_ctx: ColumnarExecutionContext,
 ) -> list[dict[str, object]]:
     return [
         _empty_dataset_issue_row(row, columns=columns)
-        for row in _iter_empty_dataset_issue_rows(dataset, run_id=run_id, columns=columns)
+        for row in _iter_empty_dataset_issue_rows(
+            dataset,
+            run_id=run_id,
+            columns=columns,
+            execution_ctx=execution_ctx,
+        )
     ]
 
 
@@ -674,30 +942,15 @@ def _iter_empty_dataset_issue_rows(
     *,
     run_id: str,
     columns: Sequence[str],
+    execution_ctx: ColumnarExecutionContext,
 ) -> Iterable[Mapping[str, object]]:
-    scanner = _empty_dataset_issues_scanner(dataset, columns=columns)
-    for batch in scanner.to_batches():
-        for row in iter_rows(batch, columns):
-            run_id_value = row.get("run_id")
-            if run_id_value is None or str(run_id_value) != run_id:
-                continue
-            yield row
-
-
-def _empty_dataset_issues_scanner(
-    dataset: ds.Dataset,
-    *,
-    columns: Sequence[str],
-) -> ds.Scanner:
-    scan_settings = get_arrow_scan_settings()
-    return build_scanner(
-        dataset,
-        options=DatasetScanOptions(
-            batch_size=scan_settings.batch_size or DEFAULT_ARROW_BATCH_SIZE,
-            columns=columns,
-            unify_schemas=True,
-        ),
-    )
+    spec = _query_spec_for_run_id(columns=columns, run_id=run_id)
+    reader = _reader_for_query_spec(dataset, spec=spec, execution_ctx=execution_ctx)
+    for row in iter_rows_limit(reader, limit=_DIAGNOSTIC_ROW_LIMIT, columns=columns):
+        run_id_value = row.get("run_id")
+        if run_id_value is None or str(run_id_value) != run_id:
+            continue
+        yield row
 
 
 def _empty_dataset_issue_row(
@@ -990,7 +1243,9 @@ def _null_inventory_payload(
     runtime: HamiltonRuntimeBundle,
     run_id: str,
     table_keys: Sequence[str],
+    execution_ctx: ColumnarExecutionContext | None = None,
 ) -> dict[str, object] | None:
+    resolved_ctx = execution_ctx or _diagnostics_execution_ctx(env)
     rows: list[dict[str, object]] = []
     tables_with_nulls = 0
     missing_tables = 0
@@ -1002,6 +1257,7 @@ def _null_inventory_payload(
             env=env,
             runtime=runtime,
             table_key=table_key,
+            execution_ctx=resolved_ctx,
         )
         rows.append(entry)
         if entry.get("status") == "missing":
@@ -1037,6 +1293,7 @@ def _null_inventory_for_table(
     env: BuildEnv,
     runtime: HamiltonRuntimeBundle,
     table_key: str,
+    execution_ctx: ColumnarExecutionContext,
 ) -> dict[str, object]:
     snapshot_dir = dataset_snapshot_dir(
         env.paths.dataset_root_dir,
@@ -1075,7 +1332,11 @@ def _null_inventory_for_table(
     if not columns:
         columns = available
 
-    row_count, null_counts = _null_counts_for_columns(dataset, columns)
+    row_count, null_counts = _null_counts_for_columns(
+        dataset,
+        columns,
+        execution_ctx=execution_ctx,
+    )
     columns_with_nulls: list[dict[str, object]] = []
     for name, null_count in null_counts.items():
         if null_count <= 0:
@@ -1129,21 +1390,16 @@ def _nullable_columns(table_schema: TableSchema | None) -> dict[str, bool]:
 
 
 def _null_counts_for_columns(
-    dataset: object,
+    dataset: ds.Dataset,
     columns: Sequence[str],
+    *,
+    execution_ctx: ColumnarExecutionContext,
 ) -> tuple[int, dict[str, int]]:
-    scan_settings = get_arrow_scan_settings()
-    scanner = build_scanner(
-        dataset,
-        options=DatasetScanOptions(
-            batch_size=scan_settings.batch_size or DEFAULT_ARROW_BATCH_SIZE,
-            columns=columns,
-            unify_schemas=True,
-        ),
-    )
+    spec = _query_spec_for_columns(columns=columns, predicate=None)
+    reader = _reader_for_query_spec(dataset, spec=spec, execution_ctx=execution_ctx)
     null_counts = dict.fromkeys(columns, 0)
     row_count = 0
-    for batch in scanner.to_batches():
+    for batch in reader:
         row_count += batch.num_rows
         for index, name in enumerate(batch.schema.names):
             null_counts[name] += batch.column(index).null_count

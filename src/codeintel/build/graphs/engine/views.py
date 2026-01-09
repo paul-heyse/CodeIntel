@@ -10,14 +10,13 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Hashable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
-from codeintel.build.graphs.assembly import reader_to_table, table_to_reader
+from codeintel.build.graphs.assembly import table_to_reader
 from codeintel.build.graphs.engine.datasets import GraphViewFactory, GraphViewScanOptions
 from codeintel.build.graphs.engine.protocol import GraphKind
 from codeintel.build.graphs.rx.build_from_edges import (
@@ -34,10 +33,16 @@ from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
-from codeintel.core.columnar.dedupe_ops import dedupe_keep_first_after_sort
+from codeintel.core.columnar.arrowdsl import ExecutionPlan, run_pipeline
+from codeintel.core.columnar.dedupe_ops import DedupeTier, dedupe_keep_first_after_sort
+from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table
 from codeintel.core.columnar.iter import iter_array_values, iter_tuples
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.data_models.ids import as_int
 from codeintel.core.data_models.ids import normalize_decimal_id as normalize_decimal
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -74,11 +79,90 @@ def _coerce_str(value: object) -> str | None:
     return str(value)
 
 
+def _determinism_for_table(table_key: str) -> DedupeTier:
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is not None:
+        policy = schema.finalize_policy
+        if policy is not None and policy.dedupe is not None and policy.dedupe.tier is not None:
+            return policy.dedupe.tier
+    canonical_keys = resolve_canonical_sort_keys(schema)
+    if canonical_keys == ():
+        return "throughput"
+    if canonical_keys:
+        return "canonical"
+    return "stable_set"
+
+
+def _expand_contract_columns(table_key: str, columns: Sequence[str]) -> tuple[str, ...]:
+    schema = get_schema_service().get_table_schema(table_key)
+    canonical_keys = resolve_canonical_sort_keys(schema) or ()
+    required_non_null: Sequence[str] = ()
+    if schema is not None and schema.finalize_policy is not None:
+        required_non_null = schema.finalize_policy.required_non_null
+    if not canonical_keys and not required_non_null:
+        return tuple(columns)
+    expanded = list(columns)
+    for name in required_non_null:
+        if name not in expanded:
+            expanded.append(name)
+    for key in canonical_keys:
+        if key not in expanded:
+            expanded.append(key)
+    return tuple(expanded)
+
+
+def _scan_options_for_table(
+    table_key: str,
+    *,
+    base: GraphViewScanOptions | None = None,
+) -> GraphViewScanOptions:
+    determinism = _determinism_for_table(table_key)
+    provenance = determinism == "canonical"
+    execution_ctx = ExecutionContext(determinism=determinism, provenance=provenance)
+    if base is None:
+        return GraphViewScanOptions(provenance=provenance, execution_ctx=execution_ctx)
+    return replace(
+        base,
+        provenance=base.provenance or provenance,
+        execution_ctx=execution_ctx,
+    )
+
+
+def _finalize_graph_table(
+    plan: Plan,
+    *,
+    table_key: str,
+    determinism: DedupeTier,
+    ctx: ExecutionContext | None,
+) -> pa.Table:
+    result = run_pipeline(
+        plan=ExecutionPlan.from_plan(plan, determinism=determinism),
+        finalize=finalize_spec_for_table(
+            table_key,
+            mode="tolerant",
+            determinism=determinism,
+        ),
+        ctx=ctx,
+    )
+    return result.good
+
+
+def _order_by_if_canonical(
+    determinism: DedupeTier,
+    *,
+    keys: Sequence[str],
+) -> tuple[SortKey, ...]:
+    if determinism != "canonical":
+        return ()
+    return tuple(cast("SortKey", (key, "ascending")) for key in keys)
+
+
 def _aggregate_edge_counts(
     table: pa.Table,
     *,
     src: str,
     dst: str,
+    order_by: Sequence[SortKey] = (),
 ) -> pa.Table:
     if src not in table.column_names or dst not in table.column_names:
         return table
@@ -89,7 +173,8 @@ def _aggregate_edge_counts(
         keys=[E.field(src), E.field(dst)],
         aggregates=[(src, "count", None, "weight")],
     )
-    plan = plan.order_by(sort_keys=[(src, "ascending"), (dst, "ascending")])
+    if order_by:
+        plan = plan.order_by(sort_keys=order_by)
     return materialize_plan(plan, use_threads=True)
 
 
@@ -98,6 +183,7 @@ def _filter_edge_table(
     *,
     src: str,
     dst: str,
+    order_by: Sequence[SortKey] = (),
 ) -> pa.Table:
     if src not in table.column_names or dst not in table.column_names:
         return pa.Table.from_arrays(
@@ -107,7 +193,8 @@ def _filter_edge_table(
     plan = Plan.table(table)
     plan = plan.filter(E.and_(E.is_valid(src), E.is_valid(dst)))
     plan = plan.project({src: E.field(src), dst: E.field(dst)})
-    plan = plan.order_by(sort_keys=[(src, "ascending"), (dst, "ascending")])
+    if order_by:
+        plan = plan.order_by(sort_keys=order_by)
     return materialize_plan(plan, use_threads=True)
 
 
@@ -128,13 +215,13 @@ def _iter_table_tuples(
     yield from iter_tuples(table_to_reader(table), columns=columns)
 
 
-def _node_ids_from_table(
+def _node_ids_from_table[NodeId: Hashable](
     table: pa.Table,
     *,
     columns: Sequence[str],
-    normalize: Callable[[object], Hashable | None],
-) -> set[Hashable]:
-    node_ids: set[Hashable] = set()
+    normalize: Callable[[object], NodeId | None],
+) -> set[NodeId]:
+    node_ids: set[NodeId] = set()
     for column in columns:
         if column not in table.column_names:
             continue
@@ -155,13 +242,43 @@ class _EdgeTableSpec:
     aggregate_edges: bool = False
 
 
-def _edge_table_to_store(
+@dataclass(frozen=True)
+class _ImportGraphInputs:
+    edge_counts: pa.Table
+    node_ids: set[str]
+    fallback_layers: dict[str, int]
+
+
+@dataclass(frozen=True)
+class _ConfigBipartiteInputs:
+    allowed_modules: set[str]
+    config_table: pa.Table
+    config_determinism: DedupeTier
+
+
+@dataclass(frozen=True)
+class _SymbolModuleInputs:
+    edge_table: pa.Table
+    module_lookup: pa.Table
+    edge_determinism: DedupeTier
+
+
+@dataclass(frozen=True)
+class _CallGraphInputs:
+    edge_table: pa.Table
+    node_ids: set[int]
+    node_attrs: dict[int, dict[str, object]]
+
+
+def _edge_table_to_store[NodeId: Hashable](
     table: pa.Table,
     *,
     spec: _EdgeTableSpec,
-    node_ids: Iterable[Hashable] | None = None,
+    node_ids: Iterable[NodeId] | None = None,
+    node_attrs: Mapping[NodeId, Mapping[str, object]] | None = None,
 ) -> RxGraphStore:
     node_list = list(node_ids) if node_ids is not None else None
+    normalized_attrs = _normalize_node_attrs(node_attrs)
     build_spec = EdgeBuildSpec(
         directed=spec.directed,
         weight_policy=spec.weight_policy,
@@ -176,9 +293,273 @@ def _edge_table_to_store(
             stable_nodes=True,
             aggregate_edges=spec.aggregate_edges,
             node_ids=node_list,
+            node_attrs=normalized_attrs,
             node_hint=len(node_list) if node_list is not None else None,
             edge_hint=table.num_rows,
         ),
+    )
+
+
+def _normalize_node_attrs[NodeId: Hashable](
+    node_attrs: Mapping[NodeId, Mapping[str, object]] | None,
+) -> Mapping[Hashable, Mapping[str, object]] | None:
+    if not node_attrs:
+        return None
+    normalized: dict[Hashable, Mapping[str, object]] = {}
+    for node_id, attrs in node_attrs.items():
+        normalized[node_id] = dict(attrs)
+    return normalized
+
+
+def _load_call_graph_inputs(factory: GraphViewFactory) -> _CallGraphInputs | None:
+    edge_table_key = "graph.call_graph_edges"
+    edge_determinism = _determinism_for_table(edge_table_key)
+    edge_columns = _expand_contract_columns(
+        edge_table_key,
+        ("caller_goid_h128", "callee_goid_h128"),
+    )
+    edge_scan_options = _scan_options_for_table(edge_table_key)
+    edge_plan = factory.load_plan(
+        table_key=edge_table_key,
+        columns=edge_columns,
+        scan_options=edge_scan_options,
+    )
+    if edge_plan is None:
+        return None
+    edge_table = _finalize_graph_table(
+        edge_plan,
+        table_key=edge_table_key,
+        determinism=edge_determinism,
+        ctx=edge_scan_options.execution_ctx,
+    )
+    edge_table = _aggregate_edge_counts(
+        edge_table,
+        src="caller_goid_h128",
+        dst="callee_goid_h128",
+        order_by=_order_by_if_canonical(
+            edge_determinism,
+            keys=("caller_goid_h128", "callee_goid_h128"),
+        ),
+    )
+    node_ids = _node_ids_from_table(
+        edge_table,
+        columns=("caller_goid_h128", "callee_goid_h128"),
+        normalize=normalize_decimal,
+    )
+    node_attrs: dict[int, dict[str, object]] = {}
+    node_table_key = "graph.call_graph_nodes"
+    node_determinism = _determinism_for_table(node_table_key)
+    node_columns = _expand_contract_columns(node_table_key, ("goid_h128", "kind"))
+    node_scan_options = _scan_options_for_table(node_table_key)
+    node_plan = factory.load_plan(
+        table_key=node_table_key,
+        columns=node_columns,
+        scan_options=node_scan_options,
+    )
+    if node_plan is not None:
+        node_attrs = _call_node_attrs(
+            factory,
+            table_to_reader(
+                _finalize_graph_table(
+                    node_plan,
+                    table_key=node_table_key,
+                    determinism=node_determinism,
+                    ctx=node_scan_options.execution_ctx,
+                )
+            ),
+        )
+    return _CallGraphInputs(
+        edge_table=edge_table,
+        node_ids=node_ids,
+        node_attrs=node_attrs,
+    )
+
+
+def _load_import_edge_inputs(factory: GraphViewFactory) -> _ImportGraphInputs | None:
+    edge_table_key = "graph.import_graph_edges"
+    determinism = _determinism_for_table(edge_table_key)
+    edge_columns = _expand_contract_columns(
+        edge_table_key,
+        ("src_module", "dst_module", "module_layer"),
+    )
+    edge_scan_options = _scan_options_for_table(edge_table_key)
+    edge_plan = factory.load_plan(
+        table_key=edge_table_key,
+        columns=edge_columns,
+        scan_options=edge_scan_options,
+    )
+    if edge_plan is None:
+        return None
+    edge_table = _finalize_graph_table(
+        edge_plan,
+        table_key=edge_table_key,
+        determinism=determinism,
+        ctx=edge_scan_options.execution_ctx,
+    )
+    edge_counts = _aggregate_edge_counts(
+        edge_table,
+        src="src_module",
+        dst="dst_module",
+        order_by=_order_by_if_canonical(
+            determinism,
+            keys=("src_module", "dst_module"),
+        ),
+    )
+    node_ids = _node_ids_from_table(
+        edge_counts,
+        columns=("src_module", "dst_module"),
+        normalize=_coerce_str,
+    )
+    fallback_layers = _fallback_layer_by_module(edge_table)
+    return _ImportGraphInputs(
+        edge_counts=edge_counts,
+        node_ids=node_ids,
+        fallback_layers=fallback_layers,
+    )
+
+
+def _load_import_module_attrs(factory: GraphViewFactory) -> dict[str, dict[str, int]]:
+    module_table_key = "graph.import_modules"
+    determinism = _determinism_for_table(module_table_key)
+    module_columns = _expand_contract_columns(
+        module_table_key,
+        ("module", "scc_id", "component_size", "layer"),
+    )
+    module_scan_options = _scan_options_for_table(module_table_key)
+    module_plan = factory.load_plan(
+        table_key=module_table_key,
+        columns=module_columns,
+        scan_options=module_scan_options,
+    )
+    if module_plan is None:
+        return {}
+    module_table = _finalize_graph_table(
+        module_plan,
+        table_key=module_table_key,
+        determinism=determinism,
+        ctx=module_scan_options.execution_ctx,
+    )
+    return _module_attrs_from_reader(factory, table_to_reader(module_table))
+
+
+def _load_config_bipartite_inputs(
+    factory: GraphViewFactory,
+) -> _ConfigBipartiteInputs | None:
+    modules_table_key = "core.modules"
+    modules_determinism = _determinism_for_table(modules_table_key)
+    modules_columns = _expand_contract_columns(
+        modules_table_key,
+        ("module", "repo", "commit"),
+    )
+    modules_scan_options = _scan_options_for_table(
+        modules_table_key,
+        base=GraphViewScanOptions(apply_filter=False),
+    )
+    modules_plan = factory.load_plan(
+        table_key=modules_table_key,
+        columns=modules_columns,
+        scan_options=modules_scan_options,
+    )
+    if modules_plan is None:
+        return None
+    modules_table = _finalize_graph_table(
+        modules_plan,
+        table_key=modules_table_key,
+        determinism=modules_determinism,
+        ctx=modules_scan_options.execution_ctx,
+    )
+    allowed_modules = _allowed_modules_from_table(
+        modules_table,
+        repo=factory.scan_context.repo,
+        commit=factory.scan_context.commit,
+        order_by=_order_by_if_canonical(
+            modules_determinism,
+            keys=("module",),
+        ),
+    )
+    config_table_key = "analytics.config_values"
+    config_determinism = _determinism_for_table(config_table_key)
+    config_columns = _expand_contract_columns(
+        config_table_key,
+        ("key", "extras", "repo", "commit"),
+    )
+    config_scan_options = _scan_options_for_table(
+        config_table_key,
+        base=GraphViewScanOptions(apply_filter=False),
+    )
+    config_plan = factory.load_plan(
+        table_key=config_table_key,
+        columns=config_columns,
+        scan_options=config_scan_options,
+    )
+    if config_plan is None:
+        return None
+    config_table = _finalize_graph_table(
+        config_plan,
+        table_key=config_table_key,
+        determinism=config_determinism,
+        ctx=config_scan_options.execution_ctx,
+    )
+    return _ConfigBipartiteInputs(
+        allowed_modules=allowed_modules,
+        config_table=config_table,
+        config_determinism=config_determinism,
+    )
+
+
+def _load_symbol_module_inputs(
+    factory: GraphViewFactory,
+    *,
+    repo: str,
+    commit: str,
+) -> _SymbolModuleInputs | None:
+    edge_table_key = "graph.symbol_use_edges"
+    edge_determinism = _determinism_for_table(edge_table_key)
+    edge_columns = _expand_contract_columns(edge_table_key, ("def_path", "use_path"))
+    edge_scan_options = _scan_options_for_table(edge_table_key)
+    edge_plan = factory.load_plan(
+        table_key=edge_table_key,
+        columns=edge_columns,
+        scan_options=edge_scan_options,
+    )
+    if edge_plan is None:
+        return None
+    edge_table = _finalize_graph_table(
+        edge_plan,
+        table_key=edge_table_key,
+        determinism=edge_determinism,
+        ctx=edge_scan_options.execution_ctx,
+    )
+    modules_table_key = "core.modules"
+    modules_determinism = _determinism_for_table(modules_table_key)
+    modules_columns = _expand_contract_columns(
+        modules_table_key,
+        ("path", "module", "repo", "commit"),
+    )
+    module_scan_options = _scan_options_for_table(
+        modules_table_key,
+        base=GraphViewScanOptions(apply_filter=False),
+    )
+    module_plan = factory.load_plan(
+        table_key=modules_table_key,
+        columns=modules_columns,
+        scan_options=module_scan_options,
+    )
+    if module_plan is None:
+        return None
+    module_table = _finalize_graph_table(
+        module_plan,
+        table_key=modules_table_key,
+        determinism=modules_determinism,
+        ctx=module_scan_options.execution_ctx,
+    )
+    module_lookup = _module_lookup_table(module_table, repo=repo, commit=commit)
+    if module_lookup.num_rows == 0:
+        return None
+    return _SymbolModuleInputs(
+        edge_table=edge_table,
+        module_lookup=module_lookup,
+        edge_determinism=edge_determinism,
     )
 
 
@@ -227,16 +608,6 @@ def _call_node_attrs(
     return node_attrs
 
 
-def _presence_flag(
-    table: pa.Table,
-    *,
-    column: str,
-) -> pa.Array | pa.ChunkedArray:
-    if column not in table.column_names:
-        return pa.array([0] * table.num_rows, type=pa.int8())
-    return pc.cast(pc.is_valid(table[column]), pa.int8())
-
-
 def _module_lookup_table(
     table: pa.Table,
     *,
@@ -263,19 +634,16 @@ def _module_lookup_table(
         "path": E.cast(E.field("path"), "string"),
         "module": E.cast(E.field("module"), "string"),
     }
+    specificity_expr = E.scalar(0)
     if "repo" in table.column_names:
-        projection["repo"] = E.field("repo")
+        specificity_expr += E.cast(E.is_valid("repo"), "int8")
     if "commit" in table.column_names:
-        projection["commit"] = E.field("commit")
+        specificity_expr += E.cast(E.is_valid("commit"), "int8")
+    projection["specificity"] = specificity_expr
     plan = plan.project(projection)
     filtered = materialize_plan(plan, use_threads=True)
     if filtered.num_rows == 0:
         return filtered.select(["path", "module"])
-    specificity = pc.add(
-        _presence_flag(filtered, column="repo"),
-        _presence_flag(filtered, column="commit"),
-    )
-    filtered = filtered.append_column("specificity", specificity)
     deduped = dedupe_keep_first_after_sort(
         filtered,
         key_columns=("path",),
@@ -288,6 +656,8 @@ def _module_lookup_table(
 def _symbol_module_edge_counts(
     edge_table: pa.Table,
     module_lookup: pa.Table,
+    *,
+    order_by: Sequence[SortKey] = (),
 ) -> pa.Table:
     if edge_table.num_rows == 0 or module_lookup.num_rows == 0:
         return pa.Table.from_arrays(
@@ -356,9 +726,8 @@ def _symbol_module_edge_counts(
         keys=[E.field("use_module"), E.field("def_module")],
         aggregates=[("use_module", "count", None, "weight")],
     )
-    use_join = use_join.order_by(
-        sort_keys=[("use_module", "ascending"), ("def_module", "ascending")]
-    )
+    if order_by:
+        use_join = use_join.order_by(sort_keys=order_by)
     return materialize_plan(use_join, use_threads=True)
 
 
@@ -420,17 +789,6 @@ def module_attrs_from_row(
     if layer_value is not None:
         attrs["layer"] = layer_value
     return module_name, attrs
-
-
-def _apply_node_attrs[NodeId: Hashable](
-    store: RxGraphStore,
-    attrs_by_node: Mapping[NodeId, Mapping[str, object]],
-) -> None:
-    for node_id, attrs in attrs_by_node.items():
-        if attrs:
-            store.set_node_attrs(node_id, attrs)
-        else:
-            store.ensure_node(node_id)
 
 
 def _module_attrs_from_reader(
@@ -518,35 +876,11 @@ def load_call_graph(
     if dataset_root is None:
         return _empty_graph(directed=True, kind=GraphKind.CALL_GRAPH)
     factory = _view_factory(dataset_root, repo=repo, commit=commit)
-    edge_reader = factory.load_reader(
-        table_key="graph.call_graph_edges",
-        columns=("caller_goid_h128", "callee_goid_h128"),
-    )
-    if edge_reader is None:
+    inputs = _load_call_graph_inputs(factory)
+    if inputs is None:
         return _empty_graph(directed=True, kind=GraphKind.CALL_GRAPH)
-
-    edge_table = _aggregate_edge_counts(
-        reader_to_table(edge_reader),
-        src="caller_goid_h128",
-        dst="callee_goid_h128",
-    )
-    node_ids = _node_ids_from_table(
-        edge_table,
-        columns=("caller_goid_h128", "callee_goid_h128"),
-        normalize=normalize_decimal,
-    )
-    node_attrs: dict[int, dict[str, object]] = {}
-    node_reader = factory.load_reader(
-        table_key="graph.call_graph_nodes",
-        columns=("goid_h128", "kind"),
-    )
-    if node_reader is not None:
-        node_attrs = _call_node_attrs(factory, node_reader)
-        if node_attrs:
-            node_ids.update(node_attrs.keys())
-
     store = _edge_table_to_store(
-        edge_table,
+        inputs.edge_table,
         spec=_EdgeTableSpec(
             src="caller_goid_h128",
             dst="callee_goid_h128",
@@ -554,10 +888,9 @@ def load_call_graph(
             weight_policy=weight_policy_for_kind(GraphKind.CALL_GRAPH),
             normalize=normalize_decimal,
         ),
-        node_ids=node_ids or None,
+        node_ids=inputs.node_ids or None,
+        node_attrs=inputs.node_attrs or None,
     )
-    if node_attrs:
-        _apply_node_attrs(store, node_attrs)
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
@@ -593,35 +926,13 @@ def load_import_graph(
     if dataset_root is None:
         return _empty_graph(directed=True, kind=GraphKind.IMPORT_GRAPH)
     factory = _view_factory(dataset_root, repo=repo, commit=commit)
-    edge_reader = factory.load_reader(
-        table_key="graph.import_graph_edges",
-        columns=("src_module", "dst_module", "module_layer"),
-    )
-    if edge_reader is None:
+    edge_inputs = _load_import_edge_inputs(factory)
+    if edge_inputs is None:
         return _empty_graph(directed=True, kind=GraphKind.IMPORT_GRAPH)
-
-    edge_table = reader_to_table(edge_reader)
-    edge_counts = _aggregate_edge_counts(edge_table, src="src_module", dst="dst_module")
-    node_ids = _node_ids_from_table(
-        edge_counts,
-        columns=("src_module", "dst_module"),
-        normalize=_coerce_str,
-    )
-    fallback_layer_by_module = _fallback_layer_by_module(edge_table)
-
-    module_reader = factory.load_reader(
-        table_key="graph.import_modules",
-        columns=("module", "scc_id", "component_size", "layer"),
-    )
-    module_attrs: dict[str, dict[str, int]] = {}
-    if module_reader is not None:
-        module_attrs = _module_attrs_from_reader(factory, module_reader)
-    _apply_fallback_layers(module_attrs, fallback_layer_by_module)
-    if module_attrs:
-        node_ids.update(module_attrs.keys())
-
+    module_attrs = _load_import_module_attrs(factory)
+    _apply_fallback_layers(module_attrs, edge_inputs.fallback_layers)
     store = _edge_table_to_store(
-        edge_counts,
+        edge_inputs.edge_counts,
         spec=_EdgeTableSpec(
             src="src_module",
             dst="dst_module",
@@ -629,10 +940,9 @@ def load_import_graph(
             weight_policy=weight_policy_for_kind(GraphKind.IMPORT_GRAPH),
             normalize=_coerce_str,
         ),
-        node_ids=node_ids or None,
+        node_ids=edge_inputs.node_ids or None,
+        node_attrs=module_attrs or None,
     )
-    if module_attrs:
-        _apply_node_attrs(store, module_attrs)
     return _maybe_to_gpu_graph(store, use_gpu=use_gpu)
 
 
@@ -675,6 +985,7 @@ def _allowed_modules_from_table(
     *,
     repo: str | None,
     commit: str | None,
+    order_by: Sequence[SortKey] = (),
 ) -> set[str]:
     if table.num_rows == 0 or "module" not in table.column_names:
         return set()
@@ -690,7 +1001,8 @@ def _allowed_modules_from_table(
         keys=[E.field("module")],
         aggregates=[("module", "count", None, "module_count")],
     )
-    plan = plan.order_by(sort_keys=[("module", "ascending")])
+    if order_by:
+        plan = plan.order_by(sort_keys=order_by)
     filtered = materialize_plan(plan, use_threads=True)
     return {str(row.get("module")) for row in iter_rows(filtered, ("module",)) if row.get("module")}
 
@@ -699,7 +1011,7 @@ def _allowed_modules_from_reader(
     factory: GraphViewFactory,
     modules_reader: pa.RecordBatchReader,
 ) -> set[str]:
-    table = reader_to_table(modules_reader)
+    table = modules_reader.read_all()
     return _allowed_modules_from_table(
         table,
         repo=factory.scan_context.repo,
@@ -713,6 +1025,7 @@ def _config_bipartite_edges(
     repo: str | None,
     commit: str | None,
     allowed_modules: set[str],
+    order_by: Sequence[SortKey] = (),
 ) -> tuple[
     list[tuple[Hashable, Hashable, float]],
     dict[Hashable, dict[str, object]],
@@ -730,7 +1043,8 @@ def _config_bipartite_edges(
     if filters:
         plan = plan.filter(E.and_(*filters))
     plan = plan.project({"key": E.field("key"), "extras": E.field("extras")})
-    plan = plan.order_by(sort_keys=[("key", "ascending")])
+    if order_by:
+        plan = plan.order_by(sort_keys=order_by)
     filtered = materialize_plan(plan, use_threads=True)
     edges: list[tuple[Hashable, Hashable, float]] = []
     node_attrs: dict[Hashable, dict[str, object]] = {}
@@ -794,29 +1108,18 @@ def load_config_module_bipartite(
     if dataset_root is None:
         return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
     factory = _view_factory(dataset_root, repo=repo, commit=commit)
-    modules_reader = factory.load_reader(
-        table_key="core.modules",
-        columns=("module", "repo", "commit"),
-        scan_options=GraphViewScanOptions(apply_filter=False),
-    )
-    if modules_reader is None:
+    inputs = _load_config_bipartite_inputs(factory)
+    if inputs is None:
         return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
-    allowed_modules = _allowed_modules_from_reader(factory, modules_reader)
-
-    config_reader = factory.load_reader(
-        table_key="analytics.config_values",
-        columns=("key", "extras", "repo", "commit"),
-        scan_options=GraphViewScanOptions(apply_filter=False),
-    )
-    if config_reader is None:
-        return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
-
-    config_table = reader_to_table(config_reader)
     edges, node_attrs, stats = _config_bipartite_edges(
-        config_table,
+        inputs.config_table,
         repo=repo,
         commit=commit,
-        allowed_modules=allowed_modules,
+        allowed_modules=inputs.allowed_modules,
+        order_by=_order_by_if_canonical(
+            inputs.config_determinism,
+            keys=("key",),
+        ),
     )
     if not edges:
         return _empty_graph(directed=False, kind=GraphKind.CONFIG_MODULE_BIPARTITE)
@@ -839,7 +1142,7 @@ def load_config_module_bipartite(
         "parsed_modules=%d kept_modules=%d dropped_modules=%d graph_nodes=%d edges=%d",
         stats.total_rows,
         stats.empty_refs,
-        len(allowed_modules),
+        len(inputs.allowed_modules),
         stats.parsed_modules,
         stats.kept_modules,
         stats.dropped_modules,
@@ -881,25 +1184,17 @@ def load_symbol_module_graph(
     if dataset_root is None:
         return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
     factory = _view_factory(dataset_root, repo=repo, commit=commit)
-    edge_reader = factory.load_reader(
-        table_key="graph.symbol_use_edges",
-        columns=("def_path", "use_path"),
+    inputs = _load_symbol_module_inputs(factory, repo=repo, commit=commit)
+    if inputs is None:
+        return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
+    edge_counts = _symbol_module_edge_counts(
+        inputs.edge_table,
+        inputs.module_lookup,
+        order_by=_order_by_if_canonical(
+            inputs.edge_determinism,
+            keys=("use_module", "def_module"),
+        ),
     )
-    if edge_reader is None:
-        return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
-    module_reader = factory.load_reader(
-        table_key="core.modules",
-        columns=("path", "module", "repo", "commit"),
-        scan_options=GraphViewScanOptions(apply_filter=False),
-    )
-    if module_reader is None:
-        return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
-    module_table = reader_to_table(module_reader)
-    module_lookup = _module_lookup_table(module_table, repo=repo, commit=commit)
-    if module_lookup.num_rows == 0:
-        return _empty_graph(directed=False, kind=GraphKind.SYMBOL_MODULE_GRAPH)
-    edge_table = reader_to_table(edge_reader)
-    edge_counts = _symbol_module_edge_counts(edge_table, module_lookup)
     node_ids = _node_ids_from_table(
         edge_counts,
         columns=("use_module", "def_module"),
@@ -949,17 +1244,35 @@ def load_symbol_function_graph(
     if dataset_root is None:
         return _empty_graph(directed=False, kind=GraphKind.SYMBOL_FUNCTION_GRAPH)
     factory = _view_factory(dataset_root, repo=None, commit=commit)
-    edge_reader = factory.load_reader(
-        table_key="graph.symbol_use_edges",
-        columns=("def_goid_h128", "use_goid_h128"),
+    edge_table_key = "graph.symbol_use_edges"
+    edge_determinism = _determinism_for_table(edge_table_key)
+    edge_columns = _expand_contract_columns(
+        edge_table_key,
+        ("def_goid_h128", "use_goid_h128"),
     )
-    if edge_reader is None:
+    edge_scan_options = _scan_options_for_table(edge_table_key)
+    edge_plan = factory.load_plan(
+        table_key=edge_table_key,
+        columns=edge_columns,
+        scan_options=edge_scan_options,
+    )
+    if edge_plan is None:
         return _empty_graph(directed=False, kind=GraphKind.SYMBOL_FUNCTION_GRAPH)
 
+    edge_table = _finalize_graph_table(
+        edge_plan,
+        table_key=edge_table_key,
+        determinism=edge_determinism,
+        ctx=edge_scan_options.execution_ctx,
+    )
     edge_table = _aggregate_edge_counts(
-        reader_to_table(edge_reader),
+        edge_table,
         src="use_goid_h128",
         dst="def_goid_h128",
+        order_by=_order_by_if_canonical(
+            edge_determinism,
+            keys=("use_goid_h128", "def_goid_h128"),
+        ),
     )
     if edge_table.num_rows:
         plan = Plan.table(edge_table)

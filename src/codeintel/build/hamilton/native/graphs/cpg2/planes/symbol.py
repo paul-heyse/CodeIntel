@@ -20,7 +20,7 @@ from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import (
     array_from_compute,
 )
-from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
+from codeintel.build.tabular.compute_masks import is_valid_expr
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
@@ -241,15 +241,7 @@ def _symbol_goid_joined_table(
 ) -> pa.Table:
     goid_rows = _normalize_symbol_goid(symbol_goid)
     if "goid_h128" in goid_rows.column_names:
-
-        def _goid_mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
-            return is_valid_mask(table.column("goid_h128"))
-
-        goid_rows = plan_filter_or_fallback(
-            goid_rows,
-            is_valid_expr("goid_h128"),
-            fallback_mask=_goid_mask,
-        )
+        goid_rows = plan_filter_or_fallback(goid_rows, is_valid_expr("goid_h128"))
     goid_rows = append_constant_columns(
         goid_rows,
         {
@@ -445,14 +437,8 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
     if not required.issubset(set(table.column_names)):
         return table
 
-    def _edge_mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
-        return and_kleene(
-            is_valid_mask(target.column("src_cpg_node_id")),
-            is_valid_mask(target.column("dst_cpg_node_id")),
-        )
-
     expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-    return plan_filter_or_fallback(table, expr, fallback_mask=_edge_mask)
+    return plan_filter_or_fallback(table, expr)
 
 
 def _coalesce_column(table: pa.Table, column: str, fallback: str) -> pa.Table:

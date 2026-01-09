@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from rpygrep import RipGrepSearch
+
 from codeintel.build.hamilton.graph_validation import (
     validate_graph,
     validation_result_to_json,
@@ -398,6 +400,60 @@ def iter_candidate_files(repo_root: Path) -> Iterable[Path]:
                 yield path
 
 
+def _glob_for_prefix(prefix: str) -> str:
+    normalized = prefix.rstrip("/")
+    return f"{normalized}/**/*.py"
+
+
+def _rule_include_globs(rule: Guardrail) -> tuple[str, ...]:
+    prefixes = rule.include_prefixes if rule.include_prefixes else BASE_DIRS
+    return tuple(_glob_for_prefix(prefix) for prefix in prefixes)
+
+
+def _rule_requires_multiline(pattern: re.Pattern[str]) -> bool:
+    return "(?s)" in pattern.pattern or "\\n" in pattern.pattern
+
+
+def _rule_requires_pcre2(pattern: re.Pattern[str]) -> bool:
+    lookarounds = ("(?=", "(?!", "(?<=", "(?<!")
+    return any(token in pattern.pattern for token in lookarounds)
+
+
+def _scan_guardrail(rule: Guardrail, *, repo_root: Path) -> list[str]:
+    include_globs = _rule_include_globs(rule)
+    search = RipGrepSearch(working_directory=repo_root).add_pattern(rule.pattern.pattern)
+    search = search.include_types(["py"]).include_globs(list(include_globs))
+    extra_options = ["--no-config"]
+    if _rule_requires_multiline(rule.pattern):
+        extra_options.append("--multiline")
+    if _rule_requires_pcre2(rule.pattern):
+        extra_options.append("--pcre2")
+    search = search.add_extra_options(extra_options)
+    violations: list[str] = []
+    for result in search.run():
+        rel = _rel_path(result.path, root=repo_root)
+        if rel == _SELF_REL_PATH:
+            continue
+        if rule.include_prefixes and not rel.startswith(rule.include_prefixes):
+            continue
+        if rule.allow_prefixes and rel.startswith(rule.allow_prefixes):
+            continue
+        for match in result.matches:
+            line = match.data.line_number
+            submatches = match.data.submatches
+            count = len(submatches) if submatches else 1
+            for _ in range(count):
+                violations.append(f"{rel}:{line}: {rule.name}: {rule.message}")
+    return violations
+
+
+def _rel_path(path: Path, *, root: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
 def find_violations(repo_root: Path) -> list[str]:
     """Scan for guardrail violations and return human-friendly messages.
 
@@ -407,17 +463,8 @@ def find_violations(repo_root: Path) -> list[str]:
         Collected violation messages.
     """
     violations: list[str] = []
-    for path in iter_candidate_files(repo_root):
-        rel = path.relative_to(repo_root).as_posix()
-        text = path.read_text(encoding="utf-8")
-        for rule in GUARDRAILS:
-            if rule.include_prefixes and not rel.startswith(rule.include_prefixes):
-                continue
-            if rule.allow_prefixes and rel.startswith(rule.allow_prefixes):
-                continue
-            for match in rule.pattern.finditer(text):
-                line = text.count("\n", 0, match.start()) + 1
-                violations.append(f"{rel}:{line}: {rule.name}: {rule.message}")
+    for rule in GUARDRAILS:
+        violations.extend(_scan_guardrail(rule, repo_root=repo_root))
     return violations
 
 

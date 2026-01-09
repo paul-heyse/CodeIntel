@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import TypedDict, Unpack
+from typing import TYPE_CHECKING, TypedDict, Unpack
 
 import pyarrow as pa
 
-from codeintel.build.schemas.registry import require_table_schema
 from codeintel.build.tabular.arrow_ops import (
     AlignmentReport,
     AlignmentReporter,
@@ -18,17 +16,17 @@ from codeintel.build.tabular.arrow_ops import (
 )
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.finalize_ops import (
-    FinalizeDedupe,
-    FinalizeInvariant,
     FinalizeMode,
     FinalizeResult,
-    FinalizeSpec,
     finalize_reader,
+    finalize_spec_for_table,
     finalize_table,
 )
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_rows
-from codeintel.core.validation.schema_constraints import list_alignment_specs_for_table_key
+
+if TYPE_CHECKING:
+    from codeintel.build.tabular.finalize_ops import FinalizeSpec
 
 
 class NormalizationOverrides(TypedDict, total=False):
@@ -60,12 +58,6 @@ _TOLERANT_INGEST_TABLE_KEYS = frozenset(
     }
 )
 
-_DEDUPE_PREFER_COLUMNS: dict[str, Sequence[str]] = {
-    "core.file_state": ("mtime_ns", "content_hash"),
-    "core.scip_external_symbols": ("package_manager", "package_name", "package_version"),
-}
-
-
 def _merge_normalization_options(
     options: NormalizationOptions | None,
     overrides: NormalizationOverrides,
@@ -76,30 +68,8 @@ def _merge_normalization_options(
     return resolved
 
 
-def _required_non_null_columns(table_key: str) -> tuple[str, ...]:
-    schema = require_table_schema(table_key)
-    return tuple(column.name for column in schema.columns if not column.nullable)
-
-
-def _key_fields_for_table(table_key: str) -> tuple[str, ...]:
-    schema = require_table_schema(table_key)
-    return tuple(schema.primary_key) if schema.primary_key else ()
-
-
-def _list_alignment_invariants(table_key: str) -> tuple[FinalizeInvariant, ...]:
-    specs = list_alignment_specs_for_table_key(table_key)
-    return tuple(FinalizeInvariant.list_alignment(spec.column, spec.related) for spec in specs)
-
-
 def _finalize_mode_for_table(table_key: str) -> FinalizeMode:
     return "tolerant" if table_key in _TOLERANT_INGEST_TABLE_KEYS else "strict"
-
-
-def _finalize_dedupe(table_key: str) -> FinalizeDedupe | None:
-    prefer = _DEDUPE_PREFER_COLUMNS.get(table_key)
-    if prefer is None:
-        return None
-    return FinalizeDedupe(prefer_columns=prefer)
 
 
 def _emit_alignment_report_from_finalize(result: FinalizeResult) -> None:
@@ -134,13 +104,9 @@ def _ingest_finalize_spec(
     target_name: str | None,
     mode: FinalizeMode | None,
 ) -> FinalizeSpec:
-    return FinalizeSpec(
-        table_key=table_key,
+    return finalize_spec_for_table(
+        table_key,
         mode=mode or _finalize_mode_for_table(table_key),
-        required_non_null=_required_non_null_columns(table_key),
-        invariants=_list_alignment_invariants(table_key),
-        key_fields=_key_fields_for_table(table_key),
-        dedupe=_finalize_dedupe(table_key),
         emit_artifacts=True,
         target_name=target_name,
     )

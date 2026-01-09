@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.core.columnar.compute_helpers import combine_table_chunks
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.nested_ops import deep_cast_table_to_contract
 from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.service import get_schema_service
@@ -27,14 +27,11 @@ def _finalize_dataset_table(table_key: str, table: pa.Table) -> pa.Table:
     contract = arrow_contract_for_table_schema(table_schema=table_schema)
     compact = combine_table_chunks(table)
     casted = deep_cast_table_to_contract(compact, contract)
-    required_non_null = tuple(column.name for column in table_schema.columns if not column.nullable)
     finalized = finalize_table(
         casted,
-        spec=FinalizeSpec(
-            table_key=table_key,
+        spec=finalize_spec_for_table(
+            table_key,
             mode="tolerant",
-            required_non_null=required_non_null,
-            invariants=(),
             emit_artifacts=True,
         ),
     )

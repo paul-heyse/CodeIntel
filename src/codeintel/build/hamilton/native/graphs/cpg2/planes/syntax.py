@@ -18,7 +18,7 @@ from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or
 from codeintel.build.tabular.arrow_ops import iter_array_values, normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import scalar_from_compute
-from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
+from codeintel.build.tabular.compute_masks import is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.extras_ops import extras_kv_from_payload
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
@@ -345,14 +345,8 @@ def cpg2_edges__syntax_edges(
     )
     selected = ensure_table_columns(child_join, _CPG_EDGE_COLUMNS)
 
-    def _edge_mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
-        return and_kleene(
-            is_valid_mask(table.column("src_cpg_node_id")),
-            is_valid_mask(table.column("dst_cpg_node_id")),
-        )
-
     expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-    filtered = plan_filter_or_fallback(selected, expr, fallback_mask=_edge_mask)
+    filtered = plan_filter_or_fallback(selected, expr)
     if diagnostics is not None:
         resolved = filtered.num_rows
         diagnostics["syntax_edges"] = SyntaxEdgeDiagnostics(

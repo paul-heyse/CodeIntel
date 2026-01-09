@@ -22,7 +22,12 @@ from codeintel.build.analytics.scip_diagnostics_rollups import (
     SCIP_DIAGNOSTICS_TOP_MESSAGES_TABLE_KEY,
     build_scip_diagnostics_rollups,
 )
-from codeintel.build.analytics.utilities.finalize import finalize_analytics_result
+from codeintel.build.analytics.utilities.finalize import (
+    finalize_analytics_reader,
+    finalize_analytics_result,
+    finalize_artifact_counts,
+    finalize_artifact_table_key,
+)
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.validation.runner import (
     GraphValidationRunRequest,
@@ -40,7 +45,6 @@ from codeintel.build.hamilton.native.graphs.cpg.constants import (
     PY_SYM_SCOPES_TABLE_KEY,
 )
 from codeintel.build.tabular.finalize_ops import FinalizeResult
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.ordering import OrderingSpec, SortDirection, SortKey
@@ -55,8 +59,9 @@ from codeintel.core.datasets.arrow_store import (
     write_dataset,
 )
 from codeintel.core.execution.ids import RUN_PREFIX_ANALYTICS, new_run_id
+from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.core.schemas.primitives import TableSchema, resolve_stable_sort_keys
+from codeintel.core.schemas.primitives import TableSchema, resolve_canonical_sort_keys
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.core.validation.reporters import (
     GRAPH_VALIDATION_TABLE_KEY,
@@ -134,6 +139,7 @@ def persist_graph_validation(*, env: BuildEnv) -> bool:
             dataset_root_dir=dataset_root,
         ),
         dataset_root_dir=dataset_root,
+        output_dir=env.paths.build_dir / "quality-results" / "graph_validation",
     )
     try:
         report = run_graph_validations_with_runner(request=request)
@@ -239,8 +245,7 @@ def _scan_snapshot_table(
     )
     if reader is None:
         return None
-    table = reader_to_table(reader)
-    result = finalize_analytics_result(table_key, table)
+    result = finalize_analytics_reader(table_key, reader)
     return result.good
 
 
@@ -410,12 +415,12 @@ def _emit_run_manifest(
 ) -> None:
     schema_service = get_schema_service()
     table_schema = schema_service.get_table_schema(table_key)
-    stable_sort_keys = resolve_stable_sort_keys(table_schema)
+    sort_keys = resolve_canonical_sort_keys(table_schema)
     ordering = _scan_ordering(
-        stable_sort_keys=stable_sort_keys,
+        sort_keys=sort_keys,
         implicit_ordering=implicit_ordering,
     )
-    determinism = _determinism_for_stable_sort_keys(stable_sort_keys)
+    determinism = _determinism_for_sort_keys(sort_keys)
     filename = f"run_manifest_{table_key.replace('.', '_')}.json"
     write_run_manifest(
         _post_run_output_dir(env),
@@ -430,24 +435,24 @@ def _emit_run_manifest(
     )
 
 
-def _determinism_for_stable_sort_keys(
-    stable_sort_keys: tuple[str, ...] | None,
+def _determinism_for_sort_keys(
+    sort_keys: tuple[str, ...] | None,
 ) -> DedupeTier | None:
-    if stable_sort_keys == ():
+    if sort_keys == ():
         return "throughput"
-    if stable_sort_keys:
+    if sort_keys:
         return "canonical"
     return None
 
 
 def _scan_ordering(
     *,
-    stable_sort_keys: tuple[str, ...] | None,
+    sort_keys: tuple[str, ...] | None,
     implicit_ordering: bool,
 ) -> OrderingSpec | None:
-    if stable_sort_keys:
-        keys: list[SortKey] = [(key, ORDER_ASC) for key in stable_sort_keys]
-        return OrderingSpec.explicit(keys=keys, reason="stable sort keys")
+    if sort_keys:
+        keys: list[SortKey] = [(key, ORDER_ASC) for key in sort_keys]
+        return OrderingSpec.explicit(keys=keys, reason="canonical sort keys")
     if implicit_ordering:
         return OrderingSpec.implicit(reason="implicit scan ordering")
     return OrderingSpec.unordered(reason="scan unordered")
@@ -523,13 +528,20 @@ def _write_dataset_table(
     schema_service = get_schema_service()
     table_schema = schema_service.require_table_schema(table_key)
     result = finalize_analytics_result(table_key, table)
+    finalize_counts = finalize_artifact_counts(result)
     _emit_finalize_artifacts(env=env, table_key=table_key, result=result)
+    _write_finalize_artifact_datasets(
+        dataset_root=dataset_root,
+        snapshot_id=snapshot_id,
+        base_table_key=table_key,
+        result=result,
+    )
     table = result.good
     options = ArrowDatasetWriteOptions(
         partition_columns=_partition_columns_for_schema(table_schema),
         schema_hash=schema_hash(table_schema),
-        manifest_extras={"table_schema": table_schema.to_json_obj()},
-        stable_sort_keys=resolve_stable_sort_keys(table_schema),
+        manifest_extras=_manifest_extras(table_schema, finalize_counts=finalize_counts),
+        stable_sort_keys=_resolve_manifest_sort_keys(table_schema),
     )
     write_dataset(
         dataset_root=dataset_root,
@@ -546,6 +558,97 @@ def _partition_columns_for_schema(table_schema: TableSchema) -> tuple[str, ...]:
     if "repo" in names and "commit" in names:
         return ("repo", "commit")
     return ()
+
+
+def _resolve_manifest_sort_keys(table_schema: TableSchema) -> tuple[str, ...] | None:
+    return resolve_canonical_sort_keys(table_schema)
+
+
+def _manifest_extras(
+    table_schema: TableSchema,
+    *,
+    finalize_counts: Mapping[str, int] | None = None,
+    artifact_for: str | None = None,
+    artifact_type: str | None = None,
+) -> dict[str, object]:
+    extras: dict[str, object] = {"table_schema": table_schema.to_json_obj()}
+    if finalize_counts is not None:
+        extras["finalize"] = dict(finalize_counts)
+    if artifact_for is not None:
+        extras["artifact_for"] = artifact_for
+    if artifact_type is not None:
+        extras["artifact_type"] = artifact_type
+    return extras
+
+
+def _write_finalize_artifact_datasets(
+    *,
+    dataset_root: Path,
+    snapshot_id: str,
+    base_table_key: str,
+    result: FinalizeResult,
+) -> None:
+    _write_finalize_artifact_dataset(
+        dataset_root=dataset_root,
+        snapshot_id=snapshot_id,
+        base_table_key=base_table_key,
+        artifact="errors",
+        table=result.errors,
+    )
+    _write_finalize_artifact_dataset(
+        dataset_root=dataset_root,
+        snapshot_id=snapshot_id,
+        base_table_key=base_table_key,
+        artifact="alignment",
+        table=result.alignment,
+    )
+    _write_finalize_artifact_dataset(
+        dataset_root=dataset_root,
+        snapshot_id=snapshot_id,
+        base_table_key=base_table_key,
+        artifact="stats",
+        table=result.stats,
+    )
+
+
+def _write_finalize_artifact_dataset(
+    *,
+    dataset_root: Path,
+    snapshot_id: str,
+    base_table_key: str,
+    artifact: str,
+    table: pa.Table,
+) -> None:
+    artifact_table_key = finalize_artifact_table_key(base_table_key, artifact)
+    try:
+        table_schema = table_schema_from_arrow_schema(
+            arrow_schema=table.schema,
+            table_key=artifact_table_key,
+        )
+        options = ArrowDatasetWriteOptions(
+            partition_columns=_partition_columns_for_schema(table_schema),
+            schema_hash=schema_hash(table_schema),
+            manifest_extras=_manifest_extras(
+                table_schema,
+                artifact_for=base_table_key,
+                artifact_type=artifact,
+            ),
+            stable_sort_keys=_resolve_manifest_sort_keys(table_schema),
+        )
+        write_dataset(
+            dataset_root=dataset_root,
+            table_key=artifact_table_key,
+            snapshot_id=snapshot_id,
+            data=table,
+            options=options,
+        )
+    except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError) as exc:
+        log.warning(
+            "Post-run finalize artifact write failed; table_key=%s artifact=%s error=%s",
+            base_table_key,
+            artifact,
+            exc,
+        )
 
 
 def _resolve_run_id(*, env: BuildEnv, run_id: str) -> str:

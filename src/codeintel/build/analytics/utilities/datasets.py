@@ -17,9 +17,17 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 from sqlglot import exp
 
-from codeintel.build.analytics.utilities.finalize import finalize_analytics_result
+from codeintel.build.analytics.utilities.finalize import (
+    finalize_analytics_result,
+    finalize_artifact_counts,
+    finalize_artifact_table_key,
+)
+from codeintel.build.analytics.utilities.pipeline import QuerySource, run_analytics_pipeline
 from codeintel.build.analytics.utilities.snapshot import (
     snapshot_plan as _snapshot_plan,
+)
+from codeintel.build.analytics.utilities.snapshot import (
+    snapshot_reader as _snapshot_reader,
 )
 from codeintel.build.analytics.utilities.snapshot import (
     snapshot_table as _snapshot_table,
@@ -34,20 +42,24 @@ from codeintel.build.tabular.plan_ops import Plan
 from codeintel.build.validation.columnar import ColumnarValidationContext, validate_table
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable, table_to_reader
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.rows import table_for_rows
+from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
+from codeintel.core.schemas.arrow_polars import table_schema_from_arrow_schema
 from codeintel.core.schemas.hashing import schema_digest, schema_hash
-from codeintel.core.schemas.primitives import resolve_stable_sort_keys
+from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.validation.profiles import ValidationProfile
 
 if TYPE_CHECKING:
     from codeintel.build.analytics.utilities.persistence import DeleteScope
+    from codeintel.build.tabular.finalize_ops import FinalizeResult
     from codeintel.core.gateway import BuildGateway
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
@@ -91,6 +103,30 @@ def snapshot_table(
         Snapshot-scoped table, optionally ordered.
     """
     return _snapshot_table(
+        table,
+        repo=repo,
+        commit=commit,
+        columns=columns,
+        order_by=order_by,
+    )
+
+
+def snapshot_reader(
+    table: pa.Table,
+    *,
+    repo: str | None = None,
+    commit: str | None = None,
+    columns: Sequence[str] | None = None,
+    order_by: Sequence[str] | None = None,
+) -> pa.RecordBatchReader:
+    """Materialize a snapshot-scoped Plan as a reader with optional ordering.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Snapshot-scoped reader, optionally ordered.
+    """
+    return _snapshot_reader(
         table,
         repo=repo,
         commit=commit,
@@ -189,13 +225,29 @@ def _partition_columns_for_schema(table_schema: TableSchema) -> tuple[str, ...]:
         return ("repo", "commit")
     return ()
 
+def _resolve_manifest_sort_keys(table_schema: TableSchema) -> tuple[str, ...] | None:
+    return resolve_canonical_sort_keys(table_schema)
 
-def _manifest_extras(table_schema: TableSchema) -> dict[str, object]:
-    return {
+
+def _manifest_extras(
+    table_schema: TableSchema,
+    *,
+    finalize_counts: Mapping[str, int] | None = None,
+    artifact_for: str | None = None,
+    artifact_type: str | None = None,
+) -> dict[str, object]:
+    extras: dict[str, object] = {
         "table_schema": table_schema.to_json_obj(),
         "write_source": "analytics_insert",
         "written_at": datetime.now(tz=UTC).isoformat(),
     }
+    if finalize_counts is not None:
+        extras["finalize"] = dict(finalize_counts)
+    if artifact_for is not None:
+        extras["artifact_for"] = artifact_for
+    if artifact_type is not None:
+        extras["artifact_type"] = artifact_type
+    return extras
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +259,14 @@ class _ParquetMetadataContext:
     repo: str
     commit: str
     snapshot_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class _WriteContext:
+    dataset_root: Path
+    snapshot_id: str
+    repo: str
+    commit: str
 
 
 def _parquet_metadata_payload(
@@ -308,29 +368,44 @@ def _write_parquet_dataset(
     if not normalized:
         return 0
     dataset_root_dir, snapshot_id, repo, commit = _resolve_parquet_context(gateway)
-    reader, stable_sort_keys = _finalize_rows_for_parquet(
+    write_context = _WriteContext(
+        dataset_root=dataset_root_dir,
+        snapshot_id=snapshot_id,
+        repo=repo,
+        commit=commit,
+    )
+    result = _finalize_rows_for_parquet(
         contract.table_key,
-        table_schema=table_schema,
         rows=normalized,
+    )
+    stable_sort_keys = _resolve_manifest_sort_keys(table_schema)
+    manifest_extras = _manifest_extras(
+        table_schema,
+        finalize_counts=finalize_artifact_counts(result),
     )
     options = _parquet_write_options(
         table_schema=table_schema,
         stable_sort_keys=stable_sort_keys,
-        repo=repo,
-        commit=commit,
-        snapshot_id=snapshot_id,
+        context=write_context,
+        manifest_extras=manifest_extras,
     )
+    reader = table_to_reader(result.good, batch_size=DEFAULT_ARROW_BATCH_SIZE)
     write_dataset(
-        dataset_root=dataset_root_dir,
+        dataset_root=write_context.dataset_root,
         table_key=contract.table_key,
-        snapshot_id=snapshot_id,
+        snapshot_id=write_context.snapshot_id,
         data=reader,
         options=options,
     )
+    _write_finalize_artifacts(
+        context=write_context,
+        base_table_key=contract.table_key,
+        result=result,
+    )
     _log_missing_metadata(
-        dataset_root=dataset_root_dir,
+        dataset_root=write_context.dataset_root,
         table_key=contract.table_key,
-        snapshot_id=snapshot_id,
+        snapshot_id=write_context.snapshot_id,
     )
     return len(normalized)
 
@@ -338,11 +413,9 @@ def _write_parquet_dataset(
 def _finalize_rows_for_parquet(
     table_key: str,
     *,
-    table_schema: TableSchema,
     rows: Sequence[Mapping[str, object]],
-) -> tuple[pa.RecordBatchReader, tuple[str, ...] | None]:
+) -> FinalizeResult:
     table, _ = table_for_rows(table_key, rows)
-    stable_sort_keys = resolve_stable_sort_keys(table_schema)
     result = finalize_analytics_result(table_key, table)
     if result.errors.num_rows:
         LOG.warning(
@@ -350,17 +423,82 @@ def _finalize_rows_for_parquet(
             result.errors.num_rows,
             table_key,
         )
-    reader = table_to_reader(result.good, batch_size=DEFAULT_ARROW_BATCH_SIZE)
-    return reader, stable_sort_keys
+    return result
+
+
+def _write_finalize_artifacts(
+    *,
+    context: _WriteContext,
+    base_table_key: str,
+    result: FinalizeResult,
+) -> None:
+    _write_finalize_artifact(
+        context=context,
+        base_table_key=base_table_key,
+        artifact="errors",
+        table=result.errors,
+    )
+    _write_finalize_artifact(
+        context=context,
+        base_table_key=base_table_key,
+        artifact="alignment",
+        table=result.alignment,
+    )
+    _write_finalize_artifact(
+        context=context,
+        base_table_key=base_table_key,
+        artifact="stats",
+        table=result.stats,
+    )
+
+
+def _write_finalize_artifact(
+    *,
+    context: _WriteContext,
+    base_table_key: str,
+    artifact: str,
+    table: pa.Table,
+) -> None:
+    artifact_table_key = finalize_artifact_table_key(base_table_key, artifact)
+    try:
+        table_schema = table_schema_from_arrow_schema(
+            arrow_schema=table.schema,
+            table_key=artifact_table_key,
+        )
+        stable_sort_keys = _resolve_manifest_sort_keys(table_schema)
+        manifest_extras = _manifest_extras(
+            table_schema,
+            artifact_for=base_table_key,
+            artifact_type=artifact,
+        )
+        options = _parquet_write_options(
+            table_schema=table_schema,
+            stable_sort_keys=stable_sort_keys,
+            context=context,
+            manifest_extras=manifest_extras,
+        )
+        write_dataset(
+            dataset_root=context.dataset_root,
+            table_key=artifact_table_key,
+            snapshot_id=context.snapshot_id,
+            data=table,
+            options=options,
+        )
+    except (OSError, ValueError, pa.ArrowInvalid, pa.ArrowTypeError) as exc:
+        LOG.warning(
+            "Finalize artifact write failed; table_key=%s artifact=%s error=%s",
+            base_table_key,
+            artifact,
+            exc,
+        )
 
 
 def _parquet_write_options(
     *,
     table_schema: TableSchema,
     stable_sort_keys: tuple[str, ...] | None,
-    repo: str,
-    commit: str,
-    snapshot_id: str,
+    context: _WriteContext,
+    manifest_extras: Mapping[str, object],
 ) -> ArrowDatasetWriteOptions:
     schema_hash_value = schema_hash(table_schema)
     schema_digest_value = schema_digest(table_schema)
@@ -371,15 +509,15 @@ def _parquet_write_options(
             schema_hash_value=schema_hash_value,
             schema_digest_value=schema_digest_value,
             partition_columns=partition_columns,
-            repo=repo,
-            commit=commit,
-            snapshot_id=snapshot_id,
+            repo=context.repo,
+            commit=context.commit,
+            snapshot_id=context.snapshot_id,
         )
     )
     return ArrowDatasetWriteOptions(
         partition_columns=partition_columns,
         schema_hash=schema_hash_value,
-        manifest_extras=_manifest_extras(table_schema),
+        manifest_extras=manifest_extras,
         schema_metadata=metadata,
         stable_sort_keys=stable_sort_keys,
     )
@@ -421,6 +559,75 @@ def insert_analytics_rows(
         rows=rows,
         delete_scope=delete_scope,
     )
+
+
+def run_analytics_pipeline_to_parquet(
+    gateway: BuildGateway,
+    *,
+    source: QuerySource,
+    spec: QuerySpec,
+    table_key: str,
+    ctx: ExecutionContext,
+    delete_scope: DeleteScope | None = None,
+) -> int:
+    """Execute a QuerySpec and persist the finalized output to parquet datasets.
+
+    Returns
+    -------
+    int
+        Number of rows written from the finalized output.
+    """
+    contract = get_analytics_dataset_contract(gateway, table_key)
+    table_schema = contract.schema
+    if table_schema is None:
+        msg = f"Dataset schema missing for {contract.table_key}"
+        raise ValueError(msg)
+    if delete_scope is not None and not _table_supports_snapshot_delete(contract.table_key):
+        message = f"Unsupported delete target: {contract.table_key}"
+        raise ValueError(message)
+    dataset_root_dir, snapshot_id, repo, commit = _resolve_parquet_context(gateway)
+    write_context = _WriteContext(
+        dataset_root=dataset_root_dir,
+        snapshot_id=snapshot_id,
+        repo=repo,
+        commit=commit,
+    )
+    result = run_analytics_pipeline(
+        source=source,
+        spec=spec,
+        table_key=table_key,
+        ctx=ctx,
+    )
+    stable_sort_keys = _resolve_manifest_sort_keys(table_schema)
+    manifest_extras = _manifest_extras(
+        table_schema,
+        finalize_counts=finalize_artifact_counts(result),
+    )
+    options = _parquet_write_options(
+        table_schema=table_schema,
+        stable_sort_keys=stable_sort_keys,
+        context=write_context,
+        manifest_extras=manifest_extras,
+    )
+    reader = table_to_reader(result.good, batch_size=DEFAULT_ARROW_BATCH_SIZE)
+    write_dataset(
+        dataset_root=write_context.dataset_root,
+        table_key=contract.table_key,
+        snapshot_id=write_context.snapshot_id,
+        data=reader,
+        options=options,
+    )
+    _write_finalize_artifacts(
+        context=write_context,
+        base_table_key=contract.table_key,
+        result=result,
+    )
+    _log_missing_metadata(
+        dataset_root=write_context.dataset_root,
+        table_key=contract.table_key,
+        snapshot_id=write_context.snapshot_id,
+    )
+    return result.good.num_rows
 
 
 def validate_contract_rows(
@@ -574,7 +781,9 @@ __all__ = [
     "get_delete_sql_by_table",
     "get_function_ast_features_contract",
     "insert_analytics_rows",
+    "run_analytics_pipeline_to_parquet",
     "snapshot_plan",
+    "snapshot_reader",
     "snapshot_table",
     "validate_contract_rows",
 ]

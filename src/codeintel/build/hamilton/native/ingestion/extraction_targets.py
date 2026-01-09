@@ -64,8 +64,8 @@ from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
-    FinalizeSpec,
     finalize_join_keys,
+    finalize_spec_for_table,
     finalize_table,
     record_join_precheck_errors,
 )
@@ -1423,8 +1423,8 @@ def _precheck_join_table(
     else:
         result = finalize_table(
             table,
-            spec=FinalizeSpec(
-                table_key=table_key,
+            spec=finalize_spec_for_table(
+                table_key,
                 mode="tolerant",
                 required_non_null=join_keys,
                 key_fields=join_keys,

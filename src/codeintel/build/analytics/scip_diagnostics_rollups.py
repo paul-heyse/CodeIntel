@@ -11,7 +11,8 @@ import pyarrow.compute as pc
 
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
-from codeintel.build.tabular.plan_ops import Plan, materialize_plan
+from codeintel.build.analytics.utilities.snapshot import snapshot_plan
+from codeintel.build.tabular.plan_ops import materialize_plan
 from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.query_results import coerce_int
@@ -136,14 +137,7 @@ def _aggregate_rollup_table(
     group_columns: Sequence[str],
 ) -> pa.Table:
     column_names = set(table.column_names)
-    plan = Plan.table(table)
-    filters: list[pc.Expression] = []
-    if repo and "repo" in column_names:
-        filters.append(E.field("repo") == E.scalar(repo))
-    if commit and "commit" in column_names:
-        filters.append(E.field("commit") == E.scalar(commit))
-    if filters:
-        plan = plan.filter(E.and_(*filters))
+    plan = snapshot_plan(table, repo=repo, commit=commit)
     project = {
         column: _normalized_text_expr(column, columns=column_names) for column in group_columns
     }
@@ -152,7 +146,6 @@ def _aggregate_rollup_table(
         keys=[E.field(column) for column in group_columns],
         aggregates=[(group_columns[0], "count", None, "diagnostic_count")],
     )
-    plan = plan.order_by(sort_keys=[(column, "ascending") for column in group_columns])
     return materialize_plan(plan, use_threads=True)
 
 

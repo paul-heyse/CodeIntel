@@ -58,7 +58,7 @@ from codeintel.core.columnar import (
     align_reader_to_contract,
     extras_policy_from_schema,
 )
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.polars_utils import resolve_query_opt_flags
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
@@ -709,7 +709,11 @@ def _write_dataset_from_reader(
     order_by = _order_by_for_table(table, options=ctx.options)
     result = finalize_table(
         table,
-        spec=FinalizeSpec(table_key=ctx.table_key, mode="tolerant", order_by=order_by),
+        spec=finalize_spec_for_table(
+            ctx.table_key,
+            mode="tolerant",
+            order_by=order_by,
+        ),
     )
     if result.errors.num_rows:
         LOG.warning(

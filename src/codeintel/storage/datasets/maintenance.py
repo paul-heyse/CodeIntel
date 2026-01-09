@@ -15,7 +15,7 @@ from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
-    FinalizeSpec,
+    finalize_spec_for_table,
 )
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.readers import empty_reader_from_schema
@@ -282,10 +282,9 @@ def _finalize_reader_for_maintenance(
         determinism=execution_ctx.determinism,
     )
     dedupe_keys = _dedupe_keys_for_table(table_key)
-    finalize_spec = FinalizeSpec(
-        table_key=table_key,
+    finalize_spec = finalize_spec_for_table(
+        table_key,
         mode="tolerant",
-        required_non_null=_required_non_null_columns(table_key),
         dedupe=FinalizeDedupe(
             enabled=False,
             keys=dedupe_keys,
@@ -315,16 +314,6 @@ def _finalize_reader_for_maintenance(
     if finalized is None:
         return empty_reader_from_schema(reader.schema)
     return finalized
-
-
-def _required_non_null_columns(table_key: str) -> tuple[str, ...]:
-    try:
-        schema = get_schema_service().get_table_schema(table_key)
-    except RuntimeError:
-        return ()
-    if schema is None:
-        return ()
-    return tuple(column.name for column in schema.columns if not column.nullable)
 
 
 def _stable_sort_keys_for_table(table_key: str) -> tuple[str, ...] | None:

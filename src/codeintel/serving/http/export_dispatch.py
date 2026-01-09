@@ -21,11 +21,10 @@ from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 
 from codeintel.core.columnar.arrowdsl import ExecutionContext
-from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec
+from codeintel.core.columnar.finalize_ops import FinalizeDedupe, finalize_spec_for_table
 from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.constants import DEFAULT_ARROW_PROVENANCE_COLUMNS
-from codeintel.core.schemas.service import get_schema_service
 from codeintel.serving.export.engine import (
     ExportDelivery,
     ExportPlan,
@@ -119,16 +118,6 @@ class ExportDispatchOptions:
 
 def _finalize_mode(schema_enforcement: str) -> Literal["strict", "tolerant"]:
     return "strict" if schema_enforcement == "strict" else "tolerant"
-
-
-def _required_non_null_columns(table_key: str) -> tuple[str, ...]:
-    try:
-        schema = get_schema_service().get_table_schema(table_key)
-    except RuntimeError:
-        return ()
-    if schema is None:
-        return ()
-    return tuple(column.name for column in schema.columns if not column.nullable)
 
 
 def _finalize_log_hook(table_key: str) -> Callable[[FinalizeResult], None]:
@@ -260,10 +249,9 @@ async def dispatch_semantic_export(
         view_desc = ops.describe(payload.view_id)
         execution_ctx = _export_execution_context(ops)
         order_by = _resolve_export_order_by(payload, view_desc)
-        finalize_spec = FinalizeSpec(
-            table_key=view_desc.table_key,
+        finalize_spec = finalize_spec_for_table(
+            view_desc.table_key,
             mode=_finalize_mode(ops.settings.schema_enforcement),
-            required_non_null=_required_non_null_columns(view_desc.table_key),
             dedupe=FinalizeDedupe(
                 enabled=False,
                 keys=tuple(view_desc.primary_key),
@@ -271,7 +259,6 @@ async def dispatch_semantic_export(
                 tier="canonical",
                 strategy="order_independent",
             ),
-            key_fields=tuple(view_desc.primary_key),
             context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
             order_by=order_by,
             emit_artifacts=True,

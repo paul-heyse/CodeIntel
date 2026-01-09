@@ -11,7 +11,11 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import (
+    FinalizeDedupe,
+    finalize_spec_for_table,
+    finalize_table,
+)
 from codeintel.core.schemas.resolution import resolve_table_schema
 from codeintel.core.validation.engine import (
     ColumnarValidationContext,
@@ -111,22 +115,14 @@ def _finalize_table_for_validation(
     table_key: str,
     table: pa.Table,
     *,
-    table_schema: TableSchema | None,
     mode: ValidationMode,
 ) -> tuple[pa.Table, list[str]]:
     if mode == "skip":
         return table, []
-    required_non_null: tuple[str, ...] = ()
-    if table_schema is not None:
-        required_non_null = tuple(
-            column.name for column in table_schema.columns if not column.nullable
-        )
-    spec = FinalizeSpec(
-        table_key=table_key,
+    spec = finalize_spec_for_table(
+        table_key,
         mode="tolerant",
-        required_non_null=required_non_null,
         dedupe=FinalizeDedupe(enabled=False),
-        key_fields=table_schema.primary_key if table_schema is not None else (),
         context_fields=_DEFAULT_PROVENANCE_FIELDS,
         emit_artifacts=True,
     )
@@ -180,7 +176,6 @@ def validate_table(
     finalized, finalize_errors = _finalize_table_for_validation(
         table_key,
         table,
-        table_schema=resolved_context.table_schema,
         mode=mode,
     )
     _handle_finalize_errors(table_key, finalize_errors, mode)

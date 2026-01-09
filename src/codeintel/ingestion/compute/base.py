@@ -18,7 +18,7 @@ from codeintel.core.columnar.finalize_ops import (
     FinalizeDedupe,
     FinalizeMode,
     FinalizeResult,
-    FinalizeSpec,
+    finalize_spec_for_table,
     finalize_table,
 )
 from codeintel.core.columnar.plan_ops import build_query_plan_for_context, materialize_plan
@@ -157,10 +157,9 @@ def finalize_arrow_tables(
     finalized: dict[str, pa.Table] = {}
     warnings: list[str] = []
     for table_key, table in tables.items():
-        spec = FinalizeSpec(
-            table_key=table_key,
+        spec = finalize_spec_for_table(
+            table_key,
             mode=mode,
-            required_non_null=_required_non_null_columns(table_key),
             dedupe=FinalizeDedupe(enabled=False),
             emit_artifacts=True,
         )
@@ -190,10 +189,9 @@ def finalize_arrow_readers(
     finalized: dict[str, pa.Table] = {}
     warnings: list[str] = []
     for table_key, reader in readers.items():
-        spec = FinalizeSpec(
-            table_key=table_key,
+        spec = finalize_spec_for_table(
+            table_key,
             mode=mode,
-            required_non_null=_required_non_null_columns(table_key),
             dedupe=FinalizeDedupe(enabled=False),
             emit_artifacts=True,
         )
@@ -306,16 +304,6 @@ def _ingest_scope_predicate(
     if not exprs:
         return None
     return E.and_(*exprs)
-
-
-def _required_non_null_columns(table_key: str) -> tuple[str, ...]:
-    try:
-        schema = get_schema_service().get_table_schema(table_key)
-    except RuntimeError:
-        return ()
-    if schema is None:
-        return ()
-    return tuple(column.name for column in schema.columns if not column.nullable)
 
 
 def _finalize_warnings(table_key: str, result: FinalizeResult) -> list[str]:

@@ -163,7 +163,6 @@ def cfg_blocks_rowset(
             ("out_degree", "list", None, "out_degree"),
         ],
     )
-    plan = plan.order_by(sort_keys=[("function_goid_h128", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -199,7 +198,6 @@ def cfg_edges_rowset(
             ("edge_kind", "list", None, "edge_kind"),
         ],
     )
-    plan = plan.order_by(sort_keys=[("function_goid_h128", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -248,7 +246,6 @@ def dfg_edges_rowset(
             ("use_kind", "list", None, "use_kind"),
         ],
     )
-    plan = plan.order_by(sort_keys=[("function_goid_h128", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -319,7 +316,6 @@ def _module_metadata_table(
         keys=[E.field("path")],
         aggregates=[("module", "min", None, "module")],
     )
-    plan = plan.order_by(sort_keys=[("path", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -355,7 +351,6 @@ def _goid_metadata_table(
             ("qualname", "min", None, "qualname"),
         ],
     )
-    plan = plan.order_by(sort_keys=[("goid_h128", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 

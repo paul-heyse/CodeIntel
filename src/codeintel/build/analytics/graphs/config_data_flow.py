@@ -284,7 +284,6 @@ def _config_reference_rowset(
         keys=[E.field("config_path"), E.field("key")],
         aggregates=[("reference_paths", "list", None, "reference_paths")],
     )
-    plan = plan.order_by(sort_keys=[("config_path", "ascending"), ("key", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 
@@ -300,7 +299,6 @@ def _entrypoint_rowset(
     plan = snapshot_plan(table, repo=repo, commit=commit, columns=("handler_goid_h128",))
     plan = plan.filter(E.is_valid("handler_goid_h128"))
     plan = plan.aggregate(keys=[E.field("handler_goid_h128")], aggregates=[])
-    plan = plan.order_by(sort_keys=[("handler_goid_h128", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 

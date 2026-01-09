@@ -83,11 +83,11 @@ def run_pipeline_good(
 - src/codeintel/core/columnar/__init__.py
 
 **Checklist**
-- [ ] Collapse ExecutionPlan into a sum-type with Declaration/TableThunk/ReaderThunk.
-- [ ] Make `run_pipeline` return `FinalizeResult` and add `run_pipeline_good`.
-- [ ] Update call sites that need artifacts to use `FinalizeResult` directly.
-- [ ] Integrate `ExternalPlanSpec`/external runners into `ExecutionPlan`.
-- [ ] Ensure streaming paths stay reader-first until finalize.
+- [x] Collapse ExecutionPlan into a sum-type with Declaration/TableThunk/ReaderThunk.
+- [x] Make `run_pipeline` return `FinalizeResult` and add `run_pipeline_good`.
+- [x] Update call sites that need artifacts to use `FinalizeResult` directly.
+- [x] Integrate `ExternalPlanSpec`/external runners into `ExecutionPlan`.
+- [x] Ensure streaming paths stay reader-first until finalize.
 
 ---
 
@@ -95,51 +95,49 @@ def run_pipeline_good(
 **Findings addressed**
 - Canonical ordering ignores `stable_sort_keys`.
 - List alignment/null list policies drift in hidden maps.
+- Dedupe preferences and required-non-null enforcement are re-derived ad hoc.
 
 **Pattern**
 ```python
-from dataclasses import dataclass
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table
 
-from codeintel.core.columnar.finalize_ops import (
-    FinalizeDedupe,
-    FinalizeInvariant,
-    FinalizeListPolicy,
-    FinalizeSpec,
+spec = finalize_spec_for_table(
+    "core.file_state",
+    mode="tolerant",
+    target_name="ingest_core",
 )
-from codeintel.core.schemas.primitives import resolve_stable_sort_keys
-from codeintel.core.schemas.service import get_schema_service
+```
 
-@dataclass(frozen=True)
-class FinalizePolicy:
-    required_non_null: tuple[str, ...] = ()
-    list_policies: tuple[FinalizeListPolicy, ...] = ()
-    invariants: tuple[FinalizeInvariant, ...] = ()
-    dedupe: FinalizeDedupe | None = None
-    canonical_sort_keys: tuple[str, ...] | None = None
+```python
+from codeintel.core.schemas.primitives import FinalizeDedupeSpec, FinalizePolicy
 
+TableSchema(
+    schema="core",
+    name="file_state",
+    columns=[...],
+    primary_key=("repo", "commit", "rel_path"),
+    finalize_policy=FinalizePolicy(
+        required_non_null=("repo", "commit", "rel_path"),
+        dedupe=FinalizeDedupeSpec(
+            prefer_columns=("mtime_ns", "content_hash"),
+            tier="canonical",
+            strategy="order_independent",
+        ),
+    ),
+)
+```
 
-def finalize_spec_for_table(
-    table_key: str,
-    *,
-    mode: str,
-    target_name: str | None = None,
-) -> FinalizeSpec:
-    schema = get_schema_service().require_table_schema(table_key)
-    policy = schema.finalize_policy
-    canonical = policy.canonical_sort_keys
-    if canonical is None:
-        canonical = resolve_stable_sort_keys(schema)
-    order_by = tuple((name, "ascending") for name in canonical or ())
-    return FinalizeSpec(
-        table_key=table_key,
-        mode=mode,
-        required_non_null=policy.required_non_null,
-        list_policies=policy.list_policies,
-        invariants=policy.invariants,
-        dedupe=policy.dedupe,
-        order_by=order_by,
-        target_name=target_name,
-    )
+```python
+def resolve_canonical_sort_keys(schema: TableSchema | None) -> tuple[str, ...] | None:
+    if schema is None:
+        return None
+    write_policy = schema.write_policy
+    if write_policy is not None and write_policy.stable_sort_keys is not None:
+        return write_policy.stable_sort_keys
+    finalize_policy = schema.finalize_policy
+    if finalize_policy is not None and finalize_policy.canonical_sort_keys is not None:
+        return finalize_policy.canonical_sort_keys
+    return resolve_stable_sort_keys(schema)
 ```
 
 **Target files**
@@ -149,13 +147,29 @@ def finalize_spec_for_table(
 - src/codeintel/core/columnar/finalize_ops.py
 - src/codeintel/core/validation/schema_constraints.py
 - src/codeintel/core/schemas/table_registry.py
+- src/codeintel/core/schemas/output_registry.py
+- src/codeintel/build/hamilton/transforms/ingestion_normalize.py
+- src/codeintel/core/validation/engine.py
+- src/codeintel/storage/validation/columnar.py
+- src/codeintel/ingestion/compute/base.py
+- src/codeintel/ingestion/adapters/duckdb_storage.py
+- src/codeintel/storage/repositories/datasets.py
+- src/codeintel/storage/datasets/maintenance.py
+- src/codeintel/serving/http/export_dispatch.py
 
 **Checklist**
-- [ ] Add `FinalizePolicy` to TableSchema metadata with serde support.
-- [ ] Replace hidden list-alignment maps with schema-level policy definitions.
-- [ ] Derive `FinalizeSpec` from schema policy by default.
-- [ ] Enforce `stable_sort_keys` precedence for canonical ordering.
-- [ ] Require explicit `order_by` when `stable_sort_keys = ()` and determinism is canonical.
+- [x] Add `FinalizePolicy` to TableSchema metadata with serde support.
+- [x] Replace hidden list-alignment maps with schema-level policy definitions.
+- [x] Derive `FinalizeSpec` from schema policy by default.
+- [x] Enforce `stable_sort_keys` precedence for canonical ordering.
+- [x] Require explicit `order_by` when `stable_sort_keys = ()` and determinism is canonical.
+- [x] Move remaining ad-hoc policy maps into schema metadata (e.g., `_DEDUPE_PREFER_COLUMNS`).
+- [ ] Encode list alignment/null list policies in `FinalizePolicy` for ingestion tables.
+- [x] Delete policy maps and per-table derivations from ingestion normalization.
+- [x] Remove redundant required-non-null/dedupe derivations and rely on `finalize_spec_for_table`.
+- [x] Ensure `stable_sort_keys` in write policy always overrides finalize canonical keys.
+- [ ] Validate serde/registry round-trips for `FinalizePolicy` fields.
+- [x] Add a guardrail to flag list columns without list policies/invariants (optional but recommended).
 
 ---
 
@@ -310,12 +324,14 @@ if "pyarrow.compute" in file_text and "columnar" not in path:
 - tools/lint_no_raw_pyarrow_compute_in_nodes.py
 - tools/lint_no_materialize_in_nodes.py
 - tools/quality_report.py
+- tools/lint_finalize_policy_guardrails.py
 
 **Checklist**
 - [ ] Replace `acero_ops.build_exec_plan` with IR v2 usage or deprecate it.
 - [ ] Consolidate scanner construction around QuerySpec + streaming helpers.
 - [ ] Add lints for "no raw pc in nodes" and "no to_table outside finalize".
 - [ ] Wire lints into quality report gating.
+- [ ] Add a guardrail for schema policy completeness (dedupe/list policies/invariants).
 
 ---
 
@@ -363,17 +379,21 @@ def queryspec_from_filters(
 ---
 
 ## Sequencing Recommendation
-1) Scope 00 (IR v2 + FinalizeResult runner)
-2) Scope 01 (contract-driven finalize)
+1) Scope 00 (IR v2 + FinalizeResult runner) - completed
+2) Scope 01 (contract-driven finalize) - mostly complete; list policy migration + serde validation remain
 3) Scope 02 (order-independent dedupe)
 4) Scope 03 (runtime profiles)
 5) Scope 04 (observability)
 6) Scope 05 (legacy retirement + guardrails)
 7) Scope 06 (filter compiler integration)
 
+**Schema-derivation enablement order**
+1) Move policy maps into `FinalizePolicy` metadata (output registry); list policies still pending.
+2) Enforce `stable_sort_keys` precedence and explicit `order_by` when canonical is disabled.
+3) Remove remaining required-non-null/dedupe derivations in callers.
+
 ## Validation Gates
 - `uv run python -m tools.quality_report --output build/quality-results/quality_report.json`
 - Targeted pytest runs for modified modules (columnar, schemas, queries)
 - Determinism tests for dedupe and canonical ordering
 - Artifact presence tests for tolerant finalize
-

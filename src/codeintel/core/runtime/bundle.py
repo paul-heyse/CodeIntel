@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from codeintel.core.config.settings import (
     BuildSettings,
     CliSettings,
+    ColumnarRuntimeSettings,
     HamiltonExecutionSettings,
     ObservabilitySettings,
     ServingSettings,
@@ -21,6 +22,7 @@ class RuntimeSettings:
 
     build: BuildSettings
     cli: CliSettings
+    columnar: ColumnarRuntimeSettings
     execution: HamiltonExecutionSettings
     serving: ServingSettings
     observability: ObservabilitySettings

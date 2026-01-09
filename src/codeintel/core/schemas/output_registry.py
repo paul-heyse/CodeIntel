@@ -16,6 +16,9 @@ from codeintel.config.datasets.primitives import (
 from codeintel.core.schemas.primitives import (
     Column,
     ColumnType,
+    FinalizeDedupeSpec,
+    FinalizeInvariantSpec,
+    FinalizePolicy,
     Index,
     TableSchema,
     TableWritePolicy,
@@ -875,6 +878,15 @@ CST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("qnames", "LIST(VARCHAR)"),
         ],
         primary_key=("node_id",),
+        finalize_policy=FinalizePolicy(
+            invariants=(
+                FinalizeInvariantSpec(
+                    kind="list_alignment",
+                    column="span.start",
+                    related=("span.end",),
+                ),
+            ),
+        ),
         description="Concrete syntax tree nodes",
     ),
 )
@@ -1719,6 +1731,9 @@ MODULES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Index("idx_core_file_state_path", ("rel_path",)),
             Index("idx_core_file_state_repo_commit", ("repo", "commit")),
         ),
+        finalize_policy=FinalizePolicy(
+            dedupe=FinalizeDedupeSpec(prefer_columns=("mtime_ns", "content_hash")),
+        ),
         description="Per-commit file digests used for incremental ingestion",
     ),
     TableSchema(
@@ -1762,6 +1777,12 @@ EXAMPLE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("message", "VARCHAR", nullable=False),
             Column("value", "INTEGER", nullable=False),
         ],
+        primary_key=("message", "value"),
+        finalize_policy=FinalizePolicy(
+            required_non_null=("message", "value"),
+            dedupe=FinalizeDedupeSpec(keys=("message", "value")),
+            canonical_sort_keys=("message", "value"),
+        ),
         description="Example analytics output for local dev targets.",
     ),
 )
@@ -1961,6 +1982,11 @@ SCIP_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "symbol"),
         indexes=(Index("idx_core_scip_external_symbol", ("symbol",)),),
+        finalize_policy=FinalizePolicy(
+            dedupe=FinalizeDedupeSpec(
+                prefer_columns=("package_manager", "package_name", "package_version"),
+            ),
+        ),
         description="External SCIP symbols referenced by the index",
     ),
     TableSchema(
@@ -3103,7 +3129,16 @@ FUNCTION_ANALYTICS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("extras", FUNCTION_TYPES_EXTRAS_STRUCT),
             *CREATED_AT_COL_NULLABLE,
         ],
+        primary_key=("repo", "commit", "function_goid_h128"),
         indexes=(Index("idx_analytics_function_types_goid", ("function_goid_h128",)),),
+        finalize_policy=FinalizePolicy(
+            required_non_null=("repo", "commit", "function_goid_h128"),
+            dedupe=FinalizeDedupeSpec(
+                keys=("repo", "commit", "function_goid_h128"),
+                prefer_columns=("created_at",),
+            ),
+            canonical_sort_keys=("repo", "commit", "function_goid_h128"),
+        ),
         description="Per-function parameter and return type annotations",
     ),
     TableSchema(
@@ -3164,6 +3199,14 @@ FUNCTION_CONTRACTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
         indexes=(Index("idx_analytics_function_contracts_goid", ("function_goid_h128",)),),
+        finalize_policy=FinalizePolicy(
+            required_non_null=("repo", "commit", "function_goid_h128"),
+            dedupe=FinalizeDedupeSpec(
+                keys=("repo", "commit", "function_goid_h128"),
+                prefer_columns=("created_at",),
+            ),
+            canonical_sort_keys=("repo", "commit", "function_goid_h128"),
+        ),
         description="Inferred pre/postconditions and nullability per function",
     ),
 )
@@ -3951,6 +3994,14 @@ SUBSYSTEM_CACHE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             *CREATED_AT_COL_NULLABLE,
         ],
         primary_key=("repo", "commit", "subsystem_id"),
+        finalize_policy=FinalizePolicy(
+            required_non_null=("repo", "commit", "subsystem_id"),
+            dedupe=FinalizeDedupeSpec(
+                keys=("repo", "commit", "subsystem_id"),
+                prefer_columns=("created_at",),
+            ),
+            canonical_sort_keys=("repo", "commit", "subsystem_id"),
+        ),
         description="Cached subsystem profile metrics derived from subsystem analytics.",
     ),
 )
@@ -3970,6 +4021,14 @@ SEMANTIC_ROLES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "function_goid_h128"),
         indexes=(Index("idx_analytics_semantic_roles_fn", ("function_goid_h128",)),),
+        finalize_policy=FinalizePolicy(
+            required_non_null=("repo", "commit", "function_goid_h128"),
+            dedupe=FinalizeDedupeSpec(
+                keys=("repo", "commit", "function_goid_h128"),
+                prefer_columns=("created_at",),
+            ),
+            canonical_sort_keys=("repo", "commit", "function_goid_h128"),
+        ),
         description="Semantic role classification per function",
     ),
     TableSchema(
@@ -3984,9 +4043,44 @@ SEMANTIC_ROLES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         ],
         primary_key=("repo", "commit", "module"),
         indexes=(Index("idx_analytics_semantic_roles_mod", ("module",)),),
+        finalize_policy=FinalizePolicy(
+            required_non_null=("repo", "commit", "module"),
+            dedupe=FinalizeDedupeSpec(
+                keys=("repo", "commit", "module"),
+                prefer_columns=("created_at",),
+            ),
+            canonical_sort_keys=("repo", "commit", "module"),
+        ),
         description="Semantic role classification per module",
     ),
 )
+
+
+def _table_has_column(table: TableSchema, column: str) -> bool:
+    return any(col.name == column for col in table.columns)
+
+
+def _apply_analytics_finalize_policy(table: TableSchema) -> TableSchema:
+    if table.schema != "analytics":
+        return table
+    if table.finalize_policy is not None:
+        return table
+    if not table.primary_key:
+        return table
+    prefer_columns = ("created_at",) if _table_has_column(table, "created_at") else ()
+    if table.write_policy is not None and table.write_policy.stable_sort_keys is not None:
+        canonical_sort_keys = table.write_policy.stable_sort_keys
+    else:
+        canonical_sort_keys = table.primary_key
+    policy = FinalizePolicy(
+        required_non_null=table.primary_key,
+        dedupe=FinalizeDedupeSpec(
+            keys=table.primary_key,
+            prefer_columns=prefer_columns,
+        ),
+        canonical_sort_keys=canonical_sort_keys,
+    )
+    return replace(table, finalize_policy=policy)
 
 
 def _disable_stable_sort_key(table: TableSchema) -> TableSchema:
@@ -4179,10 +4273,11 @@ NON_INFERABLE_OUTPUT_KEYS: frozenset[str] = frozenset(
 def _build_output_table_schemas() -> dict[str, TableSchema]:
     table_map: dict[str, TableSchema] = {}
     for table in _all_output_tables():
-        if table.table_key in table_map:
-            msg = f"Duplicate output TableSchema: {table.table_key}"
+        resolved = _apply_analytics_finalize_policy(table)
+        if resolved.table_key in table_map:
+            msg = f"Duplicate output TableSchema: {resolved.table_key}"
             raise ValueError(msg)
-        table_map[table.table_key] = table
+        table_map[resolved.table_key] = resolved
     missing = NON_INFERABLE_OUTPUT_KEYS.difference(table_map)
     if missing:
         msg = f"Missing non-inferable TableSchemas: {sorted(missing)}"

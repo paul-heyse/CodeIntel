@@ -257,7 +257,6 @@ def _config_reference_rowset(
         keys=[E.field("key")],
         aggregates=[("reference_modules", "list", None, "reference_modules")],
     )
-    plan = plan.order_by(sort_keys=[("key", "ascending")])
     return materialize_plan(plan, use_threads=True)
 
 

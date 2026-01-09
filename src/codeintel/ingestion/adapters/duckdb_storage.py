@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, ClassVar, cast
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.columnar.compute_helpers import combine_table_chunks
 from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import SortKey, stable_sort_indices
 from codeintel.core.columnar.nested_ops import deep_cast_table_to_contract
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
@@ -70,12 +70,6 @@ def _columns_for_table(table_key: str) -> list[str] | None:
     return load_columns_by_table().get(table_key)
 
 
-def _required_non_null_columns(table_key: str) -> tuple[str, ...]:
-    schema_service = get_schema_service()
-    table_schema = schema_service.require_table_schema(table_key)
-    return tuple(column.name for column in table_schema.columns if not column.nullable)
-
-
 def _prepare_table_for_write(table_key: str, table: pa.Table) -> pa.Table:
     schema_service = get_schema_service()
     table_schema = schema_service.require_table_schema(table_key)
@@ -84,11 +78,9 @@ def _prepare_table_for_write(table_key: str, table: pa.Table) -> pa.Table:
     casted = deep_cast_table_to_contract(compact, contract)
     finalized = finalize_table(
         casted,
-        spec=FinalizeSpec(
-            table_key=table_key,
+        spec=finalize_spec_for_table(
+            table_key,
             mode="strict",
-            required_non_null=_required_non_null_columns(table_key),
-            invariants=(),
             emit_artifacts=True,
         ),
     )

@@ -18,7 +18,7 @@ from sqlglot.errors import SqlglotError
 
 from codeintel.core.columnar import align_reader_to_contract, extras_policy_from_schema
 from codeintel.core.columnar.compute_helpers import combine_table_chunks
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.core.columnar.kernels import hash_struct_ordinal, stable_sort_indices
 from codeintel.core.columnar.nested_ops import deep_cast_table_to_contract
 from codeintel.core.exports import (
@@ -623,7 +623,7 @@ class SemanticQueryKernel:
                 table = deep_cast_table_to_contract(table, options.contract_schema)
         finalized = finalize_table(
             table,
-            spec=FinalizeSpec(table_key=options.table_key, mode=options.mode),
+            spec=finalize_spec_for_table(options.table_key, mode=options.mode),
         )
         result = finalized.good
         if options.sort_keys:

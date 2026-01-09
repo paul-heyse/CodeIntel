@@ -11,12 +11,24 @@ from typing import TYPE_CHECKING, cast
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import reader_to_table
-from codeintel.core.columnar.finalize_ops import FinalizeMode, FinalizeSpec, finalize_table
+from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.finalize_ops import (
+    FinalizeMode,
+    finalize_spec_for_table,
+    finalize_table,
+)
 from codeintel.core.columnar.masks import equal_expr
 from codeintel.core.columnar.normalization import normalize_table_for_compute
-from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
-from codeintel.core.columnar.streaming import DatasetScanOptions
+from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan_for_context
+from codeintel.core.columnar.queryspec import QuerySpec, projection_spec_from_columns
+from codeintel.core.columnar.streaming import (
+    DatasetScanOptions,
+    build_scanner_for_queryspec_ctx,
+    configure_arrow_threading_for_context,
+    scan_options_for_queryspec_ctx,
+)
 from codeintel.core.constants import (
     DEFAULT_ARROW_BATCH_READAHEAD,
     DEFAULT_ARROW_BATCH_SIZE,
@@ -29,12 +41,11 @@ from codeintel.core.constants import (
     DEFAULT_ARROW_USE_THREADS,
 )
 from codeintel.core.datasets.arrow_store import scan_dataset
-from codeintel.core.datasets.scanner_ops import build_scanner
-
-LOG = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +68,7 @@ class ParquetScanOptions:
     require_sequenced_output: bool | None = None
     metrics_enabled: bool = False
     finalize_mode: FinalizeMode | None = None
+    execution_ctx: ExecutionContext | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +108,17 @@ class ParquetScanTelemetry:
         return payload
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedParquetScan:
+    """Prepared dataset scan metadata."""
+
+    dataset: ds.Dataset
+    query_spec: QuerySpec
+    scan_options: DatasetScanOptions
+    use_threads: bool
+    execution_ctx: ExecutionContext | None
+
+
 def scan_parquet_dataset(
     *,
     dataset_root: Path,
@@ -129,11 +152,15 @@ def scan_parquet_dataset(
     )
     if prepared is None:
         return None
-    dataset, scan_options = prepared
-    plan_reader = _plan_scan_reader(dataset, scan_options)
+    plan_reader = _plan_scan_reader(prepared)
     if plan_reader is not None:
         return plan_reader
-    scanner = build_scanner(dataset, options=scan_options)
+    scanner = build_scanner_for_queryspec_ctx(
+        prepared.dataset,
+        spec=prepared.query_spec,
+        ctx=prepared.execution_ctx,
+        options=prepared.scan_options,
+    )
     return scanner.to_reader()
 
 
@@ -159,17 +186,21 @@ def scan_parquet_dataset_with_telemetry(
     )
     if prepared is None:
         return None, None
-    dataset, scan_options = prepared
     telemetry = collect_parquet_scan_telemetry(
-        dataset=dataset,
+        dataset=prepared.dataset,
         table_key=table_key,
         snapshot_id=snapshot_id,
-        scan_options=scan_options,
+        scan_options=prepared.scan_options,
     )
-    plan_reader = _plan_scan_reader(dataset, scan_options)
+    plan_reader = _plan_scan_reader(prepared)
     if plan_reader is not None:
         return plan_reader, telemetry
-    scanner = build_scanner(dataset, options=scan_options)
+    scanner = build_scanner_for_queryspec_ctx(
+        prepared.dataset,
+        spec=prepared.query_spec,
+        ctx=prepared.execution_ctx,
+        options=prepared.scan_options,
+    )
     return scanner.to_reader(), telemetry
 
 
@@ -179,8 +210,9 @@ def _prepare_parquet_dataset(
     table_key: str,
     snapshot_id: str,
     options: ParquetScanOptions | None,
-) -> tuple[ds.Dataset, DatasetScanOptions] | None:
+) -> PreparedParquetScan | None:
     resolved = options or ParquetScanOptions()
+    configure_arrow_threading_for_context(ctx=resolved.execution_ctx)
     try:
         dataset = scan_dataset(
             dataset_root=dataset_root,
@@ -205,43 +237,46 @@ def _prepare_parquet_dataset(
         else:
             expression = cast("ds.Expression", expression & commit_expr)
 
-    scan_options = DatasetScanOptions(
-        batch_size=resolved.batch_size,
-        batch_readahead=resolved.batch_readahead,
-        fragment_readahead=resolved.fragment_readahead,
-        filter_expression=expression,
-        cache_metadata=resolved.cache_metadata,
-        use_threads=resolved.use_threads,
-        parquet_pre_buffer=resolved.parquet_pre_buffer,
-        parquet_use_buffered_stream=resolved.parquet_use_buffered_stream,
-        parquet_buffer_size=resolved.parquet_buffer_size,
+    provenance_columns = _resolve_provenance_columns(resolved, ctx=resolved.execution_ctx)
+    query_spec = _query_spec_for_scan(
         columns=resolved.columns,
-        provenance_columns=_resolve_provenance_columns(resolved),
-        implicit_ordering=resolved.implicit_ordering,
-        require_sequenced_output=resolved.require_sequenced_output,
-        metrics_enabled=resolved.metrics_enabled,
-        unify_schemas=True,
+        provenance_columns=provenance_columns,
+        predicate=expression,
     )
-    return dataset, scan_options
+    base_options = _base_scan_options(resolved, provenance_columns=provenance_columns)
+    scan_options = scan_options_for_queryspec_ctx(
+        query_spec,
+        ctx=resolved.execution_ctx,
+        options=base_options,
+    )
+    use_threads = _resolve_use_threads(resolved, ctx=resolved.execution_ctx)
+    return PreparedParquetScan(
+        dataset=dataset,
+        query_spec=query_spec,
+        scan_options=scan_options,
+        use_threads=use_threads,
+        execution_ctx=resolved.execution_ctx,
+    )
 
 
 def _plan_scan_reader(
-    dataset: ds.Dataset,
-    scan_options: DatasetScanOptions,
+    prepared: PreparedParquetScan,
 ) -> pa.RecordBatchReader | None:
-    use_threads = scan_options.use_threads
-    resolved_use_threads = use_threads if use_threads is not None else True
+    query_plan_options = QueryPlanOptions(
+        implicit_ordering=prepared.scan_options.implicit_ordering,
+        require_sequenced_output=prepared.scan_options.require_sequenced_output,
+    )
     try:
-        plan = build_scan_plan(
-            dataset,
-            options=ScanPlanOptions(
-                columns=scan_options.projection_columns(),
-                filter_expr=scan_options.filter_expression,
-                implicit_ordering=scan_options.implicit_ordering,
-                require_sequenced_output=scan_options.require_sequenced_output,
-            ),
+        plan = build_query_plan_for_context(
+            prepared.dataset,
+            spec=prepared.query_spec,
+            ctx=prepared.execution_ctx,
+            options=query_plan_options,
         )
-        return plan.to_reader(use_threads=resolved_use_threads)
+        execution_ctx = prepared.execution_ctx
+        if execution_ctx is None:
+            execution_ctx = ExecutionContext(use_threads=prepared.use_threads)
+        return ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
     except (
         pa.ArrowInvalid,
         pa.ArrowNotImplementedError,
@@ -250,6 +285,58 @@ def _plan_scan_reader(
         ValueError,
     ):
         return None
+
+
+def _query_spec_for_scan(
+    *,
+    columns: Sequence[str] | Mapping[str, ds.Expression] | None,
+    provenance_columns: Sequence[str],
+    predicate: ds.Expression | None,
+) -> QuerySpec:
+    projection = projection_spec_from_columns(
+        columns,
+        provenance_columns=provenance_columns,
+    )
+    return QuerySpec(
+        predicate=predicate,
+        pushdown_predicate=predicate,
+        projection=projection,
+    )
+
+
+def _base_scan_options(
+    options: ParquetScanOptions,
+    *,
+    provenance_columns: Sequence[str],
+) -> DatasetScanOptions:
+    return DatasetScanOptions(
+        batch_size=options.batch_size,
+        batch_readahead=options.batch_readahead,
+        fragment_readahead=options.fragment_readahead,
+        cache_metadata=options.cache_metadata,
+        use_threads=options.use_threads,
+        parquet_pre_buffer=options.parquet_pre_buffer,
+        parquet_use_buffered_stream=options.parquet_use_buffered_stream,
+        parquet_buffer_size=options.parquet_buffer_size,
+        provenance_columns=tuple(provenance_columns),
+        implicit_ordering=options.implicit_ordering,
+        require_sequenced_output=options.require_sequenced_output,
+        metrics_enabled=options.metrics_enabled,
+        unify_schemas=True,
+    )
+
+
+def _resolve_use_threads(
+    options: ParquetScanOptions,
+    *,
+    ctx: ExecutionContext | None,
+) -> bool:
+    default_threads = options.use_threads
+    if default_threads is None:
+        default_threads = DEFAULT_ARROW_USE_THREADS
+    if ctx is None:
+        return default_threads
+    return ctx.resolve_use_threads()
 
 
 def scan_parquet_table(
@@ -275,14 +362,14 @@ def scan_parquet_table(
     if reader is None:
         return None
     resolved = options or ParquetScanOptions()
-    provenance_columns = _resolve_provenance_columns(resolved)
+    provenance_columns = _resolve_provenance_columns(resolved, ctx=resolved.execution_ctx)
     table = normalize_table_for_compute(reader_to_table(reader))
     if resolved.finalize_mode is None or resolved.columns is not None:
         return table
     finalized = finalize_table(
         table,
-        spec=FinalizeSpec(
-            table_key=table_key,
+        spec=finalize_spec_for_table(
+            table_key,
             mode=resolved.finalize_mode,
             context_fields=provenance_columns,
         ),
@@ -404,12 +491,31 @@ def _projection_column_names(
     return tuple(columns)
 
 
-def _resolve_provenance_columns(options: ParquetScanOptions) -> tuple[str, ...]:
+def _resolve_provenance_columns(
+    options: ParquetScanOptions,
+    *,
+    ctx: ExecutionContext | None,
+) -> tuple[str, ...]:
     if options.provenance_columns:
         return tuple(options.provenance_columns)
-    if options.metrics_enabled or options.finalize_mode is not None:
+    if _resolve_provenance_enabled(options, ctx=ctx):
         return DEFAULT_ARROW_PROVENANCE_COLUMNS
     return ()
+
+
+def _resolve_provenance_enabled(
+    options: ParquetScanOptions,
+    *,
+    ctx: ExecutionContext | None,
+) -> bool:
+    enabled = options.metrics_enabled or options.finalize_mode is not None
+    if ctx is None:
+        return enabled
+    provenance = ctx.provenance or enabled
+    profile = ctx.runtime_profile
+    if profile is not None:
+        provenance = profile.resolve_provenance(default=provenance)
+    return provenance
 
 
 __all__ = [

@@ -66,6 +66,7 @@ if TYPE_CHECKING:
         finalize_join_keys,
         finalize_reader,
         finalize_reader_batches,
+        finalize_spec_for_table,
         finalize_table,
         record_join_precheck_errors,
     )
@@ -385,6 +386,10 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "codeintel.core.columnar.finalize_ops",
         "drain_join_precheck_reports",
     ),
+    "finalize_spec_for_table": (
+        "codeintel.core.columnar.finalize_ops",
+        "finalize_spec_for_table",
+    ),
     "finalize_join_keys": ("codeintel.core.columnar.finalize_ops", "finalize_join_keys"),
     "finalize_reader_batches": (
         "codeintel.core.columnar.finalize_ops",
@@ -616,6 +621,7 @@ __all__ = (
     "finalize_join_keys",
     "finalize_reader",
     "finalize_reader_batches",
+    "finalize_spec_for_table",
     "finalize_table",
     "group_by_aggregate",
     "hash_struct_goid",

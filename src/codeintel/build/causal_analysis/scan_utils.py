@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.core.columnar.conversion import reader_to_table
+from codeintel.core.columnar.execution_context import ExecutionContext
 from codeintel.core.columnar.normalization import normalize_table_for_compute
 from codeintel.core.datasets.scanning import (
     ParquetScanOptions,
@@ -38,6 +39,7 @@ class ScanConfig:
     snapshot_id: str
     repo: str | None = None
     commit: str | None = None
+    execution_ctx: ExecutionContext | None = None
 
 
 def scan_table_with_fallback(
@@ -64,6 +66,7 @@ def scan_table_with_fallback(
         implicit_ordering=True,
         require_sequenced_output=True,
         metrics_enabled=True,
+        execution_ctx=config.execution_ctx,
     )
     reader, telemetry = scan_parquet_dataset_with_telemetry(
         dataset_root=config.dataset_root,
@@ -88,6 +91,7 @@ def scan_table_with_fallback(
                 implicit_ordering=True,
                 require_sequenced_output=True,
                 metrics_enabled=True,
+                execution_ctx=config.execution_ctx,
             ),
         )
         if fallback_telemetry is not None:

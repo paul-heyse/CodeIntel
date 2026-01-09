@@ -17,7 +17,11 @@ except ImportError:  # pragma: no cover - optional dependency
     pl = None
 
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
-from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec, finalize_table
+from codeintel.core.columnar.finalize_ops import (
+    FinalizeDedupe,
+    finalize_spec_for_table,
+    finalize_table,
+)
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema_alignment import (
     align_reader_to_contract,
@@ -234,26 +238,19 @@ def _finalize_artifact_errors(result: FinalizeResult) -> list[str]:
     return errors
 
 
-def _required_non_null_columns(table_schema: TableSchema) -> tuple[str, ...]:
-    return tuple(column.name for column in table_schema.columns if not column.nullable)
-
-
 def _finalize_table_for_validation(
     table_key: str,
     table: pa.Table,
     *,
-    table_schema: TableSchema,
     mode: ValidationMode,
     enabled: bool,
 ) -> tuple[pa.Table, list[str]]:
     if mode == "skip" or not enabled:
         return table, []
-    spec = FinalizeSpec(
-        table_key=table_key,
+    spec = finalize_spec_for_table(
+        table_key,
         mode="tolerant",
-        required_non_null=_required_non_null_columns(table_schema),
         dedupe=FinalizeDedupe(enabled=False),
-        key_fields=table_schema.primary_key,
         context_fields=_DEFAULT_PROVENANCE_FIELDS,
         emit_artifacts=True,
     )
@@ -334,7 +331,6 @@ def validate_table(
     table, finalize_errors = _finalize_table_for_validation(
         table_key,
         table,
-        table_schema=table_schema,
         mode=resolved_mode,
         enabled=resolved_context.finalize,
     )

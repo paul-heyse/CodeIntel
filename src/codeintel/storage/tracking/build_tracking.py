@@ -21,7 +21,7 @@ from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.core.columnar.arrowdsl import ExecutionContext, ExecutionPlan, run_pipeline
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
 from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
-from codeintel.core.columnar.finalize_ops import FinalizeDedupe, FinalizeSpec
+from codeintel.core.columnar.finalize_ops import FinalizeDedupe, finalize_spec_for_table
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.kernels import stable_sort_indices
 from codeintel.core.columnar.masks import and_mask, fill_null_false, invert_mask
@@ -397,8 +397,8 @@ class BuildTracking:
         def _read_table() -> pa.Table:
             return reader_to_table(plan.to_reader(use_threads=resolved_threads))
 
-        finalize_spec = FinalizeSpec(
-            table_key=_MANIFEST_TABLE_KEY,
+        finalize_spec = finalize_spec_for_table(
+            _MANIFEST_TABLE_KEY,
             mode="tolerant",
             context_fields=DEFAULT_ARROW_PROVENANCE_COLUMNS,
             dedupe=FinalizeDedupe(

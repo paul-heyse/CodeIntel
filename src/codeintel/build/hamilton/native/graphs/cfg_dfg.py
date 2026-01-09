@@ -22,9 +22,9 @@ from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabul
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import iter_array_values, iter_rows
 from codeintel.build.tabular.compute_helpers import cast_array
-from codeintel.build.tabular.compute_masks import non_empty_string_expr, non_empty_string_mask
+from codeintel.build.tabular.compute_masks import non_empty_string_expr
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
-from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -71,14 +71,7 @@ def _filter_non_empty_paths(table: pa.Table) -> pa.Table:
     if table.num_rows == 0 or "path" not in table.column_names:
         return table
 
-    def _mask(value_table: pa.Table) -> pa.Array | pa.ChunkedArray:
-        return non_empty_string_mask(value_table.column("path"))
-
-    return plan_filter_or_fallback(
-        table,
-        non_empty_string_expr("path"),
-        fallback_mask=_mask,
-    )
+    return plan_filter_or_fallback(table, non_empty_string_expr("path"))
 
 
 def _collect_ast_function_keys(
@@ -302,8 +295,8 @@ def cfg_blocks_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInp
     table = _cast_function_goid(table)
     result = finalize_table(
         table,
-        spec=FinalizeSpec(
-            table_key=CFG_BLOCKS_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CFG_BLOCKS_TABLE_KEY,
             mode="strict",
             key_fields=_key_fields_for_table(CFG_BLOCKS_TABLE_KEY),
             order_by=_order_by_for_table(CFG_BLOCKS_TABLE_KEY),
@@ -327,8 +320,8 @@ def cfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
     table = _cast_function_goid(table)
     result = finalize_table(
         table,
-        spec=FinalizeSpec(
-            table_key=CFG_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            CFG_EDGES_TABLE_KEY,
             mode="strict",
             key_fields=_key_fields_for_table(CFG_EDGES_TABLE_KEY),
             order_by=_order_by_for_table(CFG_EDGES_TABLE_KEY),
@@ -352,8 +345,8 @@ def dfg_edges_compute(cfg_dfg_analysis: _CfgDfgAnalysis) -> InferableTabularInpu
     table = _cast_function_goid(table)
     result = finalize_table(
         table,
-        spec=FinalizeSpec(
-            table_key=DFG_EDGES_TABLE_KEY,
+        spec=finalize_spec_for_table(
+            DFG_EDGES_TABLE_KEY,
             mode="strict",
             key_fields=_key_fields_for_table(DFG_EDGES_TABLE_KEY),
             order_by=_order_by_for_table(DFG_EDGES_TABLE_KEY),

@@ -40,6 +40,36 @@ log = logging.getLogger(__name__)
 _MAX_EDGES_FOR_FULL_METRICS = 50_000
 
 
+def _projection_degree_stats(
+    proj_store: RxGraphStore,
+    *,
+    algo_config: GraphAlgoConfig,
+) -> tuple[dict[Any, int], dict[Any, float]]:
+    degree: dict[Any, int] = dict.fromkeys(proj_store.node_ids(), 0)
+    weighted_degree: dict[Any, float] = dict.fromkeys(proj_store.node_ids(), 0.0)
+    resolved_nan_policy = proj_store.numeric_policy.nan_policy
+    semantics = resolve_weight_semantics(proj_store, algo_config)
+    epsilon = resolve_weight_epsilon(algo_config)
+    for src_idx, dst_idx, payload in iter_edge_payloads(proj_store):
+        weight_val = edge_strength_from_payload(
+            payload,
+            nan_policy=resolved_nan_policy,
+            semantics=semantics,
+            epsilon=epsilon,
+        )
+        src_id = proj_store.index_to_id[src_idx]
+        dst_id = proj_store.index_to_id[dst_idx]
+        if src_idx == dst_idx:
+            degree[src_id] += 2
+            weighted_degree[src_id] += weight_val * 2.0
+            continue
+        degree[src_id] += 1
+        degree[dst_id] += 1
+        weighted_degree[src_id] += weight_val
+        weighted_degree[dst_id] += weight_val
+    return degree, weighted_degree
+
+
 def build_projection_graph(
     bipartite_graph: GraphInput,
     nodes: Iterable[Any],
@@ -134,28 +164,10 @@ def projection_metrics(
         edge_count,
     )
 
-    degree: dict[Any, int] = dict.fromkeys(proj_store.node_ids(), 0)
-    weighted_degree: dict[Any, float] = dict.fromkeys(proj_store.node_ids(), 0.0)
-    resolved_nan_policy = proj_store.numeric_policy.nan_policy
-    semantics = resolve_weight_semantics(proj_store, algo_config)
-    epsilon = resolve_weight_epsilon(algo_config)
-    for src_idx, dst_idx, payload in iter_edge_payloads(proj_store):
-        weight_val = edge_strength_from_payload(
-            payload,
-            nan_policy=resolved_nan_policy,
-            semantics=semantics,
-            epsilon=epsilon,
-        )
-        src_id = proj_store.index_to_id[src_idx]
-        dst_id = proj_store.index_to_id[dst_idx]
-        if src_idx == dst_idx:
-            degree[src_id] += 2
-            weighted_degree[src_id] += weight_val * 2.0
-            continue
-        degree[src_id] += 1
-        degree[dst_id] += 1
-        weighted_degree[src_id] += weight_val
-        weighted_degree[dst_id] += weight_val
+    degree, weighted_degree = _projection_degree_stats(
+        proj_store,
+        algo_config=algo_config,
+    )
 
     if edge_count > _MAX_EDGES_FOR_FULL_METRICS:
         log.warning(

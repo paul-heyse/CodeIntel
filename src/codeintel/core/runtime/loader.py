@@ -24,6 +24,7 @@ from codeintel.core.config.settings import (
     BatchProcessorSettings,
     BuildSettings,
     CliSettings,
+    ColumnarRuntimeSettings,
     ExportAuditSettings,
     GrpcObservabilitySettings,
     HamiltonExecutionSettings,
@@ -213,6 +214,15 @@ def _load_build_settings() -> BuildSettings:
         if dataset_row_index_offset is not None
         else 0,
     )
+
+
+def _load_columnar_settings() -> ColumnarRuntimeSettings:
+    profile = get_str("CODEINTEL_COLUMNAR_PROFILE", default=None)
+    if profile is not None:
+        profile = profile.strip()
+        if not profile:
+            profile = None
+    return ColumnarRuntimeSettings(profile=profile)
 
 
 def _load_execution_settings() -> HamiltonExecutionSettings:
@@ -1085,6 +1095,7 @@ def load_runtime_settings() -> RuntimeSettings:
     return RuntimeSettings(
         build=_load_build_settings(),
         cli=_load_cli_settings(),
+        columnar=_load_columnar_settings(),
         execution=_load_execution_settings(),
         serving=_load_serving_settings(),
         observability=_load_observability_settings(),

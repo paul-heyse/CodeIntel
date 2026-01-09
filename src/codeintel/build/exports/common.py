@@ -25,7 +25,7 @@ from codeintel.build.schemas import (
     iter_contracts,
 )
 from codeintel.core.columnar.conversion import table_to_reader
-from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_reader
+from codeintel.core.columnar.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.plan_ops import QueryPlanOptions, build_query_plan_for_context
 from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
 from codeintel.core.columnar.streaming import scan_telemetry_for_queryspec
@@ -306,7 +306,10 @@ def _export_reader_from_dataset(
     if stable_sort_keys:
         plan = plan.order_by(sort_keys=[(key, "ascending") for key in stable_sort_keys])
     reader = plan.to_reader(use_threads=True)
-    result = finalize_reader(reader, spec=FinalizeSpec(table_key=table_key, mode="tolerant"))
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(table_key, mode="tolerant"),
+    )
     return table_to_reader(result.good, batch_size=batch_size)
 
 

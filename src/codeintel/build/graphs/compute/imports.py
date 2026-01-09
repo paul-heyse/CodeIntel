@@ -102,7 +102,13 @@ def _build_import_store(
     isolate_graph = rx.PyDiGraph(multigraph=False)
     for module in sorted(missing, key=stable_key):
         isolate_graph.add_node(encode_node_payload(module, {}))
-    merged = rx.digraph_union(store.graph, isolate_graph, merge_nodes=True, merge_edges=True)
+    directed_graph = cast("rx.PyDiGraph", store.graph)
+    merged = rx.digraph_union(
+        directed_graph,
+        isolate_graph,
+        merge_nodes=True,
+        merge_edges=True,
+    )
     return RxGraphStore.from_rx_graph(
         merged,
         weight_policy=store.weight_policy,
@@ -133,7 +139,7 @@ def compute_scc(
     if store.graph.num_nodes() == 0:
         return {}
 
-    condensed = rx.condensation(cast("rx.PyDiGraph", store.graph))
+    condensed = cast("rx.PyDiGraph", rx.condensation(cast("rx.PyDiGraph", store.graph)))
     node_map = condensed.attrs.get("node_map")
     if not isinstance(node_map, Sequence) or isinstance(
         node_map, (str, bytes, bytearray, memoryview)
@@ -174,7 +180,7 @@ def compute_layers(
         return {}
     if not scc_map:
         return {}
-    condensed = rx.condensation(cast("rx.PyDiGraph", store.graph))
+    condensed = cast("rx.PyDiGraph", rx.condensation(cast("rx.PyDiGraph", store.graph)))
     comp_layers: dict[int, int] = {}
     for layer, generation in enumerate(rx.topological_generations(condensed)):
         for comp_id in generation:

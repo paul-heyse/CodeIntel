@@ -4,21 +4,21 @@ from __future__ import annotations
 
 import contextlib
 import inspect
-import os
-import threading
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, cast
 
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.core.columnar import profiles as columnar_profiles
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
-from codeintel.core.columnar.execution_context import ExecutionContext, RuntimeProfile
-from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.execution_context import ExecutionContext
+from codeintel.core.columnar.profiles import DatasetScanOptions, scan_profile_options
 from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.readers import empty_reader_from_schema
+from codeintel.core.columnar.runtime import apply_arrow_threading, apply_runtime_profile
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_ops import unify_schemas
 from codeintel.core.config.settings import ArrowScanSettings
@@ -29,8 +29,6 @@ from codeintel.core.constants import (
     DEFAULT_ARROW_CPU_COUNT,
     DEFAULT_ARROW_FRAGMENT_READAHEAD,
     DEFAULT_ARROW_IO_THREAD_COUNT,
-    DEFAULT_ARROW_IO_THREAD_MULTIPLIER,
-    DEFAULT_ARROW_MIN_IO_THREADS,
     DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
     DEFAULT_ARROW_PARQUET_PRE_BUFFER,
     DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM,
@@ -45,6 +43,7 @@ if TYPE_CHECKING:
     from pyarrow.dataset import Scanner
 
     from codeintel.core.columnar.plan_ops import ExternalPlanSpec
+    from codeintel.core.columnar.profiles import RuntimeProfile
 
     type PolarsLazyFrame = LazyFrame
 else:
@@ -55,49 +54,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     pl = None
 
-
-@dataclass(frozen=True, slots=True)
-class DatasetScanOptions:
-    """Options for Arrow dataset scanning."""
-
-    batch_size: int = DEFAULT_ARROW_BATCH_SIZE
-    batch_readahead: int | None = DEFAULT_ARROW_BATCH_READAHEAD
-    fragment_readahead: int | None = DEFAULT_ARROW_FRAGMENT_READAHEAD
-    filter_expression: ds.Expression | None = None
-    cache_metadata: bool | None = DEFAULT_ARROW_CACHE_METADATA
-    use_threads: bool | None = DEFAULT_ARROW_USE_THREADS
-    parquet_pre_buffer: bool | None = DEFAULT_ARROW_PARQUET_PRE_BUFFER
-    parquet_use_buffered_stream: bool | None = DEFAULT_ARROW_PARQUET_USE_BUFFERED_STREAM
-    parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
-    memory_pool: pa.MemoryPool | None = None
-    schema: pa.Schema | None = None
-    columns: Sequence[str] | Mapping[str, ds.Expression] | None = None
-    provenance_columns: Sequence[str] = ()
-    implicit_ordering: bool | None = None
-    require_sequenced_output: bool | None = None
-    unify_schemas: bool = False
-    schema_promote_options: SchemaPromoteOptions = DEFAULT_SCHEMA_PROMOTE_OPTIONS
-    metrics_enabled: bool = False
-
-    def projection_columns(
-        self,
-    ) -> Sequence[str] | Mapping[str, ds.Expression] | None:
-        """Return projection columns merged with provenance columns.
-
-        Returns
-        -------
-        Sequence[str] | Mapping[str, ds.Expression] | None
-            Projection columns including provenance columns.
-        """
-        return _merge_scan_columns(self.columns, self.provenance_columns)
-
-
-@dataclass(frozen=True, slots=True)
-class ScanProfile:
-    """Named scan profile bundling DatasetScanOptions."""
-
-    name: str
-    options: DatasetScanOptions
+ScanProfile = columnar_profiles.ScanProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +75,6 @@ class QueryPlanSpec:
     external_plan: ExternalPlanSpec | None = None
 
 
-_ARROW_THREADING_CONFIGURED = threading.Event()
 _DATASET_IGNORE_PREFIXES: tuple[str, ...] = (".", "_")
 _DATASET_EXCLUDE_INVALID_FILES = True
 
@@ -127,71 +83,6 @@ def _resolve_arrow_scan_settings(settings: ArrowScanSettings | None = None) -> A
     if settings is not None:
         return settings
     return load_runtime_settings().build.arrow_scan
-
-
-class ScanProfileOverrides(TypedDict, total=False):
-    """Typed overrides for scan profile defaults."""
-
-    batch_size: int
-    batch_readahead: int | None
-    fragment_readahead: int | None
-    use_threads: bool | None
-
-
-_SCAN_PROFILE_OVERRIDES: dict[str, ScanProfileOverrides] = {
-    "dev_fast": {},
-    "ci_stable": {
-        "use_threads": False,
-        "batch_readahead": 4,
-        "fragment_readahead": 2,
-    },
-    "prod_throughput": {},
-}
-
-
-def scan_profile_options(
-    name: str,
-    *,
-    base: DatasetScanOptions | None = None,
-) -> DatasetScanOptions:
-    """Return scan options for a named profile.
-
-    Returns
-    -------
-    DatasetScanOptions
-        Scan options with profile overrides applied.
-
-    Raises
-    ------
-    ValueError
-        Raised when the profile name is empty or unknown.
-    """
-    normalized = name.strip().lower()
-    if not normalized:
-        msg = "Scan profile name must be non-empty."
-        raise ValueError(msg)
-    overrides = _SCAN_PROFILE_OVERRIDES.get(normalized)
-    if overrides is None:
-        msg = f"Unknown scan profile '{normalized}'."
-        raise ValueError(msg)
-    base_options = base or DatasetScanOptions()
-    return _apply_scan_profile_overrides(base_options, overrides)
-
-
-def _apply_scan_profile_overrides(
-    base_options: DatasetScanOptions,
-    overrides: ScanProfileOverrides,
-) -> DatasetScanOptions:
-    options = base_options
-    if "batch_size" in overrides:
-        options = replace(options, batch_size=overrides["batch_size"])
-    if "batch_readahead" in overrides:
-        options = replace(options, batch_readahead=overrides["batch_readahead"])
-    if "fragment_readahead" in overrides:
-        options = replace(options, fragment_readahead=overrides["fragment_readahead"])
-    if "use_threads" in overrides:
-        options = replace(options, use_threads=overrides["use_threads"])
-    return options
 
 
 def _override_default_int(current: int, override: int, *, default: int) -> int:
@@ -276,24 +167,6 @@ def _merge_scan_options(
     return resolved
 
 
-def _resolve_arrow_cpu_count(default_count: int | None) -> int:
-    if default_count is not None and default_count > 0:
-        return default_count
-    detected = os.cpu_count() or 1
-    return max(1, detected)
-
-
-def _resolve_arrow_io_thread_count(
-    default_count: int | None,
-    *,
-    cpu_count: int,
-) -> int:
-    if default_count is not None and default_count > 0:
-        return default_count
-    scaled = cpu_count * DEFAULT_ARROW_IO_THREAD_MULTIPLIER
-    return max(DEFAULT_ARROW_MIN_IO_THREADS, scaled)
-
-
 def configure_arrow_threading(
     *,
     cpu_count: int | None = DEFAULT_ARROW_CPU_COUNT,
@@ -301,24 +174,29 @@ def configure_arrow_threading(
     settings: ArrowScanSettings | None = None,
 ) -> None:
     """Apply Arrow threading defaults for compute and dataset scans."""
-    if _ARROW_THREADING_CONFIGURED.is_set():
-        return
-    _ARROW_THREADING_CONFIGURED.set()
-    resolved_settings = _resolve_arrow_scan_settings(settings)
-    if cpu_count == DEFAULT_ARROW_CPU_COUNT:
-        cpu_count = resolved_settings.cpu_count
-    if io_thread_count == DEFAULT_ARROW_IO_THREAD_COUNT:
-        io_thread_count = resolved_settings.io_thread_count
-    resolved_cpu = _resolve_arrow_cpu_count(cpu_count)
-    resolved_io = _resolve_arrow_io_thread_count(io_thread_count, cpu_count=resolved_cpu)
-    set_cpu = getattr(pa, "set_cpu_count", None)
-    if callable(set_cpu):
-        with contextlib.suppress(TypeError, ValueError, pa.ArrowInvalid):
-            set_cpu(resolved_cpu)
-    set_io = getattr(pa, "set_io_thread_count", None)
-    if callable(set_io):
-        with contextlib.suppress(TypeError, ValueError, pa.ArrowInvalid):
-            set_io(resolved_io)
+    apply_arrow_threading(
+        cpu_threads=cpu_count,
+        io_threads=io_thread_count,
+        settings=settings,
+    )
+
+
+def configure_arrow_threading_for_context(
+    *,
+    ctx: ExecutionContext | None,
+    settings: ArrowScanSettings | None = None,
+) -> None:
+    """Apply Arrow threading defaults using an execution context profile.
+
+    Parameters
+    ----------
+    ctx
+        Execution context providing runtime profile defaults.
+    settings
+        Optional Arrow scan settings override.
+    """
+    profile = ctx.runtime_profile if ctx is not None else None
+    apply_runtime_profile(profile, settings=settings)
 
 
 def resolve_partitioning(
@@ -515,7 +393,7 @@ def scan_options_for_queryspec(
     """
     resolved = options or DatasetScanOptions()
     columns = spec.scan_columns(provenance=provenance)
-    filter_expression = spec.predicate or spec.pushdown_predicate
+    filter_expression = spec.scan_filter_expression()
     return replace(
         resolved,
         columns=columns,
@@ -542,6 +420,9 @@ def scan_options_for_queryspec_ctx(
     provenance = ctx.provenance if ctx is not None else False
     if profile is not None:
         provenance = profile.resolve_provenance(default=provenance)
+    determinism = ctx.resolve_determinism() if ctx is not None else None
+    if determinism == "canonical":
+        provenance = True
     return scan_options_for_queryspec(
         spec,
         provenance=provenance,
@@ -557,15 +438,14 @@ def _apply_runtime_profile_scan_defaults(
     if profile is None:
         return options
     resolved = options
-    if profile.scan_profile:
-        resolved = scan_profile_options(profile.scan_profile, base=resolved)
+    scan_profile = profile.resolve_scan_profile(default=None)
+    if scan_profile:
+        resolved = scan_profile_options(scan_profile, base=resolved)
     implicit_ordering = profile.resolve_implicit_ordering(default=resolved.implicit_ordering)
     require_sequenced_output = profile.resolve_require_sequenced_output(
         default=resolved.require_sequenced_output
     )
-    use_threads = resolved.use_threads
-    if profile.use_threads is not None:
-        use_threads = profile.use_threads
+    use_threads = profile.resolve_scan_use_threads(default=resolved.use_threads)
     if (
         implicit_ordering == resolved.implicit_ordering
         and require_sequenced_output == resolved.require_sequenced_output
@@ -616,6 +496,7 @@ def build_scanner_for_queryspec_ctx(
     pyarrow.dataset.Scanner
         Scanner configured from query spec and execution context.
     """
+    configure_arrow_threading_for_context(ctx=ctx)
     scan_options = scan_options_for_queryspec_ctx(
         spec,
         ctx=ctx,
@@ -636,7 +517,7 @@ def scan_telemetry_for_queryspec(
     ScanTelemetry
         Fragment count and estimated rows for the query.
     """
-    filter_expression = spec.pushdown_predicate or spec.predicate
+    filter_expression = spec.scan_filter_expression()
     return scan_telemetry(dataset, filter_expression=filter_expression)
 
 
@@ -1022,24 +903,6 @@ def _read_str_list(value: object) -> list[str] | None:
     return None
 
 
-def _merge_scan_columns(
-    columns: Sequence[str] | Mapping[str, ds.Expression] | None,
-    provenance_columns: Sequence[str],
-) -> Sequence[str] | Mapping[str, ds.Expression] | None:
-    if not provenance_columns:
-        return columns
-    provenance = {name: E.field(name) for name in provenance_columns}
-    if columns is None:
-        return provenance
-    if isinstance(columns, Mapping):
-        merged = dict(provenance)
-        merged.update(columns)
-        return merged
-    names = list(provenance_columns)
-    names.extend(name for name in columns if name not in provenance)
-    return names
-
-
 def _dataset_discovery_kwargs() -> dict[str, object]:
     return {
         "exclude_invalid_files": _DATASET_EXCLUDE_INVALID_FILES,
@@ -1172,6 +1035,7 @@ __all__ = [
     "build_scanner_for_queryspec",
     "build_scanner_for_queryspec_ctx",
     "configure_arrow_threading",
+    "configure_arrow_threading_for_context",
     "dataset_for_manifest",
     "dataset_for_path",
     "empty_reader_from_schema",
