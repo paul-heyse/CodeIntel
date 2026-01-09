@@ -60,9 +60,9 @@ from codeintel.storage.views.diff import diff_sql_structural
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    import pyarrow.compute as pc
     from duckdb import DuckDBPyConnection
 
+    from codeintel.core.columnar.expr_vocab import Expression
     from codeintel.core.manifests import SchemaManifest, TableProvenance
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.storage.datasets.manifest_index import DatasetManifestEntry
@@ -90,7 +90,7 @@ def _arrow_scan_table(
     *,
     entry: DatasetManifestEntry,
     columns: list[str],
-    filter_expr: pc.Expression | None,
+    filter_expr: Expression | None,
     order_by: Sequence[SortKey] | None,
     limit: int | None,
 ) -> pa.Table:

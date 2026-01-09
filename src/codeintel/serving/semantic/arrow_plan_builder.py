@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING, cast
 
 from sqlglot import exp
 
-from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.queryspec import ProjectionSpec, QuerySpec
 from codeintel.core.queries.filter_compiler import (
     FilterCompilerError,
     arrow_filter_expression,
@@ -21,8 +22,7 @@ from codeintel.serving.semantic.specs import SemanticQuerySpec
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    import pyarrow.compute as pc
-
+    from codeintel.core.columnar.expr_vocab import Expression
     from codeintel.core.schemas.primitives import ColumnType
 
 
@@ -30,8 +30,8 @@ if TYPE_CHECKING:
 class ArrowPlanSpec:
     """Arrow plan details for the supported serving subset."""
 
-    filter_expr: pc.Expression | None
-    projections: Mapping[str, pc.Expression]
+    filter_expr: Expression | None
+    projections: Mapping[str, Expression]
     order_by: tuple[SortKey, ...]
     limit: int | None
 
@@ -69,6 +69,25 @@ def build_arrow_plan_spec(
         projections=projections,
         order_by=order_by,
         limit=limit,
+    )
+
+
+def build_arrow_query_spec(plan_spec: ArrowPlanSpec) -> QuerySpec:
+    """Return a QuerySpec representation for an Arrow plan.
+
+    Returns
+    -------
+    QuerySpec
+        Query specification for scan and plan compilation.
+    """
+    projection = ProjectionSpec(
+        base_cols=tuple(plan_spec.projections.keys()),
+        computed=tuple(plan_spec.projections.items()),
+    )
+    return QuerySpec(
+        predicate=plan_spec.filter_expr,
+        pushdown_predicate=plan_spec.filter_expr,
+        projection=projection,
     )
 
 
@@ -111,8 +130,8 @@ def _projection_expressions(
     columns: list[str],
     *,
     column_types: Mapping[str, ColumnType] | None,
-) -> dict[str, pc.Expression]:
-    projections: dict[str, pc.Expression] = {}
+) -> dict[str, Expression]:
+    projections: dict[str, Expression] = {}
     for column in columns:
         projections[column] = _projection_expr(column, column_types=column_types)
     return projections
@@ -122,7 +141,7 @@ def _projection_expr(
     column: str,
     *,
     column_types: Mapping[str, ColumnType] | None,
-) -> pc.Expression:
+) -> Expression:
     expr = E.field(column)
     if column_types is None:
         return expr
@@ -141,7 +160,7 @@ def _filter_expression(
     *,
     allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None,
-) -> pc.Expression | None:
+) -> Expression | None:
     if not filters:
         return None
     try:
@@ -155,7 +174,7 @@ def _filter_expression(
     expression = arrow_filter_expression(predicates)
     if expression is None:
         return None
-    return cast("pc.Expression", expression)
+    return cast("Expression", expression)
 
 
 def _order_by(order_by: list[str]) -> tuple[SortKey, ...]:
@@ -169,4 +188,4 @@ def _order_by(order_by: list[str]) -> tuple[SortKey, ...]:
     return tuple(keys)
 
 
-__all__ = ["ArrowPlanSpec", "build_arrow_plan_spec"]
+__all__ = ["ArrowPlanSpec", "build_arrow_plan_spec", "build_arrow_query_spec"]

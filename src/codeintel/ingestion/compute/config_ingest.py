@@ -369,7 +369,6 @@ class ConfigIngestStep(BaseExtractStep):
         rows_reader, row_count = table_for_columnar_rows(
             CONFIG_VALUES_TABLE_KEY,
             buffer.data,
-            extras_policy="retain",
         )
         scope = f"{resolved_repo}@{resolved_commit}"
         persist_arrow_tables(

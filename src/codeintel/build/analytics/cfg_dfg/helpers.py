@@ -7,24 +7,17 @@ and dfg_core.py to eliminate code duplication.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
 from codeintel.build.graphs.rx.normalize import edge_weight_from_payload
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import equal_expr, is_in_expr, is_valid_expr
+from codeintel.build.tabular.expr_vocab import Expression
 from codeintel.core.data_models.ids import normalize_decimal_id
-
-if TYPE_CHECKING:
-    from pyarrow.compute import Expression as ComputeExpression
-else:
-    ComputeExpression = object
-
-_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 def degree_dict(
@@ -88,12 +81,12 @@ def parse_block_idx(block_id: str | int | None) -> int | None:
 
 
 def _combine_expr(
-    current: ComputeExpression | None,
-    next_expr: ComputeExpression,
-) -> ComputeExpression:
+    current: Expression | None,
+    next_expr: Expression,
+) -> Expression:
     if current is None:
         return next_expr
-    return cast("ComputeExpression", current & next_expr)
+    return cast("Expression", current & next_expr)
 
 
 def prefilter_table(
@@ -112,7 +105,7 @@ def prefilter_table(
         Filtered table when expressions apply.
     """
     column_names = set(table.column_names)
-    expr: ComputeExpression | None = None
+    expr: Expression | None = None
     if repo is not None and "repo" in column_names:
         expr = _combine_expr(expr, equal_expr("repo", repo))
     if commit is not None and "commit" in column_names:
@@ -122,9 +115,9 @@ def prefilter_table(
     for name in require_valid:
         if name in column_names:
             expr = _combine_expr(expr, is_valid_expr(name))
-    if expr is None or _EXPR_TYPE is None:
+    if expr is None:
         return table
-    return safe_filter(table, expr)
+    return safe_filter_expr(table, expr)
 
 
 def load_function_metadata(

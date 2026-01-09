@@ -17,11 +17,6 @@ from codeintel.build.graphs.compute.symbols import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.graphs.compute_filters import (
-    filter_goids_with_spans,
-    filter_python_modules,
-    filter_symbol_occurrences,
-)
 from codeintel.build.hamilton.native.patterns import (
     TableTargetContext,
     attach_table_target_template,
@@ -30,7 +25,9 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -48,7 +45,7 @@ def _module_by_path(modules_table: pa.Table) -> dict[str, str]:
         return module_by_path
     if not {"path", "module"}.issubset(set(modules_table.column_names)):
         return module_by_path
-    filtered = filter_python_modules(modules_table)
+    filtered = _python_modules_table(modules_table)
     for row in iter_rows(filtered):
         path = row.get("path")
         module = row.get("module")
@@ -63,7 +60,7 @@ def _goid_resolver(
     resolver = SpanResolver.for_lines(path_normalizer=lambda value: value)
     if goids_table.num_rows == 0 or "rel_path" not in goids_table.column_names:
         return resolver
-    filtered = filter_goids_with_spans(goids_table)
+    filtered = _filtered_goids_table(goids_table)
     for row in iter_rows(filtered):
         rel_path = row.get("rel_path")
         goid_raw = row.get("goid_h128")
@@ -101,7 +98,7 @@ def _symbol_occurrences(occurrences_table: pa.Table) -> list[SymbolOccurrence]:
     required = {"symbol", "rel_path", "start_line"}
     if not required.issubset(set(occurrences_table.column_names)):
         return occurrences
-    filtered = filter_symbol_occurrences(occurrences_table)
+    filtered = _filtered_occurrences_table(occurrences_table)
     for row in iter_rows(filtered):
         symbol = row.get("symbol")
         rel_path = row.get("rel_path")
@@ -246,6 +243,77 @@ def symbol_use_edges_compute(
         ),
     )
     return result.good
+
+
+def _filtered_occurrences_table(occurrences_table: pa.Table) -> pa.Table:
+    required = {"symbol", "rel_path", "start_line"}
+    if occurrences_table.num_rows == 0 or not required.issubset(
+        set(occurrences_table.column_names)
+    ):
+        return occurrences_table
+    plan = Plan.table(occurrences_table).project(
+        {
+            "symbol": E.cast(E.field("symbol"), "string"),
+            "rel_path": E.cast(E.field("rel_path"), "string"),
+            "start_line": E.field("start_line"),
+            "roles": E.field("roles"),
+        }
+    )
+    plan = plan.filter(
+        E.and_(
+            _non_empty_expr("symbol"),
+            _non_empty_expr("rel_path"),
+            E.is_valid("start_line"),
+        )
+    )
+    return materialize_plan(plan, use_threads=True)
+
+
+def _filtered_goids_table(goids_table: pa.Table) -> pa.Table:
+    required = {"rel_path", "goid_h128", "start_line"}
+    if goids_table.num_rows == 0 or not required.issubset(set(goids_table.column_names)):
+        return goids_table
+    projection = {
+        "rel_path": E.cast(E.field("rel_path"), "string"),
+        "goid_h128": E.field("goid_h128"),
+        "start_line": E.field("start_line"),
+        "end_line": E.field("end_line"),
+    }
+    plan = Plan.table(goids_table).project(projection)
+    plan = plan.filter(
+        E.and_(
+            _non_empty_expr("rel_path"),
+            E.is_valid("goid_h128"),
+            E.is_valid("start_line"),
+        )
+    )
+    return materialize_plan(plan, use_threads=True)
+
+
+def _python_modules_table(modules_table: pa.Table) -> pa.Table:
+    required = {"path", "module"}
+    if modules_table.num_rows == 0 or not required.issubset(set(modules_table.column_names)):
+        return modules_table
+    projection = {
+        "path": E.cast(E.field("path"), "string"),
+        "module": E.cast(E.field("module"), "string"),
+    }
+    if "language" in modules_table.column_names:
+        projection["language"] = E.cast(E.field("language"), "string")
+    plan = Plan.table(modules_table).project(projection)
+    exprs: list[Expression] = [_non_empty_expr("path"), _non_empty_expr("module")]
+    if "language" in projection:
+        exprs.append(_python_language_expr())
+    plan = plan.filter(E.and_(*exprs))
+    return materialize_plan(plan, use_threads=True)
+
+
+def _python_language_expr() -> Expression:
+    return E.or_(E.is_null("language"), E.field("language") == E.scalar("python"))
+
+
+def _non_empty_expr(name: str) -> Expression:
+    return E.and_(E.is_valid(name), E.field(name) != E.scalar(""))
 
 
 def symbol_use_edges_existing(env: BuildEnv) -> InferableTabularInput:

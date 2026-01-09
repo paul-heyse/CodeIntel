@@ -6,6 +6,8 @@ import ast
 import dataclasses
 from pathlib import Path
 
+import pyarrow as pa
+
 from codeintel.build.graphs.assembly import tabular_to_table
 from codeintel.build.graphs.compute.imports import (
     ImportAnalysisResult,
@@ -16,10 +18,11 @@ from codeintel.build.graphs.compute.imports import (
     collect_import_edges,
 )
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.graphs.compute_filters import filter_python_modules
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
@@ -86,8 +89,7 @@ def import_graph_analysis(
     ImportAnalysisResult
         Import graph analysis derived from module sources.
     """
-    modules_table = tabular_to_table(q__core__modules)
-    modules_table = filter_python_modules(modules_table)
+    modules_table = _python_modules_table(tabular_to_table(q__core__modules))
     modules: set[str] = set()
     edges: list[ImportEdge] = []
     repo_root = env.snapshot.repo_root
@@ -214,6 +216,32 @@ def import_graph_edges_empty(env: BuildEnv) -> InferableTabularInput:
     """
     _ = env
     return empty_table_for_table(IMPORT_GRAPH_EDGES_TABLE_KEY)
+
+
+def _python_modules_table(modules_table: pa.Table) -> pa.Table:
+    required = {"path", "module"}
+    if modules_table.num_rows == 0 or not required.issubset(set(modules_table.column_names)):
+        return modules_table
+    projection = {
+        "path": E.cast(E.field("path"), "string"),
+        "module": E.cast(E.field("module"), "string"),
+    }
+    if "language" in modules_table.column_names:
+        projection["language"] = E.cast(E.field("language"), "string")
+    plan = Plan.table(modules_table).project(projection)
+    exprs: list[Expression] = [_non_empty_expr("path"), _non_empty_expr("module")]
+    if "language" in projection:
+        exprs.append(_python_language_expr())
+    plan = plan.filter(E.and_(*exprs))
+    return materialize_plan(plan, use_threads=True)
+
+
+def _python_language_expr() -> Expression:
+    return E.or_(E.is_null("language"), E.field("language") == E.scalar("python"))
+
+
+def _non_empty_expr(name: str) -> Expression:
+    return E.and_(E.is_valid(name), E.field(name) != E.scalar(""))
 
 
 __all__ = [

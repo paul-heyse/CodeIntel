@@ -1623,6 +1623,8 @@ def _left_anti_external_symbols(left: pa.Table, right: pa.Table) -> pa.Table:
         table_key=SCIP_SYMBOL_INFO_TABLE_KEY,
         join_keys=join_keys,
     )
+    left_checked = normalize_table_for_join(left_checked)
+    right_checked = normalize_table_for_join(right_checked)
     left_plan = Plan.table(left_checked).project(project)
     right_plan = Plan.table(right_checked).project(project)
     joined = left_plan.hash_join(

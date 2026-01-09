@@ -187,37 +187,30 @@ def _build_symtable_collectors(options: SymtableExtractOptions) -> _SymtableColl
         scopes=columnar_batch_collector_for_table_key(
             PY_SYM_SCOPES_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         symbols=columnar_batch_collector_for_table_key(
             PY_SYM_SYMBOLS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         scope_edges=columnar_batch_collector_for_table_key(
             PY_SYM_SCOPE_EDGES_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         namespace_edges=columnar_batch_collector_for_table_key(
             PY_SYM_NAMESPACE_EDGES_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         function_partitions=columnar_batch_collector_for_table_key(
             PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         bindings=columnar_batch_collector_for_table_key(
             PY_SYM_BINDINGS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         resolution_edges=columnar_batch_collector_for_table_key(
             PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
     )
 

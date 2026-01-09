@@ -85,20 +85,33 @@ _GOID_HASH_COLUMNS = (
     "start_line",
     "end_line",
 )
+_GOID_HASH_SCHEMA = pa.schema(
+    [
+        pa.field("repo", pa.string()),
+        pa.field("commit", pa.string()),
+        pa.field("language", pa.string()),
+        pa.field("rel_path", pa.string()),
+        pa.field("kind", pa.string()),
+        pa.field("qualname", pa.string()),
+        pa.field("start_line", pa.int64()),
+        pa.field("end_line", pa.int64()),
+    ]
+)
 
 
 def _goid_hash_table(descriptor: GoidDescriptor) -> pa.Table:
-    return pa.table(
+    return pa.Table.from_pydict(
         {
-            "repo": pa.array([descriptor.repo], type=pa.string()),
-            "commit": pa.array([descriptor.commit], type=pa.string()),
-            "language": pa.array([descriptor.language], type=pa.string()),
-            "rel_path": pa.array([descriptor.rel_path], type=pa.string()),
-            "kind": pa.array([descriptor.kind], type=pa.string()),
-            "qualname": pa.array([descriptor.qualname], type=pa.string()),
-            "start_line": pa.array([descriptor.start_line], type=pa.int64()),
-            "end_line": pa.array([descriptor.end_line], type=pa.int64()),
-        }
+            "repo": [descriptor.repo],
+            "commit": [descriptor.commit],
+            "language": [descriptor.language],
+            "rel_path": [descriptor.rel_path],
+            "kind": [descriptor.kind],
+            "qualname": [descriptor.qualname],
+            "start_line": [descriptor.start_line],
+            "end_line": [descriptor.end_line],
+        },
+        schema=_GOID_HASH_SCHEMA,
     )
 
 

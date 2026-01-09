@@ -137,12 +137,10 @@ def _build_ast_collectors(options: AstExtractOptions) -> _AstCollectors:
         ast_nodes=columnar_batch_collector_for_table_key(
             AST_NODES_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         metrics=columnar_batch_collector_for_table_key(
             AST_METRICS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
     )
 

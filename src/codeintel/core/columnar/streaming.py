@@ -9,13 +9,14 @@ import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
 from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.queryspec import QuerySpec
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.columnar.schema import DEFAULT_SCHEMA_PROMOTE_OPTIONS, SchemaPromoteOptions
 from codeintel.core.columnar.schema_ops import unify_schemas
@@ -91,6 +92,22 @@ class DatasetScanOptions:
 
 
 @dataclass(frozen=True, slots=True)
+class ScanProfile:
+    """Named scan profile bundling DatasetScanOptions."""
+
+    name: str
+    options: DatasetScanOptions
+
+
+@dataclass(frozen=True, slots=True)
+class ScanTelemetry:
+    """Scan telemetry captured during dataset planning."""
+
+    fragment_count: int | None
+    estimated_rows: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class QueryPlanSpec:
     """Shared query plan details for dataset scanning."""
 
@@ -109,6 +126,71 @@ def _resolve_arrow_scan_settings(settings: ArrowScanSettings | None = None) -> A
     if settings is not None:
         return settings
     return load_runtime_settings().build.arrow_scan
+
+
+class ScanProfileOverrides(TypedDict, total=False):
+    """Typed overrides for scan profile defaults."""
+
+    batch_size: int
+    batch_readahead: int | None
+    fragment_readahead: int | None
+    use_threads: bool | None
+
+
+_SCAN_PROFILE_OVERRIDES: dict[str, ScanProfileOverrides] = {
+    "dev_fast": {},
+    "ci_stable": {
+        "use_threads": False,
+        "batch_readahead": 4,
+        "fragment_readahead": 2,
+    },
+    "prod_throughput": {},
+}
+
+
+def scan_profile_options(
+    name: str,
+    *,
+    base: DatasetScanOptions | None = None,
+) -> DatasetScanOptions:
+    """Return scan options for a named profile.
+
+    Returns
+    -------
+    DatasetScanOptions
+        Scan options with profile overrides applied.
+
+    Raises
+    ------
+    ValueError
+        Raised when the profile name is empty or unknown.
+    """
+    normalized = name.strip().lower()
+    if not normalized:
+        msg = "Scan profile name must be non-empty."
+        raise ValueError(msg)
+    overrides = _SCAN_PROFILE_OVERRIDES.get(normalized)
+    if overrides is None:
+        msg = f"Unknown scan profile '{normalized}'."
+        raise ValueError(msg)
+    base_options = base or DatasetScanOptions()
+    return _apply_scan_profile_overrides(base_options, overrides)
+
+
+def _apply_scan_profile_overrides(
+    base_options: DatasetScanOptions,
+    overrides: ScanProfileOverrides,
+) -> DatasetScanOptions:
+    options = base_options
+    if "batch_size" in overrides:
+        options = replace(options, batch_size=overrides["batch_size"])
+    if "batch_readahead" in overrides:
+        options = replace(options, batch_readahead=overrides["batch_readahead"])
+    if "fragment_readahead" in overrides:
+        options = replace(options, fragment_readahead=overrides["fragment_readahead"])
+    if "use_threads" in overrides:
+        options = replace(options, use_threads=overrides["use_threads"])
+    return options
 
 
 def _override_default_int(current: int, override: int, *, default: int) -> int:
@@ -145,7 +227,7 @@ def _merge_scan_options(
     options: DatasetScanOptions,
     settings: ArrowScanSettings,
 ) -> DatasetScanOptions:
-    return replace(
+    resolved = replace(
         options,
         batch_size=_override_default_int(
             options.batch_size,
@@ -188,6 +270,9 @@ def _merge_scan_options(
             default=DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
         ),
     )
+    if settings.profile:
+        return scan_profile_options(settings.profile, base=resolved)
+    return resolved
 
 
 def _resolve_arrow_cpu_count(default_count: int | None) -> int:
@@ -391,6 +476,50 @@ def build_scanner(dataset: ds.Dataset, *, options: DatasetScanOptions) -> Scanne
 
     scan_kwargs["filter"] = filter_expression
     return _scanner_with_schema(dataset, scan_kwargs)
+
+
+def scan_telemetry(
+    dataset: ds.Dataset,
+    *,
+    filter_expression: ds.Expression | None,
+) -> ScanTelemetry:
+    """Return scan telemetry for the provided dataset and filter.
+
+    Returns
+    -------
+    ScanTelemetry
+        Fragment count and estimated rows for the scan.
+    """
+    fragments = _fragments_for_filter(dataset, filter_expression)
+    fragment_count = len(fragments) if fragments is not None else None
+    try:
+        estimated_rows = dataset.count_rows(filter=filter_expression)
+    except (OSError, ValueError, pa.ArrowInvalid):
+        estimated_rows = None
+    return ScanTelemetry(fragment_count=fragment_count, estimated_rows=estimated_rows)
+
+
+def scan_options_for_queryspec(
+    spec: QuerySpec,
+    *,
+    provenance: bool,
+    options: DatasetScanOptions | None = None,
+) -> DatasetScanOptions:
+    """Return DatasetScanOptions configured from a QuerySpec.
+
+    Returns
+    -------
+    DatasetScanOptions
+        Scan options reflecting the query specification.
+    """
+    resolved = options or DatasetScanOptions()
+    columns = spec.scan_columns(provenance=provenance)
+    filter_expression = spec.predicate or spec.pushdown_predicate
+    return replace(
+        resolved,
+        columns=columns,
+        filter_expression=filter_expression,
+    )
 
 
 def unify_dataset_schema(
@@ -918,6 +1047,8 @@ def _scan_parquet_with_row_index(
 __all__ = [
     "DatasetScanOptions",
     "QueryPlanSpec",
+    "ScanProfile",
+    "ScanTelemetry",
     "apply_row_group_pruning",
     "build_scanner",
     "configure_arrow_threading",
@@ -928,5 +1059,8 @@ __all__ = [
     "sample_reader",
     "scan_dataset_lazyframe",
     "scan_dataset_reader",
+    "scan_options_for_queryspec",
+    "scan_profile_options",
+    "scan_telemetry",
     "unify_dataset_schema",
 ]

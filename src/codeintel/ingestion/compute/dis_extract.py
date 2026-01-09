@@ -442,32 +442,26 @@ def _build_dis_collectors(options: BytecodeExtractOptions) -> _DisCollectors:
         code_units=columnar_batch_collector_for_table_key(
             PY_BC_CODE_UNITS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         instructions=columnar_batch_collector_for_table_key(
             PY_BC_INSTRUCTIONS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         exceptions=columnar_batch_collector_for_table_key(
             PY_BC_EXCEPTION_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         blocks=columnar_batch_collector_for_table_key(
             PY_BC_BLOCKS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         cfg_edges=columnar_batch_collector_for_table_key(
             PY_BC_CFG_EDGES_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         defuse_events=columnar_batch_collector_for_table_key(
             PY_BC_DEFUSE_EVENTS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
     )
 

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
 import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from codeintel.core.columnar.compute_helpers import call_compute, require_array
@@ -713,29 +712,19 @@ def _any_out_of_range(
     scalar = _coerce_scalar(bound, values.type)
     if scalar is None:
         return False
-    less = getattr(pc, "less", None)
-    greater = getattr(pc, "greater", None)
-    compare = less if op == "lt" else greater
-    if not callable(compare):
+    compare = "less" if op == "lt" else "greater"
+    result = call_compute(compare, [values, scalar])
+    if not isinstance(result, (pa.Array, pa.ChunkedArray)):
         return False
-    try:
-        mask = compare(values, scalar)
-    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError):
-        return False
-    return _any_true(mask)
+    return _any_true(result)
 
 
 def _any_true(values: pa.Array | pa.ChunkedArray) -> bool:
-    any_fn = getattr(pc, "any", None)
-    if callable(any_fn):
-        try:
-            result = any_fn(values)
-        except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError):
-            result = None
-        if result is not None:
-            as_py = getattr(result, "as_py", None)
-            if callable(as_py):
-                return bool(as_py() or False)
+    result = call_compute("any", [values])
+    if result is not None:
+        as_py = getattr(result, "as_py", None)
+        if callable(as_py):
+            return bool(as_py() or False)
     if isinstance(values, pa.ChunkedArray):
         return any(_any_true(chunk) for chunk in values.chunks)
     try:

@@ -103,6 +103,28 @@ def explode_edges(
     return ExplodeResult(good=exploded, errors=errors)
 
 
+def explode_edges_with_aligned_lists(
+    table: pa.Table,
+    *,
+    spec: ExplodeSpec,
+) -> ExplodeResult:
+    """Explode a list column while enforcing aligned list payloads.
+
+    Parameters
+    ----------
+    table
+        Table containing the list payload column.
+    spec
+        Explode specification including alignment and null policies.
+
+    Returns
+    -------
+    ExplodeResult
+        Exploded rows plus error rows.
+    """
+    return explode_edges(table, spec=spec)
+
+
 def explode_list_struct(
     table: pa.Table,
     *,
@@ -576,4 +598,10 @@ def _list_value_type(data_type: pa.DataType) -> pa.DataType:
     return data_type
 
 
-__all__ = ["ExplodeResult", "ExplodeSpec", "explode_edges", "explode_list_struct"]
+__all__ = [
+    "ExplodeResult",
+    "ExplodeSpec",
+    "explode_edges",
+    "explode_edges_with_aligned_lists",
+    "explode_list_struct",
+]

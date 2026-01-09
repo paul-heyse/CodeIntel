@@ -13,6 +13,7 @@ from pyarrow import acero
 from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.normalization import normalize_table_for_compute
+from codeintel.core.columnar.queryspec import QuerySpec
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -335,6 +336,16 @@ class ScanPlanOptions:
     order_by: Sequence[tuple[str, str]] | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class QueryPlanOptions:
+    """Options for building query plans."""
+
+    provenance: bool = False
+    implicit_ordering: bool | None = None
+    require_sequenced_output: bool | None = None
+    order_by: Sequence[tuple[str, str]] | None = None
+
+
 def build_scan_plan(
     dataset: ds.Dataset,
     *,
@@ -368,6 +379,46 @@ def build_scan_plan(
         plan = plan.project(expressions, names=names)
     if resolved.filter_expr is not None:
         plan = plan.filter(resolved.filter_expr)
+    if resolved.order_by is not None:
+        plan = plan.order_by(sort_keys=resolved.order_by)
+    return plan
+
+
+def build_query_plan(
+    dataset: ds.Dataset,
+    *,
+    spec: QuerySpec,
+    options: QueryPlanOptions | None = None,
+) -> Plan:
+    """Return a scan plan compiled from a QuerySpec.
+
+    Parameters
+    ----------
+    dataset
+        Dataset to scan.
+    spec
+        Query specification for predicates and projection.
+    options
+        Query plan options for provenance, ordering, and scan behavior.
+
+    Returns
+    -------
+    Plan
+        Compiled scan/filter/project plan.
+    """
+    resolved = options or QueryPlanOptions()
+    plan = Plan.scan(
+        dataset,
+        columns=spec.scan_columns(provenance=resolved.provenance),
+        filter_expr=spec.pushdown_predicate,
+        implicit_ordering=resolved.implicit_ordering,
+        require_sequenced_output=resolved.require_sequenced_output,
+    )
+    if spec.predicate is not None:
+        plan = plan.filter(spec.predicate)
+    projection = spec.project_expressions(provenance=resolved.provenance)
+    if projection:
+        plan = plan.project(projection)
     if resolved.order_by is not None:
         plan = plan.order_by(sort_keys=resolved.order_by)
     return plan
@@ -494,7 +545,9 @@ __all__ = [
     "ExternalPlanSpec",
     "HashJoinSpec",
     "Plan",
+    "QueryPlanOptions",
     "ScanPlanOptions",
+    "build_query_plan",
     "build_scan_plan",
     "list_external_plan_runners",
     "materialize_plan",

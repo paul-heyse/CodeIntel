@@ -11,9 +11,9 @@ from hamilton.function_modifiers import pipe_input, resolve_from_config, step, v
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.tabular.compute_helpers import safe_filter_batch
-from codeintel.build.tabular.compute_masks import and_kleene, is_valid_mask
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 
 P = ParamSpec("P")
@@ -38,34 +38,9 @@ def _drop_null_rows(
     required = [name for name in required_cols if name in table.schema.names]
     if not required:
         return table
-    batches: list[pa.RecordBatch] = []
-    for batch in table.to_batches():
-        mask = _required_columns_mask(batch, required)
-        if mask is None:
-            batches.append(batch)
-            continue
-        filtered = safe_filter_batch(batch, mask)
-        if filtered.num_rows:
-            batches.append(filtered)
-    if not batches:
-        return pa.Table.from_batches([], schema=table.schema)
-    return pa.Table.from_batches(batches, schema=table.schema)
-
-
-def _required_columns_mask(
-    batch: pa.RecordBatch,
-    required: Sequence[str],
-) -> pa.Array | None:
-    if not required:
-        return None
-    mask: pa.Array | None = None
-    for name in required:
-        index = batch.schema.get_field_index(name)
-        if index < 0:
-            continue
-        col_mask = is_valid_mask(batch.column(index))
-        mask = col_mask if mask is None else and_kleene(mask, col_mask)
-    return mask
+    exprs = [E.is_valid(name) for name in required]
+    plan = Plan.table(table).filter(E.and_(*exprs))
+    return materialize_plan(plan, use_threads=True)
 
 
 def _pipe_ingest_rows(

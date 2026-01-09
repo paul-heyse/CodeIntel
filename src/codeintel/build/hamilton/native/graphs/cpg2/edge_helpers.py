@@ -69,13 +69,16 @@ def finalize_cpg_edge_rows(
     if not edge_rows:
         return empty_table_for_table(CPG_EDGES_TABLE_KEY)
 
-    parent_rows: list[dict[str, object]] = []
+    column_names = ("edge_id", *error_context_cols, "edge")
+    parent_data: dict[str, list[object]] = {name: [] for name in column_names}
     for index, row in enumerate(edge_rows):
         edge = dict(row)
-        context = {name: edge.get(name) for name in error_context_cols}
-        parent_rows.append({"edge_id": index, **context, "edge": [edge]})
+        parent_data["edge_id"].append(index)
+        for name in error_context_cols:
+            parent_data[name].append(edge.get(name))
+        parent_data["edge"].append([edge])
 
-    parent_table = pa.Table.from_pylist(parent_rows)
+    parent_table = pa.Table.from_pydict(parent_data)
     exploded = explode_edges(
         parent_table,
         spec=ExplodeSpec(

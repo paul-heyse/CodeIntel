@@ -22,6 +22,8 @@ from codeintel.build.hamilton.transforms.ingestion_normalize import finalize_ing
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.plan_ops import Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 
@@ -34,12 +36,27 @@ FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
 
 
 def _resolve_module_paths(modules_table: pa.Table) -> dict[str, str | None]:
+    if modules_table.num_rows == 0 or "path" not in modules_table.column_names:
+        return {}
+    columns = ["path"]
+    if "language" in modules_table.column_names:
+        columns.append("language")
+    project = {name: E.field(name) for name in columns}
+    plan = Plan.table(modules_table).project(project)
+    plan = plan.filter(E.and_(E.is_valid("path"), E.field("path") != E.scalar("")))
+    if "language" in columns:
+        plan = plan.aggregate(
+            keys=[E.field("path")],
+            aggregates=[("language", "min", None, "language")],
+        )
+    else:
+        plan = plan.aggregate(keys=[E.field("path")], aggregates=[])
+    plan = plan.order_by(sort_keys=[("path", "ascending")])
+    table = materialize_plan(plan, use_threads=True)
     paths: dict[str, str | None] = {}
-    for row in iter_rows(modules_table):
+    for row in iter_rows(table):
         rel_path = row.get("path")
         if not isinstance(rel_path, str) or not rel_path:
-            continue
-        if rel_path in paths:
             continue
         language = row.get("language")
         paths[rel_path] = language if isinstance(language, str) else None

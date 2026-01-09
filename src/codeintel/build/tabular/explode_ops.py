@@ -8,6 +8,7 @@ from codeintel.core.columnar.explode_ops import (
     NullChildPolicy,
     NullListPolicy,
     explode_edges,
+    explode_edges_with_aligned_lists,
     explode_list_struct,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "NullChildPolicy",
     "NullListPolicy",
     "explode_edges",
+    "explode_edges_with_aligned_lists",
     "explode_list_struct",
 ]

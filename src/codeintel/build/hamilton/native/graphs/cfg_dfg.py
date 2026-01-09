@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.compute.cfg import build_cfg, cfg_to_rows
 from codeintel.build.graphs.compute.dfg import build_dfg, dfg_to_rows
@@ -20,7 +19,7 @@ from codeintel.build.hamilton.native.graphs.compute_filters import (
 )
 from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabular
 from codeintel.build.tabular.arrow_ops import iter_array_values, iter_rows
-from codeintel.build.tabular.compute_helpers import cast_array, safe_filter
+from codeintel.build.tabular.compute_helpers import cast_array, safe_filter_expr
 from codeintel.build.tabular.compute_masks import non_empty_string_expr, non_empty_string_mask
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
@@ -38,7 +37,6 @@ CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
 DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
 _FUNCTION_GOID_TYPE = pa.decimal128(38, 0)
-_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,11 +66,16 @@ class _CfgDfgAnalysis:
 def _filter_non_empty_paths(table: pa.Table) -> pa.Table:
     if table.num_rows == 0 or "path" not in table.column_names:
         return table
+
+    def _mask(value_table: pa.Table) -> pa.Array | pa.ChunkedArray:
+        return non_empty_string_mask(value_table.column("path"))
+
     try:
-        if _EXPR_TYPE is not None:
-            return safe_filter(table, non_empty_string_expr("path"))
-        path_mask = non_empty_string_mask(table.column("path"))
-        return safe_filter(table, path_mask)
+        return safe_filter_expr(
+            table,
+            non_empty_string_expr("path"),
+            fallback_mask=_mask,
+        )
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError, TypeError, ValueError):
         return table
 

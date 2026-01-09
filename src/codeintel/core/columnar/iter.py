@@ -66,11 +66,6 @@ def iter_tuples(
     ------
     tuple[object, ...]
         Row tuples in column order.
-
-    Raises
-    ------
-    ValueError
-        If requested columns are missing from a batch.
     """
     if isinstance(source, pa.RecordBatchReader):
         for batch in source:
@@ -82,13 +77,9 @@ def iter_tuples(
     column_names = list(batch.schema.names) if columns is None else list(columns)
     if not column_names:
         return
-    data_by_name = batch.to_pydict()
-    missing = [name for name in column_names if name not in data_by_name]
-    if missing:
-        msg = f"Missing columns in Arrow batch: {', '.join(missing)}"
-        raise ValueError(msg)
-    column_values = [data_by_name[name] for name in column_names]
-    yield from zip(*column_values, strict=True)
+    arrays = [batch.column(name) for name in column_names]
+    for row_index in range(batch.num_rows):
+        yield tuple(array[row_index].as_py() for array in arrays)
 
 
 def iter_batches(

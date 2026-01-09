@@ -50,6 +50,7 @@ from codeintel.build.tabular.frames import (
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.arrowdsl import require_join_safe_schema
 from codeintel.core.columnar.iter import (
     iter_array_values as _iter_array_values,
 )
@@ -640,7 +641,12 @@ def _normalize_table_binary_views(table: pa.Table) -> pa.Table:
     return pa.Table.from_arrays(columns, names=list(table.column_names))
 
 
-def normalize_table_for_join(table: pa.Table, *, combine_chunks: bool = True) -> pa.Table:
+def normalize_table_for_join(
+    table: pa.Table,
+    *,
+    combine_chunks: bool = True,
+    enforce_join_safe: bool = True,
+) -> pa.Table:
     """Normalize string/binary view types ahead of Arrow joins.
 
     Returns
@@ -650,7 +656,10 @@ def normalize_table_for_join(table: pa.Table, *, combine_chunks: bool = True) ->
     """
     configure_arrow_threading()
     normalized = _normalize_table_binary_views(_normalize_table_string_views(table))
-    return _normalize_table_for_compute(normalized, combine_chunks=combine_chunks)
+    normalized = _normalize_table_for_compute(normalized, combine_chunks=combine_chunks)
+    if enforce_join_safe:
+        require_join_safe_schema(normalized)
+    return normalized
 
 
 def normalize_table_for_compute(table: pa.Table, *, combine_chunks: bool = True) -> pa.Table:
@@ -661,7 +670,11 @@ def normalize_table_for_compute(table: pa.Table, *, combine_chunks: bool = True)
     pa.Table
         Table with normalized view types, unified dictionaries, and combined chunks.
     """
-    return normalize_table_for_join(table, combine_chunks=combine_chunks)
+    return normalize_table_for_join(
+        table,
+        combine_chunks=combine_chunks,
+        enforce_join_safe=False,
+    )
 
 
 def _null_key_stats(
@@ -696,39 +709,73 @@ def _null_key_stats(
 def _ensure_unique_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> None:
     if not keys:
         return
+    _require_keys_present(table, keys, label=label)
+    _require_non_null_keys(table, keys, label=label)
+    max_count = _max_duplicate_count(table, keys)
+    if max_count is None or max_count <= 1:
+        return
+    msg = f"Join validation failed for {label}: keys not unique"
+    raise ValueError(msg)
+
+
+def _require_keys_present(table: pa.Table, keys: Sequence[str], *, label: str) -> None:
     missing = [key for key in keys if key not in table.column_names]
-    if missing:
-        msg = f"Missing join keys on {label}: {', '.join(missing)}"
-        raise ValueError(msg)
+    if not missing:
+        return
+    msg = f"Missing join keys on {label}: {', '.join(missing)}"
+    raise ValueError(msg)
+
+
+def _require_non_null_keys(table: pa.Table, keys: Sequence[str], *, label: str) -> None:
     has_nulls, null_count = _null_key_stats(table, keys)
-    if has_nulls:
-        count_info = f" (rows={null_count})" if isinstance(null_count, int) else ""
-        msg = f"Join validation failed for {label}: NULL keys detected{count_info}"
-        raise ValueError(msg)
+    if not has_nulls:
+        return
+    count_info = f" (rows={null_count})" if isinstance(null_count, int) else ""
+    msg = f"Join validation failed for {label}: NULL keys detected{count_info}"
+    raise ValueError(msg)
+
+
+def _max_duplicate_count(table: pa.Table, keys: Sequence[str]) -> float | int | None:
     count_source = keys[0]
     grouped = (
         _group_by_table_keys(table, keys).group_by(list(keys)).aggregate([(count_source, "count")])
     )
     count_name = f"{count_source}_count"
     if grouped.num_rows == 0 or count_name not in grouped.column_names:
-        return
+        return None
     max_value = scalar_from_compute(
         "max",
         [grouped[count_name]],
         options=pc.ScalarAggregateOptions(skip_nulls=True),
     )
-    if isinstance(max_value, (int, float)) and not isinstance(max_value, bool) and max_value > 1:
-        msg = f"Join validation failed for {label}: keys not unique"
-        raise ValueError(msg)
+    max_count = _numeric_count(max_value)
+    if max_count is not None:
+        return max_count
     if max_value is not None:
-        return
+        return None
     try:
-        counts = grouped[count_name].combine_chunks().to_numpy(zero_copy_only=False)
+        counts = grouped[count_name].combine_chunks()
     except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
-        return
-    if counts.size > 0 and counts.max() > 1:
-        msg = f"Join validation failed for {label}: keys not unique"
-        raise ValueError(msg)
+        return None
+    return _max_count_from_array(counts)
+
+
+def _numeric_count(value: object | None) -> float | int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    return None
+
+
+def _max_count_from_array(counts: pa.Array | pa.ChunkedArray) -> float | int | None:
+    max_count: float | int | None = None
+    for value in _iter_array_values(counts):
+        candidate = _numeric_count(value)
+        if candidate is None:
+            continue
+        max_count = candidate if max_count is None else max(max_count, candidate)
+    return max_count
 
 
 def _validate_join(

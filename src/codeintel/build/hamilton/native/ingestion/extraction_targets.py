@@ -25,7 +25,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -61,7 +60,7 @@ from codeintel.build.tabular.arrow_ops import (
 )
 from codeintel.build.tabular.compute_helpers import array_from_compute, safe_filter
 from codeintel.build.tabular.compute_masks import equal_mask, or_kleene
-from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -1397,8 +1396,8 @@ def _project_with_cast(
     table: pa.Table,
     *,
     casts: dict[str, str],
-) -> dict[str, pc.Expression]:
-    exprs: dict[str, pc.Expression] = {}
+) -> dict[str, Expression]:
+    exprs: dict[str, Expression] = {}
     for name in table.column_names:
         if name in casts:
             exprs[name] = E.cast(E.field(name), casts[name])
@@ -1477,8 +1476,10 @@ def _hash_join_reader(
         table_key=spec.right_table_key,
         join_keys=spec.right_keys,
     )
-    left_exprs = _project_with_cast(left, casts=_join_casts(spec.left_keys))
-    right_exprs = _project_with_cast(right, casts=_join_casts(spec.right_keys))
+    left_checked = normalize_table_for_join(left_checked)
+    right_checked = normalize_table_for_join(right_checked)
+    left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
+    right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
     left_plan = Plan.table(left_checked).project(left_exprs)
     right_plan = Plan.table(right_checked).project(right_exprs)
     joined = left_plan.hash_join(

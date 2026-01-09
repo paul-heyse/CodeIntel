@@ -235,47 +235,38 @@ def _build_buffers() -> _TreeSitterBuffers:
         parse_manifest=columnar_batch_collector_for_table_key(
             TS_PARSE_MANIFEST_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            extras_policy="retain",
         ),
         captures=columnar_batch_collector_for_table_key(
             TS_CAPTURES_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            extras_policy="retain",
         ),
         nodes=columnar_batch_collector_for_table_key(
             TS_NODES_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            extras_policy="retain",
         ),
         edges=columnar_batch_collector_for_table_key(
             TS_EDGES_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            extras_policy="retain",
         ),
         parse_errors=columnar_batch_collector_for_table_key(
             TS_PARSE_ERRORS_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            extras_policy="retain",
         ),
         changed_ranges=columnar_batch_collector_for_table_key(
             TS_CHANGED_RANGES_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            extras_policy="retain",
         ),
         tokens=columnar_batch_collector_for_table_key(
             TS_TOKENS_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            extras_policy="retain",
         ),
         trivia=columnar_batch_collector_for_table_key(
             TS_TRIVIA_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            extras_policy="retain",
         ),
         language_metadata=columnar_batch_collector_for_table_key(
             TS_LANGUAGE_METADATA_TABLE_KEY,
             batch_size=DEFAULT_ARROW_BATCH_SIZE,
-            extras_policy="retain",
         ),
     )
 

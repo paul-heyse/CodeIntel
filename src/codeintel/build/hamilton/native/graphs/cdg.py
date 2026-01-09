@@ -8,10 +8,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.tabular.arrow_ops import iter_rows
-from codeintel.build.tabular.compute_helpers import safe_filter, safe_filter_expr
+from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import (
     and_kleene,
     is_valid_expr,
@@ -27,8 +26,6 @@ from codeintel.core.data_models.ids import normalize_decimal_id
 
 CDG_EDGES_TABLE_KEY = "graph.cdg_edges"
 CDG_TARGET_NAME = "cdg"
-
-_EXPR_TYPE = getattr(pc, "Expression", None)
 LOG = logging.getLogger(__name__)
 
 
@@ -311,14 +308,12 @@ def _prefilter_cdg_blocks(blocks_table: pa.Table) -> pa.Table:
         combined = and_kleene(goid_mask, block_id_mask)
         return and_kleene(combined, block_idx_mask)
 
-    if _EXPR_TYPE is not None:
-        expr = (
-            is_valid_expr("function_goid_h128")
-            & is_valid_expr("block_id")
-            & is_valid_expr("block_idx")
-        )
-        return safe_filter_expr(blocks_table, expr, fallback_mask=_mask)
-    return safe_filter(blocks_table, _mask(blocks_table))
+    expr = (
+        is_valid_expr("function_goid_h128")
+        & is_valid_expr("block_id")
+        & is_valid_expr("block_idx")
+    )
+    return safe_filter_expr(blocks_table, expr, fallback_mask=_mask)
 
 
 def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
@@ -333,10 +328,8 @@ def _prefilter_cdg_edges(edges_table: pa.Table) -> pa.Table:
         kind_mask = non_empty_string_mask(table.column("edge_kind"))
         return and_kleene(goid_mask, kind_mask)
 
-    if _EXPR_TYPE is not None:
-        expr = is_valid_expr("function_goid_h128") & non_empty_string_expr("edge_kind")
-        return safe_filter_expr(edges_table, expr, fallback_mask=_mask)
-    return safe_filter(edges_table, _mask(edges_table))
+    expr = is_valid_expr("function_goid_h128") & non_empty_string_expr("edge_kind")
+    return safe_filter_expr(edges_table, expr, fallback_mask=_mask)
 
 
 def cdg_edges(

@@ -20,10 +20,6 @@ from codeintel.build.graphs.compute.goid import (
 )
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.graphs.compute_filters import (
-    filter_goid_ast_nodes,
-    filter_modules_with_language,
-)
 from codeintel.build.hamilton.native.patterns import (
     DatasetSaveSpec,
     MultiTableTargetContext,
@@ -32,9 +28,11 @@ from codeintel.build.hamilton.native.patterns import (
     build_multi_table_target_spec_from_contexts,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.arrow_ops import iter_rows, normalize_table_for_join
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.kernels import hash_struct_goid
+from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.iter import iter_array_values
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -102,26 +100,27 @@ def _rows_to_reader(
     return reader
 
 
-def _module_frame(modules_table: pa.Table) -> list[dict[str, str]]:
+def _module_frame(modules_table: pa.Table) -> pa.Table:
     if modules_table.num_rows == 0:
-        return []
+        return modules_table
     required = {"path", "module", "language"}
     if not required.issubset(set(modules_table.column_names)):
-        return []
-    modules_table = filter_modules_with_language(modules_table)
-    rows: list[dict[str, str]] = []
-    for row in iter_rows(modules_table):
-        path = row.get("path")
-        module = row.get("module")
-        language = row.get("language")
-        if not isinstance(path, str) or not path:
-            continue
-        if not isinstance(module, str) or not module:
-            continue
-        if not isinstance(language, str) or not language:
-            continue
-        rows.append({"path": path, "module": module, "language": language})
-    return rows
+        return pa.Table.from_pydict({})
+    plan = Plan.table(modules_table).project(
+        {
+            "path": E.cast(E.field("path"), "string"),
+            "module": E.cast(E.field("module"), "string"),
+            "language": E.cast(E.field("language"), "string"),
+        }
+    )
+    plan = plan.filter(
+        E.and_(
+            _non_empty_expr("path"),
+            _non_empty_expr("module"),
+            _non_empty_expr("language"),
+        )
+    )
+    return materialize_plan(plan, use_threads=True)
 
 
 def _resolve_qualname(
@@ -221,10 +220,10 @@ def _descriptor_from_values(
 
 def _joined_ast_nodes(
     ast_nodes_table: pa.Table,
-    modules: list[dict[str, str]],
-) -> list[dict[str, object]]:
-    if ast_nodes_table.num_rows == 0 or not modules:
-        return []
+    modules_table: pa.Table,
+) -> pa.Table:
+    if ast_nodes_table.num_rows == 0 or modules_table.num_rows == 0:
+        return pa.Table.from_pydict({})
     required = {
         "path",
         "node_type",
@@ -235,48 +234,87 @@ def _joined_ast_nodes(
         "end_lineno",
     }
     if not required.issubset(set(ast_nodes_table.column_names)):
-        return []
-    module_by_path = {row["path"]: row for row in modules}
-    joined: list[dict[str, object]] = []
-    total = 0
-    matched = 0
-    filtered = filter_goid_ast_nodes(ast_nodes_table)
-    for row in iter_rows(filtered):
-        node_type = row.get("node_type")
-        if node_type not in _ALLOWED_NODE_TYPES:
-            continue
-        total += 1
-        path = row.get("path")
-        if not isinstance(path, str):
-            continue
-        module_row = module_by_path.get(path)
-        if module_row is None:
-            continue
-        matched += 1
-        joined.append({**row, **module_row})
+        return pa.Table.from_pydict({})
+    ast_plan = Plan.table(ast_nodes_table).project(
+        {
+            "path": E.cast(E.field("path"), "string"),
+            "node_type": E.cast(E.field("node_type"), "string"),
+            "name": E.field("name"),
+            "qualname": E.field("qualname"),
+            "parent_qualname": E.field("parent_qualname"),
+            "lineno": E.field("lineno"),
+            "end_lineno": E.field("end_lineno"),
+        }
+    )
+    ast_plan = ast_plan.filter(
+        E.and_(
+            _non_empty_expr("path"),
+            E.is_valid("node_type"),
+            E.in_("node_type", sorted(_ALLOWED_NODE_TYPES)),
+        )
+    )
+    filtered_ast = materialize_plan(ast_plan, use_threads=True)
+    if filtered_ast.num_rows == 0:
+        return pa.Table.from_pydict({})
+    filtered_ast = normalize_table_for_join(filtered_ast)
+    modules_table = normalize_table_for_join(modules_table)
+    module_plan = Plan.table(modules_table).project(
+        {
+            "path": E.cast(E.field("path"), "string"),
+            "module_name": E.cast(E.field("module"), "string"),
+            "language": E.cast(E.field("language"), "string"),
+        }
+    )
+    module_plan = module_plan.filter(
+        E.and_(
+            _non_empty_expr("path"),
+            _non_empty_expr("module_name"),
+            _non_empty_expr("language"),
+        )
+    )
+    joined = Plan.table(filtered_ast).hash_join(
+        right=module_plan,
+        spec=HashJoinSpec(
+            left_keys=["path"],
+            right_keys=["path"],
+            how="left outer",
+            left_output=list(filtered_ast.column_names),
+            right_output=["module_name", "language"],
+        ),
+    )
+    joined_table = materialize_plan(joined, use_threads=True)
+    total = filtered_ast.num_rows
+    matched = sum(1 for row in iter_rows(joined_table) if row.get("module_name") is not None)
     if total:
         LOG.info(
             "goids join coverage ast_nodes_to_modules matched=%d total=%d",
             matched,
             total,
         )
-    return joined
+    return joined_table
+
+
+def _non_empty_expr(name: str) -> Expression:
+    return E.and_(E.is_valid(name), E.field(name) != E.scalar(""))
 
 
 def _collect_descriptors(
     *,
-    joined_nodes: list[dict[str, object]],
+    joined_nodes: pa.Table,
     repo: str,
     commit: str,
 ) -> list[_ResolvedDescriptor]:
     descriptors: list[_ResolvedDescriptor] = []
     seen: set[tuple[str, str, str, int]] = set()
-    if not joined_nodes:
+    if joined_nodes.num_rows == 0:
         return descriptors
-    for row in joined_nodes:
+    required = {"node_type", "path", "module_name", "language"}
+    if not required.issubset(set(joined_nodes.column_names)):
+        return descriptors
+    for row in iter_rows(joined_nodes):
         node_type = row.get("node_type")
         path = row.get("path")
-        module_name = row.get("module")
+        module_name = row.get("module_name")
         language = row.get("language")
         name = row.get("name")
         qualname = row.get("qualname")
@@ -312,20 +350,26 @@ def _hash_goids(
 ) -> list[int]:
     if not descriptors:
         return []
-    rows = [
-        {
-            "repo": resolved.descriptor.repo,
-            "commit": resolved.descriptor.commit,
-            "language": resolved.descriptor.language,
-            "rel_path": resolved.descriptor.rel_path,
-            "kind": resolved.descriptor.kind,
-            "qualname": resolved.descriptor.qualname,
-            "start_line": resolved.descriptor.start_line,
-            "end_line": resolved.descriptor.end_line,
-        }
-        for resolved in descriptors
-    ]
-    table = pa.Table.from_pylist(rows)
+    columns = {
+        "repo": [],
+        "commit": [],
+        "language": [],
+        "rel_path": [],
+        "kind": [],
+        "qualname": [],
+        "start_line": [],
+        "end_line": [],
+    }
+    for resolved in descriptors:
+        columns["repo"].append(resolved.descriptor.repo)
+        columns["commit"].append(resolved.descriptor.commit)
+        columns["language"].append(resolved.descriptor.language)
+        columns["rel_path"].append(resolved.descriptor.rel_path)
+        columns["kind"].append(resolved.descriptor.kind)
+        columns["qualname"].append(resolved.descriptor.qualname)
+        columns["start_line"].append(resolved.descriptor.start_line)
+        columns["end_line"].append(resolved.descriptor.end_line)
+    table = pa.Table.from_pydict(columns)
     hashed = hash_struct_goid(
         table,
         columns=(
@@ -402,7 +446,7 @@ def goids_analysis(env: BuildEnv, goids_inputs: _GoidsInputs) -> _GoidsAnalysis:
         return _GoidsAnalysis(goid_rows=(), crosswalk_rows=())
 
     modules = _module_frame(goids_inputs.modules)
-    if not modules:
+    if modules.num_rows == 0:
         return _GoidsAnalysis(goid_rows=(), crosswalk_rows=())
 
     joined_nodes = _joined_ast_nodes(goids_inputs.ast_nodes, modules)

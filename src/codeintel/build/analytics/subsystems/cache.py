@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 
 from codeintel.build.scopes.snapshot import SnapshotScope
-from codeintel.build.tabular.arrow_ops import iter_rows
+from codeintel.build.tabular.arrow_ops import iter_rows, normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
@@ -56,7 +56,7 @@ def build_subsystem_profile_cache_frame(
         target_name=None,
         join_keys=join_keys,
     )
-    subsystems = subsystems_precheck.good
+    subsystems = normalize_table_for_join(subsystems_precheck.good)
     metrics_precheck = finalize_join_keys(
         metrics,
         required_non_null=join_keys,
@@ -69,7 +69,7 @@ def build_subsystem_profile_cache_frame(
         target_name=None,
         join_keys=join_keys,
     )
-    metrics = metrics_precheck.good
+    metrics = normalize_table_for_join(metrics_precheck.good)
     left_columns = list(subsystems.column_names)
     right_columns = list(metrics.column_names)
     left_project = {name: E.field(name) for name in left_columns}

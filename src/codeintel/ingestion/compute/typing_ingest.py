@@ -242,7 +242,6 @@ class TypingIngestStep:
         diagnostic_rows_reader, row_count = table_for_columnar_rows(
             DIAGNOSTICS_TABLE_KEY,
             diagnostic_buffer.data,
-            extras_policy="retain",
         )
         scope = f"{resolved_context.repo}@{resolved_context.commit}"
         persist_arrow_tables(

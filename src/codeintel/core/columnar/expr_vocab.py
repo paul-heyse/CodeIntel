@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING
 
 import pyarrow.compute as pc
+
+if TYPE_CHECKING:
+    from pyarrow.compute import Expression
+else:
+    Expression = object
 
 ExpressionInput = pc.Expression | str | tuple[str, ...]
 
@@ -225,4 +231,4 @@ class ExprVocab:
 
 E = ExprVocab
 
-__all__ = ["E", "ExprVocab"]
+__all__ = ["E", "ExprVocab", "Expression"]

@@ -14,6 +14,7 @@ import pyarrow.dataset as ds
 from codeintel.build.graphs.assembly import iter_normalized_tuples
 from codeintel.build.scopes.snapshot import SnapshotScanContext
 from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_reader
+from codeintel.core.columnar.streaming import scan_telemetry
 from codeintel.core.datasets.arrow_store import scan_dataset
 from codeintel.core.datasets.parquet_metadata import DatasetMetadataContext
 from codeintel.core.datasets.paths import SnapshotIdError, dataset_snapshot_dir
@@ -395,69 +396,15 @@ def _log_scan_telemetry(
     snapshot_id: str,
     filter_expression: ds.Expression | None,
 ) -> None:
-    fragments = _count_fragments(dataset, filter_expression)
-    rows = _count_rows(dataset, filter_expression)
+    telemetry = scan_telemetry(dataset, filter_expression=filter_expression)
     LOG.debug(
         "Dataset scan telemetry table=%s snapshot=%s fragments=%s rows=%s filter=%s",
         table_key,
         snapshot_id,
-        fragments,
-        rows,
+        telemetry.fragment_count,
+        telemetry.estimated_rows,
         filter_expression,
     )
-
-
-def _count_fragments(
-    dataset: ds.Dataset,
-    filter_expression: ds.Expression | None,
-) -> int | None:
-    get_fragments = getattr(dataset, "get_fragments", None)
-    if not callable(get_fragments):
-        return None
-    try:
-        fragments = (
-            get_fragments(filter=filter_expression)
-            if filter_expression is not None
-            else get_fragments()
-        )
-    except (TypeError, ValueError, pa.ArrowInvalid):
-        return None
-    if not isinstance(fragments, Iterable):
-        return None
-    try:
-        return len(tuple(fragments))
-    except TypeError:
-        return None
-
-
-def _count_rows(
-    dataset: ds.Dataset,
-    filter_expression: ds.Expression | None,
-) -> int | None:
-    counter = getattr(dataset, "count_rows", None)
-    if callable(counter):
-        try:
-            count = counter() if filter_expression is None else counter(filter=filter_expression)
-        except (TypeError, ValueError, pa.ArrowInvalid):
-            count = None
-        if isinstance(count, int):
-            return count
-    try:
-        scanner = (
-            dataset.scanner(filter=filter_expression)
-            if filter_expression is not None
-            else dataset.scanner()
-        )
-    except (TypeError, ValueError, pa.ArrowInvalid):
-        return None
-    count_rows = getattr(scanner, "count_rows", None)
-    if callable(count_rows):
-        try:
-            count = count_rows()
-        except (TypeError, ValueError, pa.ArrowInvalid):
-            return None
-        return count if isinstance(count, int) else None
-    return None
 
 
 __all__ = [

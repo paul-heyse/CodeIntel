@@ -1755,62 +1755,50 @@ def _build_cst_collectors(batch_size: int) -> _CstCollectors:
         cst=columnar_batch_collector_for_table_key(
             CST_NODES_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         parse_manifest=columnar_batch_collector_for_table_key(
             PARSE_MANIFEST_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         spans=columnar_batch_collector_for_table_key(
             SYNTAX_SPANS_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         syntax_nodes=columnar_batch_collector_for_table_key(
             SYNTAX_NODES_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         syntax_edges=columnar_batch_collector_for_table_key(
             SYNTAX_EDGES_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         scopes=columnar_batch_collector_for_table_key(
             SYNTAX_SCOPES_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         defs=columnar_batch_collector_for_table_key(
             SYNTAX_DEFS_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         refs=columnar_batch_collector_for_table_key(
             SYNTAX_REFS_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         calls=columnar_batch_collector_for_table_key(
             SYNTAX_CALLS_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         call_args=columnar_batch_collector_for_table_key(
             SYNTAX_CALL_ARGS_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         func_params=columnar_batch_collector_for_table_key(
             SYNTAX_FUNC_PARAMS_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
         imports=columnar_batch_collector_for_table_key(
             SYNTAX_IMPORTS_TABLE_KEY,
             batch_size=batch_size,
-            extras_policy="retain",
         ),
     )
 

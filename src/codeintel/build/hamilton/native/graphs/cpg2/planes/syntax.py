@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import ensure_table_columns, rename_table_columns
 from codeintel.build.hamilton.native.graphs.cpg.constants import CPG_TARGET_NAME
@@ -18,7 +17,6 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
 from codeintel.build.tabular.arrow_ops import iter_array_values, normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import (
-    safe_filter,
     safe_filter_expr,
     scalar_from_compute,
 )
@@ -32,8 +30,6 @@ from codeintel.core.columnar.rows import empty_table_for_table
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
-
-_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True)
@@ -354,11 +350,8 @@ def cpg2_edges__syntax_edges(
             is_valid_mask(table.column("dst_cpg_node_id")),
         )
 
-    if _EXPR_TYPE is not None:
-        expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-        filtered = safe_filter_expr(selected, expr, fallback_mask=_edge_mask)
-    else:
-        filtered = safe_filter(selected, _edge_mask(selected))
+    expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+    filtered = safe_filter_expr(selected, expr, fallback_mask=_edge_mask)
     if diagnostics is not None:
         resolved = filtered.num_rows
         diagnostics["syntax_edges"] = SyntaxEdgeDiagnostics(

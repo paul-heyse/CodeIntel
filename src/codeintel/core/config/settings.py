@@ -57,6 +57,7 @@ class ArrowScanSettings:
     parquet_buffer_size: int | None = DEFAULT_ARROW_PARQUET_BUFFER_SIZE
     cpu_count: int | None = DEFAULT_ARROW_CPU_COUNT
     io_thread_count: int | None = DEFAULT_ARROW_IO_THREAD_COUNT
+    profile: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

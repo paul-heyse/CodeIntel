@@ -8,11 +8,26 @@ from codeintel.build.graphs.assembly import tabular_to_table
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.finalize_ops import FinalizeSpec, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
+from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.columnar.schema_ops import concat_tables_unified
 
 PDG_EDGES_TABLE_KEY = "graph.pdg_edges"
 PDG_TARGET_NAME = "pdg"
+PDG_SORT_KEYS: tuple[SortKey, ...] = (
+    ("repo", "ascending"),
+    ("commit", "ascending"),
+    ("function_goid_h128", "ascending"),
+    ("src_block_id", "ascending"),
+    ("dst_block_id", "ascending"),
+    ("edge_kind", "ascending"),
+    ("src_var", "ascending"),
+    ("dst_var", "ascending"),
+    ("via_phi", "ascending"),
+    ("use_kind", "ascending"),
+    ("via_succ_block_id", "ascending"),
+    ("via_edge_kind", "ascending"),
+)
 
 
 def _dfg_edges_table(dfg_edges: pa.Table) -> pa.Table:
@@ -67,6 +82,7 @@ def pdg_edges(
         spec=FinalizeSpec(
             table_key=PDG_EDGES_TABLE_KEY,
             mode="strict",
+            order_by=PDG_SORT_KEYS,
             target_name=PDG_TARGET_NAME,
         ),
     )

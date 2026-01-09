@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import pyarrow as pa
-import pyarrow.compute as pc
 from intervaltree import IntervalTree
 
 from codeintel.build.graphs.assembly import (
@@ -34,12 +33,13 @@ from codeintel.build.tabular.arrow_ops import (
     AlignmentReport,
     dedupe_table_for_table,
     emit_alignment_report,
+    normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
 from codeintel.build.tabular.compute_helpers import cast_array
 from codeintel.build.tabular.compute_masks import equal_mask
 from codeintel.build.tabular.explode_ops import ExplodeSpec, explode_edges
-from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeResult,
     FinalizeSpec,
@@ -1370,8 +1370,8 @@ def _exit_blocks(cfg_blocks: pa.Table) -> pa.Table:
     return _dedupe_block_table(table, output_column="exit_block_id")
 
 
-def _project_with_goid_cast(table: pa.Table, *, key: str) -> dict[str, pc.Expression]:
-    exprs: dict[str, pc.Expression] = {}
+def _project_with_goid_cast(table: pa.Table, *, key: str) -> dict[str, Expression]:
+    exprs: dict[str, Expression] = {}
     for name in table.column_names:
         if name == key:
             exprs[name] = E.cast(E.field(name), _GOID_CAST_TYPE)
@@ -1393,6 +1393,8 @@ def _hash_join_block_targets(
         return targets
     if right_key not in blocks.column_names or output_column not in blocks.column_names:
         return targets
+    targets = normalize_table_for_join(targets)
+    blocks = normalize_table_for_join(blocks)
     left_exprs = _project_with_goid_cast(targets, key="callee_goid_h128")
     right_exprs = {
         right_key: E.cast(E.field(right_key), _GOID_CAST_TYPE),
@@ -2295,9 +2297,11 @@ def cpg_edges_calls(
         return empty_reader(CPG_CALL_EDGES_TABLE_KEY)
     entry_blocks = _cast_table_column(entry_blocks, "function_goid_h128", _GOID_ARROW_TYPE)
     entry_blocks = _cast_table_column(entry_blocks, "entry_block_id", _BLOCK_ID_ARROW_TYPE)
+    exploded_good = normalize_table_for_join(exploded.good)
+    entry_blocks = normalize_table_for_join(entry_blocks)
 
     left_plan = (
-        Plan.table(exploded.good)
+        Plan.table(exploded_good)
         .project(
             {
                 "repo": E.field("repo"),

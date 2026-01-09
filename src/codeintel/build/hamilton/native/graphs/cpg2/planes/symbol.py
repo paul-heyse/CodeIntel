@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import rename_table_columns
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
@@ -18,11 +17,10 @@ from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import (
     array_from_compute,
-    safe_filter,
     safe_filter_expr,
 )
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
-from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.build.tabular.kernels import stable_sort_indices
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
@@ -33,8 +31,6 @@ CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbol_information"
 SCIP_EXTERNAL_SYMBOLS_TABLE_KEY = "core.scip_external_symbols"
 GOIDS_TABLE_KEY = "core.goids"
-
-_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True)
@@ -108,9 +104,8 @@ def cpg2_edges__scip_symbol_relationships(
         pa.array(extras_kv, type=pa.map_(pa.string(), pa.string())),
     )
     if joined.num_rows > 0:
-        joined = joined.take(
-            stable_sort_indices(
-                joined,
+        joined = materialize_plan(
+            Plan.table(joined).order_by(
                 sort_keys=[
                     ("repo", "ascending"),
                     ("commit", "ascending"),
@@ -118,7 +113,8 @@ def cpg2_edges__scip_symbol_relationships(
                     ("related_symbol", "ascending"),
                     ("relationship_kind", "ascending"),
                 ],
-            )
+            ),
+            use_threads=True,
         )
     joined = append_constant_columns(
         joined,
@@ -246,14 +242,11 @@ def _symbol_goid_joined_table(
         def _goid_mask(table: pa.Table) -> pa.Array | pa.ChunkedArray:
             return is_valid_mask(table.column("goid_h128"))
 
-        if _EXPR_TYPE is not None:
-            goid_rows = safe_filter_expr(
-                goid_rows,
-                is_valid_expr("goid_h128"),
-                fallback_mask=_goid_mask,
-            )
-        else:
-            goid_rows = safe_filter(goid_rows, _goid_mask(goid_rows))
+        goid_rows = safe_filter_expr(
+            goid_rows,
+            is_valid_expr("goid_h128"),
+            fallback_mask=_goid_mask,
+        )
     goid_rows = append_constant_columns(
         goid_rows,
         {
@@ -415,10 +408,8 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
             is_valid_mask(target.column("dst_cpg_node_id")),
         )
 
-    if _EXPR_TYPE is not None:
-        expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-        return safe_filter_expr(table, expr, fallback_mask=_edge_mask)
-    return safe_filter(table, _edge_mask(table))
+    expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+    return safe_filter_expr(table, expr, fallback_mask=_edge_mask)
 
 
 def _coalesce_column(table: pa.Table, column: str, fallback: str) -> pa.Table:
@@ -483,7 +474,7 @@ def _join_symbol_relationship_anchor(
         renamed = rename_table_columns(renamed, {"cpg_node_id": id_field})
     left = normalize_table_for_join(left)
     renamed = normalize_table_for_join(renamed)
-    left_project: dict[str, pc.Expression] = {}
+    left_project: dict[str, Expression] = {}
     for name in left.column_names:
         if name in {"repo", "commit", symbol_field}:
             left_project[name] = E.cast(E.field(name), "string")

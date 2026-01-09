@@ -38,6 +38,7 @@ class ExecutionContext:
     use_threads: bool = True
     determinism: DedupeTier = "throughput"
     combine_chunks: bool = True
+    provenance: bool = False
 
 
 @dataclass(frozen=True, slots=True)

@@ -355,7 +355,6 @@ class DocstringsExtractStep(BaseExtractStep):
         rows_reader, row_count = table_for_columnar_rows(
             DOCSTRINGS_TABLE_KEY,
             buffer.data,
-            extras_policy="retain",
         )
         scope = f"{resolved_repo}@{resolved_commit}"
         persist_arrow_tables(

@@ -204,17 +204,14 @@ class RepoScanStep:
         module_rows_reader, _ = table_for_columnar_rows(
             MODULES_TABLE_KEY,
             module_buffer.data,
-            extras_policy="retain",
         )
         file_state_rows_reader, _ = table_for_columnar_rows(
             FILE_STATE_TABLE_KEY,
             change_set.state_rows,
-            extras_policy="retain",
         )
         repo_map_rows_reader, _ = table_for_columnar_rows(
             REPO_MAP_TABLE_KEY,
             repo_map_rows,
-            extras_policy="retain",
         )
         scope = f"{resolved_repo}@{resolved_commit}"
         persist_arrow_tables(

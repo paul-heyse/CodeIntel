@@ -15,6 +15,7 @@ from sqlglot import exp
 from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
 from codeintel.core.columnar.expr_vocab import E
 from codeintel.core.columnar.finalize_ops import FinalizeSpec, finalize_table
+from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.plan_ops import ScanPlanOptions, build_scan_plan
 from codeintel.core.columnar.streaming import sample_reader
@@ -44,8 +45,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
 
-    import pyarrow.compute as pc
-
+    from codeintel.core.columnar.expr_vocab import Expression
     from codeintel.storage.datasets.manifest_index import DatasetManifestEntry
     from codeintel.storage.gateway.protocol import StorageGateway
 
@@ -250,7 +250,7 @@ class AssetTracking:
         *,
         entry: DatasetManifestEntry,
         columns: list[str],
-        filter_expr: pc.Expression | None,
+        filter_expr: Expression | None,
         order_by: Sequence[SortKey] | None,
         limit: int | None,
     ) -> pa.Table:
@@ -1307,7 +1307,10 @@ class AssetTracking:
             )
             if table.num_rows == 0:
                 return None
-            row = table.slice(0, 1).to_pylist()[0]
+            row_iter = iter_rows(table, columns=columns)
+            row = next(row_iter, None)
+            if row is None:
+                return None
             tool_versions_payload = row.get("tool_versions")
             tool_versions_raw = (
                 decode_json_dict(tool_versions_payload) if tool_versions_payload else None
@@ -1323,7 +1326,10 @@ class AssetTracking:
                 tool_versions=tool_versions,
                 config_hash=str(row.get("config_hash")) if row.get("config_hash") else None,
                 git_dirty=bool(row.get("git_dirty")),
-                captured_at=row.get("captured_at"),
+                captured_at=coerce_optional_datetime(
+                    row.get("captured_at"),
+                    ctx="build.run_environments.captured_at",
+                ),
             )
         query = (
             exp.select(

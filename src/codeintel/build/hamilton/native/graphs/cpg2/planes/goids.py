@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
     build_anchor_map,
@@ -14,7 +13,7 @@ from codeintel.build.hamilton.native.graphs.cpg2.anchors import (
 )
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import is_valid_expr, is_valid_mask
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.kernels import stable_sort_indices
@@ -23,8 +22,6 @@ from codeintel.core.columnar.rows import empty_table_for_table
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 GOIDS_TABLE_KEY = "core.goids"
-
-_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True)
@@ -144,19 +141,11 @@ def cpg2_nodes__goids(
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     if "cpg_node_id" not in table.column_names:
         return table
-    if _EXPR_TYPE is not None:
-        try:
-            return safe_filter(table, is_valid_expr("cpg_node_id"))
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            pass
-    mask = is_valid_mask(table.column("cpg_node_id"))
-    return safe_filter(table, mask)
+
+    def _mask(value_table: pa.Table) -> pa.Array | pa.ChunkedArray:
+        return is_valid_mask(value_table.column("cpg_node_id"))
+
+    return safe_filter_expr(table, is_valid_expr("cpg_node_id"), fallback_mask=_mask)
 
 
 __all__ = ["GoidNodeDiagnostics", "cpg2_nodes__goids"]

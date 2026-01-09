@@ -221,52 +221,42 @@ def _build_inspect_collectors(options: InspectExtractOptions) -> _InspectCollect
         objects=columnar_batch_collector_for_table_key(
             PY_INSPECT_OBJECTS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         members=columnar_batch_collector_for_table_key(
             PY_INSPECT_MEMBERS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         class_mro=columnar_batch_collector_for_table_key(
             PY_INSPECT_CLASS_MRO_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         class_attrs=columnar_batch_collector_for_table_key(
             PY_INSPECT_CLASS_ATTRS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         unwrap=columnar_batch_collector_for_table_key(
             PY_INSPECT_UNWRAP_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         signatures=columnar_batch_collector_for_table_key(
             PY_INSPECT_SIGNATURES_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         signature_params=columnar_batch_collector_for_table_key(
             PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         annotations=columnar_batch_collector_for_table_key(
             PY_INSPECT_ANNOTATIONS_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         sources=columnar_batch_collector_for_table_key(
             PY_INSPECT_SOURCE_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
         runtime_state=columnar_batch_collector_for_table_key(
             PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
             batch_size=options.batch_size,
-            extras_policy="retain",
         ),
     )
 

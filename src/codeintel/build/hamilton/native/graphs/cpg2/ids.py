@@ -54,7 +54,8 @@ def cpg_edge_ordinal(table_key: str, payload: Mapping[str, object]) -> int:
         msg = f"Reserved key {_ORDINAL_TABLE_KEY} in ordinal payload"
         raise ValueError(msg)
     row: dict[str, object] = {_ORDINAL_TABLE_KEY: table_key, **dict(payload)}
-    table = pa.Table.from_pylist([row])
+    column_data = {key: [value] for key, value in row.items()}
+    table = pa.Table.from_pydict(column_data)
     hash_columns = [_ORDINAL_TABLE_KEY, *sorted(payload)]
     ordinals = hash_struct_ordinal(table, columns=hash_columns, modulus=ORDINAL_MOD)
     value = ordinals[0].as_py()

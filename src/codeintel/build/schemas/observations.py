@@ -12,9 +12,8 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
-from codeintel.build.tabular.compute_helpers import scalar_from_compute
+from codeintel.build.tabular.compute_helpers import call_compute, scalar_from_compute
 from codeintel.core.columnar.conversion import record_batch_reader_from_iterable
 from codeintel.core.columnar.ipc import schema_from_ipc_payload, schema_to_ipc_payload
 from codeintel.core.columnar.readers import empty_reader_from_schema
@@ -43,7 +42,7 @@ from codeintel.core.schemas.schema_catalog_models import (
 from codeintel.core.time import utc_now
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from codeintel.build.meta.bundle import BuildMetadataBundleWriter
     from codeintel.core.gateway import BuildGateway
@@ -1046,7 +1045,7 @@ def _min_max(values: pa.Array | pa.ChunkedArray) -> tuple[object | None, object 
     return min_value, max_value
 
 
-def _scalar_value(result: object) -> object | None:
+def _scalar_value(result: object | None) -> object | None:
     if result is None:
         return None
     as_py = getattr(result, "as_py", None)
@@ -1056,14 +1055,7 @@ def _scalar_value(result: object) -> object | None:
 
 
 def _count_distinct(values: pa.Array | pa.ChunkedArray) -> int | None:
-    func = getattr(pc, "count_distinct", None)
-    if not callable(func):
-        return None
-    try:
-        result = func(values)
-    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
-        return None
-    scalar = _scalar_value(result)
+    scalar = scalar_from_compute("count_distinct", [values])
     if scalar is None or isinstance(scalar, bool):
         return None
     if isinstance(scalar, int):
@@ -1074,42 +1066,34 @@ def _count_distinct(values: pa.Array | pa.ChunkedArray) -> int | None:
 
 
 def _length_stats(values: pa.Array | pa.ChunkedArray) -> tuple[int, int]:
-    length_func = _length_func(values)
-    if length_func is None:
+    kernel = _length_kernel(values)
+    if kernel is None:
         return 0, 0
-    try:
-        lengths = length_func(values)
-        filled = _fill_null(lengths, 0)
-        length_sum = _sum_scalar(filled)
-        length_count = _count_scalar(lengths)
-    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
+    lengths = call_compute(kernel, [values])
+    if lengths is None:
         return 0, 0
+    filled = _fill_null(lengths, 0)
+    length_sum = _sum_scalar(filled)
+    length_count = _count_scalar(lengths)
     return length_sum, length_count
 
 
-def _length_func(values: pa.Array | pa.ChunkedArray) -> Callable[[object], object] | None:
+def _length_kernel(values: pa.Array | pa.ChunkedArray) -> str | None:
     data_type = values.type
     if pa.types.is_string(data_type) or pa.types.is_large_string(data_type):
-        func = getattr(pc, "utf8_length", None)
-        return func if callable(func) else None
+        return "utf8_length"
     if pa.types.is_binary(data_type) or pa.types.is_large_binary(data_type):
-        func = getattr(pc, "binary_length", None)
-        return func if callable(func) else None
+        return "binary_length"
     return None
 
 
 def _fill_null(values: object, fill_value: int) -> object:
-    func = getattr(pc, "fill_null", None)
-    if not callable(func):
-        return values
-    return func(values, fill_value)
+    result = call_compute("fill_null", [values, fill_value])
+    return values if result is None else result
 
 
 def _sum_scalar(values: object) -> int:
-    func = getattr(pc, "sum", None)
-    if not callable(func):
-        return 0
-    result = func(values)
+    result = call_compute("sum", [values])
     scalar = _scalar_value(result)
     if isinstance(scalar, bool):
         return 0
@@ -1121,10 +1105,7 @@ def _sum_scalar(values: object) -> int:
 
 
 def _count_scalar(values: object) -> int:
-    func = getattr(pc, "count", None)
-    if not callable(func):
-        return 0
-    result = func(values)
+    result = call_compute("count", [values])
     scalar = _scalar_value(result)
     if isinstance(scalar, bool):
         return 0

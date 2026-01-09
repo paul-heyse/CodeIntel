@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from codeintel.core.columnar.expr_vocab import E, ExprVocab
+from codeintel.core.columnar.expr_vocab import E, Expression, ExprVocab
 
-__all__ = ["E", "ExprVocab"]
+__all__ = ["E", "ExprVocab", "Expression"]

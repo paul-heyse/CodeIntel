@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import table_rows
 from codeintel.build.hamilton.native.graphs.cpg.constants import CPG_TARGET_NAME
@@ -22,9 +21,9 @@ from codeintel.build.hamilton.native.graphs.cpg2.edge_helpers import (
 from codeintel.build.hamilton.native.graphs.cpg2.ids import cpg_edge_ordinal, cpg_node_id
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.compute_columns import append_constant_columns
-from codeintel.build.tabular.compute_helpers import safe_filter
+from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
-from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
@@ -34,7 +33,6 @@ from codeintel.build.tabular.finalize_ops import (
     finalize_table,
     record_join_precheck_errors,
 )
-from codeintel.build.tabular.kernels import stable_sort_indices
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
 from codeintel.core.intervals.span_resolver import SpanResolver
@@ -48,8 +46,6 @@ SCIP_EXTERNAL_SYMBOLS_TABLE_KEY = "core.scip_external_symbols"
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
 
 OccurrenceSpanKey = tuple[object, object, object, object, object, object, object, object]
-
-_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True)
@@ -130,22 +126,17 @@ def _scip_symbol_joined_table(
             right_output=["cpg_node_id", "source_pk_json"],
         ),
     )
-    table = materialize_plan(joined, use_threads=True)
-    if table.num_rows == 0:
-        return table
-    return table.take(
-        stable_sort_indices(
-            table,
-            sort_keys=[
-                ("repo", "ascending"),
-                ("commit", "ascending"),
-                ("symbol", "ascending"),
-            ],
-        )
+    joined = joined.order_by(
+        sort_keys=[
+            ("repo", "ascending"),
+            ("commit", "ascending"),
+            ("symbol", "ascending"),
+        ],
     )
+    return materialize_plan(joined, use_threads=True)
 
 
-def _join_key_exprs() -> dict[str, pc.Expression]:
+def _join_key_exprs() -> dict[str, Expression]:
     return {
         "repo": E.cast(E.field("repo"), "string"),
         "commit": E.cast(E.field("commit"), "string"),
@@ -480,12 +471,12 @@ def _occurrence_roles(
 ) -> pa.Table:
     syntax_rows = table_rows(occ_syntax)
     if not syntax_rows:
-        return pa.Table.from_pylist([])
+        return pa.Table.from_pydict({})
     span_index = _occurrence_span_index(table_rows(occ_span))
     resolvers = _occurrence_role_resolvers(occ_span)
     joined_rows = _occurrence_joined_rows(syntax_rows, span_index)
     _apply_occurrence_resolvers(joined_rows, resolvers)
-    return pa.Table.from_pylist(joined_rows)
+    return _table_from_rows(joined_rows)
 
 
 def _occurrence_span_index(
@@ -545,6 +536,17 @@ def _occurrence_joined_rows(
     return joined_rows
 
 
+def _table_from_rows(rows: list[dict[str, object]]) -> pa.Table:
+    if not rows:
+        return pa.Table.from_pydict({})
+    column_names = sorted({name for row in rows for name in row})
+    data: dict[str, list[object]] = {name: [] for name in column_names}
+    for row in rows:
+        for name in column_names:
+            data[name].append(row.get(name))
+    return pa.Table.from_pydict(data)
+
+
 def _apply_occurrence_resolvers(
     joined_rows: list[dict[str, object]],
     resolvers: dict[tuple[str, str], SpanResolver[_OccurrenceRolePayload]],
@@ -580,41 +582,25 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
     required = {"src_cpg_node_id", "dst_cpg_node_id"}
     if not required.issubset(set(table.column_names)):
         return table
-    if _EXPR_TYPE is not None:
-        try:
-            expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-            return safe_filter(table, expr)
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            pass
-    mask = and_kleene(
-        is_valid_mask(table.column("src_cpg_node_id")),
-        is_valid_mask(table.column("dst_cpg_node_id")),
-    )
-    return safe_filter(table, mask)
+
+    def _mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
+        return and_kleene(
+            is_valid_mask(target.column("src_cpg_node_id")),
+            is_valid_mask(target.column("dst_cpg_node_id")),
+        )
+
+    expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+    return safe_filter_expr(table, expr, fallback_mask=_mask)
 
 
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     if "cpg_node_id" not in table.column_names:
         return table
-    if _EXPR_TYPE is not None:
-        try:
-            return safe_filter(table, is_valid_expr("cpg_node_id"))
-        except (
-            pa.ArrowInvalid,
-            pa.ArrowNotImplementedError,
-            pa.ArrowTypeError,
-            TypeError,
-            ValueError,
-        ):
-            pass
-    mask = is_valid_mask(table.column("cpg_node_id"))
-    return safe_filter(table, mask)
+
+    def _mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
+        return is_valid_mask(target.column("cpg_node_id"))
+
+    return safe_filter_expr(table, is_valid_expr("cpg_node_id"), fallback_mask=_mask)
 
 
 def _symbol_key_set(table: pa.Table) -> set[tuple[str, str, str]]:

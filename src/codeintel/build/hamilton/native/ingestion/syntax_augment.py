@@ -11,7 +11,6 @@ from numbers import Integral
 from typing import cast
 
 import pyarrow as pa
-import pyarrow.compute as pc
 from hamilton.function_modifiers import cache
 
 from codeintel.build.graphs.assembly import select_table_columns
@@ -52,7 +51,7 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
 )
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
-from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -293,8 +292,7 @@ def _struct_field(
     values: pa.Array | pa.ChunkedArray,
     name: str,
 ) -> pa.Array | pa.ChunkedArray:
-    options = pc.StructFieldOptions(name)
-    result = array_from_compute("struct_field", [values], options=options)
+    result = array_from_compute("struct_field", [values, name])
     if result is None:
         msg = "Arrow compute struct_field did not return an array."
         raise TypeError(msg)
@@ -308,6 +306,17 @@ def _divide(
     result = array_from_compute("divide", [left, right])
     if result is None:
         msg = "Arrow compute divide did not return an array."
+        raise TypeError(msg)
+    return result
+
+
+def _fill_null(
+    values: pa.Array | pa.ChunkedArray,
+    replacement: object,
+) -> pa.Array | pa.ChunkedArray:
+    result = array_from_compute("fill_null", [values, replacement])
+    if result is None:
+        msg = "Arrow compute fill_null did not return an array."
         raise TypeError(msg)
     return result
 
@@ -443,8 +452,8 @@ def _project_with_cast(
     table: pa.Table,
     *,
     casts: Mapping[str, str],
-) -> dict[str, pc.Expression]:
-    exprs: dict[str, pc.Expression] = {}
+) -> dict[str, Expression]:
+    exprs: dict[str, Expression] = {}
     for name in table.column_names:
         if name in casts:
             exprs[name] = E.cast(E.field(name), casts[name])
@@ -523,8 +532,10 @@ def _hash_join_tables(
         table_key=spec.right_table_key,
         join_keys=spec.right_keys,
     )
-    left_exprs = _project_with_cast(left, casts=_join_casts(spec.left_keys))
-    right_exprs = _project_with_cast(right, casts=_join_casts(spec.right_keys))
+    left_checked = normalize_table_for_join(left_checked)
+    right_checked = normalize_table_for_join(right_checked)
+    left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
+    right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
     left_plan = Plan.table(left_checked).project(left_exprs)
     right_plan = Plan.table(right_checked).project(right_exprs)
     right_output = [name for name in right_exprs if name not in left_exprs]
@@ -1045,7 +1056,7 @@ def _weld_coverage_table(
         mapped_counts,
         spec=_JoinSpec(left_keys=key_cols, right_keys=key_cols),
     )
-    mapped = pc.fill_null(_column_or_null(joined, "mapped_count"), pa.scalar(0))
+    mapped = _fill_null(_column_or_null(joined, "mapped_count"), pa.scalar(0))
     total = _column_or_null(joined, "ts_node_count")
     total_float = cast_array(total, pa.float64(), safe=True)
     mapped_float = cast_array(mapped, pa.float64(), safe=True)

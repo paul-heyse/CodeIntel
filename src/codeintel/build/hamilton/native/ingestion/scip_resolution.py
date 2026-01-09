@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -24,7 +23,10 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.ingestion_normalize import (
     finalize_ingest_reader,
 )
-from codeintel.build.tabular.arrow_ops import dedupe_table_for_table
+from codeintel.build.tabular.arrow_ops import (
+    dedupe_table_for_table,
+    normalize_table_for_join,
+)
 from codeintel.build.tabular.compute_columns import constant_array
 from codeintel.build.tabular.compute_helpers import (
     array_from_compute,
@@ -40,7 +42,7 @@ from codeintel.build.tabular.compute_masks import (
     not_equal_mask,
 )
 from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
-from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
     FinalizeDedupe,
     FinalizeResult,
@@ -141,8 +143,8 @@ def _project_with_cast(
     table: pa.Table,
     *,
     casts: dict[str, str],
-) -> dict[str, pc.Expression]:
-    exprs: dict[str, pc.Expression] = {}
+) -> dict[str, Expression]:
+    exprs: dict[str, Expression] = {}
     for name in table.column_names:
         if name in casts:
             exprs[name] = E.cast(E.field(name), casts[name])
@@ -222,8 +224,10 @@ def _hash_join_tables(
         table_key=spec.right_table_key,
         join_keys=spec.right_keys,
     )
-    left_exprs = _project_with_cast(left, casts=_join_casts(spec.left_keys))
-    right_exprs = _project_with_cast(right, casts=_join_casts(spec.right_keys))
+    left_checked = normalize_table_for_join(left_checked)
+    right_checked = normalize_table_for_join(right_checked)
+    left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
+    right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
     left_plan = Plan.table(left_checked).project(left_exprs)
     right_plan = Plan.table(right_checked).project(right_exprs)
     right_output = [name for name in right_exprs if name not in left_exprs]
@@ -1052,6 +1056,8 @@ def _occurrence_syntax_pairs_table(occurrences: pa.Table, producers: pa.Table) -
         join_keys=join_keys,
         table_key=SYNTAX_NODES_TABLE_KEY,
     )
+    left_checked = normalize_table_for_join(left_checked)
+    right_checked = normalize_table_for_join(right_checked)
     plan = Plan.table(left_checked).hash_join(
         right=Plan.table(right_checked),
         spec=HashJoinSpec(
@@ -1085,6 +1091,8 @@ def _occurrence_syntax_match_table(
         join_keys=right_keys,
         table_key=SYNTAX_NODES_TABLE_KEY,
     )
+    left_checked = normalize_table_for_join(left_checked)
+    right_checked = normalize_table_for_join(right_checked)
     left_columns = _unique_columns([*_OCCURRENCE_MATCH_BASE_COLUMNS, *left_keys])
     right_columns = _unique_columns([*right_keys, "producer", "node_id"])
     left_project = {name: E.field(name) for name in left_columns}
@@ -1124,13 +1132,15 @@ def _occurrence_syntax_match_table(
 def _occurrence_syntax_left_anti(left: pa.Table, right: pa.Table) -> pa.Table:
     if left.num_rows == 0 or right.num_rows == 0:
         return left
-    plan = Plan.table(left).hash_join(
-        right=Plan.table(right),
+    left_checked = normalize_table_for_join(left)
+    right_checked = normalize_table_for_join(right)
+    plan = Plan.table(left_checked).hash_join(
+        right=Plan.table(right_checked),
         spec=HashJoinSpec(
             left_keys=list(_OCCURRENCE_MATCH_KEYS),
             right_keys=list(_OCCURRENCE_MATCH_KEYS),
             how="left anti",
-            left_output=list(left.column_names),
+            left_output=list(left_checked.column_names),
             right_output=[],
         ),
     )
@@ -1284,6 +1294,8 @@ def scip_resolution__occurrence_syntax_xref__base(
     else:
         matches = _empty_occurrence_match_table(pairs)
 
+    pairs = normalize_table_for_join(pairs)
+    matches = normalize_table_for_join(matches)
     joined = Plan.table(pairs).hash_join(
         right=Plan.table(matches),
         spec=HashJoinSpec(
@@ -1294,7 +1306,7 @@ def scip_resolution__occurrence_syntax_xref__base(
             right_output=["syntax_node_id", "match_kind", "candidate_count"],
         ),
     )
-    project: dict[str, pc.Expression] = {
+    project: dict[str, Expression] = {
         "repo": E.field("repo"),
         "commit": E.field("commit"),
         "rel_path": E.field("rel_path"),

@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.build.graphs.assembly import (
     rename_table_columns,
@@ -25,11 +24,10 @@ from codeintel.build.tabular.compute_columns import append_constant_columns
 from codeintel.build.tabular.compute_helpers import (
     array_from_compute,
     cast_array,
-    safe_filter,
     safe_filter_expr,
 )
 from codeintel.build.tabular.compute_masks import and_kleene, is_valid_expr, is_valid_mask
-from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.plan_ops import HashJoinSpec, Plan, materialize_plan
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -38,8 +36,6 @@ CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 GOIDS_TABLE_KEY = "core.goids"
-
-_EXPR_TYPE = getattr(pc, "Expression", None)
 
 
 @dataclass(frozen=True)
@@ -692,7 +688,7 @@ def _join_block_lookup(edges: pa.Table, lookup: pa.Table, *, table_key: str) -> 
         },
     )
     dst_lookup = normalize_table_for_join(dst_lookup)
-    edge_project: dict[str, pc.Expression] = {}
+    edge_project: dict[str, Expression] = {}
     for name in edges.column_names:
         if name == "function_goid_h128":
             edge_project[name] = E.cast(E.field(name), "decimal128(38,0)")
@@ -778,7 +774,7 @@ def _join_block_anchors(edges: pa.Table, anchors: pa.Table, *, table_key: str) -
         {"block_idx": "dst_block_idx", "cpg_node_id": "dst_cpg_node_id"},
     )
     dst_anchor = normalize_table_for_join(dst_anchor)
-    edge_project: dict[str, pc.Expression] = {}
+    edge_project: dict[str, Expression] = {}
     for name in edges.column_names:
         if name == "function_goid_h128":
             edge_project[name] = E.cast(E.field(name), "decimal128(38,0)")
@@ -891,22 +887,18 @@ def _filter_valid_edges(table: pa.Table) -> pa.Table:
             is_valid_mask(target.column("dst_cpg_node_id")),
         )
 
-    if _EXPR_TYPE is not None:
-        expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
-        return safe_filter_expr(table, expr, fallback_mask=_edge_mask)
-    return safe_filter(table, _edge_mask(table))
+    expr = is_valid_expr("src_cpg_node_id") & is_valid_expr("dst_cpg_node_id")
+    return safe_filter_expr(table, expr, fallback_mask=_edge_mask)
 
 
 def _filter_valid_nodes(table: pa.Table) -> pa.Table:
     if "cpg_node_id" not in table.column_names:
         return table
-    if _EXPR_TYPE is not None:
-        return safe_filter_expr(
-            table,
-            is_valid_expr("cpg_node_id"),
-            fallback_mask=lambda target: is_valid_mask(target.column("cpg_node_id")),
-        )
-    return safe_filter(table, is_valid_mask(table.column("cpg_node_id")))
+
+    def _mask(target: pa.Table) -> pa.Array | pa.ChunkedArray:
+        return is_valid_mask(target.column("cpg_node_id"))
+
+    return safe_filter_expr(table, is_valid_expr("cpg_node_id"), fallback_mask=_mask)
 
 
 __all__ = [

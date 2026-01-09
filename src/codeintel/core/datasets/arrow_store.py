@@ -13,7 +13,6 @@ from time import perf_counter
 from typing import TYPE_CHECKING, Literal, Protocol, cast, runtime_checkable
 
 import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
@@ -23,7 +22,7 @@ from codeintel.core.columnar.arrowdsl import (
     apply_deterministic_order,
     run_pipeline,
 )
-from codeintel.core.columnar.compute_helpers import combine_table_chunks
+from codeintel.core.columnar.compute_helpers import call_compute, combine_table_chunks
 from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.dedupe_ops import DedupeTier
 from codeintel.core.columnar.normalization import normalize_table_for_compute
@@ -926,18 +925,15 @@ def _maybe_dictionary_encode_array(
 
 
 def _count_distinct(array: pa.Array | pa.ChunkedArray) -> int | None:
-    func = getattr(pc, "count_distinct", None)
-    if not callable(func):
-        return None
-    result = func(array)
+    result = call_compute("count_distinct", [array])
     return _coerce_int(_normalize_stat_value(result))
 
 
 def _dictionary_encode(array: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
-    func = getattr(pc, "dictionary_encode", None)
-    if not callable(func):
-        return array
-    return func(array)
+    result = call_compute("dictionary_encode", [array])
+    if isinstance(result, (pa.Array, pa.ChunkedArray)):
+        return result
+    return array
 
 
 def _count_rows(dataset: ds.Dataset, *, parquet_rows: int | None) -> int | None:

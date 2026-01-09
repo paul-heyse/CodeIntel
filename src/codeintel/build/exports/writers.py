@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import SupportsInt, TypedDict, cast
 
 import msgspec
 import pyarrow as pa
-import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from codeintel.build.tabular.arrow_ops import json_writer_available, write_json_streaming
+from codeintel.build.tabular.compute_helpers import array_from_compute
 from codeintel.build.tabular.conversion import record_batch_reader_from_iterable
+from codeintel.core.columnar.iter import iter_rows
 from codeintel.core.columnar.readers import empty_reader_from_schema
 from codeintel.core.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.core.exports.arrow_ipc import default_ipc_write_options, iter_ipc_stream
@@ -387,9 +387,6 @@ def _maybe_dictionary_encode_table(
 ) -> pa.Table:
     if not dictionary_columns:
         return table
-    encode = getattr(pc, "dictionary_encode", None)
-    if not callable(encode):
-        return table
     encode_set = set(dictionary_columns)
     arrays: list[pa.Array | pa.ChunkedArray] = []
     fields: list[pa.Field] = []
@@ -400,15 +397,7 @@ def _maybe_dictionary_encode_table(
         if name in encode_set and (
             pa.types.is_string(column.type) or pa.types.is_large_string(column.type)
         ):
-            with contextlib.suppress(
-                pa.ArrowInvalid,
-                pa.ArrowNotImplementedError,
-                pa.ArrowTypeError,
-                ValueError,
-            ):
-                candidate = encode(column)
-                if isinstance(candidate, (pa.Array, pa.ChunkedArray)):
-                    encoded = candidate
+            encoded = array_from_compute("dictionary_encode", [column])
         if encoded is None:
             arrays.append(column)
             fields.append(field)
@@ -458,13 +447,7 @@ def _iter_json_rows_from_batch(
     record_type: str | None,
 ) -> Iterable[dict[str, object]]:
     record_batch = cast("pa.RecordBatch", batch)
-    columns = record_batch.to_pydict()
-    if not columns:
-        return
-    names = list(columns.keys())
-    values_iter = zip(*(columns[name] for name in names), strict=False)
-    for values in values_iter:
-        row = dict(zip(names, values, strict=False))
+    for row in iter_rows(record_batch):
         if record_type is not None:
             row["_type"] = record_type
         yield coerce_export_row(row)
