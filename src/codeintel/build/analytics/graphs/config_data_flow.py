@@ -22,16 +22,21 @@ from codeintel.build.graphs.rx.algos import (
 )
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
     resolve_execution_context,
 )
-from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges_for_join
+from codeintel.core.columnar.explode_ops import (
+    ExplodeSpec,
+    explode_edges,
+    explode_edges_for_join,
+)
+from codeintel.core.columnar.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
+from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.hashing import sha256_short
@@ -48,6 +53,7 @@ if TYPE_CHECKING:
 CONFIG_DATA_FLOW_TABLE_KEY = "analytics.config_data_flow"
 CONFIG_REFERENCES_TABLE_KEY = "analytics.config_references"
 ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 def _columns_for_table(table_key: str) -> tuple[str, ...]:
@@ -321,14 +327,6 @@ def _entrypoint_rowset(
     )
 
 
-def _list_values(value: object) -> list[object]:
-    if isinstance(value, list):
-        return value
-    if isinstance(value, tuple):
-        return list(value)
-    return []
-
-
 def _table_from_rows(
     rows: Sequence[Mapping[str, object]] | pa.Table,
 ) -> pa.Table:
@@ -394,22 +392,28 @@ def _config_references_by_path(
         ),
         ctx=resolve_columnar_context(ctx),
     )
+    exploded = explode_edges(
+        grouped,
+        spec=ExplodeSpec(
+            src_col="reference_path",
+            dst_list_col="config_paths",
+            aligned_list_cols=("keys",),
+            null_list_policy="empty",
+            null_child_policy="drop",
+            error_context_cols=("reference_path",),
+        ),
+    )
     refs: dict[str, list[tuple[str, str]]] = {}
-    for reference_path, config_paths, keys in iter_tuples(
-        grouped.to_reader(),
+    for reference_path, config_path, key in iter_tuples(
+        exploded.good.to_reader(),
         columns=("reference_path", "config_paths", "keys"),
     ):
         if not isinstance(reference_path, str) or not reference_path.strip():
             continue
+        if config_path is None or key is None:
+            continue
         rel_path = normalize_path(reference_path)
-        for config_path, key in zip(
-            _list_values(config_paths),
-            _list_values(keys),
-            strict=False,
-        ):
-            if config_path is None or key is None:
-                continue
-            refs.setdefault(rel_path, []).append((str(key), str(config_path)))
+        refs.setdefault(rel_path, []).append((str(key), str(config_path)))
     return refs
 
 
@@ -566,6 +570,21 @@ def compute_config_data_flow_result(inputs: ConfigDataFlowInputs) -> ConfigDataF
     return ConfigDataFlowResult(rows=tuple(rows_to_insert) if rows_to_insert else None)
 
 
+def build_config_data_flow_table(inputs: ConfigDataFlowInputs) -> pa.Table:
+    """Build a config data flow table from computed rows.
+
+    Returns
+    -------
+    pa.Table
+        Config data flow table aligned to the contract schema.
+    """
+    result = compute_config_data_flow_result(inputs)
+    if result.rows is None:
+        return empty_table_for_table(CONFIG_DATA_FLOW_TABLE_KEY)
+    table, _ = table_for_rows(CONFIG_DATA_FLOW_TABLE_KEY, result.rows)
+    return table
+
+
 def _build_config_flow_rows(
     *,
     artifacts: ConfigFlowArtifacts,
@@ -632,4 +651,8 @@ def _materialize_plan(
 ) -> pa.Table:
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
+    )
+    return result.good

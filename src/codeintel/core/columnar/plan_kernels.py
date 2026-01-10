@@ -18,6 +18,7 @@ from codeintel.core.columnar.explode_ops import (
     explode_edges_for_join as _explode_edges_for_join,
 )
 from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.join_safe import join_safe_projection
 from codeintel.core.columnar.plan_ops import HashJoinSpec, Plan
 from codeintel.core.schemas.primitives import resolve_join_safe_columns
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.service import SchemaService
 
 _DEFAULT_HASH_MODULUS = 2**63 - 1
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 class _StableDedupeFn(Protocol):
@@ -324,7 +326,16 @@ def grouped_rollup_table(
     if spec.order_by:
         plan = plan.order_by(sort_keys=spec.order_by)
     execution_ctx = resolve_execution_context(ctx)
-    return columnar.ExecutionPlan.from_plan(plan).to_table(ctx=execution_ctx)
+    reader = columnar.ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 def build_grouped_rollup_plan(

@@ -121,6 +121,7 @@ def run_rustworkx_external_plan(
         dataset=None,
         filter_expr=None,
         columns=None,
+        schema=None,
         scan_options=None,
         use_threads=use_threads,
     )

@@ -40,10 +40,6 @@ from codeintel.build.hamilton.helpers import (
     filter_modules,
     paths_to_modules,
 )
-from codeintel.build.hamilton.native.ingestion.manifesting import (
-    IngestManifestDetails,
-    finalize_ingest_reader_with_manifest,
-)
 from codeintel.build.hamilton.native.ingestion.pipelines import (
     mutate_ingest_rows,
     pipe_ingest_rows,
@@ -53,6 +49,7 @@ from codeintel.build.hamilton.native.patterns import (
     IngestStep,
     MultiTableTargetContext,
     RelationTableSaveSpec,
+    RelationTableSaveSpecOptions,
     TableTargetContext,
     TableTargetTableContext,
     ToolFinalizeContext,
@@ -550,54 +547,53 @@ def t__modules__ingest(
             )
         )
 
-    scan_telemetry = None
-    change_set = t__modules__run.change_set
-    if change_set is not None and change_set.scan_telemetry:
-        scan_telemetry = change_set.scan_telemetry
-    manifest_extras = _tool_manifest_extras(
-        result,
-        table_counts={
-            MODULES_TABLE_KEY: t__modules__run.module_row_count,
-            FILE_STATE_TABLE_KEY: t__modules__run.file_state_row_count,
-            REPO_MAP_TABLE_KEY: t__modules__run.repo_map_row_count,
-        },
-        scan_telemetry=scan_telemetry,
-    )
-    manifest_details = IngestManifestDetails(manifest_extras=manifest_extras)
-    module_table = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=MODULES_TABLE_KEY,
-        reader=t__modules__run.module_rows,
-        target_name=MODULES_TARGET_NAME,
-        details=manifest_details,
-    )
-    file_state_table = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=FILE_STATE_TABLE_KEY,
-        reader=t__modules__run.file_state_rows,
-        target_name=MODULES_TARGET_NAME,
-        details=manifest_details,
-    )
-    repo_map_table = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=REPO_MAP_TABLE_KEY,
-        reader=t__modules__run.repo_map_rows,
-        target_name=MODULES_TARGET_NAME,
-        details=manifest_details,
-    )
+    _ = env
+    module_table = t__modules__run.module_rows
+    file_state_table = t__modules__run.file_state_rows
+    repo_map_table = t__modules__run.repo_map_rows
     payload = {
         MODULES_TABLE_KEY: module_table,
         FILE_STATE_TABLE_KEY: file_state_table,
         REPO_MAP_TABLE_KEY: repo_map_table,
     }
     table_counts = {
-        MODULES_TABLE_KEY: module_table.num_rows,
-        FILE_STATE_TABLE_KEY: file_state_table.num_rows,
-        REPO_MAP_TABLE_KEY: repo_map_table.num_rows,
+        MODULES_TABLE_KEY: t__modules__run.module_row_count,
+        FILE_STATE_TABLE_KEY: t__modules__run.file_state_row_count,
+        REPO_MAP_TABLE_KEY: t__modules__run.repo_map_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
+    )
+
+
+def modules__manifest_extras(
+    t__modules__ingest: IngestStep[dict[str, InferableTabularInput]],
+    t__modules__run: ModuleToolOutput,
+) -> Mapping[str, object]:
+    """Return manifest extras for module scan ingestion outputs.
+
+    Returns
+    -------
+    Mapping[str, object]
+        Manifest extras to attach to ingestion run metadata.
+    """
+    scan_telemetry = None
+    change_set = t__modules__run.change_set
+    if change_set is not None and change_set.scan_telemetry:
+        scan_telemetry = change_set.scan_telemetry
+    return _tool_manifest_extras(
+        t__modules__ingest.result,
+        table_counts=t__modules__ingest.result.table_counts,
+        scan_telemetry=scan_telemetry,
+    )
+
+
+def _modules_save_spec(table_key: str) -> RelationTableSaveSpec:
+    return RelationTableSaveSpec(
+        table_key=table_key,
+        manifest_extras_node="modules__manifest_extras",
+        ingest_finalize=True,
     )
 
 
@@ -712,7 +708,7 @@ _MODULES_TABLE_TARGET_SPEC = build_multi_table_target_spec_from_contexts(
         tables=(),
         table_materializations_node="modules__table_materializations",
         attach_anchor=False,
-        save_spec_factory=RelationTableSaveSpec,
+        save_spec_factory=_modules_save_spec,
         default_input_type=InferableTabularInput,
     ),
     table_contexts=_MODULES_TABLE_CONTEXTS,
@@ -997,6 +993,7 @@ def t__config_ingest__ingest(
     IngestStep[dict[str, InferableTabularInput]]
         Ingest result with table inputs.
     """
+    _ = env
     result = t__config_ingest__run.result
     if result.skipped:
         return IngestStep(
@@ -1013,17 +1010,8 @@ def t__config_ingest__ingest(
             )
         )
 
-    input_counts = {CONFIG_VALUES_TABLE_KEY: t__config_ingest__run.row_count}
-    manifest_extras = _tool_manifest_extras(result, table_counts=input_counts)
-    config_table = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=CONFIG_VALUES_TABLE_KEY,
-        reader=t__config_ingest__run.rows,
-        target_name=CONFIG_INGEST_TARGET_NAME,
-        details=IngestManifestDetails(manifest_extras=manifest_extras),
-    )
-    payload = {CONFIG_VALUES_TABLE_KEY: config_table}
-    table_counts = {CONFIG_VALUES_TABLE_KEY: config_table.num_rows}
+    payload = {CONFIG_VALUES_TABLE_KEY: t__config_ingest__run.rows}
+    table_counts = {CONFIG_VALUES_TABLE_KEY: t__config_ingest__run.row_count}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
@@ -1101,6 +1089,22 @@ def config_ingest__rows__base(
     return config_ingest__raw_rows
 
 
+def config_ingest__manifest_extras(
+    t__config_ingest__ingest: IngestStep[dict[str, InferableTabularInput]],
+) -> Mapping[str, object]:
+    """Return manifest extras for config ingestion outputs.
+
+    Returns
+    -------
+    Mapping[str, object]
+        Manifest extras to attach to ingestion run metadata.
+    """
+    return _tool_manifest_extras(
+        t__config_ingest__ingest.result,
+        table_counts=t__config_ingest__ingest.result.table_counts,
+    )
+
+
 _CONFIG_INGEST_TABLE_TARGET_SPEC = TableTargetContext.build_relation_table_spec(
     context=TableTargetContext(
         domain="ingestion",
@@ -1111,7 +1115,11 @@ _CONFIG_INGEST_TABLE_TARGET_SPEC = TableTargetContext.build_relation_table_spec(
         input_type=InferableTabularInput,
         table_materializations_node="config_ingest__table_materializations",
         attach_anchor=False,
-    )
+    ),
+    save_options=RelationTableSaveSpecOptions(
+        manifest_extras_node="config_ingest__manifest_extras",
+        ingest_finalize=True,
+    ),
 )
 attach_table_target_template(_MODULE, spec=_CONFIG_INGEST_TABLE_TARGET_SPEC)
 config_ingest__rows = _MODULE.config_ingest__rows
@@ -1297,6 +1305,7 @@ def t__tests_ingest__ingest(
     IngestStep[dict[str, InferableTabularInput]]
         Ingest result with table inputs.
     """
+    _ = env
     result = t__tests_ingest__run.result
     if result.skipped:
         return IngestStep(
@@ -1313,17 +1322,8 @@ def t__tests_ingest__ingest(
             )
         )
 
-    input_counts = {TEST_CATALOG_TABLE_KEY: t__tests_ingest__run.row_count}
-    manifest_extras = _tool_manifest_extras(result, table_counts=input_counts)
-    test_table = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=TEST_CATALOG_TABLE_KEY,
-        reader=t__tests_ingest__run.rows,
-        target_name=TESTS_INGEST_TARGET_NAME,
-        details=IngestManifestDetails(manifest_extras=manifest_extras),
-    )
-    payload = {TEST_CATALOG_TABLE_KEY: test_table}
-    table_counts = {TEST_CATALOG_TABLE_KEY: test_table.num_rows}
+    payload = {TEST_CATALOG_TABLE_KEY: t__tests_ingest__run.rows}
+    table_counts = {TEST_CATALOG_TABLE_KEY: t__tests_ingest__run.row_count}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
@@ -1345,6 +1345,22 @@ def tests__rows__base(
     return tests__raw_rows
 
 
+def tests_ingest__manifest_extras(
+    t__tests_ingest__ingest: IngestStep[dict[str, InferableTabularInput]],
+) -> Mapping[str, object]:
+    """Return manifest extras for tests ingestion outputs.
+
+    Returns
+    -------
+    Mapping[str, object]
+        Manifest extras to attach to ingestion run metadata.
+    """
+    return _tool_manifest_extras(
+        t__tests_ingest__ingest.result,
+        table_counts=t__tests_ingest__ingest.result.table_counts,
+    )
+
+
 _TESTS_INGEST_TABLE_TARGET_SPEC = TableTargetContext.build_relation_table_spec(
     context=TableTargetContext(
         domain="ingestion",
@@ -1355,7 +1371,11 @@ _TESTS_INGEST_TABLE_TARGET_SPEC = TableTargetContext.build_relation_table_spec(
         input_type=InferableTabularInput,
         table_materializations_node="tests_ingest__table_materializations",
         attach_anchor=False,
-    )
+    ),
+    save_options=RelationTableSaveSpecOptions(
+        manifest_extras_node="tests_ingest__manifest_extras",
+        ingest_finalize=True,
+    ),
 )
 attach_table_target_template(_MODULE, spec=_TESTS_INGEST_TABLE_TARGET_SPEC)
 tests__rows = _MODULE.tests__rows
@@ -1519,6 +1539,7 @@ def t__typing__ingest(
     IngestStep[dict[str, InferableTabularInput]]
         Ingest result with table inputs.
     """
+    _ = env
     result = t__typing__run.result
     if result.skipped:
         return IngestStep(
@@ -1535,17 +1556,8 @@ def t__typing__ingest(
             )
         )
 
-    input_counts = {STATIC_DIAGNOSTICS_TABLE_KEY: t__typing__run.diagnostic_row_count}
-    manifest_extras = _tool_manifest_extras(result, table_counts=input_counts)
-    diagnostics_table = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=STATIC_DIAGNOSTICS_TABLE_KEY,
-        reader=t__typing__run.diagnostic_rows,
-        target_name=TYPING_TARGET_NAME,
-        details=IngestManifestDetails(manifest_extras=manifest_extras),
-    )
-    payload = {STATIC_DIAGNOSTICS_TABLE_KEY: diagnostics_table}
-    table_counts = {STATIC_DIAGNOSTICS_TABLE_KEY: diagnostics_table.num_rows}
+    payload = {STATIC_DIAGNOSTICS_TABLE_KEY: t__typing__run.diagnostic_rows}
+    table_counts = {STATIC_DIAGNOSTICS_TABLE_KEY: t__typing__run.diagnostic_row_count}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
@@ -1581,6 +1593,22 @@ def typing__diagnostic_rows__base(
     return frame
 
 
+def typing__manifest_extras(
+    t__typing__ingest: IngestStep[dict[str, InferableTabularInput]],
+) -> Mapping[str, object]:
+    """Return manifest extras for typing ingestion outputs.
+
+    Returns
+    -------
+    Mapping[str, object]
+        Manifest extras to attach to ingestion run metadata.
+    """
+    return _tool_manifest_extras(
+        t__typing__ingest.result,
+        table_counts=t__typing__ingest.result.table_counts,
+    )
+
+
 _TYPING_TABLE_TARGET_SPEC = TableTargetContext.build_relation_table_spec(
     context=TableTargetContext(
         domain="ingestion",
@@ -1591,7 +1619,11 @@ _TYPING_TABLE_TARGET_SPEC = TableTargetContext.build_relation_table_spec(
         input_type=InferableTabularInput,
         table_materializations_node="typing__table_materializations",
         attach_anchor=False,
-    )
+    ),
+    save_options=RelationTableSaveSpecOptions(
+        manifest_extras_node="typing__manifest_extras",
+        ingest_finalize=True,
+    ),
 )
 attach_table_target_template(_MODULE, spec=_TYPING_TABLE_TARGET_SPEC)
 typing__diagnostic_rows = _MODULE.typing__diagnostic_rows

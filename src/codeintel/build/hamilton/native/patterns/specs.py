@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hamilton.native.target_decorators import TargetSpecDescriptor
@@ -12,8 +12,8 @@ from codeintel.build.schemas.column_resolution import DeferredColumns
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.hamilton.tagging import TagKey, TagValue
     from codeintel.build.hamilton.native.patterns.savers import RelationTableSaveSpec
+    from codeintel.build.hamilton.tagging import TagKey, TagValue
 
 
 OutputRole = Literal["contract", "internal"]

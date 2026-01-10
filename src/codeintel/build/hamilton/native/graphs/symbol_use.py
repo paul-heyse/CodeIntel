@@ -27,9 +27,9 @@ from codeintel.build.hamilton.native.patterns.loaders import load_snapshot_tabul
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.tabular.conversion import table_to_reader
 from codeintel.build.tabular.expr_vocab import E, Expression
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
@@ -43,6 +43,7 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, InferableTabularI
 
 SYMBOL_USES_TARGET_NAME = "symbol_uses"
 SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 SYMBOL_USE_EDGES_SORT_KEYS: tuple[SortKey, ...] = (
     ("repo", "ascending"),
     ("commit", "ascending"),
@@ -334,7 +335,15 @@ def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
     if not use_threads:
         execution_ctx = dataclasses.replace(execution_ctx, use_threads=False)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 def _plan_from_table(

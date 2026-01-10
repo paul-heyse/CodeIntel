@@ -26,7 +26,12 @@ from codeintel.build.analytics.graphs.constants import (
     MAX_CFG_EIGEN_SAMPLE,
     MAX_DFG_CENTRALITY_SAMPLE,
 )
-from codeintel.build.graphs.rx.algos import in_degree_by_id, out_degree_by_id
+from codeintel.build.graphs.rx.algos import (
+    graph_edge_count,
+    graph_node_count,
+    in_degree_by_id,
+    out_degree_by_id,
+)
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
@@ -251,8 +256,8 @@ def dfg_fn_row(ctx: DfgFnContext) -> tuple[object, ...]:
         ctx.rel_path,
         ctx.module,
         ctx.qualname,
-        ctx.graph.graph.num_nodes(),
-        ctx.graph.graph.num_edges(),
+        graph_node_count(ctx.graph),
+        graph_edge_count(ctx.graph),
         ctx.phi_edges,
         ctx.symbol_count,
         ctx.components_count,

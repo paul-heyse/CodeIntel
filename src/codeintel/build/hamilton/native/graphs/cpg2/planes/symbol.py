@@ -24,11 +24,16 @@ from codeintel.build.tabular.compute_helpers import (
 from codeintel.build.tabular.compute_masks import is_valid_expr
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.extras_ops import extras_kv_from_mapping
-from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
+from codeintel.build.tabular.finalize_ops import (
+    finalize_join_keys,
+    finalize_reader,
+    finalize_spec_for_table,
+    record_join_precheck_errors,
+)
 from codeintel.build.tabular.kernels import stable_sort_indices
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.core.columnar.arrowdsl import ExecutionPlan, join_safe_projection
-from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
@@ -40,6 +45,7 @@ CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
 SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbol_information"
 SCIP_EXTERNAL_SYMBOLS_TABLE_KEY = "core.scip_external_symbols"
 GOIDS_TABLE_KEY = "core.goids"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 @dataclass(frozen=True)
@@ -596,7 +602,15 @@ def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
     if not use_threads:
         execution_ctx = replace(execution_ctx, use_threads=False)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 __all__ = [

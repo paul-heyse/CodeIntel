@@ -45,7 +45,12 @@ from codeintel.build.graphs.builders import (
 )
 from codeintel.build.graphs.external_plan import run_rustworkx_external_plan
 from codeintel.build.graphs.runtime import GraphMetricsOptions, GraphRuntimeOptions
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    ensure_store,
+    subgraph_with_nodemap_by_index,
+)
+from codeintel.build.graphs.rx.metadata import metadata_from_graph
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 from codeintel.core.columnar.rows import ColumnarRowBuffer
@@ -82,11 +87,17 @@ def _filter_store(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphSt
             weight_policy=store.weight_policy,
             numeric_policy=store.numeric_policy,
         )
-    subgraph, _ = store.graph.subgraph_with_nodemap(node_indices, preserve_attrs=True)
+    metadata = metadata_from_graph(store.graph)
+    subgraph, _ = subgraph_with_nodemap_by_index(
+        store,
+        node_indices,
+        preserve_attrs=True,
+    )
     return RxGraphStore.from_rx_graph(
         subgraph,
         weight_policy=store.weight_policy,
         numeric_policy=store.numeric_policy,
+        metadata=metadata,
     )
 
 

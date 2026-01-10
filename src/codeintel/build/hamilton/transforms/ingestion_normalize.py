@@ -155,25 +155,11 @@ def finalize_ingest_table(
     pa.Table
         Finalized table containing valid rows.
     """
-    resolved = options or IngestFinalizeOptions()
-    spec = _ingest_finalize_spec(
+    return finalize_ingest_reader(
         table_key,
-        target_name=resolved.target_name,
-        mode=resolved.mode,
+        table.to_reader(),
+        options=options,
     )
-    resolved_ctx = resolve_execution_context(resolved.execution_ctx)
-    plan = ExecutionPlan.from_table(
-        table,
-        ordering=OrderingSpec.implicit(reason="ingest table"),
-    )
-    run_options = _pipeline_run_options(
-        table_key=table_key,
-        ctx=resolved_ctx,
-        options=resolved,
-    )
-    result = run_pipeline(plan=plan, finalize=spec, options=run_options)
-    _emit_alignment_report_from_finalize(result)
-    return result.good
 
 
 def finalize_ingest_reader(

@@ -39,7 +39,13 @@ from codeintel.build.graphs.builders import (
 )
 from codeintel.build.graphs.runtime import GraphRuntimeOptions
 from codeintel.build.graphs.runtime.context import GraphContextSpec, resolve_graph_context
-from codeintel.build.graphs.rx.algos import GraphInput, ensure_store, graph_node_count
+from codeintel.build.graphs.rx.algos import (
+    GraphInput,
+    ensure_store,
+    graph_node_count,
+    subgraph_with_nodemap_by_index,
+)
+from codeintel.build.graphs.rx.metadata import metadata_from_graph
 from codeintel.build.graphs.rx.normalize import stable_key
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.core.columnar.rows import ColumnarRowBuffer
@@ -134,11 +140,17 @@ def _filter_nodes(graph: GraphInput, allowed: Collection[Hashable]) -> RxGraphSt
             )
         )
     node_indices.sort(key=lambda idx: stable_key(store.index_to_id[idx]))
-    subgraph, _ = store.graph.subgraph_with_nodemap(node_indices, preserve_attrs=True)
+    metadata = metadata_from_graph(store.graph)
+    subgraph, _ = subgraph_with_nodemap_by_index(
+        store,
+        node_indices,
+        preserve_attrs=True,
+    )
     return RxGraphStore.from_rx_graph(
         subgraph,
         weight_policy=store.weight_policy,
         numeric_policy=store.numeric_policy,
+        metadata=metadata,
     )
 
 

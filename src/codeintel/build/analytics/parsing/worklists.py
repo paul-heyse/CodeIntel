@@ -8,8 +8,8 @@ import pyarrow as pa
 
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
@@ -18,6 +18,7 @@ from codeintel.core.columnar.execution_context import (
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 
 _FUNCTION_KINDS = ("function", "method")
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 def build_function_ast_worklist(
@@ -63,7 +64,15 @@ def build_function_ast_worklist(
     )
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    table = reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    table = result.good
     if not has_created_at:
         table = table.append_column("created_at", pa.nulls(table.num_rows))
     return table
@@ -110,7 +119,15 @@ def build_module_ast_worklist(
     )
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 def _worklist_aggregates(*, include_created_at: bool) -> Sequence[tuple[str, str, None, str]]:

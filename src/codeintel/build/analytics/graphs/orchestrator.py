@@ -52,6 +52,7 @@ from codeintel.build.graphs.rx.algos import (
     empty_rx_graph,
     ensure_directed_store,
     ensure_store,
+    graph_node_count,
     to_undirected_store,
     union_graphs,
 )
@@ -242,7 +243,7 @@ _NO_OP_GRAPH_FILTERS: GraphFilterProtocol = _NoOpGraphFilters()
 
 
 def _copy_without_self_loops(store: RxGraphStore) -> RxGraphStore:
-    node_count = store.graph.num_nodes()
+    node_count = graph_node_count(store)
     if node_count == 0:
         return (
             RxGraphStore.directed(
@@ -268,7 +269,7 @@ def _copy_without_self_loops(store: RxGraphStore) -> RxGraphStore:
         )
     )
     ordered_indices = sorted(
-        store.graph.node_indices(),
+        store.node_indices(),
         key=lambda idx: stable_key(store.index_to_id.get(idx, idx)),
     )
     edge_graph = edge_subgraph_by_index(store, edge_list)

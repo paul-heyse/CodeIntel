@@ -14,6 +14,7 @@ from codeintel.core.columnar.execution_context import (
     resolve_execution_context,
 )
 from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.ordering import OrderingSpec
 from codeintel.core.columnar.plan_kernels import (
     build_grouped_rollup_plan as _build_grouped_rollup_plan,
 )
@@ -185,6 +186,21 @@ def build_table_plan(
     return plan
 
 
+def build_reader_plan(
+    *,
+    reader: pa.RecordBatchReader,
+    ordering: OrderingSpec | None = None,
+) -> Plan:
+    """Build a plan from a record batch reader source.
+
+    Returns
+    -------
+    Plan
+        Plan backed by a reader source.
+    """
+    return Plan.reader_source(reader, ordering=ordering)
+
+
 def build_grouped_rollup_plan(
     plan: Plan,
     *,
@@ -319,6 +335,7 @@ __all__ = [
     "TablePlanOptions",
     "build_grouped_rollup_plan",
     "build_plan_from_query_spec",
+    "build_reader_plan",
     "build_snapshot_plan",
     "build_snapshot_query_spec",
     "build_table_plan",

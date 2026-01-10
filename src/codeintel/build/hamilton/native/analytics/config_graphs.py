@@ -10,7 +10,7 @@ from hamilton.function_modifiers import cache
 
 from codeintel.build.analytics.graphs.config_data_flow import (
     ConfigDataFlowInputs,
-    compute_config_data_flow_result,
+    build_config_data_flow_table,
 )
 from codeintel.build.analytics.graphs.config_graph_metrics import (
     ConfigGraphMetricsRequest,
@@ -263,20 +263,20 @@ def config_data_flow__base(
             worklist=worklist,
         )
     )
-    result = compute_config_data_flow_result(
-        ConfigDataFlowInputs(
-            snapshot=env.snapshot,
-            config_value_rows=config_reference_rows,
-            entrypoint_rows=entrypoint_rows,
-            call_graph=call_graph,
-            ast_by_goid=ast_map,
-            missing_goids=missing,
-            ctx=env.execution_context,
-        )
+    inputs = ConfigDataFlowInputs(
+        snapshot=env.snapshot,
+        config_value_rows=config_reference_rows,
+        entrypoint_rows=entrypoint_rows,
+        call_graph=call_graph,
+        ast_by_goid=ast_map,
+        missing_goids=missing,
+        ctx=env.execution_context,
     )
-    if result.rows is None:
-        return empty_table_for_table(CONFIG_DATA_FLOW_TABLE_KEY)
-    return finalize_analytics_rows(CONFIG_DATA_FLOW_TABLE_KEY, result.rows)
+    reader = run_rustworkx_external_plan(
+        builder=build_config_data_flow_table,
+        args=(inputs,),
+    )
+    return finalize_analytics_reader(CONFIG_DATA_FLOW_TABLE_KEY, reader)
 
 
 def _build_config_graph_metrics_request(

@@ -19,12 +19,14 @@ from codeintel.build.analytics.utilities.list_semantics import normalize_list_se
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
     resolve_execution_context,
 )
+from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges
+from codeintel.core.columnar.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
@@ -40,6 +42,7 @@ log = logging.getLogger(__name__)
 
 CONFIG_REFERENCES_TABLE_KEY = "analytics.config_references"
 CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,18 +253,36 @@ def _modules_by_path_from_table(
     repo_root: Path,
 ) -> dict[str, set[str]]:
     modules_by_path: dict[str, set[str]] = {}
-    reader = table_to_reader(table, batch_size=None)
+    exploded = explode_edges(
+        table,
+        spec=ExplodeSpec(
+            src_col="path",
+            dst_list_col="modules",
+            null_list_policy="empty",
+            null_child_policy="drop",
+            error_context_cols=("path",),
+        ),
+    )
+    grouped = grouped_rollup_table(
+        exploded.good,
+        spec=GroupedRollupSpec(
+            keys=("path",),
+            aggregates=[("modules", "list", None, "modules")],
+            pre_sort_keys=(("path", "ascending"), ("modules", "ascending")),
+        ),
+        ctx=None,
+    )
+    reader = table_to_reader(grouped, batch_size=None)
     for path, module_list in iter_tuples(reader, columns=("path", "modules")):
         if not isinstance(path, str) or not path.strip():
             continue
         rel_path = _normalize_module_path(path, repo_root=repo_root)
         if not rel_path:
             continue
-        for module in _list_values(module_list):
-            module_value = str(module).strip()
-            if not module_value:
-                continue
-            modules_by_path.setdefault(rel_path, set()).add(module_value)
+        modules = normalize_list_semantics(_list_values(module_list))
+        if not modules:
+            continue
+        modules_by_path.setdefault(rel_path, set()).update(modules)
     return modules_by_path
 
 
@@ -347,7 +368,11 @@ def _materialize_plan(
 ) -> pa.Table:
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
+    )
+    return result.good
 
 
 __all__ = [

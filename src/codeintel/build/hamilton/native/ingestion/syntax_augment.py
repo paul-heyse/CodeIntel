@@ -30,6 +30,9 @@ from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.array_ops import ensure_array
 from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinOptions,
+    ArrowJoinSpec,
+    arrow_join_tables,
     group_list_or_polars,
     iter_array_values,
     normalize_table_for_compute,
@@ -40,6 +43,7 @@ from codeintel.build.tabular.compute_helpers import (
     array_from_compute,
     cast_array,
     safe_filter,
+    safe_filter_expr,
     take_array,
 )
 from codeintel.build.tabular.compute_masks import (
@@ -51,17 +55,13 @@ from codeintel.build.tabular.compute_masks import (
     is_valid_mask,
 )
 from codeintel.build.tabular.finalize_ops import (
-    FinalizeDedupe,
     FinalizeResult,
     finalize_join_keys,
-    finalize_spec_for_table,
-    finalize_table,
     record_join_precheck_errors,
 )
+from codeintel.build.tabular.frames import JoinStrategy
 from codeintel.build.tabular.nested_ops import deep_cast_table_to_contract, make_extras_struct
-from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import empty_table_from_schema, table_from_batches
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
@@ -70,8 +70,8 @@ from codeintel.core.columnar.execution_context import (
 )
 from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges_with_aligned_lists
 from codeintel.core.columnar.expr_vocab import E, Expression
-from codeintel.core.columnar.kernels import SortKey
-from codeintel.core.columnar.plan_builder import build_table_plan
+from codeintel.core.columnar.join_safe import join_safe_projection
+from codeintel.core.columnar.kernels import SortKey, stable_sort_table
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import (
@@ -102,7 +102,6 @@ TS_NODES_TABLE_KEY = "core.ts_nodes"
 TS_EDGES_TABLE_KEY = "core.ts_edges"
 TS_XREF_TABLE_KEY = "core.ts_syntax_node_xref"
 TS_WELD_COVERAGE_TABLE_KEY = "core.ts_weld_coverage"
-
 SYNTAX_PRODUCER_LIBCST = "libcst"
 TS_PRODUCER = "tree_sitter"
 EDGE_KIND = "AST_CHILD"
@@ -491,6 +490,21 @@ def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
     return resolve_join_safe_columns(schema)
 
 
+def _normalize_join_input(
+    table: pa.Table,
+    *,
+    table_key: str | None,
+) -> pa.Table:
+    normalized = normalize_table_for_join(
+        table,
+        enforce_join_safe=False,
+    )
+    return join_safe_projection(
+        normalized,
+        allowed_columns=_join_safe_allowlist(table_key),
+    )
+
+
 def _join_casts(keys: Sequence[str]) -> dict[str, str]:
     casts: dict[str, str] = {}
     for key in keys:
@@ -501,18 +515,22 @@ def _join_casts(keys: Sequence[str]) -> dict[str, str]:
     return casts
 
 
-def _project_with_cast(
+def _cast_table_columns(
     table: pa.Table,
     *,
     casts: Mapping[str, str],
-) -> dict[str, Expression]:
-    exprs: dict[str, Expression] = {}
-    for name in table.column_names:
+) -> pa.Table:
+    if not casts or table.num_rows == 0:
+        return table
+    arrays = []
+    names = list(table.column_names)
+    for name in names:
+        column = table[name]
         if name in casts:
-            exprs[name] = E.cast(E.field(name), casts[name])
+            arrays.append(cast_array(column, pa.type_for_alias(casts[name]), safe=False))
         else:
-            exprs[name] = E.field(name)
-    return exprs
+            arrays.append(column)
+    return pa.Table.from_arrays(arrays, names=names)
 
 
 def _precheck_join_table(
@@ -523,24 +541,12 @@ def _precheck_join_table(
 ) -> pa.Table:
     if table.num_rows == 0 or not join_keys:
         return table
-    if table_key is None:
-        result = finalize_join_keys(
-            table,
-            required_non_null=join_keys,
-            key_fields=join_keys,
-        )
-    else:
-        result = finalize_table(
-            table,
-            spec=finalize_spec_for_table(
-                table_key,
-                mode="tolerant",
-                required_non_null=join_keys,
-                key_fields=join_keys,
-                dedupe=FinalizeDedupe(enabled=False),
-                target_name=SYNTAX_AUGMENT_TARGET_NAME,
-            ),
-        )
+    result = finalize_join_keys(
+        table,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
     record_join_precheck_errors(
         result,
         table_key=table_key,
@@ -573,7 +579,7 @@ class _HashJoinRequest:
     left: pa.Table
     right: pa.Table
     spec: _JoinSpec
-    how: JoinType = "left outer"
+    how: JoinStrategy = "left"
     filter_expr: Expression | None = None
     execution_ctx: ExecutionContext | None = None
 
@@ -589,41 +595,36 @@ def _hash_join_tables(request: _HashJoinRequest) -> pa.Table:
         table_key=request.spec.right_table_key,
         join_keys=request.spec.right_keys,
     )
-    left_checked = normalize_table_for_join(
+    left_checked = _normalize_join_input(
         left_checked,
-        allowed_columns=_join_safe_allowlist(request.spec.left_table_key),
+        table_key=request.spec.left_table_key,
     )
-    right_checked = normalize_table_for_join(
+    right_checked = _normalize_join_input(
         right_checked,
-        allowed_columns=_join_safe_allowlist(request.spec.right_table_key),
+        table_key=request.spec.right_table_key,
     )
-    left_exprs = _project_with_cast(left_checked, casts=_join_casts(request.spec.left_keys))
-    right_exprs = _project_with_cast(right_checked, casts=_join_casts(request.spec.right_keys))
-    left_plan = build_table_plan(table=left_checked).project(left_exprs)
-    right_plan = build_table_plan(table=right_checked).project(right_exprs)
-    right_output = [name for name in right_exprs if name not in left_exprs]
-    joined = left_plan.hash_join(
-        right=right_plan,
-        spec=HashJoinSpec(
-            left_keys=list(request.spec.left_keys),
-            right_keys=list(request.spec.right_keys),
+    left_checked = _cast_table_columns(left_checked, casts=_join_casts(request.spec.left_keys))
+    right_checked = _cast_table_columns(right_checked, casts=_join_casts(request.spec.right_keys))
+    right_output = [
+        name for name in right_checked.column_names if name not in left_checked.column_names
+    ]
+    right_keep = list(dict.fromkeys([*request.spec.right_keys, *right_output]))
+    right_selected = right_checked.select(right_keep)
+    joined = arrow_join_tables(
+        left_checked,
+        right_selected,
+        spec=ArrowJoinSpec(
+            left_on=request.spec.left_keys,
+            right_on=request.spec.right_keys,
             how=request.how,
-            left_output=list(left_exprs.keys()),
-            right_output=right_output,
+            coalesce_keys=True,
         ),
+        options=ArrowJoinOptions(normalize_inputs=False),
     )
     if request.filter_expr is not None:
-        joined = joined.filter(request.filter_expr)
-    joined = joined.order_by(
-        sort_keys=[(key, "ascending") for key in request.spec.left_keys]
-    )
-    execution_ctx = request.execution_ctx or _resolve_ingest_execution_ctx(None)
-    return _plan_to_table(joined, execution_ctx=execution_ctx)
-
-
-def _plan_to_table(plan: Plan, *, execution_ctx: ExecutionContext) -> pa.Table:
-    resolved_ctx = resolve_execution_context(execution_ctx)
-    return ExecutionPlan.from_plan(plan).to_table(ctx=resolved_ctx)
+        joined = safe_filter_expr(joined, request.filter_expr)
+    sort_keys: list[SortKey] = [(key, "ascending") for key in request.spec.left_keys]
+    return stable_sort_table(joined, sort_keys=sort_keys) if sort_keys else joined
 
 
 def _xref_exact(
@@ -651,18 +652,18 @@ def _xref_exact(
         ["repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"],
     )
     ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
-    ts_selected = normalize_table_for_join(
+    ts_selected = _normalize_join_input(
         ts_selected,
-        allowed_columns=_join_safe_allowlist(TS_NODES_TABLE_KEY),
+        table_key=TS_NODES_TABLE_KEY,
     )
     syntax_selected = select_table_columns(
         syntax_nodes,
         ["repo", "commit", "rel_path", "node_id", "start_byte", "end_byte", "producer"],
     )
     syntax_selected = _rename_columns(syntax_selected, {"node_id": "syntax_node_id"})
-    syntax_selected = normalize_table_for_join(
+    syntax_selected = _normalize_join_input(
         syntax_selected,
-        allowed_columns=_join_safe_allowlist(SYNTAX_NODES_TABLE_KEY),
+        table_key=SYNTAX_NODES_TABLE_KEY,
     )
     join_keys = ["repo", "commit", "rel_path", "start_byte", "end_byte"]
     joined = _hash_join_tables(
@@ -718,16 +719,16 @@ def _unmatched_ts_nodes(
         ["repo", "commit", "rel_path", "language", "node_id", "start_byte", "end_byte"],
     )
     ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
-    ts_selected = normalize_table_for_join(
+    ts_selected = _normalize_join_input(
         ts_selected,
-        allowed_columns=_join_safe_allowlist(TS_NODES_TABLE_KEY),
+        table_key=TS_NODES_TABLE_KEY,
     )
     if xref_exact.num_rows == 0 or "ts_node_id" not in xref_exact.column_names:
         return ts_selected
     xref_selected = select_table_columns(xref_exact, ["ts_node_id", "syntax_node_id"])
-    xref_selected = normalize_table_for_join(
+    xref_selected = _normalize_join_input(
         xref_selected,
-        allowed_columns=_join_safe_allowlist(TS_XREF_TABLE_KEY),
+        table_key=TS_XREF_TABLE_KEY,
     )
     return _hash_join_tables(
         _HashJoinRequest(
@@ -908,13 +909,13 @@ def _xref_fuzzy(
     if unmatched_ts_nodes.num_rows == 0:
         return _empty_output_table(TS_XREF_TABLE_KEY)
     index_by_path = _build_syntax_index(syntax_nodes)
-    unmatched_ts_nodes = normalize_table_for_join(
+    unmatched_ts_nodes = _normalize_join_input(
         unmatched_ts_nodes,
-        allowed_columns=_join_safe_allowlist(TS_NODES_TABLE_KEY),
+        table_key=TS_NODES_TABLE_KEY,
     )
-    producer_table = normalize_table_for_join(
+    producer_table = _normalize_join_input(
         producer_table,
-        allowed_columns=_join_safe_allowlist(SYNTAX_NODES_TABLE_KEY),
+        table_key=SYNTAX_NODES_TABLE_KEY,
     )
     joined = _hash_join_tables(
         _HashJoinRequest(
@@ -1122,13 +1123,13 @@ def _ts_payloads_by_syntax_node(
         ],
     )
     ts_selected = _rename_columns(ts_selected, {"node_id": "ts_node_id"})
-    filtered = normalize_table_for_join(
+    filtered = _normalize_join_input(
         filtered,
-        allowed_columns=_join_safe_allowlist(TS_XREF_TABLE_KEY),
+        table_key=TS_XREF_TABLE_KEY,
     )
-    ts_selected = normalize_table_for_join(
+    ts_selected = _normalize_join_input(
         ts_selected,
-        allowed_columns=_join_safe_allowlist(TS_NODES_TABLE_KEY),
+        table_key=TS_NODES_TABLE_KEY,
     )
     joined = _hash_join_tables(
         _HashJoinRequest(

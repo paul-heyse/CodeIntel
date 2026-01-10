@@ -33,12 +33,16 @@ from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import normalize_table_for_join
 from codeintel.build.tabular.conversion import table_to_reader, tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E, Expression
-from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
+from codeintel.build.tabular.finalize_ops import (
+    finalize_join_keys,
+    finalize_reader,
+    finalize_spec_for_table,
+    record_join_precheck_errors,
+)
 from codeintel.build.tabular.kernels import hash_struct_goid
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan, join_safe_projection
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.iter import iter_array_values, iter_tuples
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
@@ -56,6 +60,7 @@ GOIDS_TARGET_NAME = "goids"
 GOIDS_TABLE_KEY = "core.goids"
 GOID_CROSSWALK_TABLE_KEY = "core.goid_crosswalk"
 MODULES_TABLE_KEY = "core.modules"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 LOG = logging.getLogger(__name__)
 
@@ -139,7 +144,15 @@ def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
     if not use_threads:
         execution_ctx = dataclasses.replace(execution_ctx, use_threads=False)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:

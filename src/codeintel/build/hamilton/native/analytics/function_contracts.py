@@ -116,6 +116,7 @@ def function_contracts__base(
             catalog=catalog,
             docstrings_frame=docstrings_frame,
             function_types_frame=function_types_frame,
+            worklist=worklist,
             ctx=env.execution_context,
         ),
     )

@@ -17,7 +17,6 @@ from codeintel.core.columnar.arrowdsl import ExecutionPlan, PipelineRunOptions, 
 from codeintel.core.columnar.conversion import empty_table_from_schema
 from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
 from codeintel.core.columnar.finalize_ops import (
-    FinalizeDedupe,
     FinalizeMode,
     FinalizeResult,
     finalize_spec_for_table,
@@ -159,7 +158,6 @@ def finalize_arrow_tables(
         spec = finalize_spec_for_table(
             table_key,
             mode=request.mode,
-            dedupe=FinalizeDedupe(enabled=False),
             emit_artifacts=True,
         )
         plan = ExecutionPlan.from_table(table, ordering=ordering)
@@ -203,7 +201,6 @@ def finalize_arrow_readers(
         spec = finalize_spec_for_table(
             table_key,
             mode=request.mode,
-            dedupe=FinalizeDedupe(enabled=False),
             emit_artifacts=True,
         )
         plan = ExecutionPlan.from_reader(reader, ordering=ordering)

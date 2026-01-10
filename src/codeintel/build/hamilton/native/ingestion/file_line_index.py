@@ -20,6 +20,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.ingestion_normalize import scoped_table_for_ingest
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.types import InferableTabularInput
@@ -30,6 +31,7 @@ from codeintel.core.columnar.execution_context import (
     resolve_execution_context,
 )
 from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.ordering import SortKey
 from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
@@ -46,7 +48,7 @@ FILE_LINE_INDEX_TABLE_KEY = "core.file_line_index"
 def _canonical_sort_keys_for_table(
     table_key: str,
     columns: Sequence[str],
-) -> list[tuple[str, str]] | None:
+) -> list[SortKey] | None:
     schema = get_schema_service().get_table_schema(table_key)
     keys = resolve_canonical_sort_keys(schema)
     if not keys:

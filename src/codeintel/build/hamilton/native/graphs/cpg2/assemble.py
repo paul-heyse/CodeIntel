@@ -13,7 +13,6 @@ import pyarrow as pa
 from codeintel.build.graphs.assembly import ensure_table_columns, tabular_to_table
 from codeintel.build.hamilton.diagnostics import diagnostics_dir
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.graphs.cpg.constants import CPG_TARGET_NAME
 from codeintel.build.hamilton.native.graphs.cpg2.planes.ast import cpg2_nodes__ast_nodes
 from codeintel.build.hamilton.native.graphs.cpg2.planes.bytecode import (
     cpg2_nodes__py_bc_blocks,
@@ -111,9 +110,8 @@ from codeintel.build.tabular.compute_masks import (
     is_in_mask,
     is_valid_mask,
 )
-from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.kernels import SortKey
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
@@ -128,6 +126,7 @@ LOG = logging.getLogger(__name__)
 
 CPG_NODES_TABLE_KEY = "graph.cpg_nodes"
 CPG_EDGES_TABLE_KEY = "graph.cpg_edges"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 _CPG_NODE_SORT_KEYS: tuple[SortKey, ...] = (
     ("repo", "ascending"),
     ("commit", "ascending"),
@@ -207,7 +206,15 @@ def _order_table(table: pa.Table, *, sort_keys: Sequence[SortKey]) -> pa.Table:
 def _plan_to_table(plan: Plan) -> pa.Table:
     execution_ctx = resolve_execution_context(None)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 def assemble_cpg_nodes(tables: Sequence[pa.Table]) -> pa.Table:
@@ -224,17 +231,7 @@ def assemble_cpg_nodes(tables: Sequence[pa.Table]) -> pa.Table:
     combined = concat_tables_unified(tables)
     combined = _ensure_contract_columns(CPG_NODES_TABLE_KEY, combined)
     combined = _cast_to_contract_types(CPG_NODES_TABLE_KEY, combined)
-    combined = _order_table(combined, sort_keys=_CPG_NODE_SORT_KEYS)
-    result = finalize_table(
-        combined,
-        spec=finalize_spec_for_table(
-            CPG_NODES_TABLE_KEY,
-            mode="strict",
-            order_by=_CPG_NODE_SORT_KEYS,
-            target_name=CPG_TARGET_NAME,
-        ),
-    )
-    return result.good
+    return _order_table(combined, sort_keys=_CPG_NODE_SORT_KEYS)
 
 
 def assemble_cpg_edges(tables: Sequence[pa.Table]) -> pa.Table:
@@ -251,17 +248,7 @@ def assemble_cpg_edges(tables: Sequence[pa.Table]) -> pa.Table:
     combined = concat_tables_unified(tables)
     combined = _ensure_contract_columns(CPG_EDGES_TABLE_KEY, combined)
     combined = _cast_to_contract_types(CPG_EDGES_TABLE_KEY, combined)
-    combined = _order_table(combined, sort_keys=_CPG_EDGE_SORT_KEYS)
-    result = finalize_table(
-        combined,
-        spec=finalize_spec_for_table(
-            CPG_EDGES_TABLE_KEY,
-            mode="strict",
-            order_by=_CPG_EDGE_SORT_KEYS,
-            target_name=CPG_TARGET_NAME,
-        ),
-    )
-    return result.good
+    return _order_table(combined, sort_keys=_CPG_EDGE_SORT_KEYS)
 
 
 def edge_integrity_report(

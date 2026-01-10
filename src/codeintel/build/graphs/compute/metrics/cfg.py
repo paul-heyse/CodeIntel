@@ -34,6 +34,7 @@ from codeintel.build.graphs.rx.algos import (
     is_directed_acyclic,
     out_degree_by_id,
     remove_node_retain_edges_by_id,
+    subgraph_with_nodemap_by_index,
 )
 from codeintel.build.graphs.rx.build_from_edges import (
     BuildStoreOptions,
@@ -437,7 +438,11 @@ def cfg_longest_path_length(
         (store.id_to_index[node_id] for node_id in reachable_ids if node_id in store.id_to_index),
         key=lambda idx: stable_key(store.index_to_id[idx]),
     )
-    subgraph, _node_map = store.graph.subgraph_with_nodemap(ordered, preserve_attrs=True)
+    subgraph, _node_map = subgraph_with_nodemap_by_index(
+        store,
+        ordered,
+        preserve_attrs=True,
+    )
     return dag_longest_path_length(subgraph, allow_condensation=False)
 
 

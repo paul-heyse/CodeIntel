@@ -14,8 +14,8 @@ from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import finalize_join_keys, record_join_precheck_errors
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.schemas.row_models import columns_for_table_key
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
 
 SUBSYSTEM_PROFILE_CACHE_TABLE_KEY = "analytics.subsystem_profile_cache"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 def build_subsystem_profile_cache_frame(
@@ -137,7 +138,11 @@ def _right_output_columns(
 def _plan_to_table(plan: Plan) -> pa.Table:
     execution_ctx = resolve_execution_context(None)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
+    )
+    return result.good
 
 
 def _join_subsystem_metrics(

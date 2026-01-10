@@ -23,7 +23,12 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.ingestion_normalize import scoped_table_for_ingest
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.arrow_ops import normalize_table_for_join
+from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinOptions,
+    ArrowJoinSpec,
+    arrow_join_tables,
+    normalize_table_for_join,
+)
 from codeintel.build.tabular.compute_columns import constant_array
 from codeintel.build.tabular.compute_helpers import (
     array_from_compute,
@@ -39,17 +44,13 @@ from codeintel.build.tabular.compute_masks import (
     not_equal_mask,
 )
 from codeintel.build.tabular.finalize_ops import (
-    FinalizeDedupe,
     FinalizeResult,
     finalize_join_keys,
-    finalize_spec_for_table,
-    finalize_table,
     record_join_precheck_errors,
 )
+from codeintel.build.tabular.frames import JoinStrategy
 from codeintel.build.tabular.kernels import hash_struct_goid
-from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.conversion import empty_table_from_schema
 from codeintel.core.columnar.dedupe_ops import stable_dedupe_for_context
 from codeintel.core.columnar.execution_context import (
@@ -59,8 +60,8 @@ from codeintel.core.columnar.execution_context import (
 )
 from codeintel.core.columnar.expr_vocab import E, Expression
 from codeintel.core.columnar.iter import iter_array_values
-from codeintel.core.columnar.kernels import SortKey, case_when
-from codeintel.core.columnar.plan_builder import build_grouped_rollup_plan, build_table_plan
+from codeintel.core.columnar.join_safe import join_safe_projection
+from codeintel.core.columnar.kernels import SortKey, case_when, stable_sort_table
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table
@@ -89,6 +90,7 @@ SCIP_SYMBOL_INFO_TABLE_KEY = "core.scip_symbol_information"
 GOIDS_TABLE_KEY = "core.goids"
 SYNTAX_DEFS_TABLE_KEY = "core.syntax_defs"
 SYNTAX_NODES_TABLE_KEY = "core.syntax_nodes"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 _ROLE_DEFINITION = 0x1
 _ROLE_IMPORT = 0x2
@@ -176,18 +178,22 @@ def _join_casts(keys: Sequence[str]) -> dict[str, str]:
     return casts
 
 
-def _project_with_cast(
+def _cast_table_columns(
     table: pa.Table,
     *,
     casts: dict[str, str],
-) -> dict[str, Expression]:
-    exprs: dict[str, Expression] = {}
-    for name in table.column_names:
+) -> pa.Table:
+    if not casts or table.num_rows == 0:
+        return table
+    arrays = []
+    names = list(table.column_names)
+    for name in names:
+        column = table[name]
         if name in casts:
-            exprs[name] = E.cast(E.field(name), casts[name])
+            arrays.append(cast_array(column, pa.type_for_alias(casts[name]), safe=False))
         else:
-            exprs[name] = E.field(name)
-    return exprs
+            arrays.append(column)
+    return pa.Table.from_arrays(arrays, names=names)
 
 
 def _precheck_join_table(
@@ -198,25 +204,12 @@ def _precheck_join_table(
 ) -> pa.Table:
     if table.num_rows == 0 or not join_keys:
         return table
-    if table_key is None:
-        result = finalize_join_keys(
-            table,
-            required_non_null=join_keys,
-            key_fields=join_keys,
-            stage="join_precheck",
-        )
-    else:
-        result = finalize_table(
-            table,
-            spec=finalize_spec_for_table(
-                table_key,
-                mode="tolerant",
-                required_non_null=join_keys,
-                key_fields=join_keys,
-                dedupe=FinalizeDedupe(enabled=False),
-                target_name=SCIP_RESOLUTION_TARGET_NAME,
-            ),
-        )
+    result = finalize_join_keys(
+        table,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
     record_join_precheck_errors(
         result,
         table_key=table_key,
@@ -251,13 +244,27 @@ def _join_safe_allowlist(table_key: str | None) -> tuple[str, ...]:
     return resolve_join_safe_columns(schema)
 
 
+def _normalize_join_input(
+    table: pa.Table,
+    *,
+    table_key: str | None,
+) -> pa.Table:
+    normalized = normalize_table_for_join(
+        table,
+        enforce_join_safe=False,
+    )
+    return join_safe_projection(
+        normalized,
+        allowed_columns=_join_safe_allowlist(table_key),
+    )
+
+
 def _hash_join_tables(
     left: pa.Table,
     right: pa.Table,
     *,
     spec: _JoinSpec,
-    how: JoinType = "left outer",
-    execution_ctx: ExecutionContext | None = None,
+    how: JoinStrategy = "left",
 ) -> pa.Table:
     left_checked = _precheck_join_table(
         left,
@@ -269,31 +276,34 @@ def _hash_join_tables(
         table_key=spec.right_table_key,
         join_keys=spec.right_keys,
     )
-    left_checked = normalize_table_for_join(
+    left_checked = _normalize_join_input(
         left_checked,
-        allowed_columns=_join_safe_allowlist(spec.left_table_key),
+        table_key=spec.left_table_key,
     )
-    right_checked = normalize_table_for_join(
+    right_checked = _normalize_join_input(
         right_checked,
-        allowed_columns=_join_safe_allowlist(spec.right_table_key),
+        table_key=spec.right_table_key,
     )
-    left_exprs = _project_with_cast(left_checked, casts=_join_casts(spec.left_keys))
-    right_exprs = _project_with_cast(right_checked, casts=_join_casts(spec.right_keys))
-    left_plan = build_table_plan(table=left_checked).project(left_exprs)
-    right_plan = build_table_plan(table=right_checked).project(right_exprs)
-    right_output = [name for name in right_exprs if name not in left_exprs]
-    joined = left_plan.hash_join(
-        right=right_plan,
-        spec=HashJoinSpec(
-            left_keys=list(spec.left_keys),
-            right_keys=list(spec.right_keys),
+    left_checked = _cast_table_columns(left_checked, casts=_join_casts(spec.left_keys))
+    right_checked = _cast_table_columns(right_checked, casts=_join_casts(spec.right_keys))
+    right_output = [
+        name for name in right_checked.column_names if name not in left_checked.column_names
+    ]
+    right_keep = list(dict.fromkeys([*spec.right_keys, *right_output]))
+    right_selected = right_checked.select(right_keep)
+    joined = arrow_join_tables(
+        left_checked,
+        right_selected,
+        spec=ArrowJoinSpec(
+            left_on=spec.left_keys,
+            right_on=spec.right_keys,
             how=how,
-            left_output=list(left_exprs.keys()),
-            right_output=right_output,
+            coalesce_keys=True,
         ),
+        options=ArrowJoinOptions(normalize_inputs=False),
     )
-    joined = joined.order_by(sort_keys=[(key, "ascending") for key in spec.left_keys])
-    return _plan_to_table(joined, execution_ctx=execution_ctx)
+    sort_keys: list[SortKey] = [(key, "ascending") for key in spec.left_keys]
+    return stable_sort_table(joined, sort_keys=sort_keys) if sort_keys else joined
 
 
 @dataclass(frozen=True)
@@ -583,7 +593,6 @@ def _definition_anchors_table(
             left_table_key=SYNTAX_DEFS_TABLE_KEY,
             right_table_key=GOIDS_TABLE_KEY,
         ),
-        execution_ctx=execution_ctx,
     )
     if "goid_h128" not in joined.column_names:
         return joined
@@ -700,7 +709,6 @@ def _anchor_goid_matches(request: _AnchorGoidMatchRequest) -> tuple[pa.Table, pa
                         left_keys=list(join_keys),
                         right_keys=list(join_keys),
                     ),
-                    execution_ctx=request.execution_ctx,
                 )
                 matched_mask = is_valid_mask(joined["goid_h128"])
                 matched = safe_filter(joined, matched_mask)
@@ -792,7 +800,6 @@ def _strict_goid_matches(
             right_keys=join_keys,
             right_table_key=GOIDS_TABLE_KEY,
         ),
-        execution_ctx=execution_ctx,
     )
     strict_mask = is_valid_mask(strict_join["goid_h128"])
     strict_matched = safe_filter(strict_join, strict_mask)
@@ -827,7 +834,6 @@ def _fallback_goid_matches(
             right_keys=fallback_keys,
             right_table_key=GOIDS_TABLE_KEY,
         ),
-        execution_ctx=execution_ctx,
     )
     fallback_mask = is_valid_mask(fallback_join["goid_h128"])
     fallback_matched = safe_filter(fallback_join, fallback_mask)
@@ -1040,7 +1046,6 @@ def _occurrence_span_xref_table(
             left_table_key=SCIP_OCCURRENCES_TABLE_KEY,
             right_table_key=SCIP_SYMBOL_INFO_TABLE_KEY,
         ),
-        execution_ctx=execution_ctx,
     )
     base = _hash_join_tables(
         base,
@@ -1050,7 +1055,6 @@ def _occurrence_span_xref_table(
             right_keys=join_keys,
             right_table_key=SCIP_SYMBOL_GOID_XREF_TABLE_KEY,
         ),
-        execution_ctx=execution_ctx,
     )
     base = _apply_occurrence_documentation(base)
     base = _apply_enclosing_ranges(base)
@@ -1218,25 +1222,44 @@ def _unique_columns(columns: Sequence[str]) -> list[str]:
     return unique
 
 
+def _unique_marker_name(columns: Sequence[str]) -> str:
+    base = "__right_marker"
+    if base not in columns:
+        return base
+    counter = 1
+    while f"{base}_{counter}" in columns:
+        counter += 1
+    return f"{base}_{counter}"
+
+
 def _occurrence_syntax_occurrences_table(
     occurrences_table: pa.Table,
-    *,
-    execution_ctx: ExecutionContext | None = None,
 ) -> pa.Table:
-    project = {
-        "repo": E.field("repo"),
-        "commit": E.field("commit"),
-        "rel_path": E.field("rel_path"),
-        "scip_symbol": E.field("scip_symbol"),
-        "occ_start_line": E.field("start_line"),
-        "occ_start_col": E.field("start_col"),
-        "occ_end_line": E.field("end_line"),
-        "occ_end_col": E.field("end_col"),
-        "occ_start_byte": E.field("start_byte"),
-        "occ_end_byte": E.field("end_byte"),
-    }
-    occurrences_plan = build_table_plan(table=occurrences_table).project(project)
-    occurrences = _plan_to_table(occurrences_plan, execution_ctx=execution_ctx)
+    selected = occurrences_table.select(
+        [
+            "repo",
+            "commit",
+            "rel_path",
+            "scip_symbol",
+            "start_line",
+            "start_col",
+            "end_line",
+            "end_col",
+            "start_byte",
+            "end_byte",
+        ]
+    )
+    occurrences = _rename_columns(
+        selected,
+        {
+            "start_line": "occ_start_line",
+            "start_col": "occ_start_col",
+            "end_line": "occ_end_line",
+            "end_col": "occ_end_col",
+            "start_byte": "occ_start_byte",
+            "end_byte": "occ_end_byte",
+        },
+    )
     hashed = hash_struct_goid(occurrences, columns=_OCCURRENCE_ID_COLUMNS)
     occurrence_ids = cast_array(hashed, pa.string(), safe=False)
     return occurrences.append_column("scip_occurrence_id", occurrence_ids)
@@ -1253,53 +1276,31 @@ def _occurrence_syntax_producers_table(
         join_keys=join_keys,
         table_key=SYNTAX_NODES_TABLE_KEY,
     )
-    project = {name: E.field(name) for name in join_keys}
-    plan = build_table_plan(table=checked).project(project)
-    plan = build_grouped_rollup_plan(
-        plan,
-        keys=join_keys,
-        aggregates=(),
-        order_by=tuple((name, "ascending") for name in join_keys),
+    projected = checked.select(list(join_keys))
+    sort_keys: list[SortKey] = [(name, "ascending") for name in join_keys]
+    return grouped_rollup_table(
+        projected,
+        spec=GroupedRollupSpec(keys=join_keys, aggregates=(), order_by=sort_keys),
+        ctx=execution_ctx,
     )
-    return _plan_to_table(plan, execution_ctx=execution_ctx)
 
 
 def _occurrence_syntax_pairs_table(
     occurrences: pa.Table,
     producers: pa.Table,
-    *,
-    execution_ctx: ExecutionContext | None = None,
 ) -> pa.Table:
     join_keys = ("repo", "commit", "rel_path")
-    left_checked = _precheck_join_keys(
+    return _hash_join_tables(
         occurrences,
-        join_keys=join_keys,
-        table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
-    )
-    right_checked = _precheck_join_keys(
         producers,
-        join_keys=join_keys,
-        table_key=SYNTAX_NODES_TABLE_KEY,
-    )
-    left_checked = normalize_table_for_join(
-        left_checked,
-        allowed_columns=_join_safe_allowlist(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY),
-    )
-    right_checked = normalize_table_for_join(
-        right_checked,
-        allowed_columns=_join_safe_allowlist(SYNTAX_NODES_TABLE_KEY),
-    )
-    plan = build_table_plan(table=left_checked).hash_join(
-        right=build_table_plan(table=right_checked),
-        spec=HashJoinSpec(
-            left_keys=list(join_keys),
-            right_keys=list(join_keys),
-            how="inner",
-            left_output=list(occurrences.column_names),
-            right_output=["producer"],
+        spec=_JoinSpec(
+            left_keys=join_keys,
+            right_keys=join_keys,
+            left_table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
+            right_table_key=SYNTAX_NODES_TABLE_KEY,
         ),
+        how="inner",
     )
-    return _plan_to_table(plan, execution_ctx=execution_ctx)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1327,52 +1328,67 @@ def _occurrence_syntax_match_table(request: _OccurrenceSyntaxMatchRequest) -> pa
         join_keys=request.right_keys,
         table_key=SYNTAX_NODES_TABLE_KEY,
     )
-    left_checked = normalize_table_for_join(
+    left_checked = _normalize_join_input(
         left_checked,
-        allowed_columns=_join_safe_allowlist(SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY),
+        table_key=SCIP_OCCURRENCE_SPAN_XREF_TABLE_KEY,
     )
-    right_checked = normalize_table_for_join(
+    right_checked = _normalize_join_input(
         right_checked,
-        allowed_columns=_join_safe_allowlist(SYNTAX_NODES_TABLE_KEY),
+        table_key=SYNTAX_NODES_TABLE_KEY,
     )
     left_columns = _unique_columns([*_OCCURRENCE_MATCH_BASE_COLUMNS, *request.left_keys])
     right_columns = _unique_columns([*request.right_keys, "producer", "node_id"])
-    left_project = {name: E.field(name) for name in left_columns}
-    right_project = {name: E.field(name) for name in right_columns}
-    left_plan = build_table_plan(table=left_checked).project(left_project)
-    right_plan = build_table_plan(table=right_checked).project(right_project)
-    joined = left_plan.hash_join(
-        right=right_plan,
-        spec=HashJoinSpec(
-            left_keys=list(request.left_keys),
-            right_keys=list(request.right_keys),
+    left_selected = left_checked.select(left_columns)
+    right_selected = right_checked.select(right_columns)
+    joined = arrow_join_tables(
+        left_selected,
+        right_selected,
+        spec=ArrowJoinSpec(
+            left_on=request.left_keys,
+            right_on=request.right_keys,
             how="inner",
-            left_output=list(_OCCURRENCE_MATCH_BASE_COLUMNS),
-            right_output=["producer", "node_id"],
+            coalesce_keys=True,
         ),
+        options=ArrowJoinOptions(normalize_inputs=False),
     )
-    grouped = build_grouped_rollup_plan(
+    sort_keys: list[SortKey] = [
+        (name, "ascending") for name in (*_OCCURRENCE_MATCH_BASE_COLUMNS, "producer")
+    ]
+    grouped = grouped_rollup_table(
         joined,
-        keys=(*_OCCURRENCE_MATCH_BASE_COLUMNS, "producer"),
-        aggregates=(
-            ("node_id", "min", None, "syntax_node_id"),
-            ("node_id", "count", None, "candidate_count"),
+        spec=GroupedRollupSpec(
+            keys=(*_OCCURRENCE_MATCH_BASE_COLUMNS, "producer"),
+            aggregates=(
+                ("node_id", "min", None, "syntax_node_id"),
+                ("node_id", "count", None, "candidate_count"),
+            ),
+            order_by=sort_keys,
         ),
-        order_by=tuple(
-            (name, "ascending") for name in (*_OCCURRENCE_MATCH_BASE_COLUMNS, "producer")
-        ),
+        ctx=request.execution_ctx,
     )
-    project = {
-        "repo": E.field("repo"),
-        "commit": E.field("commit"),
-        "rel_path": E.field("rel_path"),
-        "producer": E.field("producer"),
-        "scip_occurrence_id": E.field("scip_occurrence_id"),
-        "syntax_node_id": E.field("syntax_node_id"),
-        "match_kind": E.scalar(request.match_kind),
-        "candidate_count": E.field("candidate_count"),
-    }
-    return _plan_to_table(grouped.project(project), execution_ctx=request.execution_ctx)
+    match_kind = constant_array(request.match_kind, grouped.num_rows)
+    return pa.Table.from_arrays(
+        [
+            grouped["repo"],
+            grouped["commit"],
+            grouped["rel_path"],
+            grouped["producer"],
+            grouped["scip_occurrence_id"],
+            grouped["syntax_node_id"],
+            match_kind,
+            grouped["candidate_count"],
+        ],
+        names=[
+            "repo",
+            "commit",
+            "rel_path",
+            "producer",
+            "scip_occurrence_id",
+            "syntax_node_id",
+            "match_kind",
+            "candidate_count",
+        ],
+    )
 
 
 def _occurrence_syntax_left_anti(
@@ -1393,24 +1409,35 @@ def _occurrence_syntax_left_anti(
         join_keys=_OCCURRENCE_MATCH_KEYS,
         table_key=None,
     )
-    left_checked = normalize_table_for_join(left_checked)
-    right_checked = normalize_table_for_join(right_checked)
-    plan = build_table_plan(table=left_checked).hash_join(
-        right=build_table_plan(table=right_checked),
-        spec=HashJoinSpec(
-            left_keys=list(_OCCURRENCE_MATCH_KEYS),
-            right_keys=list(_OCCURRENCE_MATCH_KEYS),
-            how="left anti",
-            left_output=list(left_checked.column_names),
-            right_output=[],
-        ),
+    left_checked = _normalize_join_input(
+        left_checked,
+        table_key=None,
     )
-    return _plan_to_table(plan, execution_ctx=execution_ctx)
-
-
-def _plan_to_table(plan: Plan, *, execution_ctx: ExecutionContext | None) -> pa.Table:
-    resolved_ctx = resolve_execution_context(execution_ctx)
-    return ExecutionPlan.from_plan(plan).to_table(ctx=resolved_ctx)
+    right_checked = _normalize_join_input(
+        right_checked,
+        table_key=None,
+    )
+    marker_name = _unique_marker_name(right_checked.column_names)
+    right_marker = right_checked.append_column(
+        marker_name,
+        constant_array(value=True, length=right_checked.num_rows),
+    )
+    right_selected = right_marker.select([*_OCCURRENCE_MATCH_KEYS, marker_name])
+    joined = arrow_join_tables(
+        left_checked,
+        right_selected,
+        spec=ArrowJoinSpec(
+            left_on=_OCCURRENCE_MATCH_KEYS,
+            right_on=_OCCURRENCE_MATCH_KEYS,
+            how="left",
+            coalesce_keys=True,
+        ),
+        options=ArrowJoinOptions(normalize_inputs=False),
+    )
+    filtered = safe_filter_expr(joined, E.is_null(marker_name))
+    if marker_name in filtered.column_names:
+        filtered = filtered.drop_columns([marker_name])
+    return filtered
 
 
 def _empty_occurrence_match_table(pairs: pa.Table) -> pa.Table:
@@ -1566,19 +1593,12 @@ def scip_resolution__occurrence_syntax_xref__base(
     if occurrences_table.num_rows == 0 or nodes_table.num_rows == 0:
         return _empty_plan_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
 
-    occurrences = _occurrence_syntax_occurrences_table(
-        occurrences_table,
-        execution_ctx=execution_ctx,
-    )
+    occurrences = _occurrence_syntax_occurrences_table(occurrences_table)
     producers = _occurrence_syntax_producers_table(nodes_table, execution_ctx=execution_ctx)
     if occurrences.num_rows == 0 or producers.num_rows == 0:
         return _empty_plan_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
 
-    pairs = _occurrence_syntax_pairs_table(
-        occurrences,
-        producers,
-        execution_ctx=execution_ctx,
-    )
+    pairs = _occurrence_syntax_pairs_table(occurrences, producers)
     if pairs.num_rows == 0:
         return _empty_plan_for_output_table(SCIP_OCCURRENCE_SYNTAX_XREF_TABLE_KEY)
 
@@ -1625,8 +1645,14 @@ def scip_resolution__occurrence_syntax_xref__base(
         join_keys=_OCCURRENCE_MATCH_KEYS,
         table_key=None,
     )
-    pairs = normalize_table_for_join(pairs)
-    matches = normalize_table_for_join(matches)
+    pairs = _normalize_join_input(
+        pairs,
+        table_key=None,
+    )
+    matches = _normalize_join_input(
+        matches,
+        table_key=None,
+    )
     joined = build_table_plan(table=pairs).hash_join(
         right=build_table_plan(table=matches),
         spec=HashJoinSpec(

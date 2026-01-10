@@ -10,8 +10,8 @@ import pyarrow as pa
 
 from codeintel.build.analytics.compute.row_builders import buffer_for_table
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
@@ -32,6 +32,7 @@ SCIP_DIAGNOSTICS_TABLE_KEY = "core.scip_diagnostics"
 SCIP_DIAGNOSTICS_SUMMARY_TABLE_KEY = "analytics.scip_diagnostics_summary"
 SCIP_DIAGNOSTICS_BY_FILE_TABLE_KEY = "analytics.scip_diagnostics_by_file"
 SCIP_DIAGNOSTICS_TOP_MESSAGES_TABLE_KEY = "analytics.scip_diagnostics_top_messages"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 type RollupSource = (
     Sequence[Mapping[str, object]] | ColumnarRowBuffer | pa.Table | pa.RecordBatchReader
@@ -124,9 +125,23 @@ def _diagnostics_table(rows: RollupSource) -> pa.Table | None:
     if isinstance(rows, ColumnarRowBuffer):
         collector = columnar_batch_collector_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY)
         collector.extend(rows)
-        return reader_to_table(collector.to_reader())
+        result = finalize_reader(
+            collector.to_reader(),
+            spec=finalize_spec_for_table(
+                _INTERNAL_PLAN_TABLE_KEY,
+                mode="tolerant",
+            ),
+        )
+        return result.good
     if isinstance(rows, pa.RecordBatchReader):
-        return reader_to_table(rows)
+        result = finalize_reader(
+            rows,
+            spec=finalize_spec_for_table(
+                _INTERNAL_PLAN_TABLE_KEY,
+                mode="tolerant",
+            ),
+        )
+        return result.good
     if not rows:
         return None
     table, _ = table_for_rows(SCIP_DIAGNOSTICS_TABLE_KEY, rows)
@@ -198,7 +213,15 @@ def _aggregate_rollup_table(
     )
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 def _coerce_text(value: object | None, *, default: str = "unknown") -> str:

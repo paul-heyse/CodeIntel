@@ -10,11 +10,9 @@ import pyarrow as pa
 
 from codeintel.build.hamilton.native.graphs.cpg.constants import (
     CPG_EDGES_TABLE_KEY,
-    CPG_TARGET_NAME,
 )
-from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.arrowdsl import ExecutionPlan, project_struct_fields
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.plan_kernels import ExplodeSpec, explode_edges_for_join
@@ -46,7 +44,7 @@ _DEFAULT_SORT_KEYS: tuple[SortKey, ...] = (
     ("edge_layer", "ascending"),
     ("ordinal", "ascending"),
 )
-
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 def finalize_cpg_edge_rows(
     edge_rows: Sequence[Mapping[str, object]],
@@ -100,19 +98,9 @@ def finalize_cpg_edge_rows(
         table=exploded.good,
         options=TablePlanOptions(projection=projection),
     )
-    edges = _plan_to_table(plan, use_threads=True)
     resolved_sort_keys = sort_keys if sort_keys is not None else _DEFAULT_SORT_KEYS
-
-    result = finalize_table(
-        edges,
-        spec=finalize_spec_for_table(
-            CPG_EDGES_TABLE_KEY,
-            mode="strict",
-            order_by=resolved_sort_keys,
-            target_name=CPG_TARGET_NAME,
-        ),
-    )
-    return result.good
+    ordered = plan.order_by(sort_keys=list(resolved_sort_keys))
+    return _plan_to_table(ordered, use_threads=True)
 
 
 def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
@@ -120,7 +108,15 @@ def _plan_to_table(plan: Plan, *, use_threads: bool) -> pa.Table:
     if not use_threads:
         execution_ctx = replace(execution_ctx, use_threads=False)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 __all__ = ["finalize_cpg_edge_rows"]

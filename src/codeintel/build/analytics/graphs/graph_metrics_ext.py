@@ -35,6 +35,7 @@ from codeintel.build.graphs.rx.algos import (
     ancestors_by_id,
     descendants_by_id,
     ensure_directed_store,
+    graph_node_count,
     graph_to_store,
 )
 from codeintel.core.columnar.rows import ColumnarRowBuffer
@@ -159,7 +160,7 @@ def _function_metric_rows(
     """
     graph_store = ensure_directed_store(views.graph)
     simple_store = ensure_directed_store(views.simple_graph)
-    node_count = graph_store.graph.num_nodes()
+    node_count = graph_node_count(graph_store)
     ancestor_count: dict[int, int] = {}
     descendant_count: dict[int, int] = {}
     for node_id in simple_store.node_ids():

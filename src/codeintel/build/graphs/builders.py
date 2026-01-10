@@ -29,9 +29,16 @@ from codeintel.build.graphs.rx.policies import (
 from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.expr_vocab import E
+from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.dedupe_ops import DedupeTier
-from codeintel.core.columnar.finalize_ops import finalize_spec_for_table, finalize_table
+from codeintel.core.columnar.execution_context import resolve_execution_context
+from codeintel.core.columnar.finalize_ops import (
+    finalize_reader,
+    finalize_spec_for_table,
+    finalize_table,
+)
 from codeintel.core.columnar.iter import iter_array_values, iter_tuples
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import table_for_rows
 from codeintel.core.data_models.ids import as_int, normalize_decimal_id
 from codeintel.core.schemas.primitives import resolve_canonical_sort_keys
@@ -42,6 +49,7 @@ CALL_GRAPH_NODES_TABLE_KEY = "graph.call_graph_nodes"
 IMPORT_GRAPH_EDGES_TABLE_KEY = "graph.import_graph_edges"
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
 SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 def add_weighted_edge(
@@ -159,12 +167,18 @@ def _filter_table(table: pa.Table, filters: Sequence[object]) -> pa.Table:
     return safe_filter_expr(table, E.and_(*filters))
 
 
-def _aggregate_column_name(table: pa.Table, *, key_columns: Sequence[str]) -> str:
-    remaining = [name for name in table.column_names if name not in key_columns]
-    if len(remaining) != 1:
-        msg = f"Unexpected aggregate columns: {remaining}"
-        raise ValueError(msg)
-    return remaining[0]
+def _materialize_plan_table(plan: Plan) -> pa.Table:
+    execution_ctx = resolve_execution_context(None)
+    reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 def _aggregate_edge_weights(table: pa.Table) -> pa.Table:
@@ -180,12 +194,12 @@ def _aggregate_edge_weights(table: pa.Table) -> pa.Table:
             ],
             names=["src", "dst", "weight"],
         )
-    aggregated = table.group_by(["src", "dst"]).aggregate([("src", "count")])
-    weight_column = _aggregate_column_name(aggregated, key_columns=("src", "dst"))
-    aggregated = aggregated.select(["src", "dst", weight_column]).rename_columns(
-        ["src", "dst", "weight"]
+    plan = Plan.table(table).aggregate(
+        keys=[E.field("src"), E.field("dst")],
+        aggregates=[(E.field("src"), "count", None, "weight")],
     )
-    return aggregated.sort_by([("src", "ascending"), ("dst", "ascending")])
+    plan = plan.order_by(sort_keys=[("src", "ascending"), ("dst", "ascending")])
+    return _materialize_plan_table(plan)
 
 
 def _call_graph_edge_table(
@@ -277,13 +291,16 @@ def _import_layer_fallback(
     projected = filtered.select(["src_module", "module_layer"])
     if projected.num_rows == 0:
         return {}
-    aggregated = projected.group_by(["src_module"]).aggregate([("module_layer", "max")])
-    aggregated = aggregated.sort_by([("src_module", "ascending")])
-    value_column = _aggregate_column_name(aggregated, key_columns=("src_module",))
+    plan = Plan.table(projected).aggregate(
+        keys=[E.field("src_module")],
+        aggregates=[(E.field("module_layer"), "max", None, "module_layer")],
+    )
+    plan = plan.order_by(sort_keys=[("src_module", "ascending")])
+    aggregated = _materialize_plan_table(plan)
     fallback: dict[str, int] = {}
     for module, layer in iter_tuples(
         table_to_reader(aggregated),
-        columns=("src_module", value_column),
+        columns=("src_module", "module_layer"),
     ):
         if module is None:
             continue

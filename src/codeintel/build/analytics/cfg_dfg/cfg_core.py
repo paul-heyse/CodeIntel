@@ -201,9 +201,8 @@ def branching_stats(graph: GraphInput) -> tuple[float, int, float]:
         node_idx = int(str(node))
         if in_degrees.get(node_idx, 0) == 1 and out_degrees_map.get(node_idx, 0) == 1:
             linear_blocks.append(node_idx)
-    linear_fraction = (
-        len(linear_blocks) / store.graph.num_nodes() if store.graph.num_nodes() else 0.0
-    )
+    node_count = graph_node_count(store)
+    linear_fraction = (len(linear_blocks) / node_count) if node_count else 0.0
     return branching_mean, branching_max, linear_fraction
 
 

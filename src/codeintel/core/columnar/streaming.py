@@ -114,7 +114,7 @@ def _merge_scan_options(
     options: DatasetScanOptions,
     settings: ArrowScanSettings,
 ) -> DatasetScanOptions:
-    resolved = replace(
+    return replace(
         options,
         batch_size=_override_default_int(
             options.batch_size,
@@ -157,7 +157,6 @@ def _merge_scan_options(
             default=DEFAULT_ARROW_PARQUET_BUFFER_SIZE,
         ),
     )
-    return resolved
 
 
 def configure_arrow_threading(
@@ -444,6 +443,22 @@ def scan_options_for_queryspec_ctx(
     determinism = resolved_ctx.resolve_determinism()
     if determinism == "canonical":
         provenance = True
+        if resolved.implicit_ordering is None or resolved.require_sequenced_output is None:
+            resolved = replace(
+                resolved,
+                implicit_ordering=True if resolved.implicit_ordering is None else resolved.implicit_ordering,
+                require_sequenced_output=(
+                    True
+                    if resolved.require_sequenced_output is None
+                    else resolved.require_sequenced_output
+                ),
+            )
+    elif resolved.implicit_ordering is not None or resolved.require_sequenced_output is not None:
+        resolved = replace(
+            resolved,
+            implicit_ordering=None,
+            require_sequenced_output=None,
+        )
     return scan_options_for_queryspec(
         spec,
         provenance=provenance,

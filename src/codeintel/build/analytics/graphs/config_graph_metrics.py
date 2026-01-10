@@ -34,12 +34,13 @@ from codeintel.build.graphs.rx.store import RxGraphStore
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table, table_to_reader
+from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
     resolve_execution_context,
 )
+from codeintel.core.columnar.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
@@ -79,6 +80,7 @@ CONFIG_PROJECTION_KEY_EDGES_COLS = _columns_for_table(CONFIG_PROJECTION_KEY_EDGE
 CONFIG_PROJECTION_MODULE_EDGES_COLS = _columns_for_table(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY)
 
 NODE_ID_INDEX = 2
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 def _ordering_keys_for_table(table_key: str) -> tuple[str, ...] | None:
@@ -716,4 +718,8 @@ def _materialize_plan(
 ) -> pa.Table:
     execution_ctx = resolve_execution_context(ctx)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
+    )
+    return result.good

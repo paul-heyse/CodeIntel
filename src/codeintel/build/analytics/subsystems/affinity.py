@@ -24,9 +24,9 @@ from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
 from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges_for_join
+from codeintel.core.columnar.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
@@ -43,6 +43,7 @@ DEFAULT_IMPORT_WEIGHT = 1.0
 DEFAULT_SYMBOL_WEIGHT = 0.5
 DEFAULT_CONFIG_WEIGHT = 0.3
 CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 @dataclass(frozen=True)
@@ -836,4 +837,8 @@ def _materialize_plan(
 ) -> pa.Table:
     execution_ctx = resolve_execution_context(ctx)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(_INTERNAL_PLAN_TABLE_KEY, mode="tolerant"),
+    )
+    return result.good

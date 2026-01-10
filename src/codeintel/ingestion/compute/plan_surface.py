@@ -10,7 +10,8 @@ import pyarrow.dataset as ds
 
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.execution_context import ExecutionContext, resolve_execution_context
-from codeintel.core.columnar.plan_builder import build_plan_from_query_spec
+from codeintel.core.columnar.ordering import OrderingSpec
+from codeintel.core.columnar.plan_builder import build_plan_from_query_spec, build_reader_plan
 from codeintel.core.columnar.plan_ops import (
     Plan,
     QueryPlanOptions,
@@ -100,6 +101,35 @@ def ingest_plan_for_table(
     if resolved.order_by is not None:
         plan = plan.order_by(sort_keys=resolved.order_by)
     return plan
+
+
+def ingest_plan_for_reader(
+    reader: pa.RecordBatchReader,
+    *,
+    ctx: ExecutionContext | None = None,
+) -> Plan:
+    """Build an ingestion plan for a reader source.
+
+    Parameters
+    ----------
+    reader
+        Reader providing ingestion rows.
+    ctx
+        Optional execution context for ordering metadata.
+
+    Returns
+    -------
+    Plan
+        Reader-backed plan for downstream execution/finalize.
+    """
+    resolved_ctx = resolve_execution_context(ctx)
+    reason = "ingest reader source"
+    if resolved_ctx.resolve_determinism() == "canonical":
+        reason = "ingest reader source (canonical determinism)"
+    return build_reader_plan(
+        reader=reader,
+        ordering=OrderingSpec.implicit(reason=reason),
+    )
 
 
 def ingest_plan_for_dataset(
@@ -260,6 +290,7 @@ def _resolve_dataset_query(
 __all__ = [
     "IngestQuery",
     "ingest_plan_for_dataset",
+    "ingest_plan_for_reader",
     "ingest_plan_for_table",
     "ingest_reader_for_dataset",
     "ingest_reader_for_plan",

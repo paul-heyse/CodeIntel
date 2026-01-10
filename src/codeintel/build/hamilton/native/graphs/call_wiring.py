@@ -18,7 +18,6 @@ from codeintel.build.graphs.assembly import (
 from codeintel.build.graphs.assembly import (
     empty_reader,
     stable_decimal_id,
-    table_to_reader,
     tabular_to_table,
 )
 from codeintel.build.graphs.assembly import (
@@ -32,28 +31,22 @@ from codeintel.build.graphs.assembly import (
 )
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import (
-    AlignmentReport,
     dedupe_table_for_table,
-    emit_alignment_report,
     normalize_table_for_join,
 )
 from codeintel.build.tabular.compute_columns import empty_table as _empty_table
 from codeintel.build.tabular.compute_helpers import cast_array
 from codeintel.build.tabular.expr_vocab import E, Expression
 from codeintel.build.tabular.finalize_ops import (
-    FinalizeResult,
     finalize_join_keys,
     finalize_reader,
     finalize_spec_for_table,
-    finalize_table,
     record_join_precheck_errors,
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.arrowdsl import ExecutionPlan, join_safe_projection
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import resolve_execution_context
-from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_builder import TablePlanOptions, build_table_plan
 from codeintel.core.columnar.plan_kernels import (
     ExplodeSpec,
@@ -79,6 +72,7 @@ CPG_CALL_EDGES_TABLE_KEY = "graph.cpg_edges_calls"
 CPG_ARG_TO_PARAM_EDGES_TABLE_KEY = "graph.cpg_edges_arg_to_param"
 CPG_RET_TO_CALL_EDGES_TABLE_KEY = "graph.cpg_edges_ret_to_call"
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 _GOID_ARROW_TYPE = pa.decimal128(38, 0)
 _GOID_CAST_TYPE = "decimal128(38,0)"
@@ -649,45 +643,6 @@ def _build_def_catalog(defs_rows: Sequence[Mapping[str, object]]) -> _DefCatalog
     return builder.finalize()
 
 
-def _string_list(value: object) -> tuple[str, ...]:
-    if isinstance(value, (list, tuple)):
-        return tuple(item for item in value if isinstance(item, str))
-    return ()
-
-
-def _emit_alignment_report_from_finalize(result: FinalizeResult) -> None:
-    if result.alignment.num_rows == 0:
-        return
-    columns = [
-        "table_key",
-        "target_name",
-        "missing_columns",
-        "extra_columns",
-        "coerced_columns",
-        "row_count",
-    ]
-    values = next(iter_tuples(table_to_reader(result.alignment), columns=columns), None)
-    if values is None:
-        return
-    (
-        table_key_value,
-        target_name_value,
-        missing_columns_value,
-        extra_columns_value,
-        coerced_columns_value,
-        row_count_value,
-    ) = values
-    report = AlignmentReport(
-        table_key=table_key_value if isinstance(table_key_value, str) else "",
-        target_name=target_name_value if isinstance(target_name_value, str) else None,
-        missing_columns=_string_list(missing_columns_value),
-        extra_columns=_string_list(extra_columns_value),
-        coerced_columns=_string_list(coerced_columns_value),
-        row_count=row_count_value if isinstance(row_count_value, int) else None,
-    )
-    emit_alignment_report(report)
-
-
 def _key_fields_for_table(table_key: str) -> tuple[str, ...]:
     try:
         schema = get_schema_service().get_table_schema(table_key)
@@ -705,20 +660,12 @@ def _order_by_for_table(table_key: str) -> tuple[SortKey, ...]:
     return tuple((field, _ASCENDING) for field in key_fields)
 
 
-def _table_to_reader(table_key: str, table: pa.Table) -> pa.Table:
-    result = finalize_table(
-        table,
-        spec=finalize_spec_for_table(
-            table_key,
-            mode="strict",
-            key_fields=_key_fields_for_table(table_key),
-            order_by=_order_by_for_table(table_key),
-            emit_artifacts=True,
-            target_name=CALL_WIRING_TARGET_NAME,
-        ),
-    )
-    _emit_alignment_report_from_finalize(result)
-    return result.good
+def _table_to_plan(table_key: str, table: pa.Table) -> Plan:
+    sort_keys = _order_by_for_table(table_key)
+    plan = Plan.table(table)
+    if sort_keys:
+        return plan.order_by(sort_keys=list(sort_keys))
+    return plan
 
 
 def _cast_table_column(
@@ -1534,7 +1481,15 @@ def _hash_join_block_targets(
 def _plan_to_table(plan: Plan) -> pa.Table:
     execution_ctx = resolve_execution_context(None)
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 def _call_target_record(context: _CallTargetRecordContext) -> dict[str, object]:
@@ -2370,7 +2325,7 @@ def cpg_call_targets(
     blocks = tabular_to_table(q__graph__cfg_blocks)
     joined = _attach_call_target_blocks(targets_table, blocks)
     deduped = dedupe_table_for_table(CPG_CALL_TARGETS_TABLE_KEY, joined)
-    return _table_to_reader(CPG_CALL_TARGETS_TABLE_KEY, deduped)
+    return _table_to_plan(CPG_CALL_TARGETS_TABLE_KEY, deduped)
 
 
 def cpg_call_candidates(cpg_call_targets: InferableTabularInput) -> InferableTabularInput:
@@ -2425,7 +2380,7 @@ def cpg_call_candidates(cpg_call_targets: InferableTabularInput) -> InferableTab
         for (repo, commit, rel_path, call_id, call_node_id), candidates in grouped.items()
     ]
     candidates_table, _ = table_for_rows(CPG_CALL_CANDIDATES_TABLE_KEY, rows)
-    return _table_to_reader(CPG_CALL_CANDIDATES_TABLE_KEY, candidates_table)
+    return _table_to_plan(CPG_CALL_CANDIDATES_TABLE_KEY, candidates_table)
 
 
 def cpg_edges_calls(
@@ -2534,7 +2489,7 @@ def cpg_edges_calls(
             "extras_kv": E.field("extras_kv"),
         }
     )
-    ordered = joined.order_by(
+    return joined.order_by(
         sort_keys=[
             ("repo", "ascending"),
             ("commit", "ascending"),
@@ -2543,17 +2498,6 @@ def cpg_edges_calls(
             ("callee_entry_block_id", "ascending"),
         ]
     )
-    result = finalize_reader(
-        ordered.to_reader(use_threads=True),
-        spec=finalize_spec_for_table(
-            CPG_CALL_EDGES_TABLE_KEY,
-            mode="strict",
-            key_fields=_key_fields_for_table(CPG_CALL_EDGES_TABLE_KEY),
-            order_by=_order_by_for_table(CPG_CALL_EDGES_TABLE_KEY),
-            target_name=CALL_WIRING_TARGET_NAME,
-        ),
-    )
-    return result.good
 
 
 @dataclass(frozen=True, slots=True)
@@ -2992,7 +2936,7 @@ def cpg_edges_arg_to_param(
     )
     if exploded.good.num_rows == 0:
         return empty_reader(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY)
-    ordered = build_table_plan(
+    return build_table_plan(
         table=exploded.good,
         options=TablePlanOptions(
             projection={
@@ -3024,17 +2968,6 @@ def cpg_edges_arg_to_param(
             ),
         ),
     )
-    result = finalize_reader(
-        ordered.to_reader(use_threads=True),
-        spec=finalize_spec_for_table(
-            CPG_ARG_TO_PARAM_EDGES_TABLE_KEY,
-            mode="strict",
-            key_fields=_key_fields_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY),
-            order_by=_order_by_for_table(CPG_ARG_TO_PARAM_EDGES_TABLE_KEY),
-            target_name=CALL_WIRING_TARGET_NAME,
-        ),
-    )
-    return result.good
 
 
 def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableTabularInput:
@@ -3110,7 +3043,7 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
     )
     if exploded.good.num_rows == 0:
         return empty_reader(CPG_RET_TO_CALL_EDGES_TABLE_KEY)
-    ordered = build_table_plan(
+    return build_table_plan(
         table=exploded.good,
         options=TablePlanOptions(
             projection={
@@ -3136,17 +3069,6 @@ def cpg_edges_ret_to_call(cpg_call_targets: InferableTabularInput) -> InferableT
             ),
         ),
     )
-    result = finalize_reader(
-        ordered.to_reader(use_threads=True),
-        spec=finalize_spec_for_table(
-            CPG_RET_TO_CALL_EDGES_TABLE_KEY,
-            mode="strict",
-            key_fields=_key_fields_for_table(CPG_RET_TO_CALL_EDGES_TABLE_KEY),
-            order_by=_order_by_for_table(CPG_RET_TO_CALL_EDGES_TABLE_KEY),
-            target_name=CALL_WIRING_TARGET_NAME,
-        ),
-    )
-    return result.good
 
 
 __all__ = [

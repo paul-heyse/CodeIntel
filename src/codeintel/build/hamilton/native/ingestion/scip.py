@@ -60,22 +60,21 @@ from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.arrow_ops import (
+    ArrowJoinOptions,
+    ArrowJoinSpec,
+    arrow_join_tables,
     iter_rows,
     normalize_table_for_join,
 )
-from codeintel.build.tabular.compute_columns import append_constant_columns
+from codeintel.build.tabular.compute_columns import append_constant_columns, constant_array
+from codeintel.build.tabular.compute_helpers import safe_filter_expr
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.finalize_ops import (
-    FinalizeDedupe,
     FinalizeResult,
     finalize_join_keys,
-    finalize_spec_for_table,
-    finalize_table,
     record_join_precheck_errors,
 )
-from codeintel.build.tabular.plan_ops import HashJoinSpec
 from codeintel.build.tabular.types import InferableTabularInput
-from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.dedupe_ops import stable_dedupe_for_context
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
@@ -83,8 +82,8 @@ from codeintel.core.columnar.execution_context import (
     resolve_execution_context,
 )
 from codeintel.core.columnar.expr_vocab import E
+from codeintel.core.columnar.kernels import stable_sort_table
 from codeintel.core.columnar.ordering import SortKey
-from codeintel.core.columnar.plan_builder import build_table_plan
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.queryspec import PROVENANCE_FIELDS
 from codeintel.core.columnar.rows import (
@@ -1590,7 +1589,7 @@ def _scip_payload_table(
 def _canonical_sort_keys_for_table(
     table_key: str,
     columns: Sequence[str],
-) -> list[tuple[str, str]] | None:
+) -> list[SortKey] | None:
     schema = get_schema_service().get_table_schema(table_key)
     keys = resolve_canonical_sort_keys(schema)
     if not keys:
@@ -1633,7 +1632,13 @@ def scip__manifest_extras(
     env: BuildEnv,
     t__scip__ingest: IngestStep[dict[str, InferableTabularInput]],
 ) -> Mapping[str, object]:
-    """Return manifest extras for SCIP ingestion outputs."""
+    """Return manifest extras for SCIP ingestion outputs.
+
+    Returns
+    -------
+    Mapping[str, object]
+        Manifest extras to attach to ingestion run metadata.
+    """
     return _scip_manifest_extras(t__scip__ingest.result, env=env)
 
 
@@ -1655,6 +1660,7 @@ def scip__symbol_rows__base(
     Plan
         Plan for core.scip_symbols.
     """
+    _ = env
     table = _scip_payload_table(t__scip__ingest, SCIP_SYMBOLS_TABLE_KEY)
     return _plan_from_table(table, table_key=SCIP_SYMBOLS_TABLE_KEY)
 
@@ -1677,6 +1683,7 @@ def scip__occurrence_rows__base(
     Plan
         Plan for core.scip_occurrences.
     """
+    _ = env
     table = _scip_payload_table(t__scip__ingest, SCIP_OCCURRENCES_TABLE_KEY)
     return _plan_from_table(table, table_key=SCIP_OCCURRENCES_TABLE_KEY)
 
@@ -1699,6 +1706,7 @@ def scip__symbol_info_rows__base(
     Plan
         Plan for core.scip_symbol_information.
     """
+    _ = env
     table = _scip_payload_table(t__scip__ingest, SCIP_SYMBOL_INFO_TABLE_KEY)
     return _plan_from_table(table, table_key=SCIP_SYMBOL_INFO_TABLE_KEY)
 
@@ -1721,6 +1729,7 @@ def scip__relationship_rows__base(
     Plan
         Plan for core.scip_symbol_relationships.
     """
+    _ = env
     table = _scip_payload_table(t__scip__ingest, SCIP_RELATIONSHIPS_TABLE_KEY)
     return _plan_from_table(table, table_key=SCIP_RELATIONSHIPS_TABLE_KEY)
 
@@ -1743,6 +1752,7 @@ def scip__diagnostic_rows__base(
     Plan
         Plan for core.scip_diagnostics.
     """
+    _ = env
     table = _scip_payload_table(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
     return _plan_from_table(table, table_key=SCIP_DIAGNOSTICS_TABLE_KEY)
 
@@ -1781,7 +1791,7 @@ def _derive_external_symbol_rows(
             symbol_info.select(["repo", "commit", "symbol"]),
             allowed_columns=_join_safe_allowlist(SCIP_SYMBOL_INFO_TABLE_KEY),
         )
-        missing = _left_anti_external_symbols(distinct, info, execution_ctx=execution_ctx)
+        missing = _left_anti_external_symbols(distinct, info)
     if missing.num_rows == 0:
         return empty_table_for_table(table_key)
     return append_constant_columns(
@@ -1803,24 +1813,12 @@ def _precheck_join_table(
 ) -> pa.Table:
     if table.num_rows == 0 or not join_keys:
         return table
-    if table_key is None:
-        result = finalize_join_keys(
-            table,
-            required_non_null=join_keys,
-            key_fields=join_keys,
-        )
-    else:
-        result = finalize_table(
-            table,
-            spec=finalize_spec_for_table(
-                table_key,
-                mode="tolerant",
-                required_non_null=join_keys,
-                key_fields=join_keys,
-                dedupe=FinalizeDedupe(enabled=False),
-                target_name=SCIP_TARGET_NAME,
-            ),
-        )
+    result = finalize_join_keys(
+        table,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
     record_join_precheck_errors(
         result,
         table_key=table_key,
@@ -1848,9 +1846,14 @@ def _log_join_precheck_errors(
     )
 
 
-def _plan_to_table(plan: Plan, *, execution_ctx: ExecutionContext) -> pa.Table:
-    resolved_ctx = resolve_execution_context(execution_ctx)
-    return ExecutionPlan.from_plan(plan).to_table(ctx=resolved_ctx)
+def _unique_marker_name(columns: Sequence[str]) -> str:
+    base = "__right_marker"
+    if base not in columns:
+        return base
+    counter = 1
+    while f"{base}_{counter}" in columns:
+        counter += 1
+    return f"{base}_{counter}"
 
 
 def _distinct_external_symbol_rows(
@@ -1878,13 +1881,10 @@ def _distinct_external_symbol_rows(
 def _left_anti_external_symbols(
     left: pa.Table,
     right: pa.Table,
-    *,
-    execution_ctx: ExecutionContext,
 ) -> pa.Table:
-    if left.num_rows == 0:
+    if left.num_rows == 0 or right.num_rows == 0:
         return left
     join_keys = ("repo", "commit", "symbol")
-    project = {name: E.field(name) for name in join_keys}
     left_checked = _precheck_join_table(
         left,
         table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
@@ -1903,20 +1903,28 @@ def _left_anti_external_symbols(
         right_checked,
         allowed_columns=_join_safe_allowlist(SCIP_SYMBOL_INFO_TABLE_KEY),
     )
-    left_plan = build_table_plan(table=left_checked).project(project)
-    right_plan = build_table_plan(table=right_checked).project(project)
-    joined = left_plan.hash_join(
-        right=right_plan,
-        spec=HashJoinSpec(
-            left_keys=list(join_keys),
-            right_keys=list(join_keys),
-            how="left anti",
-            left_output=list(join_keys),
-            right_output=[],
-        ),
+    marker_name = _unique_marker_name(right_checked.column_names)
+    right_marker = right_checked.append_column(
+        marker_name,
+        constant_array(value=True, length=right_checked.num_rows),
     )
-    ordered = joined.order_by(sort_keys=[(key, "ascending") for key in join_keys])
-    return _plan_to_table(ordered, execution_ctx=execution_ctx)
+    right_selected = right_marker.select([*join_keys, marker_name])
+    joined = arrow_join_tables(
+        left_checked,
+        right_selected,
+        spec=ArrowJoinSpec(
+            left_on=join_keys,
+            right_on=join_keys,
+            how="left",
+            coalesce_keys=True,
+        ),
+        options=ArrowJoinOptions(normalize_inputs=False),
+    )
+    filtered = safe_filter_expr(joined, E.is_null(marker_name))
+    if marker_name in filtered.column_names:
+        filtered = filtered.drop_columns([marker_name])
+    sort_keys: list[SortKey] = [(key, "ascending") for key in join_keys]
+    return stable_sort_table(filtered, sort_keys=sort_keys) if sort_keys else filtered
 
 
 def scip__external_symbol_rows__base(
@@ -1978,6 +1986,7 @@ def scip__index_metadata_rows__base(
     Plan
         Plan for core.scip_index_metadata.
     """
+    _ = env
     table = _scip_payload_table(t__scip__ingest, SCIP_INDEX_METADATA_TABLE_KEY)
     return _plan_from_table(table, table_key=SCIP_INDEX_METADATA_TABLE_KEY)
 
@@ -2000,6 +2009,7 @@ def scip__module_state_rows__base(
     Plan
         Plan for core.scip_module_state.
     """
+    _ = env
     table = _scip_payload_table(t__scip__ingest, SCIP_MODULE_STATE_TABLE_KEY)
     return _plan_from_table(table, table_key=SCIP_MODULE_STATE_TABLE_KEY)
 

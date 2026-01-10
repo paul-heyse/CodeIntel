@@ -273,13 +273,21 @@ def save_dataset(
     """
 
     def _materialize() -> NodeTransformLifecycle:
-        manifest_deps: dict[str, ParametrizedDependency] = {}
-        if spec.manifest_extras_node is not None:
-            manifest_deps["manifest_extras"] = _dep(source(spec.manifest_extras_node))
-        ingest_deps: dict[str, ParametrizedDependency] = {
-            "ingest_finalize": _dep(value(spec.ingest_finalize)),
-            "ingest_finalize_mode": _dep(value(spec.ingest_finalize_mode)),
-        }
+        if spec.manifest_extras_node is None:
+            return SaveToObjectMetadataDecorator(
+                [ArrowDatasetSaver],
+                output_name_=spec.output_name or materialize_node(spec.table_key),
+                env=_dep(source("env")),
+                catalog=_dep(source("catalog")),
+                target_name=_dep(value(context.target)),
+                table_key=_dep(value(spec.table_key)),
+                partition_columns=_dep(value(spec.partition_columns)),
+                collect_group=_dep(value(spec.collect_group)),
+                validation_profile=_dep(value(spec.validation_profile)),
+                output_role=_dep(value(spec.output_role)),
+                ingest_finalize=_dep(value(spec.ingest_finalize)),
+                ingest_finalize_mode=_dep(value(spec.ingest_finalize_mode)),
+            )
         return SaveToObjectMetadataDecorator(
             [ArrowDatasetSaver],
             output_name_=spec.output_name or materialize_node(spec.table_key),
@@ -291,8 +299,9 @@ def save_dataset(
             collect_group=_dep(value(spec.collect_group)),
             validation_profile=_dep(value(spec.validation_profile)),
             output_role=_dep(value(spec.output_role)),
-            **manifest_deps,
-            **ingest_deps,
+            manifest_extras=_dep(source(spec.manifest_extras_node)),
+            ingest_finalize=_dep(value(spec.ingest_finalize)),
+            ingest_finalize_mode=_dep(value(spec.ingest_finalize_mode)),
         )
 
     materializer = resolve_from_config(decorate_with=_materialize)
@@ -339,13 +348,19 @@ def save_relation_table(
     """
 
     def _materialize() -> NodeTransformLifecycle:
-        manifest_deps: dict[str, ParametrizedDependency] = {}
-        if spec.manifest_extras_node is not None:
-            manifest_deps["manifest_extras"] = _dep(source(spec.manifest_extras_node))
-        ingest_deps: dict[str, ParametrizedDependency] = {
-            "ingest_finalize": _dep(value(spec.ingest_finalize)),
-            "ingest_finalize_mode": _dep(value(spec.ingest_finalize_mode)),
-        }
+        if spec.manifest_extras_node is None:
+            return SaveToObjectMetadataDecorator(
+                [ArrowDatasetSaver],
+                output_name_=spec.output_name or materialize_node(spec.table_key),
+                env=_dep(source("env")),
+                catalog=_dep(source("catalog")),
+                target_name=_dep(value(context.target)),
+                table_key=_dep(value(spec.table_key)),
+                validation_profile=_dep(value(spec.validation_profile)),
+                output_role=_dep(value(spec.output_role)),
+                ingest_finalize=_dep(value(spec.ingest_finalize)),
+                ingest_finalize_mode=_dep(value(spec.ingest_finalize_mode)),
+            )
         return SaveToObjectMetadataDecorator(
             [ArrowDatasetSaver],
             output_name_=spec.output_name or materialize_node(spec.table_key),
@@ -355,8 +370,9 @@ def save_relation_table(
             table_key=_dep(value(spec.table_key)),
             validation_profile=_dep(value(spec.validation_profile)),
             output_role=_dep(value(spec.output_role)),
-            **manifest_deps,
-            **ingest_deps,
+            manifest_extras=_dep(source(spec.manifest_extras_node)),
+            ingest_finalize=_dep(value(spec.ingest_finalize)),
+            ingest_finalize_mode=_dep(value(spec.ingest_finalize_mode)),
         )
 
     materializer = resolve_from_config(decorate_with=_materialize)

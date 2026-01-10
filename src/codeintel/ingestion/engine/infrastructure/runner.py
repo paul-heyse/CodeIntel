@@ -3,7 +3,7 @@
 Note
 ----
 This module provides domain-specific result types for tool execution.
-For pipeline run and step tracking persistence, see `codeintel.storage.tracking`.
+Pipeline run tracking is handled via manifests and runtime registries.
 """
 
 from __future__ import annotations

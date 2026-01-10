@@ -30,8 +30,6 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.ingestion.manifesting import (
-    finalize_ingest_reader_with_manifest,
-    finalize_ingest_table_with_manifest,
     ingest_manifest_dir,
     ingest_manifest_options,
 )
@@ -44,6 +42,7 @@ from codeintel.build.hamilton.native.options.ingestion import (
 )
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
+    RelationTableSaveSpec,
     TableOutputSpec,
     ToolRunContext,
     ToolTargetSpec,
@@ -62,11 +61,8 @@ from codeintel.build.tabular.compute_helpers import array_from_compute, safe_fil
 from codeintel.build.tabular.compute_masks import equal_mask, or_kleene
 from codeintel.build.tabular.conversion import tabular_to_arrow_table
 from codeintel.build.tabular.finalize_ops import (
-    FinalizeDedupe,
     FinalizeResult,
     finalize_join_keys,
-    finalize_spec_for_table,
-    finalize_table,
     record_join_precheck_errors,
 )
 from codeintel.build.tabular.plan_ops import HashJoinSpec, JoinType
@@ -210,6 +206,15 @@ PY_INSPECT_TABLE_KEYS = (
     PY_INSPECT_SOURCE_TABLE_KEY,
     PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
 )
+
+
+def _ingest_save_spec(table_spec: TableOutputSpec) -> RelationTableSaveSpec:
+    return RelationTableSaveSpec(
+        table_key=table_spec.table_key,
+        output_role=table_spec.output_role,
+        output_name=table_spec.output_name,
+        ingest_finalize=True,
+    )
 
 
 def py_frontend__options(env: BuildEnv) -> PyFrontendOptions:
@@ -1300,6 +1305,7 @@ def t__ast__ingest(
     IngestStep[TabularByTable]
         Ingest result with table frames.
     """
+    _ = env
     result = t__ast__run.result
     if result.skipped:
         return IngestStep(
@@ -1316,25 +1322,15 @@ def t__ast__ingest(
             )
         )
 
-    ast_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=AST_NODES_TABLE_KEY,
-        reader=t__ast__run.ast_rows,
-        target_name=AST_TARGET_NAME,
-    )
-    metric_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=AST_METRICS_TABLE_KEY,
-        reader=t__ast__run.metric_rows,
-        target_name=AST_TARGET_NAME,
-    )
+    ast_rows = t__ast__run.ast_rows
+    metric_rows = t__ast__run.metric_rows
     payload = {
         AST_NODES_TABLE_KEY: ast_rows,
         AST_METRICS_TABLE_KEY: metric_rows,
     }
     table_counts = {
-        AST_NODES_TABLE_KEY: ast_rows.num_rows,
-        AST_METRICS_TABLE_KEY: metric_rows.num_rows,
+        AST_NODES_TABLE_KEY: t__ast__run.ast_row_count,
+        AST_METRICS_TABLE_KEY: t__ast__run.metric_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -1469,12 +1465,7 @@ def t__cst__ingest(
             )
         )
 
-    cst_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=CST_NODES_TABLE_KEY,
-        reader=t__cst__run.rows,
-        target_name=CST_TARGET_NAME,
-    )
+    cst_rows = tabular_to_arrow_table(t__cst__run.rows)
     list_errors = _cst_list_errors(cst_rows)
     list_warnings = _list_validation_warnings(list_errors, context=CST_NODES_TABLE_KEY)
     _persist_list_errors_manifest(
@@ -1484,7 +1475,7 @@ def t__cst__ingest(
         errors=list_errors,
     )
     payload = {CST_NODES_TABLE_KEY: cst_rows}
-    table_counts = {CST_NODES_TABLE_KEY: cst_rows.num_rows}
+    table_counts = {CST_NODES_TABLE_KEY: t__cst__run.row_count}
     return IngestStep(
         result=ExecutionResult.ok(
             table_counts=table_counts,
@@ -1543,6 +1534,7 @@ def t__syntax_index__ingest(
     IngestStep[TabularByTable]
         Ingest result with table frames.
     """
+    _ = env
     result = t__syntax_index__run.result
     if result.skipped:
         return IngestStep(
@@ -1559,72 +1551,17 @@ def t__syntax_index__ingest(
             )
         )
 
-    parse_manifest_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PARSE_MANIFEST_TABLE_KEY,
-        reader=t__syntax_index__run.parse_manifest_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
-    syntax_spans_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SYNTAX_SPANS_TABLE_KEY,
-        reader=t__syntax_index__run.syntax_spans_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
-    syntax_nodes_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SYNTAX_NODES_TABLE_KEY,
-        reader=t__syntax_index__run.syntax_nodes_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
-    syntax_edges_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SYNTAX_EDGES_TABLE_KEY,
-        reader=t__syntax_index__run.syntax_edges_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
-    syntax_scopes_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SYNTAX_SCOPES_TABLE_KEY,
-        reader=t__syntax_index__run.syntax_scopes_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
-    syntax_defs_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SYNTAX_DEFS_TABLE_KEY,
-        reader=t__syntax_index__run.syntax_defs_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
-    syntax_refs_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SYNTAX_REFS_TABLE_KEY,
-        reader=t__syntax_index__run.syntax_refs_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
-    syntax_calls_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SYNTAX_CALLS_TABLE_KEY,
-        reader=t__syntax_index__run.syntax_calls_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
-    syntax_call_args_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SYNTAX_CALL_ARGS_TABLE_KEY,
-        reader=t__syntax_index__run.syntax_call_args_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
-    syntax_func_params_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SYNTAX_FUNC_PARAMS_TABLE_KEY,
-        reader=t__syntax_index__run.syntax_func_params_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
-    syntax_imports_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=SYNTAX_IMPORTS_TABLE_KEY,
-        reader=t__syntax_index__run.syntax_imports_rows,
-        target_name=SYNTAX_INDEX_TARGET_NAME,
-    )
+    parse_manifest_rows = t__syntax_index__run.parse_manifest_rows
+    syntax_spans_rows = t__syntax_index__run.syntax_spans_rows
+    syntax_nodes_rows = t__syntax_index__run.syntax_nodes_rows
+    syntax_edges_rows = t__syntax_index__run.syntax_edges_rows
+    syntax_scopes_rows = t__syntax_index__run.syntax_scopes_rows
+    syntax_defs_rows = t__syntax_index__run.syntax_defs_rows
+    syntax_refs_rows = t__syntax_index__run.syntax_refs_rows
+    syntax_calls_rows = t__syntax_index__run.syntax_calls_rows
+    syntax_call_args_rows = t__syntax_index__run.syntax_call_args_rows
+    syntax_func_params_rows = t__syntax_index__run.syntax_func_params_rows
+    syntax_imports_rows = t__syntax_index__run.syntax_imports_rows
     payload = {
         PARSE_MANIFEST_TABLE_KEY: parse_manifest_rows,
         SYNTAX_SPANS_TABLE_KEY: syntax_spans_rows,
@@ -1639,17 +1576,17 @@ def t__syntax_index__ingest(
         SYNTAX_IMPORTS_TABLE_KEY: syntax_imports_rows,
     }
     table_counts = {
-        PARSE_MANIFEST_TABLE_KEY: parse_manifest_rows.num_rows,
-        SYNTAX_SPANS_TABLE_KEY: syntax_spans_rows.num_rows,
-        SYNTAX_NODES_TABLE_KEY: syntax_nodes_rows.num_rows,
-        SYNTAX_EDGES_TABLE_KEY: syntax_edges_rows.num_rows,
-        SYNTAX_SCOPES_TABLE_KEY: syntax_scopes_rows.num_rows,
-        SYNTAX_DEFS_TABLE_KEY: syntax_defs_rows.num_rows,
-        SYNTAX_REFS_TABLE_KEY: syntax_refs_rows.num_rows,
-        SYNTAX_CALLS_TABLE_KEY: syntax_calls_rows.num_rows,
-        SYNTAX_CALL_ARGS_TABLE_KEY: syntax_call_args_rows.num_rows,
-        SYNTAX_FUNC_PARAMS_TABLE_KEY: syntax_func_params_rows.num_rows,
-        SYNTAX_IMPORTS_TABLE_KEY: syntax_imports_rows.num_rows,
+        PARSE_MANIFEST_TABLE_KEY: t__syntax_index__run.parse_manifest_row_count,
+        SYNTAX_SPANS_TABLE_KEY: t__syntax_index__run.syntax_spans_row_count,
+        SYNTAX_NODES_TABLE_KEY: t__syntax_index__run.syntax_nodes_row_count,
+        SYNTAX_EDGES_TABLE_KEY: t__syntax_index__run.syntax_edges_row_count,
+        SYNTAX_SCOPES_TABLE_KEY: t__syntax_index__run.syntax_scopes_row_count,
+        SYNTAX_DEFS_TABLE_KEY: t__syntax_index__run.syntax_defs_row_count,
+        SYNTAX_REFS_TABLE_KEY: t__syntax_index__run.syntax_refs_row_count,
+        SYNTAX_CALLS_TABLE_KEY: t__syntax_index__run.syntax_calls_row_count,
+        SYNTAX_CALL_ARGS_TABLE_KEY: t__syntax_index__run.syntax_call_args_row_count,
+        SYNTAX_FUNC_PARAMS_TABLE_KEY: t__syntax_index__run.syntax_func_params_row_count,
+        SYNTAX_IMPORTS_TABLE_KEY: t__syntax_index__run.syntax_imports_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -1768,24 +1705,12 @@ def _precheck_join_table(
 ) -> pa.Table:
     if table.num_rows == 0 or not join_keys:
         return table
-    if table_key is None:
-        result = finalize_join_keys(
-            table,
-            required_non_null=join_keys,
-            key_fields=join_keys,
-        )
-    else:
-        result = finalize_table(
-            table,
-            spec=finalize_spec_for_table(
-                table_key,
-                mode="tolerant",
-                required_non_null=join_keys,
-                key_fields=join_keys,
-                dedupe=FinalizeDedupe(enabled=False),
-                target_name=SYMTABLE_TARGET_NAME,
-            ),
-        )
+    result = finalize_join_keys(
+        table,
+        required_non_null=join_keys,
+        key_fields=join_keys,
+        stage="join_precheck",
+    )
     record_join_precheck_errors(
         result,
         table_key=table_key,
@@ -1865,8 +1790,6 @@ def _hash_join_reader(
 def _build_py_sym_unresolved_bindings(
     resolution_edges: pa.Table,
     bindings: pa.Table,
-    *,
-    env: BuildEnv,
 ) -> pa.Table:
     table_key = PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY
     required = {"repo", "commit", "rel_path", "dst_binding_id", "kind"}
@@ -1897,12 +1820,7 @@ def _build_py_sym_unresolved_bindings(
     )
     binding_required = {"repo", "commit", "rel_path", "binding_id"}
     if bindings.num_rows == 0 or not binding_required.issubset(bindings.column_names):
-        return finalize_ingest_table_with_manifest(
-            env=env,
-            table_key=table_key,
-            table=unknown,
-            target_name=SYMTABLE_TARGET_NAME,
-        )
+        return unknown
     left = normalize_table_for_join(
         unknown,
         allowed_columns=_join_safe_allowlist(PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY),
@@ -1923,12 +1841,7 @@ def _build_py_sym_unresolved_bindings(
         ),
         how="left anti",
     )
-    return finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=table_key,
-        reader=joined_reader,
-        target_name=SYMTABLE_TARGET_NAME,
-    )
+    return tabular_to_arrow_table(joined_reader)
 
 
 def t__symtable__ingest(
@@ -1942,6 +1855,7 @@ def t__symtable__ingest(
     IngestStep[TabularByTable]
         Ingest result with table frames.
     """
+    _ = env
     result = t__symtable__run.result
     if result.skipped:
         return IngestStep(
@@ -1963,50 +1877,14 @@ def t__symtable__ingest(
     unresolved_bindings = _build_py_sym_unresolved_bindings(
         resolution_edge_rows_table,
         binding_rows_table,
-        env=env,
     )
-    scope_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_SYM_SCOPES_TABLE_KEY,
-        reader=t__symtable__run.scope_rows,
-        target_name=SYMTABLE_TARGET_NAME,
-    )
-    symbol_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_SYM_SYMBOLS_TABLE_KEY,
-        reader=t__symtable__run.symbol_rows,
-        target_name=SYMTABLE_TARGET_NAME,
-    )
-    scope_edge_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_SYM_SCOPE_EDGES_TABLE_KEY,
-        reader=t__symtable__run.scope_edge_rows,
-        target_name=SYMTABLE_TARGET_NAME,
-    )
-    namespace_edge_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_SYM_NAMESPACE_EDGES_TABLE_KEY,
-        reader=t__symtable__run.namespace_edge_rows,
-        target_name=SYMTABLE_TARGET_NAME,
-    )
-    function_partition_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY,
-        reader=t__symtable__run.function_partition_rows,
-        target_name=SYMTABLE_TARGET_NAME,
-    )
-    binding_rows = finalize_ingest_table_with_manifest(
-        env=env,
-        table_key=PY_SYM_BINDINGS_TABLE_KEY,
-        table=binding_rows_table,
-        target_name=SYMTABLE_TARGET_NAME,
-    )
-    resolution_edge_rows = finalize_ingest_table_with_manifest(
-        env=env,
-        table_key=PY_SYM_RESOLUTION_EDGES_TABLE_KEY,
-        table=resolution_edge_rows_table,
-        target_name=SYMTABLE_TARGET_NAME,
-    )
+    scope_rows = t__symtable__run.scope_rows
+    symbol_rows = t__symtable__run.symbol_rows
+    scope_edge_rows = t__symtable__run.scope_edge_rows
+    namespace_edge_rows = t__symtable__run.namespace_edge_rows
+    function_partition_rows = t__symtable__run.function_partition_rows
+    binding_rows = binding_rows_table
+    resolution_edge_rows = resolution_edge_rows_table
     payload = {
         PY_SYM_SCOPES_TABLE_KEY: scope_rows,
         PY_SYM_SYMBOLS_TABLE_KEY: symbol_rows,
@@ -2018,14 +1896,14 @@ def t__symtable__ingest(
         PY_SYM_RESOLUTION_EDGES_TABLE_KEY: resolution_edge_rows,
     }
     table_counts = {
-        PY_SYM_SCOPES_TABLE_KEY: scope_rows.num_rows,
-        PY_SYM_SYMBOLS_TABLE_KEY: symbol_rows.num_rows,
-        PY_SYM_SCOPE_EDGES_TABLE_KEY: scope_edge_rows.num_rows,
-        PY_SYM_NAMESPACE_EDGES_TABLE_KEY: namespace_edge_rows.num_rows,
-        PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: function_partition_rows.num_rows,
-        PY_SYM_BINDINGS_TABLE_KEY: binding_rows.num_rows,
+        PY_SYM_SCOPES_TABLE_KEY: t__symtable__run.scope_row_count,
+        PY_SYM_SYMBOLS_TABLE_KEY: t__symtable__run.symbol_row_count,
+        PY_SYM_SCOPE_EDGES_TABLE_KEY: t__symtable__run.scope_edge_row_count,
+        PY_SYM_NAMESPACE_EDGES_TABLE_KEY: t__symtable__run.namespace_edge_row_count,
+        PY_SYM_FUNCTION_PARTITIONS_TABLE_KEY: t__symtable__run.function_partition_row_count,
+        PY_SYM_BINDINGS_TABLE_KEY: t__symtable__run.binding_row_count,
         PY_SYM_UNRESOLVED_BINDINGS_TABLE_KEY: unresolved_bindings.num_rows,
-        PY_SYM_RESOLUTION_EDGES_TABLE_KEY: resolution_edge_rows.num_rows,
+        PY_SYM_RESOLUTION_EDGES_TABLE_KEY: t__symtable__run.resolution_edge_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -2117,6 +1995,7 @@ def t__bytecode__ingest(
     IngestStep[TabularByTable]
         Ingest result with table frames.
     """
+    _ = env
     result = t__bytecode__run.result
     if result.skipped:
         return IngestStep(
@@ -2133,48 +2012,13 @@ def t__bytecode__ingest(
             )
         )
 
-    compiler_meta_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_COMPILER_META_TABLE_KEY,
-        reader=t__bytecode__run.compiler_meta_rows,
-        target_name=BYTECODE_TARGET_NAME,
-    )
-    code_unit_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_BC_CODE_UNITS_TABLE_KEY,
-        reader=t__bytecode__run.code_unit_rows,
-        target_name=BYTECODE_TARGET_NAME,
-    )
-    instruction_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_BC_INSTRUCTIONS_TABLE_KEY,
-        reader=t__bytecode__run.instruction_rows,
-        target_name=BYTECODE_TARGET_NAME,
-    )
-    exception_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_BC_EXCEPTION_TABLE_KEY,
-        reader=t__bytecode__run.exception_rows,
-        target_name=BYTECODE_TARGET_NAME,
-    )
-    block_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_BC_BLOCKS_TABLE_KEY,
-        reader=t__bytecode__run.block_rows,
-        target_name=BYTECODE_TARGET_NAME,
-    )
-    cfg_edge_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_BC_CFG_EDGES_TABLE_KEY,
-        reader=t__bytecode__run.cfg_edge_rows,
-        target_name=BYTECODE_TARGET_NAME,
-    )
-    defuse_event_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_BC_DEFUSE_EVENTS_TABLE_KEY,
-        reader=t__bytecode__run.defuse_event_rows,
-        target_name=BYTECODE_TARGET_NAME,
-    )
+    compiler_meta_rows = t__bytecode__run.compiler_meta_rows
+    code_unit_rows = t__bytecode__run.code_unit_rows
+    instruction_rows = t__bytecode__run.instruction_rows
+    exception_rows = t__bytecode__run.exception_rows
+    block_rows = t__bytecode__run.block_rows
+    cfg_edge_rows = t__bytecode__run.cfg_edge_rows
+    defuse_event_rows = t__bytecode__run.defuse_event_rows
     payload = {
         PY_COMPILER_META_TABLE_KEY: compiler_meta_rows,
         PY_BC_CODE_UNITS_TABLE_KEY: code_unit_rows,
@@ -2185,13 +2029,13 @@ def t__bytecode__ingest(
         PY_BC_DEFUSE_EVENTS_TABLE_KEY: defuse_event_rows,
     }
     table_counts = {
-        PY_COMPILER_META_TABLE_KEY: compiler_meta_rows.num_rows,
-        PY_BC_CODE_UNITS_TABLE_KEY: code_unit_rows.num_rows,
-        PY_BC_INSTRUCTIONS_TABLE_KEY: instruction_rows.num_rows,
-        PY_BC_EXCEPTION_TABLE_KEY: exception_rows.num_rows,
-        PY_BC_BLOCKS_TABLE_KEY: block_rows.num_rows,
-        PY_BC_CFG_EDGES_TABLE_KEY: cfg_edge_rows.num_rows,
-        PY_BC_DEFUSE_EVENTS_TABLE_KEY: defuse_event_rows.num_rows,
+        PY_COMPILER_META_TABLE_KEY: t__bytecode__run.compiler_meta_row_count,
+        PY_BC_CODE_UNITS_TABLE_KEY: t__bytecode__run.code_unit_row_count,
+        PY_BC_INSTRUCTIONS_TABLE_KEY: t__bytecode__run.instruction_row_count,
+        PY_BC_EXCEPTION_TABLE_KEY: t__bytecode__run.exception_row_count,
+        PY_BC_BLOCKS_TABLE_KEY: t__bytecode__run.block_row_count,
+        PY_BC_CFG_EDGES_TABLE_KEY: t__bytecode__run.cfg_edge_row_count,
+        PY_BC_DEFUSE_EVENTS_TABLE_KEY: t__bytecode__run.defuse_event_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -2294,66 +2138,16 @@ def t__inspect__ingest(
             )
         )
 
-    object_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_INSPECT_OBJECTS_TABLE_KEY,
-        reader=t__inspect__run.object_rows,
-        target_name=INSPECT_TARGET_NAME,
-    )
-    member_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_INSPECT_MEMBERS_TABLE_KEY,
-        reader=t__inspect__run.member_rows,
-        target_name=INSPECT_TARGET_NAME,
-    )
-    class_mro_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_INSPECT_CLASS_MRO_TABLE_KEY,
-        reader=t__inspect__run.class_mro_rows,
-        target_name=INSPECT_TARGET_NAME,
-    )
-    class_attr_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_INSPECT_CLASS_ATTRS_TABLE_KEY,
-        reader=t__inspect__run.class_attr_rows,
-        target_name=INSPECT_TARGET_NAME,
-    )
-    unwrap_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_INSPECT_UNWRAP_TABLE_KEY,
-        reader=t__inspect__run.unwrap_rows,
-        target_name=INSPECT_TARGET_NAME,
-    )
-    signature_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_INSPECT_SIGNATURES_TABLE_KEY,
-        reader=t__inspect__run.signature_rows,
-        target_name=INSPECT_TARGET_NAME,
-    )
-    signature_param_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY,
-        reader=t__inspect__run.signature_param_rows,
-        target_name=INSPECT_TARGET_NAME,
-    )
-    annotation_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_INSPECT_ANNOTATIONS_TABLE_KEY,
-        reader=t__inspect__run.annotation_rows,
-        target_name=INSPECT_TARGET_NAME,
-    )
-    source_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_INSPECT_SOURCE_TABLE_KEY,
-        reader=t__inspect__run.source_rows,
-        target_name=INSPECT_TARGET_NAME,
-    )
-    runtime_state_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=PY_INSPECT_RUNTIME_STATE_TABLE_KEY,
-        reader=t__inspect__run.runtime_state_rows,
-        target_name=INSPECT_TARGET_NAME,
-    )
+    object_rows = t__inspect__run.object_rows
+    member_rows = t__inspect__run.member_rows
+    class_mro_rows = t__inspect__run.class_mro_rows
+    class_attr_rows = t__inspect__run.class_attr_rows
+    unwrap_rows = t__inspect__run.unwrap_rows
+    signature_rows = t__inspect__run.signature_rows
+    signature_param_rows = t__inspect__run.signature_param_rows
+    annotation_rows = t__inspect__run.annotation_rows
+    source_rows = t__inspect__run.source_rows
+    runtime_state_rows = tabular_to_arrow_table(t__inspect__run.runtime_state_rows)
     list_errors = _inspect_runtime_state_list_errors(runtime_state_rows)
     list_warnings = _list_validation_warnings(
         list_errors,
@@ -2378,16 +2172,16 @@ def t__inspect__ingest(
         PY_INSPECT_RUNTIME_STATE_TABLE_KEY: runtime_state_rows,
     }
     table_counts = {
-        PY_INSPECT_OBJECTS_TABLE_KEY: object_rows.num_rows,
-        PY_INSPECT_MEMBERS_TABLE_KEY: member_rows.num_rows,
-        PY_INSPECT_CLASS_MRO_TABLE_KEY: class_mro_rows.num_rows,
-        PY_INSPECT_CLASS_ATTRS_TABLE_KEY: class_attr_rows.num_rows,
-        PY_INSPECT_UNWRAP_TABLE_KEY: unwrap_rows.num_rows,
-        PY_INSPECT_SIGNATURES_TABLE_KEY: signature_rows.num_rows,
-        PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY: signature_param_rows.num_rows,
-        PY_INSPECT_ANNOTATIONS_TABLE_KEY: annotation_rows.num_rows,
-        PY_INSPECT_SOURCE_TABLE_KEY: source_rows.num_rows,
-        PY_INSPECT_RUNTIME_STATE_TABLE_KEY: runtime_state_rows.num_rows,
+        PY_INSPECT_OBJECTS_TABLE_KEY: t__inspect__run.object_row_count,
+        PY_INSPECT_MEMBERS_TABLE_KEY: t__inspect__run.member_row_count,
+        PY_INSPECT_CLASS_MRO_TABLE_KEY: t__inspect__run.class_mro_row_count,
+        PY_INSPECT_CLASS_ATTRS_TABLE_KEY: t__inspect__run.class_attr_row_count,
+        PY_INSPECT_UNWRAP_TABLE_KEY: t__inspect__run.unwrap_row_count,
+        PY_INSPECT_SIGNATURES_TABLE_KEY: t__inspect__run.signature_row_count,
+        PY_INSPECT_SIGNATURE_PARAMS_TABLE_KEY: t__inspect__run.signature_param_row_count,
+        PY_INSPECT_ANNOTATIONS_TABLE_KEY: t__inspect__run.annotation_row_count,
+        PY_INSPECT_SOURCE_TABLE_KEY: t__inspect__run.source_row_count,
+        PY_INSPECT_RUNTIME_STATE_TABLE_KEY: t__inspect__run.runtime_state_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(
@@ -2473,12 +2267,7 @@ def t__docstrings__ingest(
             )
         )
 
-    docstring_rows = finalize_ingest_reader_with_manifest(
-        env=env,
-        table_key=DOCSTRINGS_TABLE_KEY,
-        reader=t__docstrings__run.rows,
-        target_name=DOCSTRINGS_TARGET_NAME,
-    )
+    docstring_rows = tabular_to_arrow_table(t__docstrings__run.rows)
     list_errors = _docstrings_list_errors(docstring_rows)
     list_warnings = _list_validation_warnings(list_errors, context=DOCSTRINGS_TABLE_KEY)
     _persist_list_errors_manifest(
@@ -2488,7 +2277,7 @@ def t__docstrings__ingest(
         errors=list_errors,
     )
     payload = {DOCSTRINGS_TABLE_KEY: docstring_rows}
-    table_counts = {DOCSTRINGS_TABLE_KEY: docstring_rows.num_rows}
+    table_counts = {DOCSTRINGS_TABLE_KEY: t__docstrings__run.row_count}
     return IngestStep(
         result=ExecutionResult.ok(
             table_counts=table_counts,
@@ -2510,12 +2299,14 @@ _AST_TARGET_SPEC = ToolTargetSpec(
         TableOutputSpec(table_key=AST_NODES_TABLE_KEY, node_name="ast__node_rows"),
         TableOutputSpec(table_key=AST_METRICS_TABLE_KEY, node_name="ast__metric_rows"),
     ),
+    table_save_spec_factory=_ingest_save_spec,
 )
 _CST_TARGET_SPEC = ToolTargetSpec(
     domain="ingestion",
     target_name=CST_TARGET_NAME,
     spec=_INTENSIVE_SPEC,
     tables=(TableOutputSpec(table_key=CST_NODES_TABLE_KEY, node_name="cst__node_rows"),),
+    table_save_spec_factory=_ingest_save_spec,
 )
 _SYNTAX_INDEX_TARGET_SPEC = ToolTargetSpec(
     domain="ingestion",
@@ -2567,6 +2358,7 @@ _SYNTAX_INDEX_TARGET_SPEC = ToolTargetSpec(
             node_name="syntax_index__import_rows",
         ),
     ),
+    table_save_spec_factory=_ingest_save_spec,
 )
 _SYMTABLE_TARGET_SPEC = ToolTargetSpec(
     domain="ingestion",
@@ -2606,6 +2398,7 @@ _SYMTABLE_TARGET_SPEC = ToolTargetSpec(
             node_name="symtable__resolution_edge_rows",
         ),
     ),
+    table_save_spec_factory=_ingest_save_spec,
 )
 _BYTECODE_TARGET_SPEC = ToolTargetSpec(
     domain="ingestion",
@@ -2641,6 +2434,7 @@ _BYTECODE_TARGET_SPEC = ToolTargetSpec(
             node_name="bytecode__defuse_event_rows",
         ),
     ),
+    table_save_spec_factory=_ingest_save_spec,
 )
 _INSPECT_TARGET_SPEC = ToolTargetSpec(
     domain="ingestion",
@@ -2688,12 +2482,14 @@ _INSPECT_TARGET_SPEC = ToolTargetSpec(
             node_name="inspect__runtime_state_rows",
         ),
     ),
+    table_save_spec_factory=_ingest_save_spec,
 )
 _DOCSTRINGS_TARGET_SPEC = ToolTargetSpec(
     domain="ingestion",
     target_name=DOCSTRINGS_TARGET_NAME,
     spec=TargetSpecDescriptor(),
     tables=(TableOutputSpec(table_key=DOCSTRINGS_TABLE_KEY, node_name="docstrings__rows"),),
+    table_save_spec_factory=_ingest_save_spec,
 )
 
 _MODULE = sys.modules[__name__]

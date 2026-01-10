@@ -28,8 +28,8 @@ from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapsh
 from codeintel.build.scopes.snapshot import SnapshotScope
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
 from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 FunctionTypesRow = dict[str, object]
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 GOIDS_REQUIRED_COLUMNS: tuple[str, ...] = (
     "goid_h128",
@@ -359,7 +360,15 @@ def _select_goids_table(
     plan = plan.aggregate(keys=[E.field("goid_h128")], aggregates=aggregates)
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 def _group_goids_by_path(

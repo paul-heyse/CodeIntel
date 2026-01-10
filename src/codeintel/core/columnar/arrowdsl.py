@@ -166,7 +166,7 @@ class ExecutionPlan:
             external_request=request,
             ordering=ordering,
             determinism=determinism,
-            schema=None,
+            schema=request.schema,
         )
 
     @classmethod
@@ -182,13 +182,35 @@ class ExecutionPlan:
         -------
         ExecutionPlan
             Plan wrapper retaining ordering metadata from the DSL plan.
+
+        Raises
+        ------
+        ValueError
+            If the plan has no declaration or source thunk.
         """
-        return cls(
-            decl=plan.declaration,
-            ordering=plan.ordering,
-            determinism=determinism,
-            schema=plan.schema,
-        )
+        if plan.declaration is not None:
+            return cls(
+                decl=plan.declaration,
+                ordering=plan.ordering,
+                determinism=determinism,
+                schema=plan.schema,
+            )
+        if plan.reader_thunk is not None:
+            return cls(
+                reader_thunk=plan.reader_thunk,
+                ordering=plan.ordering,
+                determinism=determinism,
+                schema=plan.schema,
+            )
+        if plan.table_thunk is not None:
+            return cls(
+                table_thunk=plan.table_thunk,
+                ordering=plan.ordering,
+                determinism=determinism,
+                schema=plan.schema,
+            )
+        msg = "Plan has no declaration, table thunk, or reader thunk."
+        raise ValueError(msg)
 
     def to_reader(self, *, ctx: ExecutionContext) -> pa.RecordBatchReader:
         """Return a RecordBatchReader for the plan output.

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
@@ -14,11 +14,11 @@ from codeintel.build.hamilton.native.graphs.filter_helpers import plan_filter_or
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.tabular.compute_masks import is_valid_expr, non_empty_string_expr
 from codeintel.build.tabular.conversion import tabular_to_scoped_table
-from codeintel.build.tabular.finalize_ops import finalize_spec_for_table, finalize_table
 from codeintel.build.tabular.types import InferableTabularInput
 from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.kernels import SortKey
+from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import empty_table_for_table, table_for_rows
 from codeintel.core.data_models.ids import normalize_decimal_id
 
@@ -352,17 +352,7 @@ def cdg_edges(
     if blocks_table.num_rows == 0 or edges_table.num_rows == 0:
         return empty_table_for_table(CDG_EDGES_TABLE_KEY)
 
-    missing_goids: Counter[str] = Counter()
-    blocks_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
     block_columns = ("repo", "commit", "function_goid_h128", "block_id", "block_idx")
-    for values in iter_tuples(table_to_reader(blocks_table), columns=block_columns):
-        row: dict[str, object] = dict(zip(block_columns, values, strict=False))
-        function_goid = _coerce_goid(row.get("function_goid_h128"))
-        if function_goid is None:
-            missing_goids["blocks_missing_goid"] += 1
-            continue
-        blocks_by_goid[function_goid].append(row)
-    edges_by_goid: dict[int, list[dict[str, object]]] = defaultdict(list)
     edge_columns = (
         "repo",
         "commit",
@@ -371,20 +361,48 @@ def cdg_edges(
         "dst_block_id",
         "edge_kind",
     )
-    for values in iter_tuples(table_to_reader(edges_table), columns=edge_columns):
-        row: dict[str, object] = dict(zip(edge_columns, values, strict=False))
-        function_goid = _coerce_goid(row.get("function_goid_h128"))
-        if function_goid is None:
-            missing_goids["edges_missing_goid"] += 1
-            continue
-        edges_by_goid[function_goid].append(row)
-    if missing_goids:
+    blocks_by_goid, missing_blocks = _group_rows_by_goid(blocks_table, columns=block_columns)
+    edges_by_goid, missing_edges = _group_rows_by_goid(edges_table, columns=edge_columns)
+    if missing_blocks or missing_edges:
         LOG.info(
             "cdg_edges dropped rows missing function_goid_h128 blocks=%d edges=%d",
-            missing_goids.get("blocks_missing_goid", 0),
-            missing_goids.get("edges_missing_goid", 0),
+            missing_blocks,
+            missing_edges,
         )
 
+    rows = _build_cdg_edge_rows(blocks_by_goid, edges_by_goid)
+    if not rows:
+        return empty_table_for_table(CDG_EDGES_TABLE_KEY)
+
+    table, _ = table_for_rows(CDG_EDGES_TABLE_KEY, rows)
+    sort_keys = _order_by_for_table(CDG_EDGES_TABLE_KEY)
+    plan = Plan.table(table)
+    if sort_keys:
+        return plan.order_by(sort_keys=list(sort_keys))
+    return plan
+
+
+def _group_rows_by_goid(
+    table: pa.Table,
+    *,
+    columns: Sequence[str],
+) -> tuple[dict[int, list[dict[str, object]]], int]:
+    missing = 0
+    grouped: dict[int, list[dict[str, object]]] = defaultdict(list)
+    for values in iter_tuples(table_to_reader(table), columns=columns):
+        row: dict[str, object] = dict(zip(columns, values, strict=False))
+        function_goid = _coerce_goid(row.get("function_goid_h128"))
+        if function_goid is None:
+            missing += 1
+            continue
+        grouped[function_goid].append(row)
+    return grouped, missing
+
+
+def _build_cdg_edge_rows(
+    blocks_by_goid: Mapping[int, list[dict[str, object]]],
+    edges_by_goid: Mapping[int, list[dict[str, object]]],
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for function_goid, blocks in blocks_by_goid.items():
         edges = edges_by_goid.get(function_goid)
@@ -403,22 +421,7 @@ def cdg_edges(
             }
             for row in _cdg_edges_for_function(function_goid, blocks, edges)
         )
-
-    if not rows:
-        return empty_table_for_table(CDG_EDGES_TABLE_KEY)
-
-    table, _ = table_for_rows(CDG_EDGES_TABLE_KEY, rows)
-    result = finalize_table(
-        table,
-        spec=finalize_spec_for_table(
-            CDG_EDGES_TABLE_KEY,
-            mode="strict",
-            key_fields=_key_fields_for_table(CDG_EDGES_TABLE_KEY),
-            order_by=_order_by_for_table(CDG_EDGES_TABLE_KEY),
-            target_name=CDG_TARGET_NAME,
-        ),
-    )
-    return result.good
+    return rows
 
 
 def _key_fields_for_table(table_key: str) -> tuple[str, ...]:

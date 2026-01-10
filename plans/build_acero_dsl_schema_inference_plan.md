@@ -9,15 +9,15 @@
 ## Status Summary
 
 - Scope 1: complete (plan schema propagation + ordering metadata in Plan).
-- Scope 2: in progress (plan schema compiler wired; output registry reduction pending).
-- Scope 3: in progress (graph nodes + core ingestion nodes now return Plan; remaining Hamilton nodes still return tables).
-- Scope 4: in progress (reader-first execution supported; remaining to_table helpers still exist).
+- Scope 2: complete (plan schema compiler wired; output registry reduction done).
+- Scope 3: in progress (graph + core ingestion nodes are plan-first; remaining Hamilton nodes still return tables).
+- Scope 4: in progress (reader-first execution flows through finalize; a few non-plan helpers still materialize).
 - Scope 5: in progress (explode kernels centralized; remaining row-loop migrations pending).
-- Scope 6: in progress (HashJoinSpec in DSL; legacy joins and aggregates pending).
+- Scope 6: in progress (HashJoinSpec in DSL; remaining ad hoc joins/aggregates pending).
 - Scope 7: in progress (ingestion plan surface exists; full adoption pending).
-- Scope 8: in progress (ordering/provenance infrastructure in place; call sites still need updates).
+- Scope 8: in progress (ordering/provenance infrastructure in place; remaining call sites pending).
 - Scope 9: in progress (analytics conversions and rustworkx boundaries pending).
-- Scope 10: in progress (Substrait runner exists; schema inference alignment pending).
+- Scope 10: complete (external plan runner wired; schema inference alignment added).
 
 ## Scope 1: Plan schema propagation in the DSL
 
@@ -66,7 +66,7 @@ Targets
 Checklist
 - [x] Add a plan schema compiler that accepts input schemas and Plan graphs.
 - [x] Wire compiler into inference service for plan backed outputs.
-- [ ] Reduce output registry to contract constraints only (keys, ordering, determinism).
+- [x] Reduce output registry to contract constraints only (keys, ordering, determinism).
 
 ## Scope 3: Plan first Hamilton DAG
 
@@ -90,8 +90,8 @@ Checklist
 - [x] Replace materialized table outputs with Plan outputs in core ingestion nodes (scip_resolution/syntax_augment/syntax_enrich).
 - [ ] Replace materialized table outputs with Plan outputs in remaining Hamilton nodes.
 - [x] Allow Plan/ExecutionPlan to flow through inference + materialization.
-- [ ] Keep finalize and materialization in the target nodes only.
-- [ ] Ensure plan ordering metadata is preserved end to end.
+- [x] Keep finalize and materialization in the target nodes only for plan-first paths.
+- [ ] Ensure plan ordering metadata is preserved end to end across remaining Hamilton nodes.
 
 ## Scope 4: Reader first execution and finalize boundaries
 
@@ -111,8 +111,8 @@ Targets
 - `src/codeintel/build/hamilton/native/graphs/*`
 
 Checklist
-- [ ] Replace plan to_table helpers with reader to finalize flow.
-- [ ] Enforce finalize as the only place that calls reader.read_all().
+- [x] Replace plan to_table helpers with reader to finalize flow in graph/ingestion/analytics helpers.
+- [ ] Enforce finalize as the only place that calls reader.read_all() (remaining non-plan helpers).
 - [x] Align determinism tier and ordering keys inside finalize.
 
 ## Scope 5: Kernel lane for list explode edge builders
@@ -168,8 +168,8 @@ Targets
 
 Checklist
 - [x] Consolidate joins around HashJoinSpec in plan ops.
-- [ ] Normalize aggregates to explicit output names.
-- [ ] Remove Python joins and row grouping loops.
+- [x] Normalize aggregates to explicit output names in shared helpers.
+- [ ] Remove remaining Python joins and row grouping loops in long-tail pipelines.
 
 ## Scope 7: Ingestion plan unification
 
@@ -187,8 +187,8 @@ Targets
 - `src/codeintel/ingestion/ports/*`
 
 Checklist
-- [ ] Drive ingestion reads through QuerySpec and Plan.
-- [ ] Remove direct table materialization in ingestion compute.
+- [ ] Drive ingestion reads through QuerySpec and Plan for all ingestion compute.
+- [ ] Remove remaining direct table materialization in ingestion compute.
 - [ ] Align ingestion plans with execution context profiles.
 
 ## Scope 8: Ordering and provenance enforcement
@@ -209,7 +209,7 @@ Targets
 
 Checklist
 - [x] Propagate OrderingSpec through plan nodes.
-- [ ] Use scan ordering settings only when canonical determinism is required.
+- [x] Use scan ordering settings only when canonical determinism is required (plan + scan).
 - [x] Tie break canonical ordering with provenance fields.
 
 ## Scope 9: Analytics and graph pipeline conversion
@@ -251,11 +251,11 @@ Targets
 Checklist
 - [x] Add a Substrait plan runner for external plans.
 - [x] Wire into ExecutionPlan for optional use.
-- [ ] Keep plan schema inference aligned with Substrait outputs.
+- [x] Keep plan schema inference aligned with Substrait/external outputs.
 
 ## Rollout order
 
-1) Plan schema propagation and compiler (Scope 1 and 2). Done, except output registry reduction.
+1) Plan schema propagation and compiler (Scope 1 and 2). Done.
 2) Plan first Hamilton and reader first finalize (Scope 3 and 4). In progress (graphs + core ingestion nodes done).
 3) Kernel explode utilities and join normalization (Scope 5 and 6). In progress.
 4) Ingestion unification and ordering enforcement (Scope 7 and 8). In progress.

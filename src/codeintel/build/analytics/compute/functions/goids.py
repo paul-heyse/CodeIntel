@@ -22,8 +22,8 @@ import pyarrow as pa
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_plan
 from codeintel.build.tabular.arrow_ops import iter_rows
 from codeintel.build.tabular.expr_vocab import E
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
@@ -37,6 +37,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
+
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 
 class GoidRow(TypedDict):
@@ -252,7 +254,15 @@ def _worklist_table(
     plan = plan.aggregate(keys=[E.field("goid_h128")], aggregates=aggregates)
     execution_ctx = resolve_execution_context(resolve_columnar_context(ctx))
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 __all__ = [

@@ -19,6 +19,7 @@ from codeintel.build.analytics.utilities.ast import (
     safe_unparse,
 )
 from codeintel.build.analytics.utilities.snapshot import SnapshotContext, snapshot_table
+from codeintel.core.columnar.conversion import table_to_reader
 from codeintel.core.columnar.execution_context import resolve_columnar_context
 from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
@@ -56,7 +57,7 @@ class _RowInputs:
     repo: str
     commit: str
     max_conditions_per_func: int
-    goids: set[int]
+    goids: Sequence[int]
     ast_by_goid: dict[int, FunctionAst]
     doc_map: dict[tuple[str, str], dict[str, object]]
     type_map: dict[int, dict[str, object]]
@@ -71,6 +72,7 @@ class FunctionContractInputs:
     catalog: FunctionCatalogProvider | None = None
     docstrings_frame: pa.Table | None = None
     function_types_frame: pa.Table | None = None
+    worklist: pa.Table | pa.RecordBatchReader | None = None
     max_conditions_per_func: int = 64
     ctx: ExecutionContext | RuntimeExecutionContext | None = None
 
@@ -99,10 +101,12 @@ def build_function_contracts_rows(
     """
     ast_by_goid = inputs.function_ast_map or {}
 
-    if inputs.catalog is not None:
-        all_goids = {span.goid for span in inputs.catalog.catalog().function_spans}
+    if inputs.worklist is not None:
+        all_goids = _goids_from_worklist(inputs.worklist)
+    elif inputs.catalog is not None:
+        all_goids = [span.goid for span in inputs.catalog.catalog().function_spans]
     else:
-        all_goids = set()
+        all_goids = []
 
     doc_map = _doc_map_from_frame(
         inputs.docstrings_frame,
@@ -188,6 +192,17 @@ def _build_rows(inputs: _RowInputs) -> ColumnarRowBuffer:
             }
         )
     return buffer
+
+
+def _goids_from_worklist(worklist: pa.Table | pa.RecordBatchReader) -> list[int]:
+    reader = worklist if isinstance(worklist, pa.RecordBatchReader) else table_to_reader(worklist)
+    goids: list[int] = []
+    for (goid,) in iter_tuples(reader, columns=("goid_h128",)):
+        goid_id = normalize_decimal_id(goid)
+        if goid_id is None:
+            continue
+        goids.append(int(goid_id))
+    return goids
 
 
 def _doc_map_from_frame(

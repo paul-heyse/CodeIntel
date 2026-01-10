@@ -61,6 +61,8 @@ from codeintel.build.scopes.snapshot import SnapshotScanContext
 from codeintel.build.settings import get_arrow_scan_settings, get_columnar_runtime_settings
 from codeintel.core.columnar.execution_context import (
     ExecutionContext as ColumnarExecutionContext,
+)
+from codeintel.core.columnar.execution_context import (
     RuntimeProfile,
     resolve_arrow_scan_settings,
     runtime_profile_from_settings,

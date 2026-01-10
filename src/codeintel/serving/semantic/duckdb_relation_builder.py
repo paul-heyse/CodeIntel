@@ -998,6 +998,7 @@ def _external_plan_reader(
             dataset=dataset,
             filter_expr=filter_expression,
             columns=projection_columns,
+            schema=dataset.schema,
             scan_options=scan_options,
             use_threads=resolved_use_threads,
         )

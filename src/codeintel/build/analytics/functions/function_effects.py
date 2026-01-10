@@ -37,7 +37,9 @@ from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
 )
+from codeintel.core.columnar.explode_ops import ExplodeSpec, explode_edges_for_join
 from codeintel.core.columnar.finalize_ops import finalize_spec_for_table
+from codeintel.core.columnar.iter import iter_tuples
 from codeintel.core.columnar.plan_kernels import GroupedRollupSpec, grouped_rollup_table
 from codeintel.core.columnar.plan_ops import Plan
 from codeintel.core.columnar.rows import ColumnarRowBuffer
@@ -569,18 +571,30 @@ def _call_graph_edges_from_frame(
     if edges_frame is None or edges_frame.num_rows == 0:
         return edge_rows, node_ids
     rowset = _call_graph_rowset(edges_frame, repo=repo, commit=commit, ctx=ctx)
-    for row in iter_rows(rowset, ("caller_goid_h128", "callee_goid_h128")):
-        caller = normalize_decimal_id(row.get("caller_goid_h128"))
-        if caller is None:
-            continue
-        callee_ids = _coerce_goids(row.get("callee_goid_h128"))
-        if not callee_ids:
+    exploded = explode_edges_for_join(
+        rowset,
+        spec=ExplodeSpec(
+            src_col="caller_goid_h128",
+            dst_list_col="callee_goid_h128",
+            null_list_policy="empty",
+            null_child_policy="drop",
+            error_context_cols=("caller_goid_h128",),
+        ),
+        allowed_columns=("caller_goid_h128", "callee_goid_h128"),
+    )
+    for caller_raw, callee_raw in iter_tuples(
+        exploded.good.to_reader(),
+        columns=("caller_goid_h128", "callee_goid_h128"),
+    ):
+        caller = normalize_decimal_id(caller_raw)
+        callee = normalize_decimal_id(callee_raw)
+        if caller is None or callee is None:
             continue
         caller_id = int(caller)
+        callee_id = int(callee)
         node_ids.add(caller_id)
-        for callee_id in callee_ids:
-            node_ids.add(callee_id)
-            edge_rows.append((caller_id, callee_id, 1.0))
+        node_ids.add(callee_id)
+        edge_rows.append((caller_id, callee_id, 1.0))
     return edge_rows, node_ids
 
 
@@ -705,22 +719,6 @@ def _unresolved_call_rowset(
         ),
         ctx=resolve_columnar_context(ctx),
     )
-
-
-def _coerce_goids(raw: object) -> list[int]:
-    return [
-        int(goid)
-        for value in _list_values(raw)
-        if (goid := normalize_decimal_id(value)) is not None
-    ]
-
-
-def _list_values(value: object) -> list[object]:
-    if isinstance(value, list):
-        return value
-    if isinstance(value, tuple):
-        return list(value)
-    return []
 
 
 def _purity_confidence(*, parsed: bool, unresolved_call_count: int) -> float:

@@ -43,8 +43,10 @@ if TYPE_CHECKING:
     from codeintel.core.columnar.arrowdsl import ExecutionPlan
     from codeintel.core.columnar.streaming import DatasetScanOptions
 
+    type TableThunk = Callable[[], pa.Table]
     type ReaderThunk = Callable[[], pa.RecordBatchReader]
 else:
+    type TableThunk = object
     type ReaderThunk = object
 
 JoinType = Literal[
@@ -77,9 +79,34 @@ class HashJoinSpec:
 class Plan:
     """Wrap an Acero declaration for plan construction."""
 
-    declaration: acero.Declaration
+    declaration: acero.Declaration | None = None
+    table_thunk: TableThunk | None = None
+    reader_thunk: ReaderThunk | None = None
     schema: pa.Schema | None = None
     ordering: OrderingSpec | None = None
+
+    def require_declaration(self, *, operation: str) -> acero.Declaration:
+        """Return the underlying declaration or raise if missing.
+
+        Parameters
+        ----------
+        operation
+            Operation name for error context.
+
+        Returns
+        -------
+        pyarrow.acero.Declaration
+            Underlying declaration for the plan.
+
+        Raises
+        ------
+        ValueError
+            If the plan has no declaration source.
+        """
+        if self.declaration is None:
+            msg = f"Plan {operation} requires an Acero declaration source."
+            raise ValueError(msg)
+        return self.declaration
 
     def _resolved_ordering(self) -> OrderingSpec:
         return self.ordering or OrderingSpec.unordered(reason="unspecified")
@@ -150,6 +177,34 @@ class Plan:
         return cls(decl, schema=table.schema, ordering=ordering)
 
     @classmethod
+    def reader_source(
+        cls,
+        reader: pa.RecordBatchReader,
+        *,
+        ordering: OrderingSpec | None = None,
+    ) -> Plan:
+        """Wrap a record batch reader as a plan source.
+
+        Parameters
+        ----------
+        reader
+            Record batch reader providing plan input.
+        ordering
+            Optional ordering metadata for the reader source.
+
+        Returns
+        -------
+        Plan
+            Plan backed by a reader thunk.
+        """
+        resolved_ordering = ordering or OrderingSpec.implicit(reason="reader source ordering")
+        return cls(
+            reader_thunk=lambda: reader,
+            schema=reader.schema,
+            ordering=resolved_ordering,
+        )
+
+    @classmethod
     def from_sequence(cls, plans: Sequence[Plan]) -> Plan:
         """Create a plan from a linear sequence of declarations.
 
@@ -163,7 +218,9 @@ class Plan:
         Plan
             Plan wired using Declaration.from_sequence.
         """
-        declarations = [plan.declaration for plan in plans]
+        declarations = [
+            plan.require_declaration(operation="from_sequence") for plan in plans
+        ]
         decl = acero.Declaration.from_sequence(declarations)
         ordering = plans[-1].ordering if plans else None
         schema = plans[-1].schema if plans else None
@@ -195,7 +252,11 @@ class Plan:
         else:
             expr_list = list(expressions)
         options = acero.ProjectNodeOptions(expr_list, names=names)
-        decl = acero.Declaration("project", options, inputs=[self.declaration])
+        decl = acero.Declaration(
+            "project",
+            options,
+            inputs=[self.require_declaration(operation="project")],
+        )
         ordering = _project_ordering(
             self._resolved_ordering(),
             expressions=expr_list,
@@ -218,7 +279,11 @@ class Plan:
             Updated plan with a filter node.
         """
         options = acero.FilterNodeOptions(expr)
-        decl = acero.Declaration("filter", options, inputs=[self.declaration])
+        decl = acero.Declaration(
+            "filter",
+            options,
+            inputs=[self.require_declaration(operation="filter")],
+        )
         ordering = _filter_ordering(self._resolved_ordering())
         schema = infer_filter_schema(self.schema)
         return Plan(decl, schema=schema, ordering=ordering)
@@ -244,7 +309,11 @@ class Plan:
             Updated plan with an aggregate node.
         """
         options = acero.AggregateNodeOptions(aggregates=list(aggregates), keys=keys)
-        decl = acero.Declaration("aggregate", options, inputs=[self.declaration])
+        decl = acero.Declaration(
+            "aggregate",
+            options,
+            inputs=[self.require_declaration(operation="aggregate")],
+        )
         ordering = _aggregate_ordering(self._resolved_ordering(), keys=keys)
         schema = infer_aggregate_schema(self.schema, keys=keys, aggregates=aggregates)
         return Plan(decl, schema=schema, ordering=ordering)
@@ -282,7 +351,10 @@ class Plan:
         decl = acero.Declaration(
             "hashjoin",
             options,
-            inputs=[self.declaration, right.declaration],
+            inputs=[
+                self.require_declaration(operation="hash_join (left)"),
+                right.require_declaration(operation="hash_join (right)"),
+            ],
         )
         ordering = _merge_join_ordering(
             left=self._resolved_ordering(),
@@ -318,7 +390,11 @@ class Plan:
             sort_keys=list(sort_keys),
             null_placement=null_placement,
         )
-        decl = acero.Declaration("order_by", options, inputs=[self.declaration])
+        decl = acero.Declaration(
+            "order_by",
+            options,
+            inputs=[self.require_declaration(operation="order_by")],
+        )
         ordering = OrderingSpec.explicit(
             keys=sort_keys,
             reason="order_by explicit ordering",
@@ -340,14 +416,26 @@ class Plan:
         pyarrow.Table
             Materialized table result.
 
+        Raises
+        ------
+        ValueError
+            If the plan has no declaration or source thunk.
+
         Notes
         -----
         Deprecated. Prefer ``ExecutionPlan.from_plan(plan)`` with an
         ``ExecutionContext`` to preserve ordering metadata.
         """
         configure_arrow_threading_for_context(ctx=None)
-        reader = self.declaration.to_reader(use_threads=use_threads)
-        return normalize_table_for_compute(reader_to_table(reader))
+        if self.declaration is not None:
+            reader = self.declaration.to_reader(use_threads=use_threads)
+            return normalize_table_for_compute(reader_to_table(reader))
+        if self.table_thunk is not None:
+            return self.table_thunk()
+        if self.reader_thunk is not None:
+            return normalize_table_for_compute(reader_to_table(self.reader_thunk()))
+        msg = "Plan has no declaration, table thunk, or reader thunk."
+        raise ValueError(msg)
 
     def to_reader(self, *, use_threads: bool = True) -> pa.RecordBatchReader:
         """Materialize the plan as an Arrow reader.
@@ -362,13 +450,25 @@ class Plan:
         pyarrow.RecordBatchReader
             RecordBatchReader for the plan result.
 
+        Raises
+        ------
+        ValueError
+            If the plan has no declaration or source thunk.
+
         Notes
         -----
         Deprecated. Prefer ``ExecutionPlan.from_plan(plan)`` with an
         ``ExecutionContext`` to preserve ordering metadata.
         """
         configure_arrow_threading_for_context(ctx=None)
-        return self.declaration.to_reader(use_threads=use_threads)
+        if self.declaration is not None:
+            return self.declaration.to_reader(use_threads=use_threads)
+        if self.reader_thunk is not None:
+            return self.reader_thunk()
+        if self.table_thunk is not None:
+            return self.table_thunk().to_reader()
+        msg = "Plan has no declaration, table thunk, or reader thunk."
+        raise ValueError(msg)
 
 
 def _field_name_for_expression(expr: pc.Expression) -> str | None:
@@ -513,6 +613,11 @@ def materialize_plan(
     pyarrow.Table
         Materialized table with compute-normalized chunks.
 
+    Raises
+    ------
+    ValueError
+        If the plan has no declaration or source thunk.
+
     Notes
     -----
     Deprecated. Prefer ``ExecutionPlan.from_plan(plan)`` with an
@@ -526,7 +631,15 @@ def materialize_plan(
             combine_chunks=combine_chunks,
         )
     configure_arrow_threading_for_context(ctx=execution_ctx)
-    reader = plan.declaration.to_reader(use_threads=execution_ctx.resolve_use_threads())
+    if plan.declaration is not None:
+        reader = plan.declaration.to_reader(use_threads=execution_ctx.resolve_use_threads())
+    elif plan.reader_thunk is not None:
+        reader = plan.reader_thunk()
+    elif plan.table_thunk is not None:
+        reader = plan.table_thunk().to_reader()
+    else:
+        msg = "Plan has no declaration, table thunk, or reader thunk."
+        raise ValueError(msg)
     table = reader_to_table(reader)
     return normalize_table_for_compute(table, combine_chunks=execution_ctx.combine_chunks)
 
@@ -579,6 +692,13 @@ def query_plan_options_for_context(
         )
     if determinism == "canonical":
         provenance = True
+        if implicit_ordering is None:
+            implicit_ordering = True
+        if require_sequenced_output is None:
+            require_sequenced_output = True
+    else:
+        implicit_ordering = None
+        require_sequenced_output = None
     if (
         provenance == resolved.provenance
         and implicit_ordering == resolved.implicit_ordering
@@ -720,6 +840,7 @@ class ExternalPlanRequest:
     dataset: ds.Dataset | None
     filter_expr: ds.Expression | None
     columns: Sequence[str] | Mapping[str, pc.Expression] | None
+    schema: pa.Schema | None
     scan_options: DatasetScanOptions | None
     use_threads: bool | None
 

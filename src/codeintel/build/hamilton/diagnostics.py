@@ -37,10 +37,10 @@ from codeintel.build.settings import get_arrow_scan_settings, get_columnar_runti
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
 from codeintel.core.columnar.execution_context import (
     ExecutionContext as ColumnarExecutionContext,
-    resolve_arrow_scan_settings,
 )
 from codeintel.core.columnar.execution_context import (
     RuntimeProfile,
+    resolve_arrow_scan_settings,
     resolve_execution_context,
     runtime_profile_from_settings,
 )

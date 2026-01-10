@@ -29,13 +29,11 @@ from codeintel.core.columnar.finalize_ops import (
     FinalizeResult,
     finalize_spec_for_table,
 )
-from codeintel.core.columnar.ordering import SortDirection, SortKey
-from codeintel.core.columnar.plan_ops import (
-    Plan,
-    QueryPlanOptions,
-    build_query_plan_for_context,
-    query_plan_options_for_context,
+from codeintel.core.columnar.plan_builder import (
+    SchemaPlanDefaultsRequest,
+    plan_from_schema_defaults,
 )
+from codeintel.core.columnar.plan_ops import Plan, QueryPlanOptions
 from codeintel.core.columnar.queryspec import (
     PROVENANCE_FIELDS,
     QuerySpec,
@@ -462,20 +460,16 @@ def scan_snapshot_plan_with_telemetry(
         implicit_ordering=request.implicit_ordering,
         require_sequenced_output=request.require_sequenced_output,
     )
-    resolved_options = query_plan_options_for_context(
-        ctx=request.execution_ctx,
-        options=options,
-    )
-    resolved_options = _apply_canonical_order_by(
-        resolved_options,
-        ctx=request.execution_ctx,
-        table_key=request.table_key,
-    )
-    plan = build_query_plan_for_context(
-        dataset,
-        spec=query_spec,
-        ctx=request.execution_ctx,
-        options=resolved_options,
+    plan = plan_from_schema_defaults(
+        schema_service=get_schema_service(),
+        request=SchemaPlanDefaultsRequest(
+            table_key=request.table_key,
+            dataset=dataset,
+            predicate=query_spec.predicate,
+            columns=query_spec.scan_columns(provenance=False),
+            options=options,
+            ctx=request.execution_ctx,
+        ),
     )
     return SnapshotPlanResult(plan=plan, scan_telemetry=scan_telemetry)
 
@@ -734,26 +728,6 @@ def _provenance_columns_for_spec(
         for output_name, _source_name in PROVENANCE_FIELDS
         if output_name in available
     )
-
-
-def _apply_canonical_order_by(
-    options: QueryPlanOptions,
-    *,
-    ctx: ExecutionContext | None,
-    table_key: str,
-) -> QueryPlanOptions:
-    if options.order_by is not None:
-        return options
-    resolved_ctx = resolve_execution_context(ctx)
-    if resolved_ctx.resolve_determinism() != "canonical":
-        return options
-    schema = get_schema_service().get_table_schema(table_key)
-    canonical_keys = resolve_canonical_sort_keys(schema)
-    if not canonical_keys:
-        return options
-    direction: SortDirection = "ascending"
-    order_by: tuple[SortKey, ...] = tuple((key, direction) for key in canonical_keys)
-    return replace(options, order_by=order_by)
 
 
 def persist_finalize_artifacts(

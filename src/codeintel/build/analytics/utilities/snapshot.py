@@ -8,8 +8,8 @@ from dataclasses import dataclass
 import pyarrow as pa
 import pyarrow.dataset as ds
 
+from codeintel.build.tabular.finalize_ops import finalize_reader, finalize_spec_for_table
 from codeintel.core.columnar.arrowdsl import ExecutionPlan
-from codeintel.core.columnar.conversion import reader_to_table
 from codeintel.core.columnar.execution_context import (
     ExecutionContext,
     resolve_columnar_context,
@@ -33,6 +33,7 @@ from codeintel.core.columnar.schema_metadata import decode_metadata
 from codeintel.core.execution.context import ExecutionContext as RuntimeExecutionContext
 from codeintel.core.schemas.service import get_schema_service
 
+_INTERNAL_PLAN_TABLE_KEY = "internal.plan_materialize"
 
 @dataclass(frozen=True, slots=True)
 class SnapshotContext:
@@ -151,7 +152,15 @@ def snapshot_table(
     resolved_context = context or SnapshotContext()
     execution_ctx = resolve_execution_context(resolve_columnar_context(resolved_context.ctx))
     reader = ExecutionPlan.from_plan(plan).to_reader(ctx=execution_ctx)
-    return reader_to_table(reader)
+    result = finalize_reader(
+        reader,
+        spec=finalize_spec_for_table(
+            _INTERNAL_PLAN_TABLE_KEY,
+            mode="tolerant",
+            ordering=plan.ordering,
+        ),
+    )
+    return result.good
 
 
 def snapshot_reader(
